@@ -414,7 +414,7 @@ const en: Record<string, string> = {
   'settings.homepage': 'Homepage',
   'settings.changelog': 'Changelog',
   'settings.github': 'GitHub',
-  'settings.starCta': 'If Molio has been useful, please star it on GitHub. It means a lot to us — thank you!',
+  'settings.starCta': 'If Molio has been useful to you, please star the project on GitHub — it means a lot to us.',
   'settings.tabGeneral': 'General',
   'settings.tabRuntimes': 'Runtimes',
   'settings.tabSkills': 'Skills',

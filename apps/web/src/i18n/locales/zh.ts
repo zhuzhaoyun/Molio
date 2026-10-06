@@ -414,7 +414,7 @@ const zh: Record<string, string> = {
   'settings.homepage': '主页',
   'settings.changelog': '更新日志',
   'settings.github': 'GitHub',
-  'settings.starCta': '如果 Molio 帮到了你，请在 GitHub 点个 Star。这对我们意义重大，非常感谢！',
+  'settings.starCta': '如果 Molio 对你有帮助，请在 GitHub 为本项目点个 Star～这对我们非常重要',
   'settings.tabGeneral': '通用',
   'settings.tabRuntimes': '运行时',
   'settings.tabSkills': '技能',

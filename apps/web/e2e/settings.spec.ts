@@ -172,7 +172,7 @@ test.describe('Update card', () => {
     await expect(star).toHaveAttribute('href', REPO_URL);
     await expect(star).toHaveAttribute('target', '_blank');
     await expect(star).toHaveAttribute('rel', /noopener/);
-    await expect(star).toHaveText(/点个 Star|star it on GitHub/);
+    await expect(star).toHaveText(/点个 Star|star the project on GitHub/);
 
     // 版式意图：引导条要自成一行、铺满卡片宽度。混进操作区就成了第二个 CTA，
     // 挤在同一行则不叫「顺便」。这两条断言就是钉住这个意图。
@@ -182,6 +182,35 @@ test.describe('Update card', () => {
     expect(starBox).not.toBeNull();
     expect(starBox!.y).toBeGreaterThanOrEqual(actions!.y + actions!.height);
     expect(starBox!.width).toBeGreaterThan(actions!.width);
+
+    // 页脚 band 必须**左右对称**地铺到卡片内缘。flex-basis 的百分比按内容盒解析、
+    // 外边距算完宽度之后才扣，只写 100% 时左边被负外边距推出去、右边却缩不回来，
+    // 视觉上是「半边高亮」。实测踩过一次，用几何断言钉住（左右各留 1px 卡片边框）。
+    const card = await page.locator('.settings-update-card').boundingBox();
+    expect(card).not.toBeNull();
+    const insetLeft = starBox!.x - card!.x;
+    const insetRight = card!.x + card!.width - (starBox!.x + starBox!.width);
+    expect(Math.abs(insetLeft - insetRight)).toBeLessThanOrEqual(1);
+    expect(insetLeft).toBeLessThanOrEqual(2);
+  });
+
+  test('hovering the star row lights up the whole row, not just the words', async ({ page }) => {
+    await openSettings(page);
+
+    const star = page.locator('[data-testid="update-star-cta"]');
+    const restBg = await star.evaluate((el) => getComputedStyle(el).backgroundColor);
+
+    await star.hover();
+    // 等 140ms 过渡走完再读，否则读到的是中间帧
+    await page.waitForTimeout(300);
+    const hoverBg = await star.evaluate((el) => getComputedStyle(el).backgroundColor);
+
+    // 整行是**一个** <a>，反馈就得是整行的 —— 只改文字颜色在这条 1000+px 宽的行上
+    // 肉眼看不出来，等于把这块点击区藏起来
+    expect(hoverBg).not.toBe(restBg);
+    // 底色要铺满行宽，不能只有文字那么长
+    const box = await star.boundingBox();
+    expect(box!.width).toBeGreaterThan(600);
   });
 
   test('changelog deep-links to the tag once a version is known', async ({ page }) => {
