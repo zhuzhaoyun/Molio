@@ -433,6 +433,15 @@ function itemListJsonLd(listings: MarketListing[]): string {
  * .rl-buy[data-id]（内联脚本在 #res-grid 上做购买/下载事件委托）。
  * 详情入口在标题的 <a> 上 —— 底栏再放一个「查看详情」是同一个去处的重复，也挤占底栏宽度。
  */
+/** 卡片级的长文入口：复用 rl-desc 样式，不引入新 CSS。
+ *  放在卡片上而不是只放商品详情页，是因为这个组件同时被列表页与商品页复用，
+ *  两处都能把链接带出去（见本库 audits/2026-10-07/internal-link-gap.md）。 */
+function renderCardArticleLink(m: MarketListing): string {
+  const art = RELATED_ARTICLES[m.id];
+  if (!art) return '';
+  return `<p class="rl-desc"><a href="/blog/${escapeHtml(art.slug)}.html">这套是怎么整理出来的 →</a></p>`;
+}
+
 function renderResourceCard(m: MarketListing): string {
   const paid = m.priceCents > 0;
   const price = formatPriceYuan(m.priceCents);
@@ -448,6 +457,7 @@ function renderResourceCard(m: MarketListing): string {
     </div>
     <h3 class="rl-name"><a href="/resource/${encodeURIComponent(m.id)}.html">${escapeHtml(m.name)}</a></h3>
     <p class="rl-desc">${escapeHtml(metaDescription(m.summary, 160))}</p>
+    ${renderCardArticleLink(m)}
     ${tags}
     <div class="rl-cardfoot">
       <span class="rl-price ${paid ? 'paid' : 'free'}">${paid ? '¥' + escapeHtml(price) : '免费'}</span>
