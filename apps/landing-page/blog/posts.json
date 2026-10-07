@@ -1,5 +1,10 @@
 [
   {
+    "slug": "workbuddy-obsidian-knowledge-base",
+    "title": "WorkBuddy + Obsidian 装好之后，知识库里到底放什么",
+    "date": "2026-10-08"
+  },
+  {
     "slug": "drawing-data-extraction",
     "title": "图纸数据提取：为什么直接读 DWG 拿不到门窗表，从解析到导出 Excel 的完整链路",
     "date": "2026-09-23"

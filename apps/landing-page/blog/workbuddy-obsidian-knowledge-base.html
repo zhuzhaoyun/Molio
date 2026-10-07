@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#1A1714">
+
+<!-- SEO -->
+<title>WorkBuddy + Obsidian 装好之后，知识库里到底放什么</title>
+<meta name="description" content="WorkBuddy 加 Obsidian 这套组合，工具和接入都有现成方案，装完之后真正会撞上的问题是里面放什么。这篇讲清为什么通用模型答你领域的问题总是似是而非，以及内容层可以从哪来。">
+<meta name="robots" content="index, follow">
+<link rel="canonical" href="https://molio.cn/blog/workbuddy-obsidian-knowledge-base.html">
+
+<!-- Preconnect -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+
+<link rel="icon" type="image/png" href="../images/favicon-32.png">
+<link rel="apple-touch-icon" href="../images/favicon-32.png">
+<link rel="stylesheet" href="../styles.css?v=20260827c">
+
+<!-- Open Graph -->
+<meta property="og:title" content="WorkBuddy + Obsidian 装好之后，知识库里到底放什么">
+<meta property="og:description" content="WorkBuddy 加 Obsidian 这套组合，工具和接入都有现成方案，装完之后真正会撞上的问题是里面放什么。这篇讲清为什么通用模型答你领域的问题总是似是而非，以及内容层可以从哪来。">
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://molio.cn/blog/workbuddy-obsidian-knowledge-base.html">
+<meta property="og:image" content="https://molio.cn/images/brand.png">
+<meta property="og:site_name" content="Molio 墨流">
+<meta property="og:locale" content="zh_CN">
+
+<!-- Twitter -->
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="WorkBuddy + Obsidian 装好之后，知识库里到底放什么">
+<meta name="twitter:description" content="WorkBuddy 加 Obsidian 这套组合，工具和接入都有现成方案，装完之后真正会撞上的问题是里面放什么。这篇讲清为什么通用模型答你领域的问题总是似是而非，以及内容层可以从哪来。">
+<meta name="twitter:image" content="https://molio.cn/images/brand.png">
+
+<!-- JSON-LD -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Article",
+      "headline": "WorkBuddy + Obsidian 装好之后，知识库里到底放什么",
+      "description": "WorkBuddy 加 Obsidian 这套组合，工具和接入都有现成方案，装完之后真正会撞上的问题是里面放什么。这篇讲清为什么通用模型答你领域的问题总是似是而非，以及内容层可以从哪来。",
+      "url": "https://molio.cn/blog/workbuddy-obsidian-knowledge-base.html",
+      "datePublished": "2026-10-08",
+      "author": { "@type": "Organization", "name": "Molio" },
+      "publisher": { "@type": "Organization", "name": "Molio", "logo": { "@type": "ImageObject", "url": "https://molio.cn/images/brand.png" } }
+    },
+    {
+      "@type": "BreadcrumbList",
+      "itemListElement": [
+        { "@type": "ListItem", "position": 1, "name": "首页", "item": "https://molio.cn/" },
+        { "@type": "ListItem", "position": 2, "name": "博客", "item": "https://molio.cn/blog/index.html" },
+        { "@type": "ListItem", "position": 3, "name": "WorkBuddy + Obsidian 装好之", "item": "https://molio.cn/blog/workbuddy-obsidian-knowledge-base.html" }
+      ]
+    },
+    {
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "WorkBuddy 和 Obsidian 是什么关系？",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Obsidian 是本地 Markdown 笔记工具，管“存在哪”；WorkBuddy 是一个本地优先的个人 agent 运行时，建立在 Claude Code 与 Obsidian 之上，管“让 AI 读得到”。两者是分工关系，不是替代关系。"
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "装好之后为什么还是查不到东西？",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "因为瓶颈从工具转到了内容。一堆没有结构的文档，检索得再准也只是找到段落。要答“这两者什么关系”“这件事牵涉哪些人”这类问题，需要的是整理过的关系，不是更多的文档。"
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "自己整理知识库和用现成底座，怎么选？",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "看两件事：你需要的领域有没有人认真整理过，以及你能不能核。自己整理最贴合需求但最贵；现成底座省掉从零建结构的成本，代价是要接受别人的分类方式。"
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "现成知识底座能直接喂给 AI 吗？",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "能。它们是 Markdown 格式的本地文件夹，放进你自己的环境后，能读本地文件的 Agent 都能读它。数据全程在你自己电脑上，不需要上传，也不需要注册任何服务。"
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "通用大模型已经知道很多了，还需要这些吗？",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "通用模型给的是凭训练记忆的概括，细节容易串，而且它指不出依据。在专业场合，“说得像那么回事”和“有出处可核”是两回事。"
+          }
+        }
+      ]
+    }
+  ]
+}
+</script>
+</head>
+<body>
+<nav class="top-nav" aria-label="主导航">
+  <div class="nav-inner">
+    <a href="../index.html" class="nav-logo"><img class="logo-icon-sm" src="../images/new/black.png" alt="Molio" /> Molio</a>
+    <div class="nav-links">
+      <a href="../index.html" class="nav-link">首页</a>
+      <a href="../resources.html" class="nav-link">资源</a>
+      <a href="../help.html" class="nav-link">使用指南</a>
+      <a href="./index.html" class="nav-link active">博客</a>
+      <a href="../enterprise.html" class="nav-link">定制服务</a>
+     <span id="nav-auth"></span><a href="https://github.com/zhuzhaoyun/Molio" target="_blank" rel="noopener noreferrer" class="nav-gh" aria-label="GitHub 仓库"><svg viewBox="0 0 24 24"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg></a></div>
+  </div>
+</nav>
+<main class="page-content">
+  <div class="breadcrumb">
+    <a href="../index.html">首页</a><span class="sep">/</span><a href="./index.html">博客</a><span class="sep">/</span>WorkBuddy + Obsidian 装好之
+  </div>
+  <h1 class="page-title">WorkBuddy + Obsidian 装好之后，知识库里到底放什么</h1>
+  <div class="article-meta"><span>2026-10-08</span><span>知识管理</span></div>
+<article class="article-body reveal">
+<p><strong>先给结论：这套组合里，工具和接入都不难，难的是第三件事。你把 WorkBuddy 接上 Obsidian 之后，第一次问它一个你专业领域的具体问题，多半会得到一段四平八稳、说不上哪里错、但就是没有细节的回答。</strong></p>
+<p>问题不在工具，也不在模型。在于库里装的东西。</p>
+<h2>这套组合的分工</h2>
+<p>Obsidian 管的是“存在哪”：一堆 Markdown 文件放在你自己的硬盘上，用双链连起来，格式是开放的，十年后换个工具也能打开。</p>
+<p>WorkBuddy 管的是“让 AI 读得到”：它是一个本地优先的个人 agent 运行时，建立在 Claude Code 与 Obsidian 之上，让 AI 能在你的本地文件上工作，而不是把资料上传到别处。</p>
+<p>两者接起来之后，你会有一个能读你电脑上文件的 AI。<strong>这一步本身没有门槛，两边都有现成的文档。</strong></p>
+<h2>装好之后撞上的那个问题</h2>
+<p>假设你已经接好了。现在你问它：“我们这行的 XX 规范里，这种情况该怎么判？”</p>
+<p>它答了，条理清楚，但你就是不敢直接用。你去核对，发现它对了两处、含糊了一处、错了一处。你把资料再喂进去一些，好一点，有限。</p>
+<p><strong>这个体验很多人都碰到过，而直觉通常指向错的改进方向。</strong> 大多数人会去调检索：换分块策略、换 embedding、加重排。有效，但有限。</p>
+<p>因为问题多半不在检索。<strong>一堆没有结构的文档，检索得再准也只是找到段落，不是找到知识。</strong> 模型拿到的还是碎片，它自然只能给你碎片级别的回答。</p>
+<p>具体的表现是三种：</p>
+<p><strong>第一，它答不出“没写下来但逻辑上必然”的关联。</strong> 你的资料里写了 A 是某类，也写了 B 属于 A，但它不一定能替你推出 B 也应当满足 A 的约束。</p>
+<p><strong>第二，它分不清同名不同物的东西。</strong> 你单位说的“项目”和规范里说的“项目”不是一回事，但两边都写成“项目”。</p>
+<p><strong>第三，它给不出出处。</strong> 它说得像那么回事，但你没法核。而不敢核的答案，在专业场合等于没有答案。</p>
+<h2>内容层的三条来路</h2>
+<p>到这个位置，问题已经从“用什么工具”变成了“里面放什么”。可选的路其实只有三条。</p>
+<p><strong>第一条，自己从零整理。</strong> 最贴合你的需求，也最贵。贵不在动手，在于你得先把领域的结构想清楚：哪些是实体、哪些是概念、哪些是容易混的对照，然后逐条建页、建关系、逐段核引文。这件事本身是有方法的，但确实要投入时间。</p>
+<p><strong>第二条，把已有的文档堆进去。</strong> 最省事，但这就是前面说的那种体验的来源。文档是给人读的，不是给机器算的，堆得再多，结构还是零。</p>
+<p><strong>第三条，从现成的结构化知识底座起步。</strong> 把某个领域已经整理好的条目拿过来，当作骨架，再往上长你自己的东西。</p>
+<p><strong>第三条路适合的情况很具体</strong>：你需要的那个领域，恰好有人已经整理过，而且整理的质量你能核。</p>
+<h2>现成的知识底座长什么样</h2>
+<p>以 Molio（墨流）的<a href="https://molio.cn/resource/01M13QT669Q6E94PWACEH00YJF.html">知识工程全景图谱</a>为例，它处理的正是“怎么把资料变成机器可用的知识”这件事本身：本体建模、Palantir 的多要素结构、RAG 与 GraphRAG、Agent 工程，整理成互相链接的结构化条目。</p>
+<p><strong>它是 Markdown 格式的本地文件夹</strong>，所以能直接放进上面那套组合里：Obsidian 能打开它，Claude Code、Codex 这类 Agent 也能直接读它。</p>
+<p><strong>需要说清楚它的边界</strong>：它是知识资料，不是可运行的程序，也不含 AI 调用服务。它替代不了上面任何一步，它只是让内容层不必从零开始。</p>
+<h2>常见问题</h2>
+<h3>WorkBuddy 和 Obsidian 是什么关系？</h3>
+<p>Obsidian 是本地 Markdown 笔记工具，管“存在哪”；WorkBuddy 是一个本地优先的个人 agent 运行时，建立在 Claude Code 与 Obsidian 之上，管“让 AI 读得到”。两者是分工关系，不是替代关系。</p>
+<h3>装好之后为什么还是查不到东西？</h3>
+<p>因为瓶颈从工具转到了内容。一堆没有结构的文档，检索得再准也只是找到段落。要答“这两者什么关系”“这件事牵涉哪些人”这类问题，需要的是整理过的关系，不是更多的文档。</p>
+<h3>自己整理知识库和用现成底座，怎么选？</h3>
+<p>看两件事：你需要的领域有没有人认真整理过，以及你能不能核。自己整理最贴合需求但最贵；现成底座省掉从零建结构的成本，代价是要接受别人的分类方式。</p>
+<h3>现成知识底座能直接喂给 AI 吗？</h3>
+<p>能。它们是 Markdown 格式的本地文件夹，放进你自己的环境后，能读本地文件的 Agent 都能读它。数据全程在你自己电脑上，不需要上传，也不需要注册任何服务。</p>
+<h3>通用大模型已经知道很多了，还需要这些吗？</h3>
+<p>通用模型给的是凭训练记忆的概括，细节容易串，而且它指不出依据。在专业场合，“说得像那么回事”和“有出处可核”是两回事。</p>
+<hr>
+<p><strong>相关资源</strong>：<a href="https://molio.cn/resource/01M13QT669Q6E94PWACEH00YJF.html">知识工程全景图谱-RAG-本体-Agent工程</a></p>
+<p><strong>延伸阅读</strong>：</p>
+<ul><li><a href="https://molio.cn/blog/local-knowledge-base.html">为什么本地知识库才是你的最佳选择？2026 年知识管理软件推荐</a></li><li><a href="https://molio.cn/blog/own-materials-to-knowledge-base.html">知识库导入：为什么资料喂给 AI 还是查不全，先结构化再接入</a></li><li><a href="https://molio.cn/blog/ontology-modeling-guide.html">本体论怎么落地：GB/T 48000 要求的三类构件，和 Palantir 多出的那个“动作”</a></li></ul>
+</article>
+  <div class="related-links reveal">
+    <h2>相关文章</h2>
+    <ul>
+      <li><a href="local-knowledge-base.html">为什么本地知识库才是你的最佳选择？2026 年知识管理软件推荐</a></li>
+      <li><a href="own-materials-to-knowledge-base.html">知识库导入：为什么资料喂给 AI 还是查不全，先结构化再接入</a></li>
+      <li><a href="ontology-modeling-guide.html">本体论怎么落地：GB/T 48000 要求的三类构件，和 Palantir 多出的那个“动作”</a></li>
+    </ul>
+  </div>
+  <div class="kg-links reveal">
+    <h2>现成知识底座</h2>
+    <p>这一篇讲的知识底座不用自己攒。同系列的几部都在这里，导入即用。</p>
+    <ul>
+      <li><a href="../resource/01M13QT669Q6E94PWACEH00YJF.html">知识工程全景图谱-RAG-本体-Agent工程</a></li>
+      <li><a href="../resources.html">查看全部知识底座 →</a></li>
+    </ul>
+  </div>
+  <div class="cta-box reveal">
+    <p>别再和每一个 AI 从零开始。</p>
+    <a href="../index.html#download" class="btn btn-primary">免费下载 Molio →</a>
+  </div>
+</main>
+<!-- Footer -->
+<footer class="site-footer">
+  <div class="footer-inner">
+    <div class="footer-brand">
+      <a href="../index.html" class="footer-logo"><img class="logo-icon-sm" src="../images/new/black.png" alt="Molio" /> Molio</a>
+      <p>会成长的 AI 知识空间。Claude Code、Codex 等 Agent 带着你的背景研究、写作、问答、分析，产出回写入库，数据全在你自己电脑上。</p>
+    </div>
+    <div class="footer-links">
+      <h4>产品</h4>
+      <a href="../index.html">首页</a>
+      <a href="../resources.html">资源</a>
+      <a href="../help.html">使用指南</a>
+      <a href="../enterprise.html">定制服务</a>
+      <a href="https://github.com/zhuzhaoyun/Molio" target="_blank" rel="noopener noreferrer">GitHub 开源</a>
+    </div>
+    <div class="footer-links">
+      <h4>资源</h4>
+      <a href="../help.html">快速入门</a>
+      <a href="../help.html#step-6">排版教程</a>
+      <a href="../help.html#step-7">发布指南</a>
+      <a href="https://github.com/zhuzhaoyun/Molio/issues" target="_blank" rel="noopener noreferrer">问题反馈</a>
+    </div>
+    <div class="footer-links">
+      <h4>关于</h4>
+      <a href="./index.html">博客</a>
+      <a href="../privacy.html">隐私政策</a>
+      <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer">粤ICP备2023134483号-4</a>
+    </div>
+  </div>
+  <div class="footer-bottom">
+    <span>© 2026 Molio 墨流. 基于 MIT 协议开源.</span>
+    <span>Molio 墨流 — 别再和每一个 AI 从零开始：会成长的 AI 知识空间，产出回写入库，数据全在你自己电脑上</span>
+  </div>
+</footer>
+<script src="../auth.js?v=20260824a"></script>
+<script src="../shared.js?v=20260824a"></script>
+<script>
+var _hmt = _hmt || [];
+(function() {
+  var hm = document.createElement("script");
+  hm.src = "https://hm.baidu.com/hm.js?887d065c4dc67dfb05913b2e131a44a3";
+  var s = document.getElementsByTagName("script")[0];
+  s.parentNode.insertBefore(hm, s);
+})();
+</script>
+</body>
+</html>
