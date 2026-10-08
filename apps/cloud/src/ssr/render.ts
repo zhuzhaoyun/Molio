@@ -168,6 +168,19 @@ var _hmt = _hmt || [];
 // ── 商品页 ──
 
 /** 购买/下载 CTA：按付费形态三选一（与旧 resource.html renderMarketDetail 同逻辑） */
+/** 通用交付边界（2026-10-08 补）。
+ *
+ *  为什么放模板：这一类边界本来写在 15 份商品页**文案**里（每件措辞不同），
+ *  但那要卖家逐个粘贴。而**这一条对全部 17 件都成立** ——
+ *  本库 2026-10-08 实测：17 个商品页登记的交付格式**全部是「Markdown（.zip）」**
+ *  （`curl` 逐页取 `<span class="k">格式</span>` 的登记值）。
+ *
+ *  与商品**目录/条目数**无关，所以不涉及那些还在核的口径问题。
+ *  商品特有的边界（图纸不是识别软件、PCB 不含 MES、妇产超声不是诊断工具、
+ *  广东高考不是填报工具、古典诗文/金瓶梅不含全文）**仍走文案**，此处不替代它们。 */
+const DELIVERY_BOUNDARY = `<p class="res-boundary"><strong>这是一份 Markdown 知识资料，不是可运行的软件</strong>，
+        不包含程序、模型权重或 AI 调用服务。买到的是一个解压即可阅读的文件夹。</p>`;
+
 function renderCta(m: MarketListing): { cta: string; note: string } {
   const price = formatPriceYuan(m.priceCents);
   if (m.priceCents > 0 && m.payUrl) {
@@ -336,6 +349,7 @@ ${NAV}
         ${previews ? `<h2 class="res-section-title">效果预览</h2>
         <div class="res-preview-grid">${previews}</div>` : ''}
         <h2 class="res-section-title">资源包导入说明</h2>
+        ${DELIVERY_BOUNDARY}
         <div class="step-card"><ol>
           <li>下载资源包 <code>.zip</code> 并解压到本地任意目录</li>
           <li>打开 Molio，在知识库管理界面选择“打开本地仓库”</li>
