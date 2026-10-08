@@ -308,6 +308,20 @@ export function useKnowledge(): UseKnowledgeReturn {
     return () => { cancelled = true; };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  /**
+   * ?manage=1 —— 主页「首次运行引导卡」的建库入口：到知识库页直接把知识库管理器
+   * 打开，省掉用户自己找建库入口那一步（找不到入口正是这次事故的一环）。
+   * 读完即从 URL 摘掉——刷新不该再弹一次；?vault= 原样保留。
+   */
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('manage') !== '1') return;
+    setShowVaultSwitcher(true);
+    params.delete('manage');
+    const qs = params.toString();
+    window.history.replaceState(null, '', window.location.pathname + (qs ? `?${qs}` : ''));
+  }, []);
+
   // Track previous vault ID to distinguish mount vs vault switch
   const prevVaultIdRef = useRef<string | null>(null);
 
@@ -459,7 +473,7 @@ export function useKnowledge(): UseKnowledgeReturn {
 
   const openVault = useCallback(async (path: string) => {
     // Derive a name from the last path segment
-    const name = path.split(/[\/]/).pop() || '未命名仓库';
+    const name = path.split(/[\/]/).pop() || '未命名知识库';
     const vault = await api.createVault({ name, path, description: `从本地文件夹打开: ${path}` });
     const next = [vault, ...vaultsRef.current];
     setVaults(next);

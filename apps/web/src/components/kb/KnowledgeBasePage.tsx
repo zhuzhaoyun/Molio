@@ -1369,6 +1369,7 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
         onRenameComplete={handleRenameComplete}
         onRenameCancel={handleRenameCancel}
         onImportFiles={handleImportFiles}
+        onImportClick={() => kb.setShowImport(true)}
         onMoveFile={handleMoveFile}
         onPublishVault={handlePublishActive}
         publishGate={loggedIn && isMarketAdmin ? 'admin' : 'contact'}
@@ -1467,6 +1468,9 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
               onCopy={kb.copyToClipboard}
               onPublish={kb.publishToChrome}
               onBuildWiki={handleBuildWiki}
+              onImport={() => kb.setShowImport(true)}
+              onOpenVaultManager={() => kb.setShowVaultSwitcher(true)}
+              hasFiles={kb.tree.length > 0}
               onAskAboutSelection={handleAskAboutSelection}
               onOpenOutline={() => setShowOutline(true)}
               onAskAboutFile={handleOpenQa}

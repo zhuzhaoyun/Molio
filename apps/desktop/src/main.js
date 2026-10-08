@@ -13,6 +13,7 @@ import { startCryptoServer, stopCryptoServer } from './crypto-server.js';
 import { startAuthStatusPolling } from './auth-status-watch.js';
 import { CappedBuffer } from './capped-buffer.js';
 import { createVaultRecency } from './vault-recency.js';
+import { createRendererReadiness } from './renderer-readiness.js';
 
 const errMsg = (err) => (err instanceof Error ? err.message : String(err));
 
@@ -79,12 +80,13 @@ const appWindows = new Set();
 /** Most recently focused application window — target for second-instance/activate. */
 let lastFocusedAppWindow = null;
 /**
- * Per-webContents renderer readiness. A full page load (cold-start loadApp or
- * any reload) recreates the renderer context, so the previous molio:navigate
- * listener is gone and molio:renderer-ready fires again once the SPA re-mounts.
- * Map<webContentsId, { ready: boolean, pending: { vaultId, filePath } | null }>
+ * Per-webContents renderer readiness — decides whether a molio://open can be
+ * delivered in-page (IPC) or must fall back to a full loadURL. The clearing
+ * rules live in renderer-readiness.js; they are what makes the difference
+ * between "the clip opens the file" and "the clip reloads the window and wipes
+ * the reply the user is watching".
  */
-const rendererStates = new Map();
+const rendererStates = createRendererReadiness();
 let daemonProcess = null;
 let stopDaemonMetrics = null;
 let stopAuthStatusPolling = null;
@@ -525,18 +527,32 @@ function createWindow({ url = '' } = {}) {
 
   appWindows.add(win);
   // webContents.id is stable for the life of this window; capture it once so the
-  // closed/did-start-loading handlers below don't touch win.webContents after
+  // closed/navigation handlers below don't touch win.webContents after
   // destruction (reading webContents.id post-destroy is unreliable).
   const wcId = win.webContents.id;
   win.on('focus', () => { lastFocusedAppWindow = win; });
   win.on('closed', () => {
     appWindows.delete(win);
     if (lastFocusedAppWindow === win) lastFocusedAppWindow = null;
-    rendererStates.delete(wcId);
+    rendererStates.forget(wcId);
   });
 
-  win.webContents.on('did-start-loading', () => {
-    rendererStates.delete(wcId);
+  // Readiness is cleared ONLY when the renderer really goes away. Deliberately
+  // NOT `did-start-loading`: that also fires for same-document SPA navigation
+  // (pushState / hash) and subframe loads, which leave the React tree — and its
+  // molio:navigate listener — perfectly alive. Clearing there made every clip
+  // after one in-app route change reload the window and kill the in-flight
+  // reply. See renderer-readiness.js.
+  win.webContents.on('did-start-navigation', (details) => {
+    if (rendererStates.onNavigationStarted(wcId, details)) {
+      log('info', 'main', `renderer state cleared — document navigating to ${details.url}`);
+    }
+  });
+  // A dead renderer keeps no listener: without this the stale `ready` flag would
+  // send molio:navigate into a corpse and the clip would silently never open.
+  win.webContents.on('render-process-gone', (_event, details) => {
+    rendererStates.forget(wcId);
+    log('warn', 'main', `renderer process gone (${details?.reason ?? 'unknown'}) — readiness cleared`);
   });
 
   // Intercept window.open() — open in system browser instead of Electron
@@ -711,15 +727,14 @@ function buildKnowledgeUrlFromProtocolTarget(target) {
  */
 function deliverNavigation(win, target) {
   if (!win || win.isDestroyed()) return;
-  const state = rendererStates.get(win.webContents.id);
-  if (state?.ready) {
+  if (rendererStates.isReady(win.webContents.id)) {
     log('info', 'main', `in-page navigate: vault=${target.vaultId ?? '(active)'} file=${target.filePath}`);
     win.webContents.send('molio:navigate', {
       vaultId: target.vaultId,
       filePath: target.filePath,
     });
   } else {
-    rendererStates.set(win.webContents.id, { ready: false, pending: { ...target } });
+    rendererStates.queue(win.webContents.id, target);
     log('info', 'main', `renderer not ready — queued navigate: vault=${target.vaultId ?? '(active)'} file=${target.filePath}`);
   }
 }
@@ -742,7 +757,7 @@ function navigateFromProtocolUrl(protocolUrl, win) {
   try {
     const target = parseMolioProtocolUrl(protocolUrl);
     if (target?.action === 'open-file') {
-      const state = rendererStates.get(targetWin.webContents.id);
+      const ready = rendererStates.isReady(targetWin.webContents.id);
       // App not yet loaded, or renderer not yet ready: the in-page IPC path
       // can't deliver (no SPA listener, or a non-SPA page like the daemon
       // error page that never sends molio:renderer-ready, so a queued nav
@@ -750,10 +765,15 @@ function navigateFromProtocolUrl(protocolUrl, win) {
       // a full loadURL of the knowledge route — the SPA reads ?vault=&file=
       // and opens the file. Reload is fine here since the renderer is already
       // in a broken/transient state; the warm healthy path uses IPC below.
-      if (isWaitingForApp(targetWin) || !state?.ready) {
+      //
+      // "Not ready" now means exactly that: the React tree is gone (cold start,
+      // real reload, error page, dead renderer). Same-document SPA navigation
+      // and iframe loads no longer clear it, so a clip during an in-flight reply
+      // takes the IPC path and the reply keeps streaming.
+      if (isWaitingForApp(targetWin) || !ready) {
         const appUrl = buildKnowledgeUrlFromProtocolTarget(target);
-        log('info', 'main', `navigating to ${appUrl} (renderer ${state?.ready ? 'waiting for app' : 'not ready'})`);
-        rendererStates.set(targetWin.webContents.id, { ready: false, pending: null }); // loadURL supersedes stale queued nav
+        log('info', 'main', `navigating to ${appUrl} (renderer ${ready ? 'waiting for app' : 'not ready'})`);
+        rendererStates.forget(targetWin.webContents.id); // loadURL supersedes any queued nav
         targetWin.loadURL(appUrl);
       } else {
         deliverNavigation(targetWin, target);
@@ -1151,9 +1171,7 @@ ipcMain.handle('app:new-window', (_event, payload) => {
 ipcMain.on('molio:renderer-ready', (event) => {
   const wc = event.sender;
   const id = wc.id;
-  const state = rendererStates.get(id) ?? { ready: false, pending: null };
-  const nav = state.pending;
-  rendererStates.set(id, { ready: true, pending: null });
+  const nav = rendererStates.markReady(id);
   if (nav && !wc.isDestroyed()) {
     log('info', 'main', `renderer ready — flushing queued navigate: vault=${nav.vaultId ?? '(active)'} file=${nav.filePath}`);
     wc.send('molio:navigate', nav);

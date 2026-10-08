@@ -94,7 +94,7 @@ export function agentsRoutes(runManager: RunManager): Hono {
       while (Date.now() < deadline) {
         if (turnCompleted) {
           unsubscribe?.();
-          runManager.cancelRun(runId);
+          runManager.cancelRun(runId, 'agent-test:done');
           const elapsed = Date.now() - startedAt;
           const ok = !turnError;
           return c.json({
@@ -123,7 +123,7 @@ export function agentsRoutes(runManager: RunManager): Hono {
 
       // Timeout — clean up
       unsubscribe?.();
-      runManager.cancelRun(runId);
+      runManager.cancelRun(runId, 'agent-test:timeout');
       const elapsed = Date.now() - startedAt;
       return c.json({ ok: false, elapsed, error: `Test timed out after ${Math.round(timeoutMs / 1000)}s` }, 408);
     } catch (err) {
