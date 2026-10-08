@@ -452,6 +452,9 @@ function itemListJsonLd(listings: MarketListing[]): string {
         url: productUrl(m.id),
         image,
         description: metaDescription(m.summary, 160),
+        // 列表页卡片**可见**「分类 / 类型」，结构化数据里此前没有。
+        // 对「Molio 有哪些历史类资源」这类问句，category 是机器可用的分组依据。
+        ...(m.category?.name ? { category: m.category.name } : {}),
         offers: {
           '@type': 'Offer',
           url: productUrl(m.id),
