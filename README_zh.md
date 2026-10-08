@@ -79,6 +79,11 @@ Claude Code、Codex、Gemini CLI、Qwen Code 等 Agent 在你的知识空间里�
 - [妇产超声知识图谱：胎儿畸形诊断、征象与鉴别体系](https://molio.cn/resource/01M1152PE8YE365S9ZXDMNYCW6.html)
 - [知识工程全景图谱-RAG-本体-Agent 工程](https://molio.cn/resource/01M13QT669Q6E94PWACEH00YJF.html)
 - [广东高考志愿填报·高校专业全景知识库](https://molio.cn/resource/01M2DFJ9E66FARK5SEBMPT92K0.html)
+- [三国人物关系图：120 回本的三国演义知识图谱](https://molio.cn/resource/01M35RVX9S3TQK6ZE0QT9J6NG4.html)
+- [图纸数据提取：工程图纸数字化与 AI 识别技术全景](https://molio.cn/resource/01M35QEB3RMK46SGCQ6WSZ3GZR.html)
+- [PCB 柔性制造全景图谱：从在线下单到黑灯工厂](https://molio.cn/resource/01M3VX66XMG5NHQ5HP9TK0Q2DC.html)
+- [法考刑法·131考点与主观题观点训练知识图谱](https://molio.cn/resource/01M2QAYVBMH2YCF68BEA393BY4.html)
+- [中国古典诗文集全景图谱](https://molio.cn/resource/01M3VY2DZXW6KN1X5AFP7PXJ05.html)
 
 **[浏览全部资源 →](https://molio.cn/resources.html)**
 

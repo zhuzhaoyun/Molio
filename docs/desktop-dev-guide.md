@@ -201,6 +201,33 @@ pnpm --filter @molio/desktop package  # electron-builder --win
 4. 将 `.node` 文件从 asar 中解包（通过 `asarUnpack`）
 5. 生成 NSIS 安装包 `.exe` 到 `apps/desktop/dist/`
 
+### 国内/信创网络打包前置配置
+
+electron-builder 打包时要下载两类构建期二进制，默认源都在 GitHub，国内/信创网络直连普遍超时：
+
+| 环境变量 | 控制的下载 | 国内镜像值 |
+|---|---|---|
+| `ELECTRON_MIRROR` | Electron 本体 zip（`pnpm install` 的 electron postinstall 与 electron-builder 打包时各下载一次） | `https://cdn.npmmirror.com/binaries/electron/` |
+| `ELECTRON_BUILDER_BINARIES_MIRROR` | NSIS、winCodeSign 等构建期二进制（默认源 `github.com/electron-userland/electron-builder-binaries` 直连会超时） | `https://cdn.npmmirror.com/binaries/electron-builder-binaries/` |
+| `MOLIO_PREBUILD_HOST` | better-sqlite3 的 Electron prebuild（由 `apps/desktop/scripts/prepare-resources.mjs` 下载） | `https://registry.npmmirror.com/-/binary/better-sqlite3` |
+
+**打包镜像已内置默认值**：`apps/desktop/scripts/package.mjs` 在 `ELECTRON_MIRROR` / `ELECTRON_BUILDER_BINARIES_MIRROR` 未设置时自动注入上表的 npmmirror 值，`pnpm package` / `package:dir` / `desktop:run` 等所有本地打包入口都经过该脚本，开箱即用；已显式设置的值会被尊重、不被覆盖。CI 的 release 工作流直接调用 `npx electron-builder`、不经过该脚本，发布产物的下载来源不受默认值影响。
+
+**仍需手动处理的两个环节**：
+
+- `pnpm install` 阶段 electron 包的 postinstall 下载发生在 `package.mjs` 介入之前，国内网络需先设好 `ELECTRON_MIRROR` 再执行 install。
+- better-sqlite3 的 Electron prebuild 由 `prepare-resources.mjs` 下载，已内置「GitHub releases（重试 3 次）→ npmmirror（重试 2 次）」回退；确定不通 GitHub 的环境（信创/内网）可设 `MOLIO_PREBUILD_HOST` 跳过 GitHub 尝试，直接走指定源。
+
+Git Bash 手动设置示例：
+
+```bash
+export ELECTRON_MIRROR=https://cdn.npmmirror.com/binaries/electron/
+export ELECTRON_BUILDER_BINARIES_MIRROR=https://cdn.npmmirror.com/binaries/electron-builder-binaries/
+export MOLIO_PREBUILD_HOST=https://registry.npmmirror.com/-/binary/better-sqlite3
+```
+
+PowerShell 等价写法：`$env:ELECTRON_MIRROR = "https://cdn.npmmirror.com/binaries/electron/"`（其余同理）。
+
 ### 只生成未打包目录（不生成安装包）
 
 ```bash
@@ -357,6 +384,23 @@ netstat -ano | findstr 5173
 
 # 杀掉对应进程
 taskkill /PID <进程号> /F
+```
+
+### 7. `electron-builder` 报 `ENOENT: no such file or directory, stat '...node_modules...'`
+
+**原因**：移除依赖或切换分支后，pnpm 不会清理 node_modules 里残留的孤儿符号链接（指向已不存在的 pnpm store 路径）。electron-builder 打包时逐个 stat 文件，遇到悬挂链接即中断。2026-09 实测：一次依赖移除留下 169 个悬挂链接，打包直接卡死。
+
+**排查**（Git Bash，列出所有失效链接）：
+
+```bash
+find node_modules apps/*/node_modules packages/*/node_modules -type l ! -exec test -e {} \; -print
+```
+
+有输出即存在悬挂链接。**解决**：删掉全部 node_modules 重装，pnpm 会重建链接：
+
+```bash
+rm -rf node_modules apps/*/node_modules packages/*/node_modules
+pnpm install
 ```
 
 ---

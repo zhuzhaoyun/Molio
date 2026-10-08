@@ -60,6 +60,7 @@
         "apps/web/src/components/kb/*",
         "apps/web/src/hooks/useKnowledge*",
         "apps/web/src/hooks/useKbTabs*",
+        "apps/web/src/hooks/useScrollMemory*",
         "apps/web/src/stores/kbChatSessionsStore*",
         "apps/daemon/src/core/knowledge.ts",
         "apps/daemon/src/core/db.ts",
@@ -81,13 +82,16 @@
         "file-chat-panel",
         "kb-tab-limit",
         "kb-tab-stale",
+        "kb-scroll-memory",
+        "kb-scroll-reset",
         "kb-large-file",
         "kb-large-file-gbk",
         "kb-large-file-15mb",
         "kb-large-file-too-large",
         "pdf-preview",
         "chat-work-visibility",
-        "split-view"
+        "split-view",
+        "kb-terminology"
       ]
     },
     "publish": {
@@ -113,7 +117,7 @@
     },
     "graph": {
       "paths": [
-        "apps/web/src/components/graph/*",
+        "apps/web/src/components/graph/**",
         "apps/web/src/styles/graph.css",
         "apps/daemon/src/routes/graph.ts"
       ],
@@ -122,7 +126,8 @@
         "graph-settings",
         "graph-local",
         "split-view",
-        "graph-camera"
+        "graph-camera",
+        "graph-live-refresh"
       ]
     },
     "navigation": {
@@ -134,7 +139,8 @@
       ],
       "specs": [
         "bootstrap",
-        "navigation"
+        "navigation",
+        "home-onboarding"
       ]
     },
     "settings": {
@@ -192,10 +198,13 @@
         "apps/web/src/hooks/useResourcePay*",
         "apps/web/src/stores/loginIntentStore*",
         "apps/web/src/styles/resources.css",
-        "apps/landing-page/resources-data.js"
+        "apps/landing-page/resources-data.js",
+        "apps/landing-page/resource-catalog.js",
+        "apps/web/e2e/resource-catalog-website.spec.ts"
       ],
       "specs": [
         "resources",
+        "resource-catalog-website",
         "navigation",
         "bootstrap"
       ]
@@ -204,6 +213,7 @@
       "paths": [
         "apps/web/src/components/kb/KbFilePanel.*",
         "apps/web/src/components/kb/KbFileTree.*",
+        "apps/web/src/components/kb/KbMainContent.*",
         "apps/web/src/components/kb/KbModals.*",
         "apps/web/src/components/kb/ImportConflictDialog.*",
         "apps/web/src/components/kb/KnowledgeBasePage.*",
@@ -212,6 +222,8 @@
         "apps/daemon/src/core/knowledge.ts"
       ],
       "specs": [
+        "kb-import-entry",
+        "kb-terminology",
         "drag-drop-import",
         "kb-folder-ops",
         "kb-folder-drag-real",
@@ -234,6 +246,8 @@
         "apps/daemon/src/core/market/*",
         "apps/cloud/src/market/*",
         "apps/cloud/src/store/market-*",
+        "apps/cloud/src/ssr/*",
+        "packages/contracts/src/catalog.ts",
         "apps/web/e2e/fixtures/mock-oss.mjs"
       ],
       "specs": [
@@ -310,6 +324,14 @@
       "priority": "P1",
       "file": "graph-local.spec.ts"
     },
+    "graph-camera": {
+      "priority": "P1",
+      "file": "graph-camera.spec.ts"
+    },
+    "graph-live-refresh": {
+      "priority": "P1",
+      "file": "graph-live-refresh.spec.ts"
+    },
     "split-view": {
       "priority": "P1",
       "file": "split-view.spec.ts"
@@ -325,6 +347,14 @@
     "kb-tree-sort-locate": {
       "priority": "P1",
       "file": "kb-tree-sort-locate.spec.ts"
+    },
+    "kb-import-entry": {
+      "priority": "P0",
+      "file": "kb-import-entry.spec.ts"
+    },
+    "kb-terminology": {
+      "priority": "P1",
+      "file": "kb-terminology.spec.ts"
     },
     "kb-chat-entry": {
       "priority": "P1",
@@ -350,9 +380,21 @@
       "priority": "P1",
       "file": "kb-tab-stale.spec.ts"
     },
+    "kb-scroll-memory": {
+      "priority": "P1",
+      "file": "kb-scroll-memory.spec.ts"
+    },
+    "kb-scroll-reset": {
+      "priority": "P1",
+      "file": "kb-scroll-reset.spec.ts"
+    },
     "kb-large-file": {
       "priority": "P0",
       "file": "kb-large-file.spec.ts"
+    },
+    "home-onboarding": {
+      "priority": "P1",
+      "file": "home-onboarding.spec.ts"
     },
     "kb-large-file-gbk": {
       "priority": "P0",
@@ -377,6 +419,10 @@
     "resources": {
       "priority": "P1",
       "file": "resources.spec.ts"
+    },
+    "resource-catalog-website": {
+      "priority": "P1",
+      "file": "resource-catalog-website.spec.ts"
     },
     "pdf-preview": {
       "priority": "P1",

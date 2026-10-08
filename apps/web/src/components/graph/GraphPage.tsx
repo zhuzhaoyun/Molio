@@ -14,6 +14,7 @@ import { useI18n } from '../../i18n';
 import { useActiveVaultId, vaultStore } from '../../stores/vaultStore';
 import { navigationHistoryStore, useNavigationHistory } from '../../stores/navigationHistoryStore';
 import { useGraphSettings } from './useGraphSettings';
+import { graphFingerprint, refreshDebounceMs } from './refreshPolicy';
 import { GraphSettingsPanel } from './GraphSettingsPanel';
 import { GraphSearchBox } from './GraphSearchBox';
 import { Minimap } from './Minimap';
@@ -40,6 +41,9 @@ export function GraphPage({
   // 取景用「整张子图 fit」而非「圆心居中放大」（小画布下后者会裁掉邻居），
   // 且布局同步跑完、瞬时取景，不做过渡动画（见下方数据推送 effect）。
   companion = false,
+  // 「库变了」信号计数（useKnowledge.treeRevision）：图谱自动跟上文件树。
+  // 宿主传值；图谱不可见时先记账、等可见了再刷（见下方防抖消费 effect）。
+  revision = 0,
 }: {
   active?: boolean;
   onCloseCompanion?: () => void;
@@ -47,6 +51,7 @@ export function GraphPage({
   onNodeOpen?: () => void;
   onScopeReset?: () => void;
   companion?: boolean;
+  revision?: number;
 } = {}) {
   const { t } = useI18n();
   const navigate = useNavigate();
@@ -68,7 +73,7 @@ export function GraphPage({
   const engineRef = useRef<PixiGraphEngine | null>(null);
   const [engine, setEngine] = useState<PixiGraphEngine | null>(null);
 
-  const { settings, updateSettings, updateForce } = useGraphSettings();
+  const { settings, updateSettings, updateForce, resetSettings } = useGraphSettings();
   const themeColors = getThemeColors(settings.theme);
 
   // 供引擎回调读取的最新值（避免重建引擎）
@@ -94,7 +99,30 @@ export function GraphPage({
   // scope 的稳定标识：换 file / 换 dir 才重新拉数据
   const scopeKey = graphScope ? `${graphScope.type}:${graphScope.path}` : null;
 
-  // Fetch graph data when active vault / scope changes
+  // 供防抖与去重读取的最新值（不进 deps，避免把它们变成 effect 触发器）
+  const graphDataRef = useRef<GraphData | null>(null);
+  graphDataRef.current = graphData;
+  // 上一次「已采纳」数据的指纹：相同就不再 setGraphData（对象不换 → 下游重排不跑）
+  const fingerprintRef = useRef<string | null>(null);
+
+  // ── 库变了 → 防抖后刷新 ──
+  // 复用文件树那条 `tree-changed` 信号（useKnowledge 的 treeRevision），不另开 SSE。
+  // 两道闸门：① 图谱不可见不刷（keep-alive 的隐藏标签页没必要为看不见的重排买单），
+  // 但记账不丢——下一次 active 翻转时补上；② 按图规模尾随防抖，把 AI 连续写入打出的
+  // 多波信号合并成一次（大图一次重排数秒 CPU，多等一会儿更划算）。
+  const [refreshTick, setRefreshTick] = useState(0);
+  const consumedRevisionRef = useRef(revision);
+  useEffect(() => {
+    if (!active) return;
+    if (consumedRevisionRef.current === revision) return;
+    const timer = setTimeout(() => {
+      consumedRevisionRef.current = revision;
+      setRefreshTick((v) => v + 1);
+    }, refreshDebounceMs(graphDataRef.current?.nodes.length ?? 0));
+    return () => clearTimeout(timer);
+  }, [revision, active]);
+
+  // Fetch graph data when active vault / scope changes, or the vault content changes
   useEffect(() => {
     if (!activeVaultId) return;
 
@@ -111,6 +139,11 @@ export function GraphPage({
     req
       .then((data) => {
         if (cancelled) return;
+        // 指纹去重：库变了 ≠ 图谱变了。往 raw/ 拷个 PDF、改个错别字同样会推 tree-changed，
+        // 而重建一次要重跑整轮力导向仿真；数据没变就保持原对象，下游 setData/重排全不跑。
+        const fingerprint = graphFingerprint(data);
+        if (fingerprint === fingerprintRef.current) return;
+        fingerprintRef.current = fingerprint;
         setGraphData(data);
       })
       .catch((err) => {
@@ -121,10 +154,13 @@ export function GraphPage({
           // and this useEffect will re-fire with the new activeVaultId.
           vaultStore.setActiveVaultId(null);
           setError(null);
+          fingerprintRef.current = null;
+          setGraphData(null);
         } else {
+          // 刷新失败保留旧图，只报错（图还在，用户不必重新等一次布局）。
+          // 首次加载失败时本来就没有旧图，落到的仍然是错误空态。
           setError(err.message ?? 'Failed to load graph');
         }
-        setGraphData(null);
       })
       .finally(() => {
         if (cancelled) return;
@@ -133,7 +169,7 @@ export function GraphPage({
     return () => {
       cancelled = true;
     };
-  }, [activeVaultId, scopeKey]);
+  }, [activeVaultId, scopeKey, refreshTick]);
 
   // ── 筛选后的图数据（引擎只接收可见节点）──
   const engineData = useMemo((): { nodes: EngineNode[]; edges: EngineEdge[] } | null => {
@@ -458,8 +494,8 @@ export function GraphPage({
               </button>
             </div>
           )}
-          {/* 统计：收敛进 ℹ，点击展示 */}
-          {graphData && !loading && (
+          {/* 统计：收敛进 ℹ，点击展示（刷新期间也留着——不然每次自动刷新控件都会闪一下） */}
+          {graphData && (
             <div className="graph-stats-ctrl">
               {showStats && (
                 <div className="graph-stats-pop">
@@ -537,7 +573,8 @@ export function GraphPage({
       </div>
 
       <div className="graph-canvas">
-        {loading && (
+        {/* 刷新时不清屏：有旧图就留着（自动刷新不该闪一下加载态），只有首屏/换库才盖 */}
+        {loading && !graphData && (
           <div className="graph-loading">
             <div className="graph-loading__spinner" />
             <p>{t('graph.loading')}</p>
@@ -571,6 +608,7 @@ export function GraphPage({
               updateForce(patch);
               // 力度参数经 settings → effect 下发到引擎（单一数据源）
             }}
+            onReset={resetSettings}
             onClose={() => setShowSettings(false)}
             availableTypes={graphData.nodes
               .map(n => n.nodeType)

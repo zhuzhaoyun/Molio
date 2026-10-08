@@ -59,8 +59,54 @@ export interface NpmNativeInstallSource {
   registries: string[];
 }
 
+/**
+ * npm JS package install source.
+ *
+ * Unlike `npm-native` (which extracts a pre-built native binary from a single
+ * tarball), this strategy runs a real `npm install` of a JavaScript package
+ * with its full dependency tree, then generates a shim script that runs the
+ * package's bin entry through a Node.js executable.
+ *
+ * Node.js acquisition is multi-tier:
+ * 1. Host Node (>= `minNodeMajor`) + npm, probed via child process — NEVER
+ *    via `process.version` (the desktop daemon runs under ELECTRON_RUN_AS_NODE
+ *    with an embedded Node that says nothing about the host environment).
+ * 2. Otherwise a portable Node is downloaded from `managedNode.mirrors`
+ *    (in order, first success wins) into `~/.molio/node/`, sha256-verified
+ *    against the mirror's own SHASUMS256.txt, and atomically swapped into place.
+ */
+export interface NpmJsInstallSource {
+  type: 'npm-js';
+  /** npm package name, e.g. `'@deepseek-ai/dsh'`. */
+  pkgName: string;
+  /**
+   * Exact version to install. MUST be a concrete semver — never `'latest'`.
+   * Fast-moving packages (e.g. dsh developer previews) have had dist-tag
+   * sync bugs; upgrades are deliberate code changes, tested before release.
+   */
+  version: string;
+  /** Package bin entry relative to the package root, e.g. `'lib/bin.js'`. */
+  binEntry: string;
+  /** npm registry URLs to try in order (first success wins). */
+  registries: string[];
+  /** Minimum host Node.js major version required to run the package. */
+  minNodeMajor: number;
+  /** Portable Node fallback — downloaded when host Node is missing or too old. */
+  managedNode: {
+    /** Node version to download, e.g. `'v22.20.0'`. */
+    version: string;
+    /**
+     * Mirror base URLs in priority order. Each mirror serves
+     * `<base>/<version>/node-<version>-<platform>-<arch>.<ext>` and a
+     * sibling `SHASUMS256.txt`. China-first ordering: aliyun-backed
+     * npmmirror, then Tencent, then the official dist as last resort.
+     */
+    mirrors: string[];
+  };
+}
+
 /** Extensible install source union. Add new variants here for future agents. */
-export type InstallSource = NpmNativeInstallSource;
+export type InstallSource = NpmNativeInstallSource | NpmJsInstallSource;
 
 /** Platform compatibility constraints for preflight checks. */
 export interface PlatformRequirement {
@@ -155,6 +201,25 @@ export interface RuntimeAgentDef {
     /** Timeout for `session/cancel` — strict absolute deadline (default 5s).
      *  On expiry, fall back to SIGTERM. Cancel is a short ack, no idle timer. */
     cancelTimeoutMs?: number;
+    /**
+     * Opt in to the pre-spawn integrity probe (`bin --check` + auto-repair of a
+     * broken install). Only the hermes venv `[acp]`-extra repair flow uses
+     * this. Other ACP agents MUST NOT set it: they don't implement `--check`
+     * (dsh rejects unknown flags with "--profile <name> is required", exit 1),
+     * so the probe would fail every run before the process is even spawned.
+     */
+    preflightRepair?: boolean;
+    /**
+     * Make the card's "Test" button run a real minimal LLM turn
+     * ('Reply with exactly: "pong"' → wait for turn_end) instead of treating
+     * the handshake alone as success. Required for agents whose session/new
+     * succeeds WITHOUT credentials: dsh returns its model list (configOptions)
+     * with no API key configured, so a handshake-only test shows green and the
+     * user hits a missing-key wall on their first real message (observed on a
+     * real machine, 2026-10-04). Leave unset where the handshake is a valid
+     * install check and LLM latency would only make the test flaky (hermes).
+     */
+    testWithPrompt?: boolean;
   };
 
   fallbackModels: RuntimeModelOption[];

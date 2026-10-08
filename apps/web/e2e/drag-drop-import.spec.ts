@@ -233,28 +233,30 @@ test.describe('KB Drag-and-Drop Import', () => {
 
   // ── ImportModal tests ──
 
-  test('ImportModal can be opened and shows file browser', async ({ page }) => {
-    // Open the vault
+  test('导入弹窗走完整链路：选文件 → 导入 → 出现在树里', async ({ page }) => {
+    // 这条曾经是假测试：整块断言被 `if (await importBtn.isVisible())` 包着，
+    // 而那个按钮压根不存在（vault bar 打开的是仓库管理器，里面没有 Import 按钮），
+    // 于是永远静默通过——「导入入口不存在」这个真 bug 就这么溜过去了。
+    // 现在锚定真实的工具栏入口，并且一路跑到文件落树。
     await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
 
-    // Open the vault switcher by clicking the vault bar
-    const vaultBar = page.locator('.kb-vault-bar').first();
-    await expect(vaultBar).toBeVisible({ timeout: 5_000 });
-    await vaultBar.click();
-    await page.waitForTimeout(500);
+    await page.locator('[data-testid="kb-btn-import"]').click();
+    const dialog = page.locator('.kb-modal').filter({ has: page.locator('.kb-dropzone') });
+    await expect(dialog).toBeVisible({ timeout: 5_000 });
 
-    // Click the Import button in the vault switcher modal
-    const importBtn = page.locator('.kb-btn-primary').filter({ hasText: /Import|导入/ });
-    if (await importBtn.isVisible({ timeout: 3_000 }).catch(() => false)) {
-      await importBtn.click();
-      await page.waitForTimeout(500);
+    await dialog.locator('input[type="file"]').setInputFiles({
+      name: 'via-dialog.md',
+      mimeType: 'text/markdown',
+      buffer: Buffer.from('# hello from dialog\n'),
+    });
+    await expect(dialog).toContainText('via-dialog.md');
 
-      // The ImportModal should be visible now — look for modal with dropzone
-      const modal = page.locator('.kb-modal');
-      await expect(modal).toBeVisible();
-      await expect(modal.locator('.kb-dropzone')).toBeVisible();
-    }
+    await dialog.locator('[data-testid="kb-import-submit"]').click();
+
+    await expect(
+      page.locator('.kb-tree-name').filter({ hasText: 'via-dialog.md' })
+    ).toBeVisible({ timeout: 10_000 });
   });
 
   // ── Conflict dialog test ──

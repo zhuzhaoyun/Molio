@@ -26,6 +26,10 @@ export type MarketListingStatus = 'uploading' | 'active' | 'removed';
 
 /** 公开条目（列表/详情响应） */
 export interface MarketListing {
+  categoryId?: string | null;
+  resourceTypeId?: string | null;
+  category?: MarketTaxon | null;
+  resourceType?: MarketTaxon | null;
   id: string;
   source: MarketListingSource;
   name: string;
@@ -69,6 +73,8 @@ export interface MarketUploadTarget {
 
 /** POST /market/listings 请求（Plan 1 仅社区场景；管理员扩展字段 Plan 2） */
 export interface MarketCreateRequest {
+  categoryId?: string;
+  resourceTypeId?: string;
   name: string;
   summary: string;
   icon: string;
@@ -131,3 +137,11 @@ export interface MarketPublishSuggestion {
   /** 起草所用 agent id（前端提示用） */
   agentId: string;
 }
+
+/** 云端注册表，ID 是开放字符串；新增项不要求客户端升级。 */
+export interface MarketTaxon { id: string; kind: 'category' | 'type'; name: string; position: number; }
+export interface MarketTaxonomy { categories: MarketTaxon[]; types: MarketTaxon[]; }
+export const INITIAL_MARKET_TAXA: MarketTaxon[] = [
+  ...[['history-literature','历史与文学'],['philosophy','哲学'],['medicine','医学'],['law','法律'],['education','教育'],['engineering','工程技术']].map(([id,name],position)=>({id:id!, name:name!, kind:'category' as const, position})),
+  {id:'knowledge',name:'知识库',kind:'type',position:0},
+];

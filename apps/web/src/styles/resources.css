@@ -19,171 +19,174 @@
   padding: 28px 32px 48px;
 }
 
-/* ── 列表页：标题区 ── */
+/* ── 列表页：标题区 / 筛选 / 网格 ──
+   顶部（hero / 搜索框 / 分类 chips / 结果栏）与分组区的样式统一放在文件末尾的
+   「Dynamic resource catalog」块，与原型 docs/prototype/resources-catalog.html 对齐。 */
 
-.resources-hero {
-  margin-bottom: 20px;
-}
-
-.resources-hero h1 {
-  margin: 0 0 6px;
-  font-family: var(--serif);
-  font-size: 26px;
-  font-weight: 650;
-  color: var(--text-strong);
-  line-height: 1.2;
-}
-
-.resources-hero p {
-  margin: 0;
-  font-size: 14px;
-  color: var(--text-muted);
-}
-
-/* ── 列表页：筛选 pills ── */
-
-.resources-filters {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 20px;
-}
-
-.resources-filter {
-  appearance: none;
-  border: 1px solid var(--border-strong);
-  background-color: transparent;
-  color: var(--text-muted);
-  font-size: 13px;
-  padding: 5px 14px;
-  border-radius: var(--radius-pill);
-  cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
-}
-
-.resources-filter:hover {
-  color: var(--text-strong);
-  border-color: var(--text-soft);
-}
-
-.resources-filter.is-active {
-  background-color: var(--text-strong);
-  border-color: var(--text-strong);
-  color: var(--bg);
-}
-
-/* ── 列表页：卡片网格 ── */
-
+/* 4 列：底栏收成「价格 + 购买」后，307px 的卡片也能放下（原先三件套需要 325px） */
 .resources-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-  gap: 16px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 18px;
 }
 
 .resources-card {
+  position: relative; /* 标题链接的 ::after 以此为定位基准铺满整卡 */
   display: flex;
   flex-direction: column;
-  background: var(--bg-panel);
+  min-width: 0;
+  background-color: var(--bg-panel);
   border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  padding: 20px;
-  box-shadow: var(--shadow-xs);
-  transition: transform 0.18s ease, box-shadow 0.18s ease;
+  border-radius: 4px;
+  padding: 22px;
+  transition: border-color 0.15s ease, transform 0.15s ease;
 }
 
 .resources-card:hover {
+  border-color: var(--border-strong);
   transform: translateY(-2px);
-  box-shadow: var(--shadow-md);
 }
 
-.resources-card__top {
+.resources-card__meta {
   display: flex;
   align-items: center;
-  gap: 12px;
-  margin-bottom: 12px;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 20px;
+  font-size: 11px;
+  color: var(--text-muted);
 }
 
-.resources-card__icon {
-  flex-shrink: 0;
-  width: 48px;
-  height: 48px;
+.resources-card__stamp {
   display: flex;
   align-items: center;
-  justify-content: center;
-  font-size: 26px;
-  border-radius: var(--radius);
-}
-
-.resources-card__titles {
-  flex: 1;
+  gap: 9px;
   min-width: 0;
 }
 
-.resources-card__name {
-  margin: 0;
+.resources-card__symbol {
+  flex-shrink: 0;
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   font-size: 16px;
-  font-weight: 650;
-  color: var(--text-strong);
-  line-height: 1.3;
-}
-
-.resources-card__sub {
-  font-size: 12px;
-  color: var(--text-soft);
-  margin-top: 2px;
+  border-radius: 3px;
 }
 
 .resources-card__ver {
-  margin-left: 6px;
+  flex-shrink: 0;
   color: var(--text-faint);
   font-variant-numeric: tabular-nums;
 }
 
-.resources-card__price {
-  flex-shrink: 0;
-  font-size: 13px;
-  font-weight: 600;
-  padding: 2px 10px;
-  border-radius: var(--radius-pill);
+.resources-card__name {
+  margin: 0 0 12px;
+  /* app 的 --serif 没带中文衬线回退，补上（原型就是这么写的），否则中文标题落回默认衬线 */
+  font-family: var(--serif), 'Noto Serif SC', 'Songti SC', 'SimSun', serif;
+  font-size: 19px;
+  font-weight: 700;
+  line-height: 1.55;
+  color: var(--text-strong);
+  overflow-wrap: anywhere;
 }
 
-.resources-card__price.is-paid {
-  color: var(--red);
-  background-color: var(--red-bg);
+/* 标题本身是详情入口（底栏不再单独放「查看详情」）。
+   用「拉伸链接」把它的可点区域铺满整张卡片 —— 比给 article 挂 onClick 稳：
+   语义仍是链接（可键盘聚焦、可中键/Cmd 新开标签），也不用嵌套 <a> 或在
+   购买按钮上 stopPropagation。 */
+.resources-card__name a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.resources-card__name a:hover {
+  color: var(--accent);
+}
+
+.resources-card__name a::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+}
+
+/* 价格：原型把它做成大号衬线文本（免费则降为 14px 无衬线），不是配色 pill */
+.resources-card__price {
+  flex-shrink: 0;
+  font-family: Georgia, var(--serif);
+  font-size: 20px;
+  color: var(--text-strong);
 }
 
 .resources-card__price.is-free {
-  color: var(--green);
-  background-color: var(--green-bg);
+  font-family: var(--sans);
+  font-size: 14px;
+  color: var(--text-muted);
+}
+
+.resources-card__tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin: 0 0 20px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.resources-card__tags span {
+  background-color: var(--bg-subtle);
+  padding: 1px 7px;
+  border-radius: 2px;
 }
 
 .resources-card__desc {
-  flex: 1;
+  /* 卡片等高由 .resources-card__actions 的 margin-top:auto 保证，描述块不参与拉伸：
+     否则标题只占一行的卡片会把描述盒撑到非整数行高，裁切线落在字中间（半截字）。 */
+  flex: none;
   margin: 0 0 16px;
-  font-size: 13.5px;
-  line-height: 1.65;
+  font-size: 13px;
+  line-height: 1.85;
   color: var(--text-muted);
   display: -webkit-box;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
+  /* 几何兜底：描述块是 flex item，部分 Chromium 会把它的 display:-webkit-box
+     做 blockify、令 -webkit-line-clamp 失效。max-height 钉死三行，clamp 生效时
+     高度不变，失效时裁切线也落在行边界。 */
+  max-height: calc(3 * 1.85em);
   overflow: hidden;
 }
 
+/* 底栏：原型 cardfoot —— 上边框 + 价格靠左、动作靠右 */
 .resources-card__actions {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 14px;
+  gap: 12px;
+  margin-top: auto;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
 }
 
+.resources-card__actions .resources-card__price {
+  margin-right: auto;
+}
+
+/* 抬到铺满卡片的那层链接之上，否则点购买会被链接截走 */
 .resources-card__buy {
+  position: relative;
+  z-index: 1;
   appearance: none;
   border: none;
   background-color: var(--text-strong);
   color: var(--bg);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
-  padding: 8px 18px;
-  border-radius: var(--radius-pill);
+  padding: 7px 14px;
+  border-radius: 3px;
   cursor: pointer;
+  white-space: nowrap;
   transition: background-color 0.15s ease;
 }
 
@@ -191,68 +194,141 @@
   background-color: var(--accent);
 }
 
-.resources-card__detail {
-  font-size: 13px;
-  color: var(--text-muted);
-  text-decoration: none;
-}
-
-.resources-card__detail:hover {
-  color: var(--accent);
-}
-
 .resources-empty {
-  grid-column: 1 / -1;
+  padding: 65px 20px;
   text-align: center;
-  color: var(--text-soft);
-  font-size: 14px;
-  padding: 48px 0;
+}
+
+.resources-empty h2 {
+  margin: 0 0 8px;
+  font-family: var(--serif), 'Noto Serif SC', 'Songti SC', 'SimSun', serif;
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--text-strong);
+}
+
+.resources-empty p {
+  margin: 0 0 20px;
+  color: var(--text-muted);
+}
+
+.resources-empty__actions {
+  display: flex;
+  justify-content: center;
+  gap: 14px;
+}
+
+.resources-empty__actions button {
+  font-size: 13px;
+  padding: 9px 18px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background-color: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.resources-empty__actions .catalog-primary {
+  background-color: var(--text-strong);
+  border-color: var(--text-strong);
+  color: var(--bg);
 }
 
 /* ── 首载骨架屏（shimmer 模式同 history-skeleton） ── */
 .resources-skeleton-card {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  background: var(--bg-panel);
+  background-color: var(--bg-panel);
   border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  padding: 20px;
+  border-radius: 4px;
+  padding: 22px;
 }
 
-.resources-skeleton-card__top {
+.resources-skeleton-card__meta {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
+  margin-bottom: 20px;
 }
 
 .resources-skeleton-card span {
   display: block;
-  background: var(--bg-muted);
+  background-color: var(--bg-muted);
   animation: resources-shimmer 1.6s ease-in-out infinite;
 }
 
-.resources-skeleton-card__icon {
-  width: 48px;
-  height: 48px;
-  border-radius: var(--radius);
+.resources-skeleton-card__symbol {
   flex-shrink: 0;
+  width: 30px;
+  height: 30px;
+  border-radius: 3px;
 }
 
 .resources-skeleton-card__title {
-  width: 45%;
-  height: 16px;
-  border-radius: 4px;
+  width: 60%;
+  height: 19px;
+  border-radius: 3px;
+  margin-bottom: 12px;
 }
 
 .resources-skeleton-card__line {
-  width: 90%;
+  width: 100%;
   height: 12px;
-  border-radius: 4px;
+  border-radius: 3px;
+  margin-bottom: 8px;
 }
 
 .resources-skeleton-card__line.is-short {
-  width: 60%;
+  width: 62%;
+}
+
+/* ── 详情页首屏骨架：数据未到时不要抢跑「资源不存在」 ── */
+.resources-detail-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.resources-detail-skeleton span {
+  display: block;
+  background-color: var(--bg-muted);
+  border-radius: 4px;
+  animation: resources-shimmer 1.6s ease-in-out infinite;
+}
+
+.resources-detail-skeleton__head {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 8px;
+}
+
+.resources-detail-skeleton__icon {
+  flex: none;
+  width: 56px;
+  height: 56px;
+  border-radius: var(--radius);
+}
+
+.resources-detail-skeleton__lines {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.resources-detail-skeleton__title {
+  width: 55%;
+  height: 22px;
+}
+
+.resources-detail-skeleton__line {
+  width: 100%;
+  height: 13px;
+}
+
+.resources-detail-skeleton__line.is-short {
+  width: 62%;
 }
 
 @keyframes resources-shimmer {
@@ -1441,3 +1517,268 @@
    社区资源市场 — 详情页社区变体（Task 11）
    ═══════════════════════════════════════════════════════════ */
 
+
+/* ═══════════════════════════════════════════════════════════
+   资源目录（列表页内容区）—— 对齐设计原型
+   docs/prototype/resources-catalog.html
+   原型用的是 --paper/--soft/--ink/--muted/--line/--red 一套调色板，app 的 token
+   语义一一对应，所以这里不写死任何 hex（暗色主题随之自动生效）。
+   ═══════════════════════════════════════════════════════════ */
+
+/* 内容区最大宽度容器（原型 .wrap）。父级 .resources-scroll 自带左右内边距，
+   且该规则与详情页共用，故此处只约束宽度、不再叠加横向 padding。 */
+.catalog-wrap { width:min(1280px,100%); margin:0 auto; }
+
+/* ── hero：左标题 / 右搜索（原型 .hero） ── */
+.catalog-hero { display:grid; grid-template-columns:1fr 1fr; align-items:end; gap:48px; padding:12px 0 30px; }
+.catalog-eyebrow { font-size:11px; letter-spacing:2px; color:var(--text-muted); }
+.catalog-hero h1 {
+  margin:10px 0 14px;
+  /* app 的 --serif 没带中文衬线回退，补上，否则中文大标题落回默认衬线 */
+  font-family:var(--serif), 'Noto Serif SC', 'Songti SC', 'SimSun', serif;
+  font-size:clamp(32px,4vw,48px);
+  font-weight:700;
+  line-height:1.25;
+  color:var(--text-strong);
+}
+.catalog-hero h1 span { font-weight:400; }
+.catalog-intro { margin:0; font-size:14px; color:var(--text-muted); }
+
+/* 搜索框：容器式（放大镜 + 无边框 input + 清空），原型 .searchbox */
+.catalog-searchbox {
+  display:flex;
+  align-items:center;
+  gap:10px;
+  padding:4px 6px 4px 16px;
+  background-color:var(--bg-panel);
+  border:1px solid var(--border-strong);
+  border-radius:4px;
+}
+.catalog-searchbox svg { flex:none; width:19px; color:var(--text-muted); }
+/* 中和 base.css 对 input 的全局 width/padding/边框与蓝色 focus ring */
+.catalog-searchbox input {
+  width:100%;
+  min-width:0;
+  padding:11px 0;
+  border:0;
+  border-radius:0;
+  background-color:transparent;
+  box-shadow:none;
+  outline:none;
+  color:var(--text);
+}
+.catalog-searchbox input:focus { border-color:transparent; box-shadow:none; }
+.catalog-searchbox:focus-within { outline:2px solid var(--text-strong); outline-offset:2px; }
+.catalog-searchbox button {
+  flex:none;
+  padding:0 6px;
+  font-size:12px;
+  color:var(--text-muted);
+  background:none;
+  border:0;
+  white-space:nowrap;
+  cursor:pointer;
+}
+.catalog-searchhint { margin-top:9px; font-size:12px; color:var(--text-muted); }
+.catalog-searchhint button {
+  margin:0 5px;
+  padding:0;
+  font-size:12px;
+  color:inherit;
+  background:none;
+  border:0;
+  border-bottom:1px solid var(--border);
+  cursor:pointer;
+}
+.catalog-searchhint button:hover { color:var(--text-strong); }
+
+/* ── 分类条（原型 .filters 是 sticky，这里改成随页面滚走）：
+   浮起来那一条会在内容上压出一道硬边，观感差；分类就一行、目录也不长，
+   真要换分类往回滚一点就行。 */
+.catalog-filters {
+  padding:12px 0;
+  border-block:1px solid var(--border);
+}
+.catalog-filterrow { display:flex; align-items:center; gap:8px; }
+.catalog-quick { display:flex; flex:1; min-width:0; gap:5px; overflow:auto; scrollbar-width:thin; }
+.catalog-quick .resources-filter {
+  flex:none;
+  padding:7px 15px;
+  font-size:13px;
+  color:var(--text-muted);
+  background:none;
+  border:0;
+  border-radius:3px;
+  white-space:nowrap;
+  cursor:pointer;
+}
+.catalog-quick .resources-filter:hover { background-color:var(--bg-subtle); color:var(--text-strong); }
+.catalog-quick .resources-filter[aria-pressed=true] { background-color:var(--text-strong); color:var(--bg); }
+.catalog-quick .resources-filter small { margin-left:8px; opacity:.65; }
+.catalog-allcats {
+  flex:none;
+  padding:7px 12px;
+  font-size:13px;
+  color:var(--text-muted);
+  background:none;
+  border:1px solid var(--border);
+  border-radius:3px;
+  cursor:pointer;
+}
+.catalog-allcats:hover { color:var(--text-strong); border-color:var(--text-strong); }
+.catalog-types { display:flex; align-items:center; gap:10px; margin-top:10px; font-size:12px; color:var(--text-muted); }
+/* base.css 全局给 select 设了 width:100%，在 flex 行里会吃掉整行（实测曾把同行
+   的计数挤成逐字竖排）。这里还原为内容宽度；背景色用长写属性以保住全局下拉箭头。 */
+.catalog-types select {
+  flex:none;
+  width:auto;
+  padding:4px 8px;
+  border:1px solid var(--border);
+  border-radius:3px;
+  background-color:transparent;
+  color:var(--text);
+}
+
+/* ── 结果栏（原型 .resultbar） ── */
+.catalog-resultbar {
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:14px;
+  padding:22px 0 0;
+  font-size:13px;
+  color:var(--text-muted);
+}
+.catalog-scope { min-width:0; }
+.catalog-scope strong { color:var(--text-strong); }
+.catalog-clear {
+  flex:none;
+  padding:0;
+  font-size:13px;
+  color:inherit;
+  background:none;
+  border:0;
+  border-bottom:1px solid var(--border);
+  cursor:pointer;
+}
+.catalog-clear:hover { color:var(--text-strong); }
+.catalog-stale { margin:12px 0 0; font-size:13px; color:var(--text-muted); }
+.catalog-stale button {
+  margin-left:8px;
+  padding:3px 10px;
+  font-size:12px;
+  color:inherit;
+  background-color:transparent;
+  border:1px solid var(--border);
+  border-radius:3px;
+  cursor:pointer;
+}
+
+/* ── 分组标题（原型 .sectionhead） ── */
+.catalog-section { padding-top:28px; }
+.catalog-section > header { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:16px; }
+.catalog-section h2 {
+  margin:0;
+  font-family:var(--serif), 'Noto Serif SC', 'Songti SC', 'SimSun', serif;
+  font-size:24px;
+  font-weight:700;
+  color:var(--text-strong);
+}
+.catalog-section h2 small { margin-left:12px; font-family:var(--sans); font-size:12px; font-weight:400; color:var(--text-muted); }
+.catalog-section > header button {
+  flex:none;
+  padding:0;
+  font-size:12px;
+  color:var(--text-muted);
+  background:none;
+  border:0;
+  border-bottom:1px solid var(--border);
+  cursor:pointer;
+}
+.catalog-section > header button:hover { color:var(--text-strong); }
+
+/* ── 触底加载哨兵：不占视觉空间，只给 IntersectionObserver 一个目标 ── */
+.catalog-sentinel { height:1px; }
+
+/* ── 全部分类弹窗（原型 dialog / .categorylist） ── */
+.catalog-dialog {
+  width:min(660px,calc(100% - 32px));
+  max-height:85vh;
+  overflow:auto;
+  padding:28px;
+  border:1px solid var(--border);
+  border-radius:5px;
+  background-color:var(--bg);
+  color:var(--text);
+}
+.catalog-dialog::backdrop { background-color:rgba(0,0,0,.4); }
+.catalog-dialoghead { display:flex; align-items:center; justify-content:space-between; gap:15px; margin-bottom:18px; }
+.catalog-dialoghead h2 {
+  margin:0;
+  font-family:var(--serif), 'Noto Serif SC', 'Songti SC', 'SimSun', serif;
+  font-size:24px;
+  font-weight:700;
+  color:var(--text-strong);
+}
+.catalog-dialoghead button {
+  width:34px;
+  height:34px;
+  font-size:23px;
+  line-height:1;
+  color:var(--text-muted);
+  background:none;
+  border:0;
+  border-radius:3px;
+  cursor:pointer;
+}
+.catalog-dialoghead button:hover { background-color:var(--bg-subtle); color:var(--text-strong); }
+.catalog-dialogsearch {
+  width:100%;
+  margin-bottom:18px;
+  padding:10px 12px;
+  border:1px solid var(--border);
+  border-radius:3px;
+  background-color:var(--bg-panel);
+  color:var(--text);
+}
+.catalog-categorylist { display:grid; grid-template-columns:repeat(2,1fr); gap:8px; }
+.catalog-categorylist p { grid-column:1 / -1; margin:0; color:var(--text-muted); }
+.catalog-categorylist button {
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  padding:13px;
+  font-size:13px;
+  color:var(--text);
+  text-align:left;
+  background-color:transparent;
+  border:1px solid var(--border);
+  border-radius:3px;
+  cursor:pointer;
+}
+.catalog-categorylist button:hover { background-color:var(--bg-subtle); }
+.catalog-categorylist button[aria-pressed=true] { border-color:var(--text-strong); }
+.catalog-categorylist button small { color:var(--text-muted); }
+
+/* ── 发布表单的分类/类型字段（PublishForm / TaxonomyFields，与列表页无关） ── */
+.catalog-publish { border:1px solid var(--border); padding:16px; border-radius:4px; }
+.catalog-publish > div { display:flex; gap:10px; align-items:end; margin-bottom:10px; flex-wrap:wrap; }
+.catalog-publish label { flex:1; min-width:160px; }
+.catalog-publish select { width:100%; }
+
+@media (min-width:1600px) { .catalog-wrap { width:min(1440px,100%); } }
+@media (max-width:1200px) { .resources-grid { grid-template-columns:repeat(3,minmax(0,1fr)); } }
+@media (max-width:960px) { .resources-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } .catalog-hero { gap:24px; } }
+@media (max-width:620px) {
+  /* app 的内容区比官网窄（左侧常驻 NavRail），所以窄屏内边距与标题字号都收一档 */
+  .resources-scroll { padding:16px; }
+  .catalog-hero { grid-template-columns:1fr; gap:22px; padding:20px 0 24px; }
+  .catalog-hero h1 { font-size:30px; }
+  .resources-grid { grid-template-columns:minmax(0,1fr); }
+  .resources-card { padding:20px; }
+  /* 允许分组标题换行：否则 h2 被挤到把「N 个资源」从中间断开 */
+  .catalog-section > header { flex-wrap:wrap; }
+  .catalog-section h2 { font-size:22px; }
+  .catalog-categorylist { grid-template-columns:1fr; }
+}

@@ -353,3 +353,158 @@ test.describe('Codex provider config', () => {
     expect(toml).not.toContain('https://api.deepseek.com');
   });
 });
+
+test.describe('dsh provider config', () => {
+  // dsh credentials live in ~/.molio/config.json (agents.dsh.env) — dsh reads
+  // DEEPSEEK_API_KEY / DEEPSEEK_BASE_URL solely from env (no backing file).
+  // Back the stored config up and restore it so the suite never clobbers a
+  // real DeepSeek key.
+  let originalDshConfig: { env?: Record<string, string> } | null = null;
+
+  test.beforeAll(async ({ request }) => {
+    const res = await request.get(`${DAEMON_API}/config/agents/dsh`);
+    if (res.ok()) originalDshConfig = await res.json();
+  });
+
+  test.afterAll(async ({ request }) => {
+    if (originalDshConfig === null) return; // daemon unreachable — don't wipe blindly
+    await request.put(`${DAEMON_API}/config/agents/dsh`, {
+      data: { env: originalDshConfig.env ?? {} },
+    });
+  });
+
+  /** Navigate to Settings → Runtimes and return the dsh agent card. */
+  async function openDshCard(page: import('@playwright/test').Page) {
+    await page.goto('/');
+    await page.locator('[data-view="settings"]').click();
+    await expect(page.locator('.settings-shell')).toBeVisible();
+    await page.locator('.settings-tab-btn').filter({ hasText: /Runtime|运行时/ }).click({ timeout: 5_000 });
+    await expect(page.locator('.rt-shell')).toBeVisible();
+
+    const dshCard = page.locator('.rt-agent-card').filter({ hasText: 'DeepSeek Harness' });
+    // agent 列表是异步扫描渲染的，先等卡片出现再判断安装状态
+    await dshCard.first().waitFor({ state: 'visible', timeout: 15_000 }).catch(() => {});
+    return dshCard;
+  }
+
+  test.beforeEach(async ({ page }) => {
+    const dshCard = await openDshCard(page);
+    // The provider config panel only renders for available agents; skip
+    // gracefully where dsh isn't installed (CI).
+    const installed = await dshCard.count() > 0
+      && await dshCard.locator('.rt-badge--ok').count() > 0;
+    test.skip(!installed, 'dsh not installed in this environment');
+  });
+
+  test('dsh provider form: env-only key field, custom base URL, no model mapping', async ({ page }) => {
+    const dshCard = await openDshCard(page);
+    await dshCard.locator('.rt-provider-toggle').click();
+    const panel = dshCard.locator('.rt-provider-config');
+    await expect(panel).toBeVisible();
+
+    // Provider select offers exactly the two dsh presets
+    const select = panel.locator('.rt-provider-form__select');
+    await expect(select).toBeVisible();
+    const optionValues = await select.locator('option').evaluateAll((els) => els.map((e) => (e as HTMLOptionElement).value));
+    expect(optionValues).toEqual(['deepseek', 'custom']);
+
+    // The API key field shows even for the official preset — dsh reads
+    // DEEPSEEK_API_KEY solely from env, so a key is always required.
+    await expect(panel.locator('.rt-provider-form__input[type="password"]')).toBeVisible();
+    const apiKeyLink = panel.locator('.rt-provider-form__link').filter({ hasText: 'API Key' });
+    await expect(apiKeyLink).toHaveAttribute('href', 'https://platform.deepseek.com/api_keys');
+
+    // dsh models arrive at runtime via ACP configOptions → no model-mapping UI
+    await expect(panel.locator('.rt-provider-mapping-toggle')).toHaveCount(0);
+    // Official preset → no base URL override field
+    await expect(panel.locator('[data-testid="dsh-base-url-field"]')).toHaveCount(0);
+
+    // Switching to custom reveals the Messages-compatible base URL field
+    await select.selectOption('custom');
+    const baseUrl = panel.locator('[data-testid="dsh-base-url-field"]');
+    await expect(baseUrl).toBeVisible();
+    await expect(baseUrl).toHaveAttribute('placeholder', 'https://api.deepseek.com/anthropic');
+  });
+
+  test('save dsh custom config, verify persistence + detection after reload', async ({ page }) => {
+    const dshCard = await openDshCard(page);
+    await dshCard.locator('.rt-provider-toggle').click();
+    const panel = dshCard.locator('.rt-provider-config');
+    await expect(panel).toBeVisible();
+
+    await panel.locator('.rt-provider-form__select').selectOption('custom');
+    await panel.locator('[data-testid="dsh-base-url-field"]').fill('https://api.example.com/anthropic');
+    await panel.locator('.rt-provider-form__input[type="password"]').fill('sk-e2e-dsh-test');
+    await panel.locator('.rt-provider-form__actions .rt-btn').first().click();
+    await expect(panel.locator('.rt-provider-form__status--ok')).toBeVisible({ timeout: 5_000 });
+
+    // Daemon persisted env into ~/.molio/config.json (agents.dsh.env)
+    const response = await page.evaluate(async (api) => {
+      const res = await fetch(`${api}/config/agents/dsh`);
+      return res.json();
+    }, DAEMON_API);
+    expect(response.env?.['DEEPSEEK_API_KEY']).toBe('sk-e2e-dsh-test');
+    expect(response.env?.['DEEPSEEK_BASE_URL']).toBe('https://api.example.com/anthropic');
+
+    // Full reload — the mount-time load must detect the custom provider from
+    // the persisted env (detectDshProvider keys off DEEPSEEK_BASE_URL).
+    const reloadedCard = await openDshCard(page);
+    await expect(reloadedCard.locator('.rt-provider-toggle__current')).toHaveText(/Custom/i, { timeout: 10_000 });
+    await reloadedCard.locator('.rt-provider-toggle').click();
+    const reopened = reloadedCard.locator('.rt-provider-config');
+    await expect(reopened.locator('.rt-provider-form__select')).toHaveValue('custom');
+    await expect(reopened.locator('[data-testid="dsh-base-url-field"]'))
+      .toHaveValue('https://api.example.com/anthropic');
+  });
+
+  // Error-driven regression (2026-10-05): saving the OFFICIAL preset used to
+  // persist DEEPSEEK_BASE_URL: '' — dsh resolves the endpoint with `??`, an
+  // empty string is not nullish, `new URL('')` throws TypeError: Invalid URL,
+  // both llm-deepseek entries fail to activate and ACP initialize dies with
+  // -32603 ("at file:///…/.dsh/profiles/acp/#include"). The official preset
+  // must OMIT the key entirely.
+  test('save dsh official config omits DEEPSEEK_BASE_URL entirely', async ({ page }) => {
+    const dshCard = await openDshCard(page);
+    await dshCard.locator('.rt-provider-toggle').click();
+    const panel = dshCard.locator('.rt-provider-config');
+    await expect(panel).toBeVisible();
+
+    // Start from custom with a URL, then switch back to official — the saved
+    // env must drop the key, not blank it.
+    await panel.locator('.rt-provider-form__select').selectOption('custom');
+    await panel.locator('[data-testid="dsh-base-url-field"]').fill('https://api.example.com/anthropic');
+    await panel.locator('.rt-provider-form__select').selectOption('deepseek');
+    await panel.locator('.rt-provider-form__input[type="password"]').fill('sk-e2e-official');
+    await panel.locator('.rt-provider-form__actions .rt-btn').first().click();
+    await expect(panel.locator('.rt-provider-form__status--ok')).toBeVisible({ timeout: 5_000 });
+
+    const response = await page.evaluate(async (api) => {
+      const res = await fetch(`${api}/config/agents/dsh`);
+      return res.json();
+    }, DAEMON_API);
+    expect(response.env?.['DEEPSEEK_API_KEY']).toBe('sk-e2e-official');
+    expect(response.env).toBeDefined();
+    expect(Object.keys(response.env ?? {})).not.toContain('DEEPSEEK_BASE_URL');
+
+    // Reload → provider detection reads back as official.
+    const reloadedCard = await openDshCard(page);
+    await expect(reloadedCard.locator('.rt-provider-toggle__current')).toHaveText(/DeepSeek/i, { timeout: 10_000 });
+  });
+
+  test('clean up: reset dsh env via API', async ({ page }) => {
+    await page.evaluate(async (api) => {
+      await fetch(`${api}/config/agents/dsh`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ env: {} }),
+      });
+    }, DAEMON_API);
+
+    const response = await page.evaluate(async (api) => {
+      const res = await fetch(`${api}/config/agents/dsh`);
+      return res.json();
+    }, DAEMON_API);
+    expect(response.env?.['DEEPSEEK_API_KEY'] ?? '').toBe('');
+    expect(response.env?.['DEEPSEEK_BASE_URL'] ?? '').toBe('');
+  });
+});

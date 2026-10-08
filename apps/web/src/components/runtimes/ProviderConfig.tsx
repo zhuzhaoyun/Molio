@@ -4,10 +4,14 @@ import { useI18n } from '../../i18n';
 import {
   CLAUDE_PROVIDERS,
   CODEX_PROVIDERS,
+  DSH_PROVIDERS,
   detectProvider,
+  detectDshProvider,
   buildProviderEnv,
+  buildDshEnv,
   type ProviderPreset,
   type CodexProviderPreset,
+  type DshProviderPreset,
 } from './providers';
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'error';
@@ -37,6 +41,7 @@ export function ProviderConfig({ agentId }: ProviderConfigProps) {
   const [saveState, setSaveState] = useState<SaveState>('idle');
 
   const isCodex = agentId === 'codex';
+  const isDsh = agentId === 'dsh';
   const [codexModel, setCodexModel] = useState('');
   const [codexWireApi, setCodexWireApi] = useState<'responses' | 'chat'>('responses');
   // auth.json already holds an OPENAI_API_KEY — the key field stays empty by
@@ -79,6 +84,18 @@ export function ProviderConfig({ agentId }: ProviderConfigProps) {
       });
       return;
     }
+    if (isDsh) {
+      api.getAgentConfig(agentId).then((config) => {
+        if (touchedRef.current) return; // 用户已在编辑，不覆盖
+        const env = (config.env ?? {}) as Record<string, string>;
+        setProviderId(detectDshProvider(env));
+        setApiKey(env['DEEPSEEK_API_KEY'] ?? '');
+        if (env['DEEPSEEK_BASE_URL']) setCustomBaseUrl(env['DEEPSEEK_BASE_URL']);
+      }).catch(() => {
+        // Ignore — defaults are fine
+      });
+      return;
+    }
     api.getAgentConfig(agentId).then((config) => {
       if (touchedRef.current) return; // 用户已在编辑，不覆盖
       const env = (config.env ?? {}) as Record<string, string>;
@@ -101,15 +118,24 @@ export function ProviderConfig({ agentId }: ProviderConfigProps) {
     }).catch(() => {
       // Ignore — defaults are fine
     });
-  }, [agentId, isCodex]);
+  }, [agentId, isCodex, isDsh]);
 
-  const provider: ProviderPreset | CodexProviderPreset = isCodex
-    ? CODEX_PROVIDERS.find((p) => p.id === providerId) ?? CODEX_PROVIDERS[0]
-    : CLAUDE_PROVIDERS.find((p) => p.id === providerId) ?? CLAUDE_PROVIDERS[0];
+  const provider: ProviderPreset | CodexProviderPreset | DshProviderPreset = isDsh
+    ? DSH_PROVIDERS.find((p) => p.id === providerId) ?? DSH_PROVIDERS[0]
+    : isCodex
+      ? CODEX_PROVIDERS.find((p) => p.id === providerId) ?? CODEX_PROVIDERS[0]
+      : CLAUDE_PROVIDERS.find((p) => p.id === providerId) ?? CLAUDE_PROVIDERS[0];
 
-  const providers: { id: string; name: string }[] = isCodex ? CODEX_PROVIDERS : CLAUDE_PROVIDERS;
+  const providers: { id: string; name: string }[] = isDsh ? DSH_PROVIDERS : isCodex ? CODEX_PROVIDERS : CLAUDE_PROVIDERS;
 
   const handleProviderChange = useCallback((id: string) => {
+    if (isDsh) {
+      setProviderId(id);
+      markTouched();
+      setApiKey('');
+      setCustomBaseUrl('');
+      return;
+    }
     if (isCodex) {
       setProviderId(id);
       markTouched();
@@ -137,12 +163,15 @@ export function ProviderConfig({ agentId }: ProviderConfigProps) {
     } else {
       setMapping(EMPTY_MAPPING);
     }
-  }, [isCodex, markTouched]);
+  }, [isCodex, isDsh, markTouched]);
 
   const handleSave = useCallback(async () => {
     setSaveState('saving');
     try {
-      if (isCodex) {
+      if (isDsh) {
+        const env = buildDshEnv(providerId, apiKey, customBaseUrl);
+        await api.updateAgentConfig(agentId, { env });
+      } else if (isCodex) {
         const body: Record<string, unknown> = { presetId: providerId };
         if (providerId === 'custom') {
           body.baseUrl = customBaseUrl;
@@ -166,7 +195,7 @@ export function ProviderConfig({ agentId }: ProviderConfigProps) {
     } catch (err) {
       setSaveState('error');
     }
-  }, [agentId, isCodex, providerId, apiKey, customBaseUrl, mapping, codexModel, codexWireApi]);
+  }, [agentId, isCodex, isDsh, providerId, apiKey, customBaseUrl, mapping, codexModel, codexWireApi]);
 
   const isThirdParty = providerId !== 'anthropic';
 
@@ -281,7 +310,7 @@ export function ProviderConfig({ agentId }: ProviderConfigProps) {
         )}
 
         {/* API Key */}
-        {(isCodex ? providerId !== 'official' : providerId !== 'anthropic') && (
+        {(isDsh || (isCodex ? providerId !== 'official' : providerId !== 'anthropic')) && (
           <label className="rt-provider-form__field">
             <span className="rt-provider-form__label">
               {t('runtimes.apiKey')}
@@ -316,7 +345,7 @@ export function ProviderConfig({ agentId }: ProviderConfigProps) {
         )}
 
         {/* Base URL (for custom provider) */}
-        {!isCodex && providerId === 'custom' && (
+        {!isCodex && !isDsh && providerId === 'custom' && (
           <label className="rt-provider-form__field">
             <span className="rt-provider-form__label">{t('runtimes.baseUrl')}</span>
             <input
@@ -329,8 +358,23 @@ export function ProviderConfig({ agentId }: ProviderConfigProps) {
           </label>
         )}
 
+        {/* Base URL (dsh custom endpoint — Messages-compatible root) */}
+        {isDsh && providerId === 'custom' && (
+          <label className="rt-provider-form__field">
+            <span className="rt-provider-form__label">{t('runtimes.baseUrl')}</span>
+            <input
+              data-testid="dsh-base-url-field"
+              type="url"
+              className="rt-provider-form__input"
+              value={customBaseUrl}
+              onChange={(e) => { setCustomBaseUrl(e.target.value); markTouched(); }}
+              placeholder="https://api.deepseek.com/anthropic"
+            />
+          </label>
+        )}
+
         {/* Model mapping for third-party providers */}
-        {!isCodex && isThirdParty && (
+        {!isCodex && !isDsh && isThirdParty && (
           <div className="rt-provider-form__mapping">
             <button
               type="button"

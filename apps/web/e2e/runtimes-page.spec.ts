@@ -65,6 +65,25 @@ test.describe('Runtimes page', () => {
     expect(count).toBeGreaterThan(0);
   });
 
+  test('should show DeepSeek Harness (dsh) card with an actionable install/test path', async ({ page }) => {
+    await openRuntimesPanel(page);
+
+    await page.waitForSelector('.rt-agent-card', { timeout: 10_000 });
+
+    // dsh is registered in the runtime registry → the card must always render
+    // (even when the binary is unavailable — that's exactly when install shows).
+    const dshCard = page.locator('.rt-agent-card').filter({
+      has: page.locator('.rt-agent-card__name', { hasText: /DeepSeek Harness/i }),
+    });
+    expect(await dshCard.count()).toBeGreaterThan(0);
+
+    // npm-js install source → installable: unavailable = one-click InstallButton,
+    // available = Test button. Either way the card must expose an action.
+    const installBtn = dshCard.locator('.rt-install-btn');
+    const testBtn = dshCard.locator('.rt-btn').filter({ hasText: /Test|测试/ });
+    expect(await installBtn.count() + await testBtn.count()).toBeGreaterThan(0);
+  });
+
   test('should show install button or test button for Claude agent', async ({ page }) => {
     await openRuntimesPanel(page);
 
