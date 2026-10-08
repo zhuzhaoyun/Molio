@@ -1,6 +1,7 @@
 {
   "_comment": "Area → path globs + E2E spec mapping. Used by scripts/select-specs.mjs to pick affected specs from git diff.",
   "_priority_default": "P0 specs always run; P1 specs run only when their area is touched; P2 specs run only in nightly full.",
+  "_dependent_specs_note": "specs 列表要收「会被该 area 源码改动打红」的 spec，而不只是「属于该 area」的。NavRail 是被多个 area 的 spec 点击的公共依赖——auth.spec 点 [data-view=home]、market-community.spec 也点导航项——所以挂到 navigation 下，否则删一个导航按钮只有 navigation 自己的 spec 会跑。",
   "areas": {
     "chat": {
       "paths": [
@@ -142,7 +143,8 @@
         "bootstrap",
         "navigation",
         "home-onboarding",
-        "default-landing"
+        "default-landing",
+        "auth"
       ]
     },
     "settings": {
