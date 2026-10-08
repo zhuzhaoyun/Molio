@@ -223,6 +223,23 @@ function renderArticleLink(m: MarketListing): string {
 </section>`;
 }
 
+/** 购买决策点上的「免费样品」入口（2026-10-08 补）。
+ *
+ *  为什么放在模板里、而不是只写进商品页文案：
+ *  文案要靠卖家逐个粘贴（15 份），而**模板一次部署就覆盖全部商品页**。
+ *
+ *  本库 2026-10-08 实测：两件免费商品（周易、老庄）的源目录结构与付费品**完全一致**
+ *  （entities / concepts / comparisons / sources 四类目录相同），是现成的同格式样品。
+ *  数字商品最大的购买顾虑是「我到底买到什么」，这一行直接回答它。
+ *
+ *  ⚠️ 免费品自己不需要这一行（它本来就是样品）。 */
+const FREE_SAMPLE_IDS = ['01M12YMV1144F4RZMX1HBK8GQ0', '01M114523M19P4J7GZMZ7E6188'];
+
+function renderSampleHint(m: MarketListing): string {
+  if (m.priceCents === 0 || FREE_SAMPLE_IDS.indexOf(m.id) >= 0) return '';
+  return `${'`'}<p class="res-side-note" style="margin-top:12px;padding-top:10px;border-top:1px solid rgba(0,0,0,.08)">想先看清到手是什么形式？可以先下载免费的两套：<a href="/resource/01M12YMV1144F4RZMX1HBK8GQ0.html">《周易》六十四卦全解</a> · <a href="/resource/01M114523M19P4J7GZMZ7E6188.html">老庄思想图谱</a>。结构与这件商品一致。${'`'}`;
+}
+
 function renderRelated(related: MarketListing[]): string {
   if (related.length === 0) return '';
   // 复用列表页的卡片：全站一种卡片一套样式（原型 .card）
@@ -326,7 +343,7 @@ ${NAV}
         </ol></div>
       </div>
       <aside class="res-side">
-        <div class="res-side-card reveal">${cta}<p class="res-side-note">${escapeHtml(note)}</p></div>
+        <div class="res-side-card reveal">${cta}<p class="res-side-note">${escapeHtml(note)}</p>${renderSampleHint(m)}</div>
         <div class="res-side-card reveal">
           <div class="res-info-row"><span class="k">作者</span><span class="v">${escapeHtml(m.author)}</span></div>
           <div class="res-info-row"><span class="k">版本</span><span class="v">${escapeHtml(m.version)}</span></div>
