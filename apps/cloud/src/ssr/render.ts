@@ -73,6 +73,18 @@ function productJsonLd(m: MarketListing): string {
     image,
     sku: m.id,
     brand: { '@type': 'Brand', name: 'Molio 墨流' },
+    // 以下三项都是**页面上已经可见**的事实（侧栏「格式 / 兼容」行与分类标签）。
+    // 结构化数据应与可见内容一致，而 AI / 搜索引擎读的正是这一层：
+    // 页面写了而 JSON-LD 没写，等于对机器隐形。2026-10-08 补。
+    ...(m.category?.name ? { category: m.category.name } : {}),
+    itemCondition: 'https://schema.org/NewCondition',
+    additionalProperty: [
+      { '@type': 'PropertyValue', name: '交付形式', value: 'Markdown 文件夹（.zip）' },
+      { '@type': 'PropertyValue', name: '兼容', value: 'Molio / Obsidian' },
+      ...(m.resourceType?.name
+        ? [{ '@type': 'PropertyValue', name: '资源类型', value: m.resourceType.name }]
+        : []),
+    ],
     offers: {
       '@type': 'Offer',
       url: productUrl(m.id),
