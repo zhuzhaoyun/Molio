@@ -73,8 +73,20 @@
   color: var(--text-muted);
 }
 
-.kb-file-toolbar .kb-toolbar-btn-accent {
+/* ⚠️ 选择器必须跟上面那条基色规则同形（带 :not(.kb-sort-item):not(.kb-create-item)）。
+   基色规则的 (0,3,1) 会盖掉任何只写 `.kb-file-toolbar .kb-toolbar-btn-accent`（(0,2,0)）
+   的规则——踩过一次：高亮代码看着在，按钮渲染出来还是灰的。改这里请连带跑
+   kb-import-entry.spec.ts 的「醒目」用例。 */
+.kb-file-toolbar button:not(.kb-sort-item):not(.kb-create-item).kb-toolbar-btn-accent {
   color: var(--accent);
+}
+
+/* 导入按钮 —— 客户反馈「不知道怎么把文件放进知识库」的直接修复。
+   拖拽是隐式交互，这个按钮是显式常驻入口，所以它比工具栏其他图标按钮更显眼：
+   常驻 accent 字色 + hover 底色（其他安静图标按钮 hover 只换字色）。 */
+.kb-file-toolbar button:not(.kb-sort-item):not(.kb-create-item).kb-btn-import:hover {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
 }
 
 /* Sort dropdown (left tree toolbar) — same ghost-button sizing as the toolbar */
@@ -172,6 +184,11 @@
   flex-shrink: 0;
   color: var(--text-muted);
   transition: color 90ms ease;
+}
+/* 「导入文件」首条 —— 跟工具栏那颗同一个 accent，让它在菜单里也跳出来。
+   菜单里其余项都是「造新东西」，只有这条是「把已有的拿进来」。 */
+.kb-create-item--accent svg {
+  color: var(--accent);
 }
 .kb-create-dropdown .kb-create-item:hover {
   background: var(--accent-tint);
@@ -2353,6 +2370,44 @@
 
 .wiki-cta-btn--ghost:hover {
   background: var(--bg-panel);
+}
+
+/* 次级 CTA（描边）：与主 CTA 同行但弱一档 —— accent 字色 + 淡 accent 描边，
+   比 ghost（中性描边）重、比实心主 CTA 轻。用于空态里「并列但非主推」的动作。 */
+.wiki-cta-btn--outline {
+  background: transparent;
+  color: var(--accent);
+  border: 1px solid var(--accent-soft);
+}
+
+.wiki-cta-btn--outline:hover {
+  background: var(--accent-tint);
+}
+
+/* 不成立的动作（如无文件时的「开始构建 Wiki」）：置灰 + 禁止指针。
+   要盖掉上面的 outline:hover 底色，否则置灰后 hover 还会亮起来。 */
+.wiki-cta-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.wiki-cta-btn--outline:disabled:hover {
+  background: transparent;
+}
+
+/* 空态的动作行 —— 两颗粒度按钮并排，而不是各自 margin-top 堆成一竖列。
+   `.wiki-cta-btn` 自带 margin-top:16px（纵向堆叠场景），行内要清零。 */
+.kb-empty-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 16px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.kb-empty-actions .wiki-cta-btn {
+  margin-top: 0;
 }
 
 /* ══════════ Image Viewer ══════════ */

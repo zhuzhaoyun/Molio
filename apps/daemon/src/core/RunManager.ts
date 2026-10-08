@@ -1010,9 +1010,22 @@ export class RunManager {
     this.maybeCloseStdin(run);
   }
 
-  cancelRun(runId: string): void {
+  /**
+   * Cancel a run and kill its child process.
+   *
+   * `reason` is a short caller tag (`api:delete-run`, `shutdown:graceful`, …)
+   * that is logged — a cancel is destructive and previously left no trace at
+   * all, so a run that died mid-reply could not be attributed to a caller
+   * after the fact (2026-09-28 investigation: two unexplained cancellations,
+   * no way to tell whether a user hit 停止 or something cancelled on its own).
+   * Add a reason whenever you add a caller.
+   */
+  cancelRun(runId: string, reason = 'unspecified'): void {
     const run = this.runs.get(runId);
-    if (!run) return;
+    if (!run) {
+      console.log(`[runs] cancel ignored run=${runId} reason=${reason} (unknown run)`);
+      return;
+    }
     const def = getAgentDef(run.agentId);
 
     // Synchronously mark the run terminal so that:
@@ -1027,6 +1040,10 @@ export class RunManager {
     // append. Local onTurnComplete callbacks that don't check isTerminal
     // (e.g. the shutdown-flush path) still receive the buffered text.
     const wasTerminal = TERMINAL_STATUSES.has(run.status);
+    console.log(
+      `[runs] cancel run=${runId} reason=${reason} agent=${run.agentId}`
+        + ` status=${run.status}${wasTerminal ? ' (already terminal — no-op)' : ''}`,
+    );
     if (!wasTerminal) {
       run.status = 'canceled';
       run.stdinOpen = false;
@@ -1067,9 +1084,9 @@ export class RunManager {
     }
   }
 
-  cancelAll(): void {
+  cancelAll(reason = 'unspecified'): void {
     for (const [id] of this.runs) {
-      this.cancelRun(id);
+      this.cancelRun(id, reason);
     }
   }
 

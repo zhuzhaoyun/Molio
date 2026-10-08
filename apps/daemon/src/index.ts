@@ -288,7 +288,7 @@ function shutdown(): void {
   stopMemoryMonitor();
   weixinService.stop();
   void vaultWatcher.stop();
-  runManager.cancelAll();
+  runManager.cancelAll('shutdown:sigint');
   preloadManager.stopAll();
   process.exit(0);
 }

@@ -90,7 +90,8 @@
         "kb-large-file-too-large",
         "pdf-preview",
         "chat-work-visibility",
-        "split-view"
+        "split-view",
+        "kb-terminology"
       ]
     },
     "publish": {
@@ -138,7 +139,8 @@
       ],
       "specs": [
         "bootstrap",
-        "navigation"
+        "navigation",
+        "home-onboarding"
       ]
     },
     "settings": {
@@ -211,6 +213,7 @@
       "paths": [
         "apps/web/src/components/kb/KbFilePanel.*",
         "apps/web/src/components/kb/KbFileTree.*",
+        "apps/web/src/components/kb/KbMainContent.*",
         "apps/web/src/components/kb/KbModals.*",
         "apps/web/src/components/kb/ImportConflictDialog.*",
         "apps/web/src/components/kb/KnowledgeBasePage.*",
@@ -219,6 +222,8 @@
         "apps/daemon/src/core/knowledge.ts"
       ],
       "specs": [
+        "kb-import-entry",
+        "kb-terminology",
         "drag-drop-import",
         "kb-folder-ops",
         "kb-folder-drag-real",
@@ -343,6 +348,14 @@
       "priority": "P1",
       "file": "kb-tree-sort-locate.spec.ts"
     },
+    "kb-import-entry": {
+      "priority": "P0",
+      "file": "kb-import-entry.spec.ts"
+    },
+    "kb-terminology": {
+      "priority": "P1",
+      "file": "kb-terminology.spec.ts"
+    },
     "kb-chat-entry": {
       "priority": "P1",
       "file": "kb-chat-entry.spec.ts"
@@ -378,6 +391,10 @@
     "kb-large-file": {
       "priority": "P0",
       "file": "kb-large-file.spec.ts"
+    },
+    "home-onboarding": {
+      "priority": "P1",
+      "file": "home-onboarding.spec.ts"
     },
     "kb-large-file-gbk": {
       "priority": "P0",
