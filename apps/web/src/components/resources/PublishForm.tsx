@@ -241,7 +241,9 @@ export function PublishForm(props: PublishFormProps) {
     form.set('summary', summary.trim());
     form.set('icon', icon);
     form.set('tags', JSON.stringify(tags));
-    // 目录选择：仅首发传递；升版不传 include（daemon 打包整个 vault）
+    // 目录选择：仅首发传递；升版不传 include —— daemon 会兜底成「一级可发布目录」
+    // （= 整个 vault，含 .molio）。不要改成升版也传 include：更新入口在 /me 侧拿不到
+    // vaultId，且兜底规则与 top-dirs 同源，重复一份只会有新的漂移点。
     if (!isUpdate && selectedDirs.length > 0) form.set('include', JSON.stringify(selectedDirs));
     // 定价：仅管理员透传，云端对非管理员强制 0
     if (isAdmin) {

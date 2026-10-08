@@ -4,7 +4,7 @@
 
 import { Hono } from 'hono';
 import { stream } from 'hono/streaming';
-import { createReadStream, existsSync, mkdirSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import { createReadStream, existsSync, mkdirSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import type Database from 'better-sqlite3';
 import type { CreateVaultRequest } from '@molio/contracts';
@@ -35,6 +35,7 @@ import {
   searchFiles,
   importFiles,
   isInsideProtected,
+  listPublishableTopDirs,
   type ImportResult,
 } from '../core/knowledge.js';
 import { annotateTreeStatus } from '../core/wiki-status.js';
@@ -167,15 +168,7 @@ export function knowledgeRoutes(
       return c.json({ error: { code: 'NOT_FOUND', message: 'Vault not found' } }, 404);
     }
     try {
-      const dirs: string[] = [];
-      for (const entry of readdirSync(vault.path, { withFileTypes: true })) {
-        if (!entry.isDirectory()) continue;
-        // 隐藏目录排除，但 .molio 显式放行
-        if (entry.name.startsWith('.') && entry.name !== '.molio') continue;
-        dirs.push(entry.name);
-      }
-      dirs.sort();
-      return c.json({ dirs });
+      return c.json({ dirs: listPublishableTopDirs(vault.path) });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to scan vault';
       return c.json({ error: { code: 'INTERNAL', message } }, 500);
