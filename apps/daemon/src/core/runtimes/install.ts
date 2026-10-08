@@ -861,6 +861,143 @@ export async function applyLockfileMirror(
 }
 
 /**
+ * Surgically rewrite the value of ONE git-config key inside its section, and
+ * only when the current value equals `fromValue` (case-insensitive). Never adds
+ * a section or key, never touches any other line. Pure + synchronous so it can
+ * be unit-tested without a filesystem.
+ *
+ * Dotted key → section header mapping mirrors git's own:
+ *   `remote.origin.partialclonefilter` → `[remote "origin"]`, key `partialclonefilter`
+ *   `core.bare`                        → `[core]`,           key `bare`
+ * The subsection comparison is case-sensitive for the quoted part only insofar
+ * as git treats remote names case-sensitively; we lowercase both sides here
+ * because the installer's own remote is always the plain `origin`.
+ *
+ * Preserves the file's dominant line ending and each key's quoting style
+ * (`key = value` vs `key = "value"`). Returns `{ text, changed }`; `text` is the
+ * ORIGINAL string when nothing matched (so callers can skip the write).
+ *
+ * @internal exported for testing.
+ */
+export function rewriteGitConfigValue(
+  configText: string,
+  key: string,
+  fromValue: string,
+  toValue: string,
+): { text: string; changed: boolean } {
+  const parts = key.split('.');
+  if (parts.length < 2) return { text: configText, changed: false };
+  const section = (parts[0] ?? '').toLowerCase();
+  // Everything between the first and last dot is the (optional) subsection.
+  const subsection = parts.length >= 3 ? parts.slice(1, -1).join('.').toLowerCase() : null;
+  const keyName = (parts[parts.length - 1] ?? '').toLowerCase();
+
+  const eol = configText.includes('\r\n') ? '\r\n' : '\n';
+  const lines = configText.split(/\r?\n/);
+  // `[section]` or `[section "subsection"]` — subsection may contain spaces.
+  const headerRe = /^\[\s*([A-Za-z0-9.\-]+)\s*(?:"([^"]*)")?\s*\]$/;
+  // `name = value` — value may be quoted and/or carry a trailing comment.
+  const kvRe = /^(\s*)([A-Za-z0-9\-]+)\s*=\s*(.*)$/;
+
+  let inTargetSection = false;
+  let changed = false;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i] ?? '';
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#') || trimmed.startsWith(';')) continue;
+
+    const hm = headerRe.exec(trimmed);
+    if (hm) {
+      const sec = (hm[1] ?? '').toLowerCase();
+      const sub = hm[2]; // undefined when the header has no quoted subsection
+      inTargetSection =
+        sec === section &&
+        (subsection === null
+          ? sub === undefined
+          : sub !== undefined && sub.toLowerCase() === subsection);
+      continue;
+    }
+
+    if (!inTargetSection) continue;
+
+    const km = kvRe.exec(line);
+    if (!km) continue;
+    const indent = km[1] ?? '';
+    const name = km[2] ?? '';
+    const rawVal = (km[3] ?? '').trim();
+    if (name.toLowerCase() !== keyName) continue;
+
+    const quoted = /^"(.*)"$/.exec(rawVal);
+    const bare = quoted ? (quoted[1] ?? '') : rawVal;
+    if (bare.toLowerCase() !== fromValue.toLowerCase()) continue;
+
+    const newVal = quoted ? `"${toValue}"` : toValue;
+    lines[i] = `${indent}${name} = ${newVal}`;
+    changed = true;
+    break; // first match in the section wins (git semantics)
+  }
+
+  return { text: changed ? lines.join(eol) : configText, changed };
+}
+
+/**
+ * Best-effort engine side of the `repairGitConfig` hook. After `afterStage`,
+ * locates `<home>/<repoRelPath>/.git/config` and stamps the modern partial-clone
+ * filter over a legacy one so the tool's next-run history backfill (~100MB+) is
+ * skipped. NEVER fails the install — every miss (no file, no matching section/
+ * key/value, IO error) degrades to a logged no-op.
+ *
+ * @internal exported for testing.
+ */
+export function applyGitConfigRepair(
+  env: NodeJS.ProcessEnv,
+  cfg: NonNullable<ScriptInstallSource['repairGitConfig']>,
+  onEvent: (event: InstallEvent) => void,
+): void {
+  try {
+    const isWindows = process.platform === 'win32';
+    const homeRaw =
+      (cfg.homeEnv && env[cfg.homeEnv]?.trim()) ||
+      cfg.defaultHome[isWindows ? 'win32' : 'posix'];
+    const configPath = path.join(
+      expandHomePath(homeRaw, env),
+      cfg.repoRelPath,
+      '.git',
+      'config',
+    );
+
+    if (!existsSync(configPath)) {
+      onEvent({ type: 'log', message: `Git-config repair: not found (${configPath}) — skipping` });
+      return;
+    }
+
+    const original = readFileSync(configPath, 'utf8');
+    const { text, changed } = rewriteGitConfigValue(original, cfg.key, cfg.fromValue, cfg.toValue);
+    if (!changed) {
+      onEvent({
+        type: 'log',
+        message: `Git-config repair: '${cfg.key}' is not '${cfg.fromValue}' — nothing to do`,
+      });
+      return;
+    }
+
+    const tmpPath = `${configPath}.molio-repair.tmp`;
+    writeFileSync(tmpPath, text, 'utf8');
+    renameSync(tmpPath, configPath);
+    onEvent({
+      type: 'log',
+      message: `Git-config repair: set ${cfg.key} = ${cfg.toValue} (skips one-time ~100MB history backfill)`,
+    });
+  } catch (err) {
+    onEvent({
+      type: 'log',
+      message: `Git-config repair skipped (${err instanceof Error ? err.message : String(err)}) — install continues`,
+    });
+  }
+}
+
+/**
  * @internal exported for testing — tests drive this directly with synthetic
  * defs/sources so scenarios (unsupported platform, missing shell) don't
  * depend on the host machine or the real hermes registry entry.
@@ -1063,6 +1200,7 @@ export async function installFromScript(
       // the clone stage. `timeoutMs` is a PER-STAGE budget here — each stage
       // run gets the full timeout.
       let mirrorPending = source.mirrorLockfile ?? null;
+      let gitRepairPending = source.repairGitConfig ?? null;
       for (const stage of source.stages) {
         if (signal?.aborted) { cancelled = true; break; }
         onEvent({ type: 'log', message: `Installer stage: ${stage}` });
@@ -1099,6 +1237,17 @@ export async function installFromScript(
         if (mirrorPending && stage === mirrorPending.afterStage) {
           await applyLockfileMirror(env, mirrorPending, probeFn, onEvent);
           mirrorPending = null;
+        }
+
+        // One-shot hook: stamp the modern partial-clone filter over a legacy
+        // `tree:0` checkout BEFORE the products/maintenance stage runs the
+        // tool's own treeless→blobless migration (which would otherwise
+        // re-fetch ~100MB of history and blow the per-stage budget). Same
+        // re-applies-each-run rationale as the mirror hook (repository
+        // hard-resets the checkout). Best-effort; never fails the install.
+        if (gitRepairPending && stage === gitRepairPending.afterStage) {
+          applyGitConfigRepair(env, gitRepairPending, onEvent);
+          gitRepairPending = null;
         }
       }
     } else {
@@ -1415,43 +1564,132 @@ export function runScriptProcess(args: RunScriptArgs): Promise<RunScriptResult> 
   });
 }
 
+/** A (pid, ppid) pair from a Windows process-table snapshot. */
+export interface ProcPidPair { pid: number; ppid: number; }
+
+/**
+ * BFS a process-table snapshot to collect every live descendant of `rootPid`,
+ * ordered deepest-first (leaves before their parents) so force-killing can't
+ * orphan a child whose parent we kill first. Pure + synchronous for
+ * deterministic unit tests.
+ *
+ * Crucially this works even when `rootPid` itself is ALREADY DEAD: Windows keeps
+ * a live process's ParentProcessId pointing at its (dead) parent's pid, so a
+ * snapshot taken while the subtree is alive still connects root → child →
+ * grandchild. That is the exact gap `taskkill /pid <deadRoot> /T` cannot cover —
+ * it errors "process not found", reaps nothing, and leaves the whole subtree
+ * running (observed 2026-10-05: an installer's `git fetch` kept writing a 104MB
+ * pack for ~9min after the stage was torn down). Cycles from pid reuse are
+ * guarded by a visited set.
+ *
+ * @internal exported for testing.
+ */
+export function collectDescendants(rootPid: number, procs: ProcPidPair[]): number[] {
+  const byParent = new Map<number, number[]>();
+  for (const p of procs) {
+    if (p.pid === p.ppid) continue; // self-parented (System / System Idle) — skip
+    const list = byParent.get(p.ppid);
+    if (list) list.push(p.pid);
+    else byParent.set(p.ppid, [p.pid]);
+  }
+
+  const depth = new Map<number, number>([[rootPid, 0]]);
+  const visited = new Set<number>([rootPid]);
+  const queue: number[] = [rootPid];
+  const found: number[] = [];
+  while (queue.length) {
+    const cur = queue.shift()!;
+    for (const childPid of byParent.get(cur) ?? []) {
+      if (visited.has(childPid)) continue;
+      visited.add(childPid);
+      depth.set(childPid, (depth.get(cur) ?? 0) + 1);
+      found.push(childPid);
+      queue.push(childPid);
+    }
+  }
+  // Deepest-first so leaves die before the parents that spawned them.
+  return found.sort((a, b) => (depth.get(b) ?? 0) - (depth.get(a) ?? 0));
+}
+
+/**
+ * Snapshot the live (pid, ppid) table on Windows via CIM. Returns [] on any
+ * failure (constrained shell, timeout, no PowerShell) so the caller degrades
+ * gracefully to plain `taskkill /T`. Synchronous on purpose: killTree is a
+ * teardown path where a short (~sub-second) block is acceptable, and taking the
+ * snapshot atomically before any kill is what makes the deep-descendant sweep
+ * correct.
+ */
+function snapshotWinProcs(): ProcPidPair[] {
+  try {
+    const out = execFileSync(
+      'powershell',
+      [
+        '-NoProfile', '-NonInteractive', '-Command',
+        'Get-CimInstance Win32_Process | ForEach-Object { "$($_.ProcessId) $($_.ParentProcessId)" }',
+      ],
+      { windowsHide: true, timeout: 5_000, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] },
+    );
+    const procs: ProcPidPair[] = [];
+    for (const line of String(out).split(/\r?\n/)) {
+      const m = /^(\d+)\s+(\d+)$/.exec(line.trim());
+      if (m) procs.push({ pid: parseInt(m[1]!, 10), ppid: parseInt(m[2]!, 10) });
+    }
+    return procs;
+  } catch {
+    return [];
+  }
+}
+
 /**
  * Kill the installer's entire process tree, not just the direct child.
  *  - POSIX: the child was spawned `detached`, so it leads its own process group;
- *    signalling `-pid` reaches every subshell the script forked.
- *  - win32: `taskkill /pid <pid> /T /F` walks the child-process tree.
- * SIGTERM first, escalating to SIGKILL after 3s if the tree ignores it.
+ *    signalling `-pid` reaches every subshell the script forked. SIGTERM first,
+ *    SIGKILL after 3s.
+ *  - win32: snapshot the descendant set up-front (correct even if the root
+ *    already exited), `taskkill /T` the root, then force-kill every snapshotted
+ *    descendant deepest-first as a backstop for branches `/T` missed. The whole
+ *    sweep repeats once after 3s. Every spawned killer carries an 'error'
+ *    listener so a failed taskkill can never crash the daemon.
  */
 function killTree(child: ChildProcess): void {
   const pid = child.pid;
   const isWin = process.platform === 'win32';
 
-  const signalTree = (sig: 'SIGTERM' | 'SIGKILL') => {
-    try {
-      if (isWin) {
-        // Windows has no graceful console-tree kill; /T = tree, /F = force.
-        if (pid) {
-          const killer = spawn('taskkill', ['/pid', String(pid), '/T', '/F'], {
-            windowsHide: true,
-            stdio: 'ignore',
-          });
-          killer.unref?.();
-        }
-      } else if (pid) {
-        // Negative pid targets the whole process group (child is the leader).
-        process.kill(-pid, sig);
-      } else {
-        child.kill(sig);
+  if (!isWin) {
+    const signalGroup = (sig: 'SIGTERM' | 'SIGKILL') => {
+      try {
+        if (pid) process.kill(-pid, sig); // negative pid = whole group (child leads)
+        else child.kill(sig);
+      } catch {
+        try { child.kill(sig); } catch { /* already dead */ }
       }
-    } catch {
-      // Group/already dead — fall back to signalling the direct child.
-      try { child.kill(sig); } catch { /* already dead */ }
-    }
+    };
+    signalGroup('SIGTERM');
+    const t = setTimeout(() => signalGroup('SIGKILL'), 3_000);
+    t.unref?.(); // don't hold the loop open just for the escalation timer
+    return;
+  }
+
+  // Fire-and-forget a taskkill, swallowing spawn errors (best-effort teardown).
+  const spawnKiller = (args: string[]) => {
+    try {
+      const k = spawn('taskkill', args, { windowsHide: true, stdio: 'ignore' });
+      k.on('error', () => { /* taskkill missing/denied — nothing more to do */ });
+      k.unref?.();
+    } catch { /* spawn itself failed — ignore */ }
   };
 
-  signalTree('SIGTERM');
-  const t = setTimeout(() => signalTree('SIGKILL'), 3_000);
-  // Don't hold the event loop open just for the escalation timer.
+  // Snapshot BEFORE killing: once the root dies, an intermediate's death can
+  // make its own children unreachable to a fresh `taskkill /T` walk.
+  const descendants = pid ? collectDescendants(pid, snapshotWinProcs()) : [];
+
+  const sweep = () => {
+    if (pid) spawnKiller(['/pid', String(pid), '/T', '/F']);
+    for (const dpid of descendants) spawnKiller(['/pid', String(dpid), '/F']);
+  };
+
+  sweep();
+  const t = setTimeout(sweep, 3_000);
   t.unref?.();
 }
 

@@ -16,6 +16,11 @@
 //   - FAKE_HERMES_INIT_HEARTBEAT=1: print a stderr heartbeat every 100ms while
 //     delaying initialize — simulates real hermes printing "loading plugin X"
 //     progress, used to verify the idle-timer reset logic
+//   - FAKE_HERMES_SLOW_SESSION_NEW_MS=2000: delay the session/new response with
+//     NO stderr/stdout at all — mimics real hermes's silent `availableModels`
+//     network fetch at the tail of session/new (see hermes.ts idleTimeoutMs).
+//     Whether this times out depends purely on idleTimeoutMs vs the delay, so it
+//     reproduces the "ACP idle timeout: session/new" cold-start false-positive.
 //   - FAKE_HERMES_EXIT_AFTER_INIT=1: exit right after initialize (process-exit test)
 //   - FAKE_HERMES_EXIT_DURING_PROMPT=1: exit mid-prompt after streaming some
 //     notifications but before responding — used to verify the close handler
@@ -46,6 +51,7 @@ const NO_INIT = process.env['FAKE_HERMES_NO_INIT'] === '1';
 const INIT_ERROR = process.env['FAKE_HERMES_INIT_ERROR'] === '1';
 const SLOW_INIT_MS = Number(process.env['FAKE_HERMES_SLOW_INIT_MS'] ?? '0');
 const INIT_HEARTBEAT = process.env['FAKE_HERMES_INIT_HEARTBEAT'] === '1';
+const SLOW_SESSION_NEW_MS = Number(process.env['FAKE_HERMES_SLOW_SESSION_NEW_MS'] ?? '0');
 const EXIT_AFTER_INIT = process.env['FAKE_HERMES_EXIT_AFTER_INIT'] === '1';
 const EXIT_DURING_PROMPT = process.env['FAKE_HERMES_EXIT_DURING_PROMPT'] === '1';
 const PROMPT_MODE = process.env['FAKE_HERMES_PROMPT_MODE'] ?? 'normal';
@@ -101,26 +107,37 @@ function handleRequest(msg) {
   }
 
   if (msg.method === 'session/new') {
-    send({
-      jsonrpc: '2.0', id: msg.id, result: {
-        sessionId: SESSION_ID,
-        models: {
-          availableModels: [
-            { modelId: 'fake:model-a', name: 'Model A' },
-            { modelId: 'fake:model-b', name: 'Model B' },
-          ],
-          currentModelId: 'fake:model-a',
+    const respond = () => {
+      send({
+        jsonrpc: '2.0', id: msg.id, result: {
+          sessionId: SESSION_ID,
+          models: {
+            availableModels: [
+              { modelId: 'fake:model-a', name: 'Model A' },
+              { modelId: 'fake:model-b', name: 'Model B' },
+            ],
+            currentModelId: 'fake:model-a',
+          },
+          modes: { availableModes: [{ id: 'default', name: 'Default' }], currentModeId: 'default' },
         },
-        modes: { availableModes: [{ id: 'default', name: 'Default' }], currentModeId: 'default' },
-      },
-    });
-    // Session-init notifications (real hermes pushes these on connect)
-    send({
-      jsonrpc: '2.0', method: 'session/update',
-      params: { sessionId: SESSION_ID, update: {
-        sessionUpdate: 'available_commands_update', availableCommands: [],
-      } },
-    });
+      });
+      // Session-init notifications (real hermes pushes these on connect)
+      send({
+        jsonrpc: '2.0', method: 'session/update',
+        params: { sessionId: SESSION_ID, update: {
+          sessionUpdate: 'available_commands_update', availableCommands: [],
+        } },
+      });
+    };
+    if (SLOW_SESSION_NEW_MS > 0) {
+      // Delay with ZERO stderr/stdout — mimics the silent `availableModels`
+      // network fetch at the tail of a real session/new. No heartbeat, so the
+      // idle timer is NOT reset: whether this times out is purely
+      // idleTimeoutMs vs SLOW_SESSION_NEW_MS.
+      setTimeout(respond, SLOW_SESSION_NEW_MS);
+    } else {
+      respond();
+    }
     return;
   }
 

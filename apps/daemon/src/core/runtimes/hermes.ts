@@ -34,10 +34,24 @@ export const hermesAgentDef: RuntimeAgentDef = {
 
   transport: 'acp-jsonrpc',
   acp: {
-    // Handshake phase (initialize + session/new): hermes-acp is chatty —
-    // prints MCP/plugin loading progress to stderr throughout. 15s of total
-    // silence means the process is genuinely hung.
-    idleTimeoutMs: 15000,
+    // Handshake phase (initialize + session/new). hermes-acp IS chatty during
+    // initialize and the early session/new build — plugin loading, tools.registry
+    // checks, and "Created ACP session" all print to stderr, each line resetting
+    // the idle timer. But the FINAL step of session/new (enumerating
+    // `availableModels`) is SILENT: hermes fetches the provider model list over
+    // the network (refreshing provider_models_cache) and prints nothing until the
+    // JSON-RPC response lands. Measured on a warm install: initialize ~2.6s,
+    // session/new ~7-11s total with a 2-6s silent tail. On a COLD first run
+    // (cold .pyc, cold model caches) over a slow/CN line to the provider, that
+    // silent tail blows past 15s — the old budget — and the handshake
+    // false-times-out even though hermes is healthy and about to respond
+    // (observed 2026-10-05: "ACP idle timeout: session/new (no activity for
+    // 15000ms)", last stderr = the benign MCP-discovery retry warning, i.e. it
+    // went silent right before the model-list fetch). 60s comfortably covers the
+    // cold build while still catching a genuinely hung process; because the idle
+    // timer resets on ANY stderr, a chatty hermes is never affected. Override
+    // via MOLIO_ACP_IDLE_TIMEOUT_MS for extreme networks.
+    idleTimeoutMs: 60000,
     // Prompt phase (session/prompt): the agent can be silent for a LONG time
     // in real workflows — not just first-token latency (system prompt compile,
     // tool def loading) but also while a TOOL runs. A subprocess-based tool
@@ -116,6 +130,32 @@ export const hermesAgentDef: RuntimeAgentDef = {
           win32: '%LOCALAPPDATA%\\hermes',
           posix: '~/.hermes',
         },
+      },
+      // The installer's clone historically used `--filter=tree:0` (treeless).
+      // On the next products/update run hermes's own
+      // `gitlock.convert_treeless_checkout` migrates that to `blob:none` by
+      // re-fetching the ENTIRE commit history (~100–120MB via `git fetch
+      // --refetch`) — two python subprocess caps of 900s each, which together
+      // blow our 1800s per-stage budget on slow/CN lines. Observed 2026-10-05:
+      // the products stage timed out at 1800s while the second `--refetch` was
+      // still writing a 104MB pack (it landed ~9min later), and because the
+      // migration only stamps the new filter on success, EVERY retry re-paid the
+      // full backfill. Stamp `blob:none` ourselves right after the clone so
+      // convert_treeless_checkout's gate (`filter != tree:0 → return False`)
+      // short-circuits and the backfill never runs. Fresh installs already clone
+      // with `blob:none`, so this only touches legacy treeless checkouts and is
+      // a logged no-op elsewhere. Best-effort — never fails the install.
+      repairGitConfig: {
+        afterStage: 'repository',
+        repoRelPath: 'hermes-agent',
+        homeEnv: 'HERMES_HOME',
+        defaultHome: {
+          win32: '%LOCALAPPDATA%\\hermes',
+          posix: '~/.hermes',
+        },
+        key: 'remote.origin.partialclonefilter',
+        fromValue: 'tree:0',
+        toValue: 'blob:none',
       },
       // Source install: git clone + uv bootstrap + dependency sync, then pm
       // pulls its default tool set from GitHub releases. With `stages` set,

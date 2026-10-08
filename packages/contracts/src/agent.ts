@@ -129,6 +129,47 @@ export interface ScriptInstallSource {
     /** Default home when homeEnv is unset. `~` and `%VAR%` are expanded. */
     defaultHome: { win32: string; posix: string };
   };
+  /**
+   * Git-config repair hook (meaningful only with `stages`). After `afterStage`
+   * completes — the tool's repo is on disk but its post-clone maintenance has
+   * not yet run — the engine edits `<home>/<repoRelPath>/.git/config` to stamp a
+   * modern value over a legacy partial-clone filter.
+   *
+   * Why: some installers historically cloned with `--filter=tree:0` (treeless).
+   * On the NEXT run the tool's own migration converts that to `blob:none` by
+   * re-fetching the entire commit history (~100MB+ via `git fetch --refetch`),
+   * which on slow/CN lines blows the per-stage timeout and wedges the install —
+   * and because the migration only stamps the new filter on success, every retry
+   * re-pays the full backfill. Stamping the modern value ourselves up-front
+   * short-circuits the tool's migration gate. Fresh installs that already clone
+   * with the modern filter are untouched.
+   *
+   * The edit is surgical (rewrites only the value of an EXISTING `key` inside
+   * its section — never adds sections/keys), atomic (tmp+rename), idempotent,
+   * and best-effort: a missing file/section/key, a value that already differs
+   * from `fromValue`, or any IO error is a logged no-op, never a failure.
+   */
+  repairGitConfig?: {
+    /** Stage after which the repair runs (typically the clone/checkout stage). */
+    afterStage: string;
+    /** Repo working-dir path relative to the tool's home; its `.git/config` is edited. */
+    repoRelPath: string;
+    /** Env var that overrides the home directory (the installer's own convention). */
+    homeEnv?: string;
+    /** Default home when homeEnv is unset. `~` and `%VAR%` are expanded. */
+    defaultHome: { win32: string; posix: string };
+    /**
+     * Dotted git-config key to inspect/rewrite, e.g.
+     * `remote.origin.partialclonefilter` → section `remote`, subsection `origin`,
+     * key `partialclonefilter` (a `[remote "origin"]` header). A 2-part key
+     * (`core.bare`) has no subsection.
+     */
+    key: string;
+    /** Legacy value that triggers the repair (compared case-insensitively). */
+    fromValue: string;
+    /** Modern value stamped in its place (preserves the file's quoting style). */
+    toValue: string;
+  };
 }
 
 /** Extensible install source union. Add new variants here for future agents. */

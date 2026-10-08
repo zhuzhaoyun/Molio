@@ -253,12 +253,70 @@ describe('RunManager ACP integration (Hermes)', () => {
 
   it('hermes def uses generous cold-start timeouts', () => {
     const def = getAgentDef('hermes')!;
-    assert.equal(def.acp?.idleTimeoutMs, 15000);
+    // 60s handshake idle (raised from 15s). session/new's final step — building
+    // `availableModels` — is a SILENT network fetch of the provider model list;
+    // a cold first run over a slow/CN line exceeds 15s and false-times-out a
+    // healthy hermes ("ACP idle timeout: session/new"). 60s covers the cold
+    // build while the activity-reset idle timer still catches a true hang. See
+    // the silent-tail tests below and the hermes.ts idleTimeoutMs comment.
+    assert.equal(def.acp?.idleTimeoutMs, 60000);
     // 5min prompt idle — accommodates long-running tool calls (OCR, doc
     // conversion) where hermes itself is silent while a subprocess runs.
     assert.equal(def.acp?.promptIdleTimeoutMs, 300000);
     assert.equal(def.acp?.absoluteTimeoutMs, 1800000);
     assert.equal(def.acp?.cancelTimeoutMs, 5000);
+  });
+
+  it('session/new silent tail exceeding the idle budget times out naming session/new', async () => {
+    // Reproduces the reporter's bug (2026-10-05). The tail of session/new
+    // enumerates `availableModels` via a network fetch of the provider model
+    // list and prints NOTHING to stderr. On a cold first run over a slow/CN
+    // line that silent tail exceeds the handshake idle budget, so the handshake
+    // fails with "ACP idle timeout: session/new" even though hermes is healthy
+    // and about to respond. Harness sets MOLIO_ACP_IDLE_TIMEOUT_MS=500; a 1200ms
+    // silent session/new therefore trips it. The fix raises the real budget to
+    // 60s (config test above) so the cold fetch fits; this test pins the
+    // failure mode the fix addresses.
+    process.env['FAKE_HERMES_SLOW_SESSION_NEW_MS'] = '1200';
+    const runId = await runManager.createRun({ agentId: 'hermes', message: 'hi' });
+
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('timeout test timed out')), 5000);
+      const unsub = runManager.onEvent(runId, (ev) => {
+        if (ev.type === 'error' && /idle timeout: session\/new/.test(ev.message)) {
+          clearTimeout(timer);
+          unsub?.();
+          resolve();
+        }
+      });
+      if (!unsub) {
+        clearTimeout(timer);
+        reject(new Error(`run ${runId} not found`));
+      }
+    });
+
+    delete process.env['FAKE_HERMES_SLOW_SESSION_NEW_MS'];
+  });
+
+  it('session/new silent tail under the idle budget succeeds WITHOUT a heartbeat', async () => {
+    // Complement to the test above: a silent session/new tail is only fatal when
+    // it EXCEEDS the idle budget. Under it, the handshake completes with zero
+    // stderr activity — no heartbeat required (unlike the initialize-heartbeat
+    // test). This is exactly why raising idleTimeoutMs fixes the cold-start
+    // false-positive: the model-list fetch is silent but finite, so a large
+    // enough budget lets a healthy session/new through. Harness idle=500ms; a
+    // 200ms silent delay stays under it.
+    process.env['FAKE_HERMES_SLOW_SESSION_NEW_MS'] = '200';
+    const runId = await runManager.createRun({ agentId: 'hermes', message: 'hi' });
+
+    const events = await collectEvents(runId, (ev) => ev.type === 'models');
+    assert.ok(
+      events.some((e) => e.type === 'models'),
+      'a silent-but-fast session/new should complete and emit the models event',
+    );
+
+    runManager.cancelRun(runId);
+    delete process.env['FAKE_HERMES_SLOW_SESSION_NEW_MS'];
   });
 
   it('process exit before session/new rejects init promise and fails run', async () => {

@@ -661,11 +661,12 @@ export class RunManager {
 
     const acp = def.acp!;
     // Test escape hatch: env overrides for ACP timeouts so integration tests
-    // don't have to wait the full 15s idle / 30min absolute defaults. Fallbacks
+    // don't have to wait the full 60s idle / 30min absolute defaults. Fallbacks
     // match hermes.ts so a def missing an acp field still gets the right cap
-    // (previously absolute fell back to 5min, not 30min).
+    // (idle 60s covers session/new's silent availableModels network fetch on a
+    // cold start; absolute fell back to 5min, not 30min, before this was fixed).
     const envIdle = Number(process.env.MOLIO_ACP_IDLE_TIMEOUT_MS);
-    const idleTimeout = envIdle > 0 ? envIdle : (acp.idleTimeoutMs ?? 15000);
+    const idleTimeout = envIdle > 0 ? envIdle : (acp.idleTimeoutMs ?? 60000);
     const envAbsolute = Number(process.env.MOLIO_ACP_ABSOLUTE_TIMEOUT_MS);
     const absoluteTimeout = envAbsolute > 0 ? envAbsolute : (acp.absoluteTimeoutMs ?? 1800000);
 
