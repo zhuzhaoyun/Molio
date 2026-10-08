@@ -37,6 +37,23 @@ export interface ChatSessionViewProps {
    * 提供时直接渲染它，否则渲染由上面 composer* props 组装的 ChatComposer。
    */
   composerArea?: ReactNode;
+  /**
+   * 日志区容器的类名覆盖（默认 'home-chat-log'）。
+   * KB 面板复用时传 'file-chat-messages' 以保留其既有 DOM 结构/样式。
+   */
+  logClassName?: string;
+  /** 输入框区容器的类名覆盖（默认 'home-composer-bar'）；面板传 'file-chat-input'。 */
+  composerBarClassName?: string;
+  /**
+   * 消息为空时渲染在日志区内的内容（面板空态/选中预览）。
+   * 提供且 `messages.length === 0` 时替代消息列表；默认不渲染。
+   */
+  emptyState?: ReactNode;
+  /**
+   * 内部 ChatComposer 的 React key。面板按「会话:文件」重挂载以重播种 @ 上下文；
+   * 默认 undefined（HomePage 不重挂载）。
+   */
+  composerMountKey?: string;
   /** 历史下拉（仅全屏态需要） */
   onOpenConversation?: (conversationId: string) => void;
   onDeleteConversations?: (ids: string[]) => void;
@@ -64,6 +81,10 @@ export function ChatSessionView({
   composerDisabled,
   composerDisabledPlaceholder,
   composerArea,
+  logClassName,
+  composerBarClassName,
+  emptyState,
+  composerMountKey,
   onOpenConversation,
   onDeleteConversations,
 }: ChatSessionViewProps) {
@@ -117,6 +138,7 @@ export function ChatSessionView({
 
   const composer = composerArea ?? (
     <ChatComposer
+      key={composerMountKey}
       composerKey={composerKey}
       isRunning={isRunning}
       onSend={handleSend}
@@ -132,8 +154,8 @@ export function ChatSessionView({
   return (
     <>
       {/* Chat log */}
-      <div className="home-chat-log" ref={logRef}>
-        {messages.map((msg) => {
+      <div className={logClassName ?? 'home-chat-log'} ref={logRef}>
+        {messages.length === 0 && emptyState ? emptyState : messages.map((msg) => {
           if (msg.role === 'user') {
             const isLastUser = (() => {
               for (let i = messages.length - 1; i >= 0; i--) {
@@ -186,7 +208,7 @@ export function ChatSessionView({
 
       {/* Composer at the bottom — hidden in selection mode, replaced by the
           confirm bar (input and delete are mutually exclusive). */}
-      <div className="home-composer-bar">
+      <div className={composerBarClassName ?? 'home-composer-bar'}>
         {selectMode ? (
           <SelectionConfirmBar
             onDelete={async () => {
