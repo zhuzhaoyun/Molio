@@ -108,7 +108,7 @@ test.describe('Floating chat (方案 D)', () => {
     await expect(page).toHaveURL(/\/history$/);
   });
 
-  test('主页是例外：到达主页时面板收起且保持停靠形态，无悬浮按钮', async ({ page }) => {
+  test('主页是例外：到达主页时面板不渲染，无悬浮按钮', async ({ page }) => {
     await mockChatRun(page);
     await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
@@ -117,14 +117,12 @@ test.describe('Floating chat (方案 D)', () => {
     await expect(panel).toBeVisible();
     await expect(panel).toHaveClass(/floating-chat-panel--dock-kb/);
 
-    // 到达主页 → 面板收起（主页自身即聊天页，避免同屏两个聊天框）
+    // 到达主页（`/chat` = 悬浮面板的全屏态）→ 面板整体不渲染：主页自身已经渲染了
+    // 活动会话的 ChatSessionView，再渲染面板会让同一个会话出现两份输入框/消息列表
+    // （L2a；见 KbChatSessionsPanel 的 `if (location.pathname === CHAT_ROUTE) return null;`）。
     await gotoChatSpa(page);
     await expect(page.locator('.home-page')).toBeVisible({ timeout: 5_000 });
-    await expect(panel).toBeHidden();
-
-    // 收起过程保持停靠形态（原地关闭），不先跳到悬浮几何再消失。
-    // 由 KbChatSessionsPanel 的 `if (page === 'home') return;` 保证。
-    await expect(panel).toHaveClass(/floating-chat-panel--dock/);
+    await expect(panel).toHaveCount(0);
     // 主页不渲染悬浮按钮
     await expect(page.locator('[data-testid="floating-chat-btn"]')).toHaveCount(0);
   });

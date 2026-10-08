@@ -51,6 +51,7 @@
         "chat-repairing",
         "chat-timeout-fallback",
         "chat-work-visibility",
+        "chat-fullscreen",
         "file-ref-navigation",
         "model-switcher",
         "composer-hints"
@@ -493,6 +494,10 @@
     "chat-work-visibility": {
       "priority": "P1",
       "file": "chat-work-visibility.spec.ts"
+    },
+    "chat-fullscreen": {
+      "priority": "P1",
+      "file": "chat-fullscreen.spec.ts"
     },
     "chat-continue": {
       "priority": "P1",

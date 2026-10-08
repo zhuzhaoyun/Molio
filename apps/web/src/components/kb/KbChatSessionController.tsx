@@ -107,7 +107,19 @@ export function KbChatSessionController({
     return { runId: result.runId, conversationId: result.conversationId };
   }, [agentId, vaultPath, session.id]);
 
-  const chat = useChatCore({ agentId, createRun, onComplete: session.mode === 'qa' ? undefined : onComplete });
+  // 重新生成 / 编辑重发（消息级工具条）也要走 controller：`useChatCore` 缺少 rewindResend
+  // 时 regenerateLast / editAndResend 会直接 no-op（见 useChatCore.ts 的 `if (!rewindResend) return;`）。
+  // 语义与旧 App 级 useChat 的 rewindResend 一致（createRun 的镜像：带 agentId/cwd/model）。
+  const rewindResend = useCallback(async ({ conversationId, newContent }: { conversationId: string; newContent: string }) => {
+    return api.rewindResend(conversationId, {
+      newContent,
+      agentId: agentId ?? undefined,
+      cwd: vaultPath ?? undefined,
+      model: chatRuntimeStore.getState().model ?? undefined,
+    });
+  }, [agentId, vaultPath]);
+
+  const chat = useChatCore({ agentId, createRun, rewindResend, onComplete: session.mode === 'qa' ? undefined : onComplete });
 
   // #6: 追踪最新消息数。DB 历史加载是异步的——若加载完成前用户已发送消息（乐观消息已入列），
   // 迟到的 setMessages 会覆盖掉乐观消息（conversationId 守卫拦不住：id 未变），这里用它做守卫。

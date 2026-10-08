@@ -1,10 +1,12 @@
 // apps/web/src/components/kb/KbChatSessionsPanel.tsx
 import { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, forwardRef } from 'react';
+import { useLocation } from 'react-router-dom';
 import {
   kbChatSessionsStore, useKbChatSessions, useKbChatActiveSessionId, useKbChatPanelOpen,
   MAX_CHAT_SESSIONS,
 } from '../../stores/kbChatSessionsStore';
 import { useCurrentContext } from '../../stores/currentContextStore';
+import { CHAT_ROUTE } from '../../routes';
 import { ChatSessionTabBar } from './ChatSessionTabBar';
 import { KbChatSession } from './KbChatSession';
 import { useKbChatSessionApi } from './KbChatSessionsProvider';
@@ -17,6 +19,12 @@ export interface KbChatSessionsPanelHandle {
   openQa: (opts: { filePath: string | null; vaultId: string | null; selectedText?: string | null }) => void;
   /** 打开历史会话（方案 D：任意页面就地打开，不跳转知识库页）。 */
   openConversation: (conversationId: string) => void;
+  /**
+   * 会话（conversation）被删除后的收敛：清空任何正加载该 conversation 的标签
+   * （不关闭标签，只是把它的消息与 conversationId 清掉 → 主页/面板回到空态）。
+   * 历史页勾选删除 / 主页输入框历史下拉 / 面板历史下拉 共用。
+   */
+  resetConversations: (ids: string[]) => void;
 }
 
 interface WikiOpOpts { mode: 'build' | 'lint' | 'ingest'; filePath?: string; isDirectory?: boolean }
@@ -99,14 +107,13 @@ function readFloatPos(): { left: number; top: number } | null {
   return null;
 }
 
-interface Props {
-  /** 历史下拉删除成功后通知 App（清空主页已加载会话） */
-  onDeleteConversations?: (ids: string[]) => void;
-}
+// 面板不再从 App 接收 props：历史下拉删除后的收敛由面板自己处理（handle.resetConversations）。
+interface Props {}
 
 export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(function KbChatSessionsPanel(
-  { onDeleteConversations }, ref,
+  _props, ref,
 ) {
+  const location = useLocation();
   const sessions = useKbChatSessions();
   const activeSessionId = useKbChatActiveSessionId();
   // 上下文改从全局 store 读（方案 D：面板常驻 App 层，任意页面可用，不依赖 KB 页 props）
@@ -697,7 +704,27 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
     }
   }, [runningMap, showToast, getApi]);
 
-  useImperativeHandle(ref, () => ({ runWikiOp, openQa, openConversation: handleOpenConversation }), [runWikiOp, openQa, handleOpenConversation]);
+  // conversation 被删除后的按标签收敛：清空任何正加载它的标签（不关闭标签）。
+  const resetConversations = useCallback((ids: string[]) => {
+    const idSet = new Set(ids);
+    for (const s of kbChatSessionsStore.getSessions()) {
+      if (s.conversationId && idSet.has(s.conversationId)) {
+        getApi(s.id)?.clear();
+      }
+    }
+  }, [getApi]);
+
+  useImperativeHandle(ref, () => ({
+    runWikiOp, openQa, openConversation: handleOpenConversation, resetConversations,
+  }), [runWikiOp, openQa, handleOpenConversation, resetConversations]);
+
+  // `/chat` 自身渲染活动会话的 ChatSessionView（全屏态与面板共用同一份状态）。
+  // 此时不渲染面板的任何 DOM：否则同一个会话会同时出现在两个视图 → 输入框/消息列表/
+  // 删除确认条在 DOM 里都是两份（`[data-testid="composer-input"]` 等定位器命中两个元素，
+  // Playwright strict mode violation）。控制器在 App 层 Provider 常驻，面板 DOM 缺席不影响
+  // 后台会话存活（面板渲染已退化为纯呈现层）。用 location（与路由同步）而非 currentContext.page：
+  // 后者在 effect 里更新，会有一帧的滞后窗口。
+  if (location.pathname === CHAT_ROUTE) return null;
 
   // 面板头部活动会话的模式标签
   return (
@@ -748,7 +775,7 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
         onNewSession={handleNewSession}
         onRename={(id, title) => kbChatSessionsStore.updateSession(id, { title })}
         onOpenConversation={handleOpenConversation}
-        onDeleteConversations={onDeleteConversations}
+        onDeleteConversations={resetConversations}
         onClosePanel={() => kbChatSessionsStore.setPanelOpen(false)}
         docked={docked}
         onToggleDock={toggleDock}

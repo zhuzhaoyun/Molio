@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense } from 'react';
 import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { useAgents } from './hooks/useAgents';
-import { useChat } from './hooks/useChat';
 import { HomePage } from './components/HomePage';
 
 import { NavRail } from './components/NavRail';
@@ -12,7 +11,6 @@ import { UpdateNotification } from './components/UpdateNotification';
 import { PreloadToast } from './components/PreloadToast';
 import { AppErrorBoundary } from './components/AppErrorBoundary';
 import { LanguageProvider } from './i18n/LanguageProvider';
-import { useI18n } from './i18n';
 import type { Locale } from './i18n';
 import { api } from './api/client';
 import { useActiveVault, vaultStore } from './stores/vaultStore';
@@ -83,17 +81,6 @@ function EntryRedirect() {
   return <Navigate to={{ pathname: target, search }} replace />;
 }
 
-/** 切 vault 后会话重置的 transient 提示条（必须渲染在 LanguageProvider 内取 useI18n）。 */
-function VaultSwitchNotice({ visible }: { visible: boolean }) {
-  const { t } = useI18n();
-  if (!visible) return null;
-  return (
-    <div className="vault-switch-notice" role="status" data-testid="vault-switch-notice">
-      {t('app.vaultSwitchReset')}
-    </div>
-  );
-}
-
 export default function App() {
   const { agents, loading: agentsLoading, error: agentsError, refresh: refreshAgents } = useAgents();
   // 从 agents 列表判定「无可用运行时」，而非依赖 selection：selection 在首帧
@@ -125,12 +112,6 @@ export default function App() {
   }, []);
   const cfgLocale = config?.['locale'];
   const locale: Locale = cfgLocale === 'en' || cfgLocale === 'zh' ? cfgLocale : storedLocale;
-  const chat = useChat({ agentId: selectedAgent, cwd: activeVault?.path });
-  // 跨 vault 残留防线：home 会话绑定 activeVault 的 cwd，切 vault 后旧会话在新 vault
-  // 上下文里产出读不到文件。检测到 activeVault 变化且有会话 → 重置 + transient 提示。
-  const [vaultSwitchNotice, setVaultSwitchNotice] = useState(false);
-  const vaultNoticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const prevVaultIdRef = useRef<string | null>(null);
   // 全局悬浮对话面板句柄（App 层常驻挂载，ref 下发给 KB 页触发 runWikiOp/openQa）
   const kbChatPanelRef = useRef<KbChatSessionsPanelHandle | null>(null);
 
@@ -309,33 +290,26 @@ export default function App() {
       .catch(() => {});
   }, [activeVault?.path]);
 
+  // 页头「+」：新建一个会话标签（不再重置 App 级会话 —— 会话状态已由面板/Provider 按标签持有）。
   const handleNewChat = () => {
-    chat.reset();
-    chatRuntimeStore.setAgentId(defaultAgentId ?? null);
+    kbChatSessionsStore.openSession({
+      mode: 'qa', title: '新会话', conversationId: null, filePath: null,
+    });
   };
 
-  // 切 vault → 重置绑定旧 vault 的会话。首载/无 vault/未变化跳过；无会话无需重置。
-  // 保守同步实现（不依赖 daemon 会话归属查询）：只要 activeVault 变化即视为上下文切换。
+  // 视图切换（路由变化）→ 退出消息勾选态。`messageSelectionStore` 是模块级全局单例，
+  // 面板态与全屏态共用；若不清理，切到另一视图会凭空冒出删除确认条（选中的消息 id 在
+  // 新视图里恰好也存在时 pruneStale 拦不住）。
   useEffect(() => {
-    const vaultId = activeVault?.id ?? null;
-    const prev = prevVaultIdRef.current;
-    prevVaultIdRef.current = vaultId;
-    if (prev === null || vaultId === null || vaultId === prev) return;
-    if (!chat.conversationId) return;
-    chat.reset();
-    setVaultSwitchNotice(true);
-    if (vaultNoticeTimer.current) clearTimeout(vaultNoticeTimer.current);
-    vaultNoticeTimer.current = setTimeout(() => setVaultSwitchNotice(false), 3000);
-  }, [activeVault?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+    messageSelectionStore.exit();
+  }, [location.pathname]);
 
-  // 任一历史入口删除会话后统一收敛：删除的会话恰是主页当前加载的 → 清空主页聊天，
-  // 避免切回主页仍显示已删除的内容。历史页勾选删除 / 主页输入框历史下拉 / KB 会话面板
-  // 历史下拉 共用。
-  const handleConversationsDeleted = (ids: string[]) => {
-    if (chat.conversationId && ids.includes(chat.conversationId)) {
-      chat.reset();
-    }
-  };
+  // 任一历史入口删除会话后统一收敛：删除的会话若正是某个会话标签当前加载的，清空该标签，
+  // 避免切回主页/面板仍显示已删除的内容。历史页勾选删除 / 主页输入框历史下拉 / KB 会话面板
+  // 历史下拉 共用。收敛实现在面板（它持有各标签的 imperative API，见 resetConversations）。
+  const handleConversationsDeleted = useCallback((ids: string[]) => {
+    kbChatPanelRef.current?.resetConversations(ids);
+  }, []);
 
   return (
     <LanguageProvider initialLocale={locale}>
@@ -357,6 +331,8 @@ export default function App() {
             <Route
               path={CHAT_ROUTE}
               element={
+                // `/chat` = 悬浮对话面板的全屏态：HomePage 自己从 KbChatSessionsProvider
+                // 读活动标签的状态（与面板同一份会话），不再是 App 级独立会话。
                 <HomePage
                   selectedAgentName={agents.find((a) => a.id === selectedAgent)?.name ?? null}
                   agentsReady={!agentsLoading}
@@ -364,23 +340,12 @@ export default function App() {
                   agentsUnavailable={agentsUnavailable}
                   onRetryAgents={refreshAgents}
                   onOpenRuntimes={() => navigate('/settings?tab=runtimes')}
-                  messages={chat.messages}
-                  isRunning={chat.isRunning}
-                  activity={chat.activity}
-                  onSend={(message) => chat.send(message, { queueIfRunning: true })}
-                  onSubmitForm={(text) => chat.send(text)}
-                  onCancel={chat.cancel}
                   onNewChat={handleNewChat}
-                  onSubmitToolResult={chat.submitToolResult}
                   onOpenConversation={(conversationId) => {
-                    void chat.loadConversationById(conversationId);
+                    // 就地切换活动会话并触发加载（复用面板已有的切换语义：运行中 → 新开标签）。
+                    kbChatPanelRef.current?.openConversation(conversationId);
                   }}
                   onDeleteConversations={handleConversationsDeleted}
-                  onRegenerate={chat.regenerateLast}
-                  onEdit={chat.editAndResend}
-                  onContinue={() => chat.send('继续')}
-                  onRequestDelete={(id) => messageSelectionStore.enterSelection(id, chat.messages)}
-                  onDeleteMessages={chat.deleteMessages}
                 />
               }
             />
@@ -389,10 +354,10 @@ export default function App() {
               element={
                 <HistoryPage
                   onOpenConversation={(conversationId) => {
-                    // 恢复旧行为：加载到整页对话 → 跳转过去呈现（撤销方案 D 的「就地打开面板」）。
-                    void chat.loadConversationById(conversationId).then(() => {
-                      navigate(CHAT_ROUTE);
-                    });
+                    // 保持旧行为：加载到「整页对话」→ 跳转过去呈现（撤销方案 D 的「就地打开面板」）。
+                    // 现在整页对话展示的是活动会话，所以先把它切到目标会话，再跳 /chat。
+                    kbChatPanelRef.current?.openConversation(conversationId);
+                    navigate(CHAT_ROUTE);
                   }}
                   onDeleteConversations={handleConversationsDeleted}
                 />
@@ -415,7 +380,6 @@ export default function App() {
         {location.pathname !== CHAT_ROUTE && location.pathname !== '/' && <FloatingChatButton />}
         <KbChatSessionsPanel
           ref={kbChatPanelRef}
-          onDeleteConversations={handleConversationsDeleted}
         />
         <UpdateNotification />
         <PreloadToast />
@@ -428,7 +392,6 @@ export default function App() {
           onClose={closePrefill}
           onSave={savePrefillSkill}
         />
-        <VaultSwitchNotice visible={vaultSwitchNotice} />
       </div>
       </KbChatSessionsProvider>
       </AppErrorBoundary>
