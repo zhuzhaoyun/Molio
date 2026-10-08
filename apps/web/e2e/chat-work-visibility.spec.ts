@@ -196,7 +196,8 @@ test.describe('KB chat — work visibility', () => {
 
   test('主页问答：时间线锚定最后一条回复（不再悬浮消息流顶部）+ 产物 banner', async ({ page }) => {
     await mockChatRun(page, { script: SCRIPTS.workflowRun, frameDelay: 800 });
-    await page.goto('http://localhost:5173/');
+    // 整页对话在 /chat（入口 `/` 只做重定向，见 apps/web/src/routes.ts）
+    await page.goto('http://localhost:5173/chat');
     await expect(page.locator('[data-testid="composer-input"]')).toBeVisible({ timeout: 5_000 });
 
     await sendOnHome(page, '总结知识库');
@@ -221,6 +222,13 @@ test.describe('KB chat — work visibility', () => {
   });
 
   test('WebSearch 来源抽 URL 成可点链接 chip（去重 + host 标签）', async ({ page }) => {
+    // 本用例是全场唯一把断言挂在「整条测试剩余时钟」上的：末尾 popup 等待没有显式超时，
+    // 前面每个步骤又各自带 5s/10s 预算 —— 慢 runner 上叠加起来会把它挤成 0 余量。
+    // CI 37654803442 就是这样死的：mock 流 1.2s 应发完，浏览器却在 ~26s 才处理终结帧
+    // （截图 banner `⊙ 26s` = finishedAt − timestamp，两个时间戳都前端盖的），
+    // 30s 预算见底 → waitForEvent 被时钟掐死，报「Test timeout exceeded」而看不出是 popup。
+    // 故：放宽本用例总预算 + 给 popup 等待自己的显式超时（失败时报的是 popup，不是总超时）。
+    test.setTimeout(60_000);
     await mockChatRun(page, { script: SCRIPTS.newsRun, frameDelay: 150 });
     await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
@@ -238,7 +246,7 @@ test.describe('KB chat — work visibility', () => {
 
     // URL chip 可点击 → 新标签打开
     const [popup] = await Promise.all([
-      page.waitForEvent('popup'),
+      page.waitForEvent('popup', { timeout: 10_000 }),
       chips.filter({ hasText: '36kr.com' }).click(),
     ]);
     await expect(popup).toBeDefined();

@@ -188,6 +188,8 @@ interface UseKnowledgeReturn {
   deleteVault: (id: string) => Promise<void>;
   selectFile: (path: string | null) => void;
   refreshTree: () => void;
+  /** 「库变了」信号计数（每次 refreshTree +1）——供图谱等派生视图订阅自动刷新。 */
+  treeRevision: number;
   checkWikiStatus: () => void;
   setPanelWidth: (w: number) => void;
   setSearchQuery: (q: string) => void;
@@ -234,6 +236,9 @@ export function useKnowledge(): UseKnowledgeReturn {
   const activeVaultId = useActiveVaultId();
   const [tree, setTree] = useState<TreeNode[]>([]);
   const [treeVaultId, setTreeVaultId] = useState<string | null>(null);
+  // 每次收到「库变了」的信号就 +1。文件树自己重取即可，但别的视图（图谱）需要知道
+  // 「该重取了」这件事本身——把信号变成可订阅的计数器，比让每个视图各自开一条 SSE 便宜。
+  const [treeRevision, setTreeRevision] = useState(0);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [fileContent, setFileContent] = useState<FileContent | null>(null);
   const [fileLoadError, setFileLoadError] = useState<string | null>(null);
@@ -302,6 +307,20 @@ export function useKnowledge(): UseKnowledgeReturn {
     })();
     return () => { cancelled = true; };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /**
+   * ?manage=1 —— 主页「首次运行引导卡」的建库入口：到知识库页直接把知识库管理器
+   * 打开，省掉用户自己找建库入口那一步（找不到入口正是这次事故的一环）。
+   * 读完即从 URL 摘掉——刷新不该再弹一次；?vault= 原样保留。
+   */
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('manage') !== '1') return;
+    setShowVaultSwitcher(true);
+    params.delete('manage');
+    const qs = params.toString();
+    window.history.replaceState(null, '', window.location.pathname + (qs ? `?${qs}` : ''));
+  }, []);
 
   // Track previous vault ID to distinguish mount vs vault switch
   const prevVaultIdRef = useRef<string | null>(null);
@@ -454,7 +473,7 @@ export function useKnowledge(): UseKnowledgeReturn {
 
   const openVault = useCallback(async (path: string) => {
     // Derive a name from the last path segment
-    const name = path.split(/[\/]/).pop() || '未命名仓库';
+    const name = path.split(/[\/]/).pop() || '未命名知识库';
     const vault = await api.createVault({ name, path, description: `从本地文件夹打开: ${path}` });
     const next = [vault, ...vaultsRef.current];
     setVaults(next);
@@ -486,6 +505,7 @@ export function useKnowledge(): UseKnowledgeReturn {
 
   const refreshTree = useCallback(() => {
     if (!activeVaultId) return;
+    setTreeRevision((v) => v + 1);
     api.getFileTree(activeVaultId)
       .then((t) => {
         setTree(t);
@@ -703,6 +723,7 @@ export function useKnowledge(): UseKnowledgeReturn {
     deleteVault,
     selectFile,
     refreshTree,
+    treeRevision,
     checkWikiStatus,
     setPanelWidth,
     setSearchQuery,

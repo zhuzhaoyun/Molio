@@ -28,7 +28,7 @@ pnpm dev:web      # web only
 pnpm dev:desktop  # daemon + web + electron (需确保 5173/3100 端口未被占用)
 pnpm dev:cloud    # cloud auth service only (tsx :3200, 无 DATABASE_URL 自动内存模式)
 pnpm build        # build all packages
-pnpm test         # run cloud + daemon + desktop tests (node:test)
+pnpm test         # run cloud + daemon + desktop + web tests (node:test)
 pnpm test:e2e     # run web E2E tests (Playwright, 需先 pnpm dev)
 pnpm typecheck    # typecheck all packages
 ```
@@ -79,6 +79,15 @@ Molio Chrome 扩展保存剪藏时通过 `molio://` 唤起桌面端。协议约�
 - `molio://launch`：只用于打开应用，不应作为剪藏保存后的文件定位主路径
 
 桌面端只负责解析协议并导航到 `/knowledge?...`；Web 端负责等待目标 vault 的文件树加载完成，再选中文件。扩展可能先发出文件打开意图再完成写入，因此 Web 端文件读取允许一次短重试。改这条链路时要同时检查 `molio-connect/background.js`、`apps/desktop/src/main.js`、`apps/web/src/components/kb/KnowledgeBasePage.tsx` 和 `apps/web/src/hooks/useKnowledge.ts`。
+
+主进程按「渲染进程就绪标志」在两条投递路径间二选一：**就绪 → 页内 IPC**（React Router 跳转，不重载、不丢状态）；**未就绪 → 整页 `loadURL` 兜底**（冷启动 / daemon 错误页 / 渲染进程已死）。因此**该标志的清除条件是这条链路的命门**：只允许被「主框架 + 非同文档」的真实文档替换（`did-start-navigation` 的 `isMainFrame && !isSameDocument`）、窗口关闭、渲染进程崩溃清除。
+
+**不要用 `did-start-loading` 清标志**。2026-09-28 实测（Electron 40，真实 app 端到端）：该事件只被**导航**触发——主框架同文档（pushState / replaceState / hash）与**子框架（iframe / 任何 subframe 导航）**都会触发，而图片、`fetch`、XHR 不会。恢复侧只有一条路：Web 端 `App.tsx` 的上报 effect 依赖 `navigate`，**每次路由变化**才重发一次就绪。于是这两类误清后果完全不同：
+
+- 同文档路由跳转：误清后约 25ms 就被下一次路由变化恢复（实测 `CLEARED → RESTORED` 成对出现），窗口极窄；
+- **子框架导航：不产生 location 变化，没有任何东西会恢复它** —— 标志从此永久为 false，直到用户下一次路由跳转。此后**每一次**剪藏都退化成整页重载：React 树被销毁、正在流式输出的回复从界面消失、run 变孤儿继续跑（用户 2026-09 的真实报障即此，日志里 10 次 `molio://open` 有 8 次 `renderer not ready`）。
+
+规则与回归测试见 `apps/desktop/src/renderer-readiness.js` 与 `apps/desktop/test/clip-open-navigation.test.js`（含「子框架加载不得清标志」的用例）。
 
 ## Runtime Context Loading
 
@@ -166,9 +175,10 @@ apps/daemon/src/core/RunManager.ts, conversations/run-starter.ts, db.ts
 
 | 层 | 工具 | 位置 | 触发时机 |
 |---|---|---|---|
-| Unit | `node:test` | `apps/daemon/test/**`, `apps/desktop/test/**` | 每次 PR (win + mac) |
+| Unit | `node:test` | `apps/daemon/test/**`, `apps/desktop/test/**`, `apps/web/test/**` + `apps/web/src/**/*.test.ts` | 每次 PR (win + mac) |
 | E2E | Playwright | `apps/web/e2e/*.spec.ts` | 每次 PR (ubuntu) — affected + P0 |
 | E2E Full | Playwright | 同上 | nightly 03:00 UTC + manual |
+| Desktop E2E | Playwright (Electron) | `apps/desktop/e2e/specs/**` | nightly 03:00 UTC + manual（e2e.yml `desktop-e2e` job, windows-2022；每 spec 独占 app 生命周期 + 3100 端口，不进 PR 快检） |
 | Release Smoke | inline (release.yml) | `apps/desktop/dist/win-unpacked` 等 | tag 触发 |
 | Impact Analysis | grep + area-map | `scripts/codegraph-impact.mjs` | PR opened/synchronize/reopened |
 
@@ -194,7 +204,7 @@ area 映射在 `apps/web/e2e/area-map.json`，包含 path globs → specs。
 | Workflow | 触发 | 作用 |
 |---|---|---|
 | `pr-check.yml` | PR | matrix `[windows-latest, macos-latest]` 跑 build+typecheck+unit；ubuntu job 跑 affected E2E |
-| `e2e.yml` | nightly + manual | 全量 E2E (P0+P1+P2) |
+| `e2e.yml` | nightly + manual | 全量 web E2E (P0+P1+P2) + desktop GUI E2E（win-unpacked, windows-2022）|
 | `impact-analysis.yml` | PR opened/synchronize/reopened | 分析 diff + 命中 area + 会跑的 E2E 清单 → PR 评论 |
 | `release.yml` | tag `v*` | win + mac 打包 + smoke (启动 exe → 验证 daemon 健康 → 验证 web UI) |
 | `coverage-reminder.yml` | daily 18:00 Asia/Shanghai | 扫描前 24h 合并的 PR，检查 area 覆盖 |
@@ -244,9 +254,28 @@ CI 在 `macos-latest` (Apple Silicon) 上验证打包后可启动。Intel Mac �
 git checkout main && git pull origin main
 git checkout -b feat/功能名称   # 或 fix/、refactor/、chore/、docs/
 git add . && git commit -m "feat(scope): 描述"
+# ↓ push 前强制过 OCR 自检（见下节）：Claude 用 ocr delegate 审 diff、修掉真问题再推
 git push -u origin feat/功能名称
 gh pr create --title "feat: 功能描述" --base main
 ```
+
+### Push 前 OCR 自检（强制）
+
+**核心原则**：每次 `git push` 之前，必须先跑一遍 OpenCodeReview（OCR）对**将要推送的改动**做自检，把明显问题在本地改掉，而不是等 PR review 阶段才暴露、再回头扰动已评审过的代码。本地自检与 CI 的 `.github/workflows/ocr-review.yml` 用**同一套规则**，等于提前消化 review 意见。
+
+**Claude Code 的执行方式（无需本地 LLM 凭据）**：push 前用 `ocr delegate` 导出改动清单与命中的审查规则，由 Claude 亲自比对 diff 逐条审查，发现的真问题先修复再 push。
+
+```bash
+ocr delegate preview --from origin/main --to HEAD   # 列出将推送的可审查文件（增量 push 可改 --from @{upstream}）
+ocr delegate rule <上一步列出的文件...>               # 导出这些文件命中的审查规则
+# → Claude 依据规则审查 git diff，修复真问题后再 git push
+```
+
+**其他工具 / 人工的执行方式**：见仓库根 `AGENTS.md`（跨工具版标准，含 `ocr review` 全自动审查的凭据配置与命令）。
+
+**行为约定**：默认**只报告不硬拦**——OCR 偶有误报，是否修复由提交人判断。这是文档规范，本身不会技术上阻止 push（真要强制拦截需 git pre-push 钩子，本项目暂未启用）。
+
+> ⚠️ CLAUDE.md 只自动约束 Claude Code。为让 Codex/Cursor 等其他工具也读到这条标准，已同步写入根目录 `AGENTS.md`；两份的「代码提交标准」改动需保持一致。
 
 ### 分支命名
 

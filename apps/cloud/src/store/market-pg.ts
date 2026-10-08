@@ -1,3 +1,4 @@
+import type { MarketTaxon } from '@molio/contracts';
 // apps/cloud/src/store/market-pg.ts
 // PgMarketStore：语义与 MemoryMarketStore 逐条对齐（§资源市场设计）。
 // JSONB 列（overview/highlights/tags/previews）出入参均为字符串数组；
@@ -6,6 +7,7 @@ import type { Pool } from 'pg';
 import type { MarketListingRecord, MarketPendingUpdate, MarketStore } from './market-types.js';
 
 type Row = {
+  category_id: string | null; resource_type_id: string | null;
   id: string; user_id: string; source: string; name: string; icon: string; tint: string;
   summary: string; overview: string[]; highlights: string[]; tags: string[]; previews: string[];
   version: string; price_cents: number; pay_url: string; author_display: string | null;
@@ -16,6 +18,7 @@ type Row = {
 
 function fromRow(r: Row): MarketListingRecord {
   return {
+    categoryId: r.category_id, resourceTypeId: r.resource_type_id,
     id: r.id, userId: r.user_id, source: r.source as MarketListingRecord['source'],
     name: r.name, icon: r.icon, tint: r.tint, summary: r.summary,
     overview: r.overview ?? [], highlights: r.highlights ?? [], tags: r.tags ?? [], previews: r.previews ?? [],
@@ -28,26 +31,35 @@ function fromRow(r: Row): MarketListingRecord {
   };
 }
 
-const SELECT_COLS = `id, user_id, source, name, icon, tint, summary, overview, highlights, tags,
+const SELECT_COLS = `category_id, resource_type_id, id, user_id, source, name, icon, tint, summary, overview, highlights, tags,
   previews, version, price_cents, pay_url, author_display, oss_key, file_size, status,
   removed_reason, pending_update, created_at, updated_at, published_at`;
 
 export class PgMarketStore implements MarketStore {
   constructor(private pool: Pool) {}
 
+  async listTaxa(): Promise<MarketTaxon[]> {
+    return (await this.pool.query('SELECT id, kind, name, position FROM market_taxa ORDER BY position, id')).rows.map(r => ({...r, position: Number(r.position)}));
+  }
+  async createTaxon(taxon: MarketTaxon): Promise<MarketTaxon> {
+    const result = await this.pool.query(
+      'INSERT INTO market_taxa (id, kind, name) VALUES ($1,$2,$3) ON CONFLICT (kind, (lower(name))) DO UPDATE SET name = market_taxa.name RETURNING id, kind, name, position',
+      [taxon.id, taxon.kind, taxon.name]);
+    return {...result.rows[0], position: Number(result.rows[0].position)};
+  }
   async insertListing(rec: MarketListingRecord): Promise<void> {
     await this.pool.query(
       `INSERT INTO market_listings (id, user_id, source, name, icon, tint, summary, overview,
         highlights, tags, previews, version, price_cents, pay_url, author_display, oss_key,
-        file_size, status, removed_reason, created_at, updated_at, published_at, pending_update)
+        file_size, status, removed_reason, created_at, updated_at, published_at, pending_update, category_id, resource_type_id)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,
         to_timestamp($20/1000.0), to_timestamp($21/1000.0),
-        CASE WHEN $22::bigint IS NULL THEN NULL ELSE to_timestamp($22/1000.0) END, $23)`,
+        CASE WHEN $22::bigint IS NULL THEN NULL ELSE to_timestamp($22/1000.0) END, $23, $24, $25)`,
       [rec.id, rec.userId, rec.source, rec.name, rec.icon, rec.tint, rec.summary,
         JSON.stringify(rec.overview), JSON.stringify(rec.highlights), JSON.stringify(rec.tags),
         JSON.stringify(rec.previews), rec.version, rec.priceCents, rec.payUrl, rec.authorDisplay,
         rec.ossKey, rec.fileSize, rec.status, rec.removedReason, rec.createdAt, rec.updatedAt, rec.publishedAt,
-        rec.pendingUpdate ? JSON.stringify(rec.pendingUpdate) : null],
+        rec.pendingUpdate ? JSON.stringify(rec.pendingUpdate) : null, rec.categoryId ?? null, rec.resourceTypeId ?? 'knowledge'],
     );
   }
 
@@ -60,13 +72,15 @@ export class PgMarketStore implements MarketStore {
     id: string,
     patch: Partial<Pick<MarketListingRecord,
       'status' | 'removedReason' | 'fileSize' | 'version' | 'previews' | 'ossKey' | 'publishedAt' | 'pendingUpdate'
-      | 'priceCents' | 'payUrl' | 'name' | 'summary' | 'icon' | 'tags'>>,
+      | 'categoryId' | 'resourceTypeId' | 'priceCents' | 'payUrl' | 'name' | 'summary' | 'icon' | 'tags'>>,
     now: number,
   ): Promise<MarketListingRecord | null> {
     // 动态 SET 拼接：字段白名单固定，参数化防注入
     const sets: string[] = [];
     const args: unknown[] = [];
     const add = (col: string, v: unknown) => { args.push(v); sets.push(`${col} = $${args.length}`); };
+    if (patch.categoryId !== undefined) add('category_id', patch.categoryId);
+    if (patch.resourceTypeId !== undefined) add('resource_type_id', patch.resourceTypeId);
     if (patch.status !== undefined) add('status', patch.status);
     if (patch.removedReason !== undefined) add('removed_reason', patch.removedReason);
     if (patch.fileSize !== undefined) add('file_size', patch.fileSize);
@@ -96,10 +110,10 @@ export class PgMarketStore implements MarketStore {
     return res.rows[0] ? fromRow(res.rows[0] as Row) : null;
   }
 
-  async listActiveListings(limit: number): Promise<MarketListingRecord[]> {
+  async listActiveListings(limit?: number): Promise<MarketListingRecord[]> {
     const res = await this.pool.query(
       `SELECT ${SELECT_COLS} FROM market_listings WHERE status = 'active'
-       ORDER BY published_at DESC NULLS LAST LIMIT $1`, [limit]);
+       ORDER BY published_at DESC NULLS LAST LIMIT $1`, [limit ?? null]);
     return res.rows.map((r: Row) => fromRow(r));
   }
 

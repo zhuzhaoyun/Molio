@@ -41,6 +41,9 @@ jobs:
       - name: Run desktop tests (updater regression)
         run: pnpm --filter @molio/desktop test
 
+      - name: Run web tests (unit)
+        run: pnpm --filter @molio/web test
+
       - name: Verify desktop resources build
         shell: bash
         run: |

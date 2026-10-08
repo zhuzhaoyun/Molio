@@ -359,8 +359,8 @@ test.describe('KB chat sessions', () => {
     await expect(row).toBeVisible({ timeout: 5_000 });
     await row.locator('.history-row__main').click();
 
-    // 恢复旧行为：跳转首页并呈现该对话（不再就地打开悬浮面板）
-    await expect(page).toHaveURL(/\/$/, { timeout: 5_000 });
+    // 恢复旧行为：跳转整页对话并呈现该对话（不再就地打开悬浮面板）
+    await expect(page).toHaveURL(/\/chat$/, { timeout: 5_000 });
     await expect(page.locator('.home-page')).toBeVisible({ timeout: 5_000 });
     await expect(page.locator('.home-chat-log')).toContainText('历史问题', { timeout: 5_000 });
   });

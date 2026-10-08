@@ -82,7 +82,8 @@ export interface EngineOptions {
 }
 
 export interface GraphSnapshot {
-  nodes: Array<{ x: number; y: number }>;
+  /** key 让 e2e 能按节点身份比对坐标（Minimap 只用 x/y） */
+  nodes: Array<{ key: string; x: number; y: number }>;
   /** 当前视口（simulation 坐标） */
   view: { x: number; y: number; w: number; h: number };
 }
@@ -239,6 +240,10 @@ export class PixiGraphEngine {
     durationMs: number;
   } | null = null;
 
+  /** 下一次 setData 是否让同名节点继承当前坐标（一次性开关，读取后立刻复位）。
+   *  刷新（库变了）要继承——否则「只加了一个文件、整个布局重炸」；换 vault 不能继承——
+   *  两个库的图没有可比性，沿用旧坐标会让新库长成旧库的形状。 */
+  private inheritPositions = true;
   private hasUserInteracted = false;
   private hasFitFirstLayout = false;
   private refitTimer: ReturnType<typeof setTimeout> | null = null;
@@ -359,9 +364,15 @@ export class PixiGraphEngine {
   setData(nodes: EngineNode[], edges: EngineEdge[]): void {
     if (this.destroyed) return;
 
+    // 上一批节点（此刻 this.nodeById 还是旧的）——用来给同名节点播种坐标。
+    // 读的是「用户眼前这份布局」而非某个初始快照：布局被拖过、平移过，都该被继承。
+    const prevNodes = this.inheritPositions ? this.nodeById : null;
+    this.inheritPositions = true;
+
     const nodeById = new Map<string, SimNode>();
     const simNodes: SimNode[] = [];
     for (const n of nodes) {
+      const prev = prevNodes?.get(n.key);
       simNodes.push({
         id: n.key,
         text: n.label,
@@ -371,6 +382,12 @@ export class PixiGraphEngine {
         dead: n.dead,
         radius: this.radiusOf(n),
         rank: 0,
+        // 老节点从原位继续仿真（刷新只微调，不重炸）；新节点不给坐标，
+        // 交给 d3 默认的 phyllotaxis 散布，自然长在既有布局之外。
+        x: prev?.x,
+        y: prev?.y,
+        vx: prev?.vx,
+        vy: prev?.vy,
       });
     }
     for (const n of simNodes) nodeById.set(n.id, n);
@@ -415,6 +432,10 @@ export class PixiGraphEngine {
     this.selectedId = null;
     this.hoveredNodeId = null;
     this.hasFitFirstLayout = false;
+    // 只在紧随其后的那次 setData 生效（setData 读取后立刻复位）。
+    // 防御性：当前切库会连图谱页一起卸载（引擎本该新建、无缓存），这行是「resetPositions
+    // 的语义 = 上下文已换、别继承」的自洽保证——将来若图谱页改成跨库常驻，它就是唯一防线。
+    this.inheritPositions = false;
     this.updateFocusAndRender();
   }
 
@@ -574,7 +595,7 @@ export class PixiGraphEngine {
     if (this.nodes.length === 0) return null;
     const t = this.currentTransform;
     return {
-      nodes: this.nodes.map((n) => ({ x: n.x ?? 0, y: n.y ?? 0 })),
+      nodes: this.nodes.map((n) => ({ key: n.id, x: n.x ?? 0, y: n.y ?? 0 })),
       view: {
         x: (0 - t.x) / t.k - this.width / 2,
         y: (0 - t.y) / t.k - this.height / 2,

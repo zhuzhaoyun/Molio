@@ -112,6 +112,13 @@ interface KbMainContentProps {
   onCopy: () => void;
   onPublish: () => void;
   onBuildWiki: () => void;
+  /** Open the import dialog (file panel toolbar's 导入 按钮的双生入口)。 */
+  onImport?: () => void;
+  /** 打开知识库管理器（建库/打开已有库）。用于「一个库都没有」的空态。 */
+  onOpenVaultManager?: () => void;
+  /** vault 里有没有文件。false 时空库主 CTA 换成「导入文件」——
+   *  空库推「构建 Wiki」是错的：没有素材，AI 无从扫起。 */
+  hasFiles?: boolean;
   /** 当 tab bar 存在时，可选择隐藏 header 中的文件名 */
   showFileName?: boolean;
   /** 是否为编辑模式（仅文本文件） */
@@ -160,6 +167,9 @@ export function KbMainContent({
   onCopy,
   onPublish,
   onBuildWiki,
+  onImport,
+  onOpenVaultManager,
+  hasFiles,
   showFileName = true,
   isEditMode = false,
   onToggleEdit,
@@ -472,6 +482,46 @@ export function KbMainContent({
   };
 
   const isElectron = !!window.__electron__?.openPath;
+
+  /**
+   * 空态的两颗动作按钮。两者互为「主/次」，在同一个 flex 行里按状态对调主次
+   * （见下方 !wikiInitialized 分支）——所以用同一对构造器，避免两处样式漂移。
+   *
+   * primary=false 时「构建 Wiki」还会置灰：知识库里一个文件都没有时，AI 没有素材
+   * 可读，这个动作根本不成立。置灰而非隐藏，是因为它顺带说明了「先导文件、再建 Wiki」
+   * 这个先后关系——隐藏掉的话，用户永远不会知道这个知识库能产出 Wiki。
+   */
+  const buildWikiButton = (primary: boolean) => (
+    <button
+      type="button"
+      className={primary ? 'wiki-cta-btn' : 'wiki-cta-btn wiki-cta-btn--outline'}
+      data-testid="kb-empty-build-cta"
+      onClick={onBuildWiki}
+      disabled={!primary}
+      title={primary ? undefined : t('kb.buildWikiNeedsFiles')}
+    >
+      {t('kb.buildWikiCta')}
+    </button>
+  );
+
+  const importButton = (primary: boolean) =>
+    onImport ? (
+      <button
+        type="button"
+        className={primary ? 'wiki-cta-btn' : 'wiki-cta-btn wiki-cta-btn--outline'}
+        data-testid="kb-empty-import-cta"
+        onClick={onImport}
+      >
+        {t('kb.emptyImportCta')}
+      </button>
+    ) : null;
+
+  /**
+   * 是否把「导入文件」当成这屏的主推。没有文件才需要导入；但没有 onImport 调用方时
+   * （对照分屏那份 KbMainContent 就不传）不能硬推——否则屏上只剩一颗置灰的
+   * 「构建 Wiki」，正是这一整轮修复要消灭的死胡同。此时退回旧的「构建 Wiki 为主」。
+   */
+  const importFirst = !hasFiles && !!onImport;
 
   return (
     <main className="kb-main">
@@ -917,34 +967,61 @@ export function KbMainContent({
         !vaultId ? (
           <div className="kb-empty-state">
             <div className="kb-empty-icon">📚</div>
-            <h3>欢迎使用知识库</h3>
-            <p>创建一个知识库来管理你的文档和笔记。</p>
-            <p className="kb-empty-hint">知识库是存储和组织文档的地方，支持 Markdown 文件管理、AI 辅助阅读和 Wiki 生成。</p>
+            <h3>{t('kb.welcomeTitle')}</h3>
+            <p>{t('kb.welcomeBody')}</p>
+            <p className="kb-empty-hint">{t('kb.welcomeHint')}</p>
+            {/* 原来这段只有说明没按钮——从导航点进来的人到此为止，无路可走 */}
+            {onOpenVaultManager && (
+              <button
+                type="button"
+                className="wiki-cta-btn"
+                data-testid="kb-empty-create-vault-cta"
+                onClick={onOpenVaultManager}
+              >
+                {t('kb.createVaultCta')}
+              </button>
+            )}
           </div>
         ) : !wikiInitialized ? (
+          /* 未建 Wiki 的两个状态合成一处：同一套结构、同一组按钮，只对调主次。
+             没有文件时构建 Wiki 是死路（AI 没有素材可读），所以它不是「次要选项」，
+             而是「还不成立的动作」——置灰并在 title 里说明前置条件，让「先导文件、
+             再建 Wiki」这个先后关系本身成为引导。
+
+             原先这两态是两段各写各的硬编码中文，英文用户看到的是中文；
+             现在共用一份 i18n 文案，也对齐了「这一屏属于同一个页面」的观感。 */
           <div className="kb-empty-state">
-            <div className="kb-empty-icon">🏗</div>
-            <h3>构建知识库 Wiki</h3>
-            <p>使用 AI 自动扫描 vault 中的文件，生成结构化的 wiki 页面。</p>
-            <button type="button" className="wiki-cta-btn" onClick={onBuildWiki}>
-              开始构建 Wiki
-            </button>
-            {/* 库级问答 CTA —— 不建 Wiki 也能直接对话（ghost 次级样式，主推仍是构建 Wiki） */}
+            <div className="kb-empty-icon">{importFirst ? '📥' : '🏗'}</div>
+            <h3>{importFirst ? t('kb.emptyImportTitle') : t('kb.buildWikiTitle')}</h3>
+            <p>{importFirst ? t('kb.emptyImportBody') : t('kb.buildWikiBody')}</p>
+
+            <div className="kb-empty-actions">
+              {importFirst
+                ? [importButton(true), buildWikiButton(false)]
+                : [buildWikiButton(true), importButton(false)]}
+            </div>
+
+            {/* 库级问答 CTA —— 不建 Wiki 也能直接对话 */}
             {onAskAboutFile && (
-              <button type="button" className="wiki-cta-btn wiki-cta-btn--ghost" data-testid="kb-empty-ask-cta" onClick={onAskAboutFile}>
-                💬 与知识库问答
+              <button
+                type="button"
+                className="wiki-cta-btn wiki-cta-btn--ghost"
+                data-testid="kb-empty-ask-cta"
+                onClick={onAskAboutFile}
+              >
+                💬 {t('kb.askVault')}
               </button>
             )}
           </div>
         ) : (
           <div className="kb-empty-state">
             <div className="kb-empty-icon">📄</div>
-            <h3>未选择文件</h3>
-            <p>从左侧文件树中选择一个文件查看内容。</p>
+            <h3>{t('kb.noFileTitle')}</h3>
+            <p>{t('kb.noFileBody')}</p>
             {/* 库级问答 CTA —— 未打开文件时也能对话（样式复用「开始构建 Wiki」） */}
             {onAskAboutFile && (
               <button type="button" className="wiki-cta-btn" data-testid="kb-empty-ask-cta" onClick={onAskAboutFile}>
-                💬 与知识库问答
+                💬 {t('kb.askVault')}
               </button>
             )}
           </div>

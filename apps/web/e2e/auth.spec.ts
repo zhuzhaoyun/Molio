@@ -20,7 +20,7 @@
  */
 
 import { test, expect, type Page } from '@playwright/test';
-import { gotoHome } from './helpers/navigation';
+import { gotoHome, gotoChatSpa } from './helpers/navigation';
 
 const ACCOUNT_MODAL = '.account-modal';
 
@@ -188,7 +188,11 @@ test.describe('Login chain (requires configured daemon)', () => {
     await expect(input).not.toBeVisible();
 
     // 离开再回到 /me 仍是新昵称（数据源 = daemon 本地 token/权益快照）
-    await page.locator('[data-view="home"]').click();
+    //
+    // 原先点导航栏的 home 项离开——首页撤出导航栏后那个按钮不存在了。改用
+    // gotoChatSpa（pushState + popstate）走真 SPA 导航：**不能用整页 goto**，
+    // 页面被整个换掉同样会让「/me 卸载」这条断言假通过。
+    await gotoChatSpa(page);
     await expect(page.locator('[data-testid="me-page"]')).not.toBeVisible();
     await page.locator('[data-testid="nav-account-btn"]').click();
     await expect(page.locator('[data-testid="account-nickname"]')).toHaveText('E2E 墨流君');

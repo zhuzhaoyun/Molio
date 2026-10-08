@@ -183,7 +183,7 @@ export class ChannelDispatcher {
 
     // No reusable run — cancel any stale tracked run for this user, then spawn.
     if (state) {
-      this.deps.runManager.cancelRun(state.runId);
+      this.deps.runManager.cancelRun(state.runId, 'channel:stale-run-replaced');
       this.userRuns.delete(userId);
     }
     this.deps.conversations.appendUserMessage(conversationId, rawUserText);
@@ -262,7 +262,7 @@ export class ChannelDispatcher {
   cancelUser(userId: string): void {
     const state = this.userRuns.get(userId);
     if (!state) return;
-    this.deps.runManager.cancelRun(state.runId);
+    this.deps.runManager.cancelRun(state.runId, 'channel:cancel-user');
     this.userRuns.delete(userId);
   }
 
@@ -293,7 +293,7 @@ export class ChannelDispatcher {
       // queued follow-up spawns fresh instead of writing into a run that is
       // still grinding on the previous message.
       if (opts?.cancelRun) {
-        this.deps.runManager.cancelRun(runId);
+        this.deps.runManager.cancelRun(runId, 'channel:reply-timeout');
       }
       // Pull out <attach/> markers: those files are delivered as real IM
       // attachments; the markers are stripped from `cleanText` so the phone

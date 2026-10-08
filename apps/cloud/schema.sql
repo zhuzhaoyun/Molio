@@ -111,3 +111,47 @@ CREATE TABLE IF NOT EXISTS market_listings (
 CREATE INDEX IF NOT EXISTS market_listings_active_idx
   ON market_listings (published_at DESC) WHERE status = 'active';
 CREATE INDEX IF NOT EXISTS market_listings_user_idx ON market_listings (user_id, created_at DESC);
+
+-- Resource taxonomy: open registry, no DDL per new category/type.
+CREATE TABLE IF NOT EXISTS market_taxa (
+  id TEXT PRIMARY KEY,
+  kind TEXT NOT NULL CHECK (kind IN ('category','type')),
+  name TEXT NOT NULL CHECK (char_length(name) BETWEEN 1 AND 30),
+  position BIGSERIAL NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS market_taxa_kind_name ON market_taxa (kind, lower(name));
+INSERT INTO market_taxa (id,kind,name) VALUES
+ ('history-literature','category','历史与文学'), ('philosophy','category','哲学'),
+ ('medicine','category','医学'), ('law','category','法律'),
+ ('education','category','教育'), ('engineering','category','工程技术'),
+ ('knowledge','type','知识库') ON CONFLICT DO NOTHING;
+ALTER TABLE market_listings ADD COLUMN IF NOT EXISTS category_id TEXT REFERENCES market_taxa(id);
+ALTER TABLE market_listings ADD COLUMN IF NOT EXISTS resource_type_id TEXT REFERENCES market_taxa(id) DEFAULT 'knowledge';
+CREATE INDEX IF NOT EXISTS market_listings_category_idx ON market_listings(category_id) WHERE status = 'active';
+CREATE TABLE IF NOT EXISTS market_migrations (id TEXT PRIMARY KEY, applied_at TIMESTAMPTZ DEFAULT now());
+-- One-time explicit ID assignment, never reclassify resources on subsequent deployments.
+DO $$
+BEGIN
+  INSERT INTO market_migrations(id) VALUES ('20261002-resource-taxonomy') ON CONFLICT DO NOTHING;
+  IF FOUND THEN
+    UPDATE market_listings AS m SET category_id = v.category_id
+    FROM (VALUES ('01M3VY2DZXW6KN1X5AFP7PXJ05', 'history-literature'),
+      ('01M3VX66XMG5NHQ5HP9TK0Q2DC', 'engineering'),
+      ('01M10MC4S9ZH54WVFCXJWZ2JWS', 'philosophy'),
+      ('01M35RVX9S3TQK6ZE0QT9J6NG4', 'history-literature'),
+      ('01M35QEB3RMK46SGCQ6WSZ3GZR', 'engineering'),
+      ('01M112AA9MV91T3FJD5Z2GSPY8', 'medicine'),
+      ('01M10WWK7WNMM61QNJJJXHNWS2', 'history-literature'),
+      ('01M2QAYVBMH2YCF68BEA393BY4', 'law'),
+      ('01M2GAA83Q83CMQZPN40T9GQZ8', 'history-literature'),
+      ('01M2DFJ9E66FARK5SEBMPT92K0', 'education'),
+      ('01M13QT669Q6E94PWACEH00YJF', 'engineering'),
+      ('01M12YMV1144F4RZMX1HBK8GQ0', 'philosophy'),
+      ('01M1152PE8YE365S9ZXDMNYCW6', 'medicine'),
+      ('01M114523M19P4J7GZMZ7E6188', 'philosophy'),
+      ('01M111M5CSYX96FTKGC3V1QC2T', 'history-literature'),
+      ('01M110NNMKNWXKBXT01HVJ06ZW', 'history-literature'),
+      ('01M10RZP9118BA6YRBZ1D4FKM2', 'history-literature')) AS v(id,category_id)
+    WHERE m.id = v.id AND m.category_id IS NULL;
+  END IF;
+END $$;

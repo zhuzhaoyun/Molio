@@ -2,7 +2,7 @@
 // 资源市场服务：校验/限频/状态机/签发（设计 §五§六）。限频走 store 查询（同 auth 哲学）。
 // 价格 Plan 1 恒 0；管理员定价为 Plan 2。
 import {
-  MARKET_ICONS, MARKET_TINTS,
+  MARKET_ICONS, MARKET_TINTS, type MarketTaxon, type MarketTaxonomy,
   type MarketCreateRequest, type MarketCreateResponse, type MarketDownloadResponse,
   type MarketListing, type MarketMyListing, type MarketMyResponse,
   type MarketPurchase, type MarketPurchasesResponse, type MarketUploadTarget,
@@ -42,7 +42,7 @@ const MAX_PREVIEWS = 4;
 const MAX_PREVIEW_BYTES = 5 * 1024 * 1024;
 const UPLOAD_TTL_SEC = 60 * 60;
 const DOWNLOAD_TTL_SEC = 60 * 60;
-const LIST_LIMIT = 200;
+
 /** 单条上架设置价格上限（分=100 万元） */
 const MAX_PRICE_CENTS = 100_000_000;
 const STALE_UPLOADING_MS = 7 * 24 * 60 * 60 * 1000;
@@ -75,9 +75,29 @@ export class MarketService {
 
   // ── 公开查询 ──
 
+  async taxonomy(): Promise<MarketTaxonomy> {
+    const taxa = await this.deps.store.listTaxa();
+    return {categories: taxa.filter(t => t.kind === 'category'), types: taxa.filter(t => t.kind === 'type')};
+  }
+  async createTaxon(userId: string, input: {kind?: unknown; name?: unknown}): Promise<MarketTaxon> {
+    const user = await this.deps.users.findActiveUserById(userId);
+    if (!user || !this.isAdminEmail(user.email)) throw new MarketServiceError('not_owner', 403);
+    if (!input || (input.kind !== 'category' && input.kind !== 'type') || typeof input.name !== 'string') throw new MarketServiceError('invalid_metadata', 400);
+    const name = input.name.normalize('NFKC').trim().replace(/\s+/g, ' ');
+    if (!name || cpLen(name) > 30 || /[\u0000-\u001f\u007f]/.test(name)) throw new MarketServiceError('invalid_metadata', 400);
+    return this.deps.store.createTaxon({id:ulid(this.now), kind: input.kind, name, position:0});
+  }
+  private async validateTaxa(input: {categoryId?: unknown; resourceTypeId?: unknown}): Promise<void> {
+    const taxa = await this.deps.store.listTaxa();
+    for (const [key, kind] of [['categoryId','category'],['resourceTypeId','type']] as const) {
+      const id = input[key];
+      if (id !== undefined && (typeof id !== 'string' || !taxa.some(t => t.id === id && t.kind === kind))) throw new MarketServiceError('invalid_metadata', 400);
+    }
+  }
   async list(): Promise<MarketListing[]> {
-    const recs = await this.deps.store.listActiveListings(LIST_LIMIT);
-    return Promise.all(recs.map((r) => this.toPublic(r)));
+    const recs = await this.deps.store.listActiveListings();
+    const taxa = await this.deps.store.listTaxa();
+    return Promise.all(recs.map((r) => this.toPublic(r, taxa)));
   }
 
   async get(id: string): Promise<MarketListing> {
@@ -104,6 +124,7 @@ export class MarketService {
   async create(userId: string, req: MarketCreateRequest): Promise<MarketCreateResponse> {
     const { store, config: { market } } = this.deps;
     this.validateMetadata(req);
+    await this.validateTaxa(req);
     const user = await this.deps.users.findActiveUserById(userId);
     const admin = user !== null && this.isAdminEmail(user.email);
     if (!admin) {
@@ -125,6 +146,7 @@ export class MarketService {
     const priceCents = admin && Number.isInteger(req.priceCents) ? Math.max(0, req.priceCents!) : 0;
     const rec: MarketListingRecord = {
       id, userId, source: 'community',
+      categoryId: req.categoryId ?? null, resourceTypeId: req.resourceTypeId ?? 'knowledge',
       name: req.name.trim(), icon: req.icon, tint,
       summary: req.summary.trim(),
       overview: [], highlights: [],
@@ -220,6 +242,8 @@ export class MarketService {
       previews = urls;
     }
     const updated = await this.deps.store.updateListing(rec.id, {
+      ...(pend.categoryId !== undefined ? {categoryId: pend.categoryId} : {}),
+      ...(pend.resourceTypeId !== undefined ? {resourceTypeId: pend.resourceTypeId} : {}),
       version: bumpVersion(rec.version), previews, pendingUpdate: null,
       publishedAt: this.now,
       ...(pend.name !== undefined ? { name: pend.name } : {}),
@@ -239,10 +263,13 @@ export class MarketService {
     summary?: string;
     icon?: string;
     tags?: string[];
+    categoryId?: string;
+    resourceTypeId?: string;
   }): Promise<MarketCreateResponse> {
     const rec = await this.mustFind(listingId);
     if (rec.userId !== userId) throw new MarketServiceError('not_owner', 403);
     if (rec.status !== 'active') throw new MarketServiceError('listing_not_found', 404);
+    await this.validateTaxa(input);
     const previews = input.previews ?? [];
     if (previews.length > MAX_PREVIEWS || previews.some((p) => !(p.ext in PREVIEW_EXT_CT) || !(p.size > 0) || p.size > MAX_PREVIEW_BYTES)) {
       throw new MarketServiceError('invalid_metadata', 400);
@@ -263,6 +290,8 @@ export class MarketService {
       }
     }
     const pending: MarketPendingUpdate = {
+      ...(input.categoryId !== undefined ? {categoryId: input.categoryId} : {}),
+      ...(input.resourceTypeId !== undefined ? {resourceTypeId: input.resourceTypeId} : {}),
       previews: previews.map((p, i) => ({ key: `next/${rec.id}-p${i + 1}${p.ext}` })),
     };
     if (input.name !== undefined) pending.name = input.name.trim();
@@ -392,9 +421,13 @@ export class MarketService {
     return rec;
   }
 
-  private async toPublic(rec: MarketListingRecord): Promise<MarketListing> {
+  private async toPublic(rec: MarketListingRecord, knownTaxa?: MarketTaxon[]): Promise<MarketListing> {
+    const taxa = knownTaxa ?? await this.deps.store.listTaxa();
     const u = await this.deps.users.findActiveUserById(rec.userId);
     return {
+      categoryId: rec.categoryId ?? null, resourceTypeId: rec.resourceTypeId ?? "knowledge",
+      category: taxa.find(t => t.kind === "category" && t.id === rec.categoryId) ?? null,
+      resourceType: taxa.find(t => t.kind === "type" && t.id === (rec.resourceTypeId ?? "knowledge")) ?? null,
       id: rec.id, source: rec.source, name: rec.name, icon: rec.icon, tint: rec.tint,
       summary: rec.summary, overview: rec.overview, highlights: rec.highlights, tags: rec.tags,
       previews: rec.previews, version: rec.version, priceCents: rec.priceCents, payUrl: rec.payUrl,

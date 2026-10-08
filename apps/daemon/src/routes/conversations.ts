@@ -127,7 +127,7 @@ export function conversationRoutes(
       runManager.getRunContext(point.activeRunId) &&
       !runManager.isTerminal(point.activeRunId)
     ) {
-      runManager.cancelRun(point.activeRunId);
+      runManager.cancelRun(point.activeRunId, 'conversation:rewind-resend');
     }
 
     // Resolve agentId: body > last assistant message's agentId.

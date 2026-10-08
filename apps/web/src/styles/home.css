@@ -332,3 +332,73 @@
   padding: 0 2px;
   line-height: 1;
 }
+
+/* ── 首次运行引导卡（零知识库时的主页首屏）────────────────────────────
+   客户在这里卡了一个多小时：主页是聊天框，全程没提过知识库。卡片把
+   「建库 → 导入」这条第一步显式摆出来。视觉沿用 .home-no-runtime 的
+   卡片配方（同宽、同边框、同阴影、同入场动画），保持主页观感一致。 */
+.home-onboarding {
+  width: 100%;
+  max-width: 520px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background-color: var(--bg-panel);
+  box-shadow: 0 4px 24px rgba(26, 25, 23, 0.06), 0 1px 3px rgba(26, 25, 23, 0.04);
+  padding: 20px 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  text-align: left;
+  animation: no-runtime-card-in 280ms ease-out both;
+}
+.home-onboarding__head {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.home-onboarding__icon {
+  font-size: 20px;
+  line-height: 1.2;
+}
+.home-onboarding__title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+  margin: 0 0 4px;
+}
+.home-onboarding__body {
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text-muted);
+  margin: 0;
+}
+.home-onboarding__close {
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 18px;
+  line-height: 1;
+  padding: 0 2px;
+  cursor: pointer;
+}
+.home-onboarding__close:hover {
+  color: var(--text);
+}
+.home-onboarding__steps {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+/* 复用 base.css 的 button.primary（accent 底 / hover→accent-hover），同
+   .home-no-runtime__btn 只覆写尺寸与圆角。 */
+.home-onboarding__cta {
+  align-self: flex-start;
+  border-radius: var(--radius);
+  padding: 9px 18px;
+  font-size: 14px;
+}

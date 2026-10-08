@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import * as fs from 'fs';
 import * as path from 'path';
-import { gotoHome, clickNav } from './helpers/navigation';
+import { gotoHome, gotoChatSpa, clickNav } from './helpers/navigation';
 import { createTempVault, cleanupTempVault, type TempVault } from './helpers/cleanup';
 
 /**
@@ -54,7 +54,7 @@ test.describe('KB large-file CodeMirror viewer', () => {
     await expect(statusBar).toContainText('KB');
 
     // UI remains responsive: navigating away should immediately leave KB view.
-    await clickNav(page, 'home');
+    await gotoChatSpa(page);
     await expect(page.locator('.kb-shell')).toHaveCount(0, { timeout: 5_000 });
   });
 });

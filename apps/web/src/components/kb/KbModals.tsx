@@ -7,6 +7,7 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import type { Vault } from '@molio/contracts';
 import { MAX_IMPORT_FILE_SIZE } from '@molio/contracts';
 import { api } from '../../api/client';
+import { useI18n } from '../../i18n';
 
 // ═══════════════════════════════════════════
 // Vault Switcher Modal
@@ -254,6 +255,7 @@ interface ImportedFile {
 }
 
 export function ImportModal({ show, vaultName, vaultId, onClose, onImportComplete }: ImportModalProps) {
+  const { t } = useI18n();
   const [files, setFiles] = useState<ImportedFile[]>([]);
   const [importing, setImporting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -358,7 +360,8 @@ export function ImportModal({ show, vaultName, vaultId, onClose, onImportComplet
     <div className={`kb-overlay ${show ? 'show' : ''}`} onClick={(e) => e.target === e.currentTarget && onClose()}>
       <div className="kb-modal" style={{ width: 500 }}>
         <div className="kb-modal-header">
-          <h2>Import Knowledge</h2>
+          {/* 带上库名——用户最需要确认的正是「这些文件会落到哪儿」 */}
+          <h2>{vaultName ? t('kb.importTitleInto', { name: vaultName }) : t('kb.importTitle')}</h2>
           <button className="kb-modal-close" onClick={onClose}>&times;</button>
         </div>
         <div className="kb-modal-body">
@@ -372,10 +375,10 @@ export function ImportModal({ show, vaultName, vaultId, onClose, onImportComplet
           >
             <div style={{ fontSize: 32, marginBottom: 8, opacity: 0.4 }}>📦</div>
             <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)', marginBottom: 4 }}>
-              Drop files here or click to browse
+              {t('kb.importDropHint')}
             </div>
             <div style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>
-              Supports .md, .pdf, .txt, .docx, .html, images, and more
+              {t('kb.importFormats')}
             </div>
             <input
               ref={fileInputRef}
@@ -391,7 +394,7 @@ export function ImportModal({ show, vaultName, vaultId, onClose, onImportComplet
           {files.length > 0 && (
             <div style={{ marginBottom: 16 }}>
               <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>
-                Selected Files
+                {t('kb.importSelected')}
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 3, maxHeight: 140, overflowY: 'auto' }}>
                 {files.map((f, i) => (
@@ -416,13 +419,14 @@ export function ImportModal({ show, vaultName, vaultId, onClose, onImportComplet
           )}
         </div>
         <div className="kb-modal-footer">
-          <button className="kb-btn kb-btn-ghost" onClick={onClose}>Cancel</button>
+          <button className="kb-btn kb-btn-ghost" onClick={onClose}>{t('common.cancel')}</button>
           <button
             className="kb-btn kb-btn-primary"
+            data-testid="kb-import-submit"
             onClick={handleImport}
             disabled={files.filter((f) => !f.error).length === 0 || importing}
           >
-            {importing ? 'Importing...' : 'Import Files'}
+            {importing ? t('kb.importing') : t('kb.importFiles')}
           </button>
         </div>
       </div>

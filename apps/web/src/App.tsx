@@ -1,10 +1,11 @@
 import { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense } from 'react';
-import { Routes, Route, useNavigate, useLocation } from 'react-router-dom';
+import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { useAgents } from './hooks/useAgents';
 import { useChat } from './hooks/useChat';
 import { HomePage } from './components/HomePage';
 
 import { NavRail } from './components/NavRail';
+import { FloatingChatButton } from './components/kb/FloatingChatButton';
 import { KbChatSessionsPanel, type KbChatSessionsPanelHandle } from './components/kb/KbChatSessionsPanel';
 import { UpdateNotification } from './components/UpdateNotification';
 import { PreloadToast } from './components/PreloadToast';
@@ -23,6 +24,7 @@ import { messageSelectionStore } from './stores/messageSelectionStore';
 import { kbChatSessionsStore } from './stores/kbChatSessionsStore';
 import { usePendingPrefill, skillPrefillStore } from './stores/skillPrefillStore';
 import { SkillEditor, type SkillFormValues } from './components/settings/SkillEditor';
+import { DEFAULT_ROUTE, CHAT_ROUTE, RESTORABLE_ROUTES } from './routes';
 import './styles/rail.css';
 import './styles/home.css';
 import './styles/knowledge.css';
@@ -53,6 +55,32 @@ const ResourceDetailPage = lazy(() =>
   import('./components/resources/ResourceDetailPage').then((m) => ({ default: m.ResourceDetailPage })));
 
 const STORAGE_KEY_LAST_ROUTE = 'molio.lastRoute';
+
+/**
+ * `/` 的渲染：redirect 到「上次访问的路由」，没有则落到默认落点。
+ *
+ * 两条防线：
+ * - 老版本里 `/` 就是首页，会被写进 `molio.lastRoute`。把它当合法目标会自我重定向成死循环，
+ *   所以 `/` 天然不在 RESTORABLE_ROUTES 里。
+ * - 值必须命中白名单（允许带子路径，如 `/resources/xxx`），脏数据一律回落默认落点。
+ *
+ * query 原样带过去：`?vault=` / `?file=` 是跨路由的深链参数
+ * （`vaultStore` 与 `KnowledgeBasePage` 都从 URL 读），在入口丢掉等于把
+ * 「打开某库的某个文件」降级成「打开某库」。
+ */
+function EntryRedirect() {
+  const { search } = useLocation();
+  const target = useMemo(() => {
+    try {
+      const last = localStorage.getItem(STORAGE_KEY_LAST_ROUTE);
+      if (last && RESTORABLE_ROUTES.some((r) => last === r || last.startsWith(`${r}/`))) {
+        return last;
+      }
+    } catch { /* ignore */ }
+    return DEFAULT_ROUTE;
+  }, []);
+  return <Navigate to={{ pathname: target, search }} replace />;
+}
 
 /** 切 vault 后会话重置的 transient 提示条（必须渲染在 LanguageProvider 内取 useI18n）。 */
 function VaultSwitchNotice({ visible }: { visible: boolean }) {
@@ -124,8 +152,10 @@ export default function App() {
     }
   }, []);
 
-  // Persist current route on change
+  // Persist current route on change. `/` 是入口地址而非页面，写进去会让下次冷启动
+  // 恢复到一个自我重定向的目标——不记。
   useEffect(() => {
+    if (location.pathname === '/') return;
     try {
       localStorage.setItem(STORAGE_KEY_LAST_ROUTE, location.pathname);
     } catch { /* ignore */ }
@@ -133,7 +163,15 @@ export default function App() {
 
   // 路由切换 → 悬浮对话读取当前页面
   useEffect(() => {
-    const page = location.pathname.replace('/', '') as CurrentContext['page'];
+    // 原「首页」路由是 `/`，replace 后得到空串，会被判成 'other' —— 'home' 这个取值因此永远不可达。
+    // 显式特判，让 'home' 真正生效（悬浮面板据此跳过主页：见 KbChatSessionsPanel 的 dock effect）。
+    const path = location.pathname;
+    const page: CurrentContext['page'] = path === CHAT_ROUTE
+      ? 'home'
+      // 入口地址转瞬即走（EntryRedirect 是声明式重定向），归 'other' 以免被当成主页。
+      : path === '/'
+        ? 'other'
+        : path.replace('/', '') as CurrentContext['page'];
     const known: CurrentContext['page'][] = ['knowledge', 'home', 'history', 'graph', 'settings'];
     currentContextStore.set({
       page: known.includes(page) ? page : 'other',
@@ -148,25 +186,15 @@ export default function App() {
     return () => window.removeEventListener(OPEN_RUNTIME_SETTINGS_EVENT, handler);
   }, [navigate]);
 
-  // 入口收敛（暂时屏蔽右下角悬浮按钮）：面板只在 KB 页经 💬问答 等入口唤起。
-  // 离开 /knowledge 时若面板开着则自动收起——后台任务继续但不可见，回 KB 可重新唤起。
+  // 面板在除整页对话外的任意页面常驻可用（方案 D）：跨页保持开启，后台任务继续且可见。
+  // 唯独到达 `/chat` 时收起——它自身就是一个聊天页（占满整屏的 HomePage），
+  // 再叠一个悬浮对话会在同屏出现两个聊天框。
+  // 第 3 步 `/chat` 也不再是聊天页后，本 effect 与下方渲染处的例外一并删除。
   useEffect(() => {
-    if (location.pathname !== '/knowledge') {
+    if (location.pathname === CHAT_ROUTE) {
       kbChatSessionsStore.setPanelOpen(false);
     }
   }, [location.pathname]);
-
-  // On mount, restore last route (only if at root "/")
-  useEffect(() => {
-    if (location.pathname === '/') {
-      try {
-        const lastRoute = localStorage.getItem(STORAGE_KEY_LAST_ROUTE);
-        if (lastRoute && lastRoute !== '/') {
-          navigate(lastRoute, { replace: true });
-        }
-      } catch { /* ignore */ }
-    }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // In-page navigation from molio:// protocol (desktop main → renderer IPC).
   // When a clip lands and molio://open/... fires while the app is already open,
@@ -312,8 +340,12 @@ export default function App() {
           {/* fallback=null：懒路由 chunk 本地加载是毫秒级，闪 skeleton 反而抖动。 */}
           <Suspense fallback={null}>
           <Routes>
+            {/* 入口：不渲染页面，只决定去哪（默认知识库 / 恢复上次路由）。
+                必须是独立路由而非「挂载时重定向」effect —— 后者会让 `/` 这个地址
+                在恢复完成后失效，深链与硬导航都会落到 NotFound。 */}
+            <Route path="/" element={<EntryRedirect />} />
             <Route
-              path="/"
+              path={CHAT_ROUTE}
               element={
                 <HomePage
                   selectedAgentName={agents.find((a) => a.id === selectedAgent)?.name ?? null}
@@ -345,9 +377,9 @@ export default function App() {
               element={
                 <HistoryPage
                   onOpenConversation={(conversationId) => {
-                    // 恢复旧行为：加载到首页聊天 → 跳转首页呈现（撤销方案 D 的「就地打开面板」）。
+                    // 恢复旧行为：加载到整页对话 → 跳转过去呈现（撤销方案 D 的「就地打开面板」）。
                     void chat.loadConversationById(conversationId).then(() => {
-                      navigate('/');
+                      navigate(CHAT_ROUTE);
                     });
                   }}
                   onDeleteConversations={handleConversationsDeleted}
@@ -365,8 +397,10 @@ export default function App() {
           </Suspense>
         </div>
         {/* 全局悬浮对话面板（方案 D）：面板常驻挂载 + CSS --closed 隐藏，保 ref 恒有效。
-            右下角悬浮按钮已暂时屏蔽（Task 6）——面板只在 KB 页经 💬问答 等入口唤起，
-            离开 /knowledge 自动收起（见上方 effect）。FloatingChatButton 组件保留待回退。 */}
+            悬浮按钮在除整页对话外的任意页面显示——那里自己就是聊天页，按钮等于第二个聊天框；
+            面板展开时按钮自动让位（FloatingChatButton 在 panelOpen 时返回 null）。
+            `/`（入口）也排除：它转瞬即走，挂上会闪一帧。 */}
+        {location.pathname !== CHAT_ROUTE && location.pathname !== '/' && <FloatingChatButton />}
         <KbChatSessionsPanel
           ref={kbChatPanelRef}
           agentId={selectedAgent}
