@@ -471,7 +471,7 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
   }, [clearInlinePos, setDockMode]);
 
   // 会话的 imperative API 与 running 状态由 App 层 Provider 持有（面板是否渲染与状态解耦）。
-  const { getApi, runningMap } = useKbChatSessionApi();
+  const { getApi, runningMap, loadError } = useKbChatSessionApi();
   const pendingWikiRef = useRef<WikiOpOpts | null>(null);
   // 新开的 wiki 会话尚未 mount（API 未注册）时缓存待自动发送的提示词。
   // Provider 在 App 里渲染于面板**之前**，同一 commit 内 Provider 的 controller 先注册 API、
@@ -510,6 +510,11 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
     setToast(msg);
     window.setTimeout(() => setToast(null), 2000);
   }, []);
+
+  // Provider 关了历史加载失败的标签 → 在这里给用户可见反馈（非取巧：面板提供 toast DOM）。
+  useEffect(() => {
+    if (loadError) showToast('该会话已不存在或无法加载，已关闭标签');
+  }, [loadError, showToast]);
 
   // ─── 命令下发 ───
   const wikiPrompt = useCallback((opts: WikiOpOpts) => {

@@ -656,6 +656,33 @@ test.describe('Floating chat (方案 D)', () => {
       .not.toHaveText(textBefore, { timeout: 10_000 });
   });
 
+  test('历史加载失败：关闭标签并弹出提示（load-error toast）', async ({ page }) => {
+    // 回归：controller 上移到 App 层 Provider 后，「历史加载失败」的用户反馈不能丢 ——
+    // Provider 无 DOM，提示经 context（loadError）交给面板渲染。
+    await mockChatRun(page);
+    // 覆盖 mock 的默认「200 空历史」：让该会话的历史加载失败（会话已不存在 / 404）。
+    // 后注册的同 URL 路由优先。
+    await page.route('**/api/conversations/test-conv-1/messages', (route) =>
+      route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ error: 'not found' }) }));
+
+    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+    await page.locator('[data-testid="kb-btn-ask"]').click();
+    const panel = page.locator('[data-testid="kb-chat-panel"]');
+    await panel.locator('[data-testid="composer-input"]').fill('触发历史加载失败');
+    await page.locator('[data-testid="composer-send"]').click();
+    // 发送后标签带上后端返回的 conversationId（test-conv-1），标签持久化到 localStorage
+    await expect(page.locator('[data-testid="kb-chat-session-tab"]')).toHaveCount(1);
+
+    // 重载：会话从 localStorage 恢复，controller 挂载即按其 conversationId 从 DB 加载历史 → 404
+    await page.reload();
+
+    // ① 标签被关闭；② 用户可见提示出现（面板 DOM 常驻，收起态也渲染该元素）
+    await expect(page.locator('[data-testid="kb-notice"]'))
+      .toHaveText('该会话已不存在或无法加载，已关闭标签', { timeout: 10_000 });
+    await expect(page.locator('[data-testid="kb-chat-session-tab"]')).toHaveCount(0);
+  });
+
   test('KB 页经 💬问答 打开默认停靠（页内分栏）', async ({ page }) => {
     await mockChatRun(page);
     await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
