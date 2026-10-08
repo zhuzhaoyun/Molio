@@ -126,6 +126,19 @@
   transform: scale(0.96);
 }
 
+/* 发布面板占住 KB 右侧 pane 时，悬浮按钮让位。
+   发布面板（PublishForm variant="page"）的页脚把主动作右对齐在底部，正好压在悬浮按钮
+   （fixed right/bottom 24px、52px、z-index 90）底下：按钮会把点击整个吃掉，**真实用户
+   点不到「发布」**，不只是 E2E 点不到（截图里「发布」被完全盖住）。
+   与「面板展开时按钮返回 null」同一套让位原则。差别只在判定来源：发布 pane 的开合在
+   useKbTabs 的 per-vault store 里，App 读不到，为它提一个全局 store 不值得——这是纯外观
+   事实，从 DOM 判定即可（`:has()` 本仓库已有先例，见 graph.css 的 `.entry-main:has(.graph-page)`）。
+   注意 `.kb-pane--closed` 只是 visibility:hidden，仍会被 `:has()` 命中，必须显式排除，
+   否则发布 tab 只是存在（切到别的 tab）时会白白藏掉按钮。 */
+body:has(.kb-pane:not(.kb-pane--closed) .kb-publish-pane) .floating-chat-btn {
+  display: none;
+}
+
 /* 拖拽调整宽度：面板左缘 8px 命中区，hover/拖动时显示 2px 陶土色抓握条。
    拖拽期间给 body 加全局 col-resize 光标并禁用文本选择（配合 setPointerCapture）。 */
 .floating-chat-resize-handle {

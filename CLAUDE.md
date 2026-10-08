@@ -254,9 +254,28 @@ CI 在 `macos-latest` (Apple Silicon) 上验证打包后可启动。Intel Mac �
 git checkout main && git pull origin main
 git checkout -b feat/功能名称   # 或 fix/、refactor/、chore/、docs/
 git add . && git commit -m "feat(scope): 描述"
+# ↓ push 前强制过 OCR 自检（见下节）：Claude 用 ocr delegate 审 diff、修掉真问题再推
 git push -u origin feat/功能名称
 gh pr create --title "feat: 功能描述" --base main
 ```
+
+### Push 前 OCR 自检（强制）
+
+**核心原则**：每次 `git push` 之前，必须先跑一遍 OpenCodeReview（OCR）对**将要推送的改动**做自检，把明显问题在本地改掉，而不是等 PR review 阶段才暴露、再回头扰动已评审过的代码。本地自检与 CI 的 `.github/workflows/ocr-review.yml` 用**同一套规则**，等于提前消化 review 意见。
+
+**Claude Code 的执行方式（无需本地 LLM 凭据）**：push 前用 `ocr delegate` 导出改动清单与命中的审查规则，由 Claude 亲自比对 diff 逐条审查，发现的真问题先修复再 push。
+
+```bash
+ocr delegate preview --from origin/main --to HEAD   # 列出将推送的可审查文件（增量 push 可改 --from @{upstream}）
+ocr delegate rule <上一步列出的文件...>               # 导出这些文件命中的审查规则
+# → Claude 依据规则审查 git diff，修复真问题后再 git push
+```
+
+**其他工具 / 人工的执行方式**：见仓库根 `AGENTS.md`（跨工具版标准，含 `ocr review` 全自动审查的凭据配置与命令）。
+
+**行为约定**：默认**只报告不硬拦**——OCR 偶有误报，是否修复由提交人判断。这是文档规范，本身不会技术上阻止 push（真要强制拦截需 git pre-push 钩子，本项目暂未启用）。
+
+> ⚠️ CLAUDE.md 只自动约束 Claude Code。为让 Codex/Cursor 等其他工具也读到这条标准，已同步写入根目录 `AGENTS.md`；两份的「代码提交标准」改动需保持一致。
 
 ### 分支命名
 
