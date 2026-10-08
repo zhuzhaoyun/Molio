@@ -29,10 +29,19 @@ export function ssrRoutes(deps: SsrRoutesDeps): Hono {
     const id = raw.slice(0, -'.html'.length);
     try {
       const listing = await deps.service.get(id);
-      // 相关商品：全量列表排除自身取前 6；取失败不影响主内容（空即可）
-      const related = await deps.service.list()
-        .then((all) => all.filter((l) => l.id !== id).slice(0, 6))
-        .catch(() => []);
+      // 相关商品：**优先同分类**，不足 6 个再用其它补齐；取失败不影响主内容（空即可）。
+      //
+      // 2026-10-07 改：原实现是「全量列表排除自身取前 6」，那与当前商品毫无关系——
+      // 实测两个免费款详情页（周易 / 老庄）的「相关资源」是完全相同的 6 个，
+      // 因为所有页面看到的都是列表顺序最前那 6 个。这既不是「相关」，也起不到导流作用。
+      // 改成按 categoryId 分组后，同题材商品会浮到前面（例：哲学免费款先带出哲学付费款）。
+      const all = await deps.service.list().catch(() => []);
+      const pool = all.filter((l) => l.id !== id);
+      const sameCategory = listing.categoryId
+        ? pool.filter((l) => l.categoryId === listing.categoryId)
+        : [];
+      const others = pool.filter((l) => !sameCategory.includes(l));
+      const related = sameCategory.concat(others).slice(0, 6);
       c.header('Cache-Control', PAGE_CACHE);
       return c.html(renderProductPage(listing, related));
     } catch (e) {
