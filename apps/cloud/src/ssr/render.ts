@@ -182,7 +182,8 @@ const DELIVERY_BOUNDARY = `<p class="res-boundary"><strong>这是一份 Markdown
         不包含程序、模型权重或 AI 调用服务。买到的是一个解压即可阅读的文件夹。</p>
       <p class="res-boundary">解压后，Obsidian 与 Molio（墨流）可以直接打开；
         <strong>放进你自己的环境，Claude Code、Codex 这类 Agent 也能直接读它</strong>。
-        这是它和电子书最根本的区别。</p>`;
+        这是它和电子书最根本的区别。
+        <strong>数据全程在你自己电脑上，不需要上传，也不需要注册任何服务。</strong></p>`;
 
 function renderCta(m: MarketListing): { cta: string; note: string } {
   const price = formatPriceYuan(m.priceCents);
