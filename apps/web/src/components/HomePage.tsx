@@ -1,16 +1,10 @@
-import { useRef, useEffect, useCallback, useMemo, useState, lazy, Suspense } from 'react';
+import { useCallback, useState, lazy, Suspense } from 'react';
 import { ChatComposer, buildAttachmentPrefix } from './ChatComposer';
 import type { PastedImage } from './ChatComposer';
-import { UserMessage } from './UserMessage';
-import { AssistantMessage } from './AssistantMessage';
-import { findLastAssistant } from '../utils/workSteps';
 import { useI18n } from '../i18n';
-import { useSelectMode, messageSelectionStore } from '../stores/messageSelectionStore';
-import { SelectionConfirmBar } from './SelectionConfirmBar';
 import type { ChatMessage } from '../hooks/useChat';
-import { RunStatusBar } from './RunStatusBar';
-import { ActivityTree } from './ActivityTree';
 import type { ActivityInfo } from '@molio/contracts';
+import { ChatSessionView } from './ChatSessionView';
 import { PanelIcon } from './icons';
 import { NoRuntimeCard } from './NoRuntimeCard';
 import { AgentsUnavailableCard } from './AgentsUnavailableCard';
@@ -89,9 +83,6 @@ export function HomePage({
   onDeleteMessages,
 }: Props) {
   const { t } = useI18n();
-  const logRef = useRef<HTMLDivElement>(null);
-  const bottomRef = useRef<HTMLDivElement>(null);
-  const selectMode = useSelectMode();
 
   const [dockOpen, setDockOpen] = useState<boolean>(readDockOpen);
   const toggleDock = useCallback(() => {
@@ -101,35 +92,6 @@ export function HomePage({
       return next;
     });
   }, []);
-
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages.length, messages[messages.length - 1]?.content]);
-
-  // Prune stale selected ids whenever the message set changes (streaming,
-  // regenerate, etc. may have removed a selected bubble).
-  useEffect(() => {
-    const present = new Set(messages.map((m) => m.id));
-    messageSelectionStore.pruneStale(present);
-  }, [messages]);
-
-  // Find the last assistant message ID so only that card stays interactive
-  const lastAssistant = useMemo(() => findLastAssistant(messages), [messages]);
-  const lastAssistantId = lastAssistant?.id ?? null;
-
-  // Wire onAnswerToolUse: route tool_result back to the open stream-json child
-  const onAnswerToolUse = useCallback(
-    async (toolUseId: string, content: string) => {
-      if (!onSubmitToolResult) return false;
-      try {
-        await onSubmitToolResult(toolUseId, content);
-        return true;
-      } catch {
-        return false;
-      }
-    },
-    [onSubmitToolResult],
-  );
 
   // Wrap onSend to handle pastedImages → message prefix. Inline @/skill refs
   // in `message` were already expanded by ChatComposer before send.
@@ -203,78 +165,24 @@ export function HomePage({
           </div>
         </div>
 
-        {/* Chat log */}
-        <div className="home-chat-log" ref={logRef}>
-          {messages.map((msg) => {
-            if (msg.role === 'user') {
-              const isLastUser = (() => {
-                for (let i = messages.length - 1; i >= 0; i--) {
-                  if (messages[i]!.role === 'user') return messages[i]!.id === msg.id;
-                }
-                return false;
-              })();
-              return (
-                <UserMessage
-                  key={msg.id}
-                  message={msg}
-                  isLast={isLastUser}
-                  onEdit={onEdit}
-                  disabled={isRunning}
-                  onRequestDelete={onRequestDelete}
-                />
-              );
-            }
-            if (msg.role === 'assistant') {
-              return (
-                <AssistantMessage
-                  key={msg.id}
-                  message={msg}
-                  isLast={msg.id === lastAssistantId}
-                  onAnswerToolUse={onSubmitToolResult ? onAnswerToolUse : undefined}
-                  onSubmitForm={onSubmitForm ?? ((text: string) => handleSend(text, []))}
-                  onRegenerate={msg.id === lastAssistantId ? onRegenerate : undefined}
-                  onContinue={msg.id === lastAssistantId ? onContinue : undefined}
-                  onRequestDelete={onRequestDelete}
-                />
-              );
-            }
-            if (msg.role === 'error') {
-              return (
-                <div key={msg.id} className="msg error">
-                  {msg.content}
-                </div>
-              );
-            }
-            return null;
-          })}
-          <div ref={bottomRef} />
-        </div>
-
-        {/* 后台 subagent/workflow 活动树（activity SSE 事件驱动） */}
-        <ActivityTree activity={activity ?? null} />
-
-        {/* 进度状态条: 只在 run 运行时显示 */}
-        <RunStatusBar messages={messages} isRunning={isRunning} />
-
-        {/* Composer at the bottom — hidden in selection mode, replaced by the
-            confirm bar (input and delete are mutually exclusive). */}
-        <div className="home-composer-bar">
-          {selectMode ? (
-            <SelectionConfirmBar
-              onDelete={async () => {
-                const ids = [...messageSelectionStore.getSelectedIds()];
-                try {
-                  await onDeleteMessages?.(ids);
-                } finally {
-                  messageSelectionStore.exit();
-                }
-              }}
-              onCancel={() => messageSelectionStore.exit()}
-            />
-          ) : (
-            composerArea
-          )}
-        </div>
+        <ChatSessionView
+          messages={messages}
+          isRunning={isRunning}
+          activity={activity}
+          onSend={onSend}
+          onSubmitForm={onSubmitForm}
+          onCancel={onCancel}
+          onSubmitToolResult={onSubmitToolResult}
+          onRegenerate={onRegenerate}
+          onEdit={onEdit}
+          onContinue={onContinue}
+          onRequestDelete={onRequestDelete}
+          onDeleteMessages={onDeleteMessages}
+          composerKey="home"
+          composerArea={composerArea}
+          onOpenConversation={onOpenConversation}
+          onDeleteConversations={onDeleteConversations}
+        />
         </div>
 
       {dockOpen && (
