@@ -491,6 +491,34 @@
     "chat-work-visibility": {
       "priority": "P1",
       "file": "chat-work-visibility.spec.ts"
+    },
+    "chat-continue": {
+      "priority": "P1",
+      "file": "chat-continue.spec.ts"
+    },
+    "chat-save-kb": {
+      "priority": "P1",
+      "file": "chat-save-kb.spec.ts"
+    },
+    "chat-timeout-fallback": {
+      "priority": "P1",
+      "file": "chat-timeout-fallback.spec.ts"
+    },
+    "composer-hints": {
+      "priority": "P1",
+      "file": "composer-hints.spec.ts"
+    },
+    "model-switcher": {
+      "priority": "P1",
+      "file": "model-switcher.spec.ts"
+    },
+    "kb-open-vault-error": {
+      "priority": "P1",
+      "file": "kb-open-vault-error.spec.ts"
+    },
+    "kb-vault-list-menu": {
+      "priority": "P1",
+      "file": "kb-vault-list-menu.spec.ts"
     }
   }
 }
