@@ -244,9 +244,46 @@ CI 在 `macos-latest` (Apple Silicon) 上验证打包后可启动。Intel Mac �
 git checkout main && git pull origin main
 git checkout -b feat/功能名称   # 或 fix/、refactor/、chore/、docs/
 git add . && git commit -m "feat(scope): 描述"
+# ↓ push 前强制过 OCR 自检（见下节）：审 diff、修掉真问题再推
 git push -u origin feat/功能名称
 gh pr create --title "feat: 功能描述" --base main
 ```
+
+### Push 前 OCR 自检（强制）
+
+**核心原则**：每次 `git push` **之前**，先对**将要推送的改动**跑一遍 [OpenCodeReview](https://github.com/alibaba/open-code-review)（OCR），把明显问题在本地改掉，而不是等 PR review 阶段才暴露、再回头扰动已评审过的代码。本地自检与 CI 的 `.github/workflows/ocr-review.yml` 用**同一套规则**，等于提前消化 review 意见。
+
+**前置**：安装 CLI（一次即可）
+
+```bash
+npm install -g @alibaba-group/open-code-review
+```
+
+**方式 A — 全自动审查（`ocr review`，需本地配一次 LLM 凭据）**
+
+```bash
+# 一次性配置（值取自团队提供的 OCR_LLM_*，切勿提交进仓库）
+ocr config set llm.url        "<OCR_LLM_URL>"
+ocr config set llm.auth_token "<OCR_LLM_AUTH_TOKEN>"
+ocr config set llm.model      "<OCR_LLM_MODEL>"
+
+# push 前审查将推送的改动（增量 push 可改 --from @{upstream}）
+ocr review --from origin/main --to HEAD --audience agent
+```
+
+**方式 B — 宿主 agent 自审（`ocr delegate`，无需 LLM 凭据）**
+
+适用于本身就是 LLM agent 的工具（Claude Code、Codex 等）：由 OCR 导出改动清单与命中的审查规则，agent 自己比对 diff 审查。**Claude Code 默认走这条路**（见 `CLAUDE.md`「Push 前 OCR 自检」）。
+
+```bash
+ocr delegate preview --from origin/main --to HEAD   # 列出将推送的可审查文件（增量 push 可改 --from @{upstream}）
+ocr delegate rule <上一步列出的文件...>               # 导出这些文件命中的审查规则
+# → agent 依据规则审查 git diff，修复真问题后再 git push
+```
+
+**行为约定**：默认**只报告不硬拦**——OCR 偶有误报，是否修复由提交人判断。这是**文档规范**，本身不会技术上阻止 push；真正的强制拦截需要 git pre-push 钩子（本项目暂未启用）。若将来启用钩子，确需跳过时用 `git push --no-verify`。
+
+> ⚠️ 本文件是**工具无关**的跨工具标准，供 Codex / Cursor / Jules / Zed 等读取 `AGENTS.md` 的工具使用；Claude Code 读取的是 `CLAUDE.md`。两份的「代码提交标准」需保持一致，改一处须同步另一处。
 
 ### 分支命名
 
