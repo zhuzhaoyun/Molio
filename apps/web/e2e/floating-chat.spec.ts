@@ -629,6 +629,33 @@ test.describe('Floating chat (方案 D)', () => {
     await expect(title).toHaveText('我的会话');
   });
 
+  test('切到别的页面后，面板里正在跑的会话继续收到事件', async ({ page }) => {
+    // 后台标签保活护栏（L2a 第 3 步）：状态生命周期必须与面板 DOM 解耦。
+    // frameDelay 拉长流式，保证 SPA 导航发生在 run 结束之前。
+    await mockChatRun(page, { frameDelay: 400 });
+    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+    await page.locator('[data-testid="kb-btn-ask"]').click();
+
+    const panel = page.locator('[data-testid="kb-chat-panel"]');
+    await panel.locator('[data-testid="composer-input"]').fill('保活测试');
+    await page.locator('[data-testid="composer-send"]').click();
+
+    const assistant = panel.locator('[data-testid="assistant-message"]').last();
+    // 等到首个 delta 落地再取快照 —— 后面才能断言内容真的继续推进（不是一开始就是终态）
+    await expect(assistant).toContainText('Hello,', { timeout: 5_000 });
+    const textBefore = await assistant.innerText();
+
+    // SPA 导航走开（面板常驻渲染）：不能用整页 goto —— 那本来就会重建一切，测不出保活。
+    await clickNav(page, 'history');
+    await expect(page.locator('.history-shell')).toBeVisible({ timeout: 5_000 });
+    await expect(panel).toBeAttached();
+
+    // 面板里正在跑的会话内容继续推进 → 订阅没断（run 未被卸载的 DOM 带走）
+    await expect(panel.locator('[data-testid="assistant-message"]').last())
+      .not.toHaveText(textBefore, { timeout: 10_000 });
+  });
+
   test('KB 页经 💬问答 打开默认停靠（页内分栏）', async ({ page }) => {
     await mockChatRun(page);
     await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);

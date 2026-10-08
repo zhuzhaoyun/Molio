@@ -7,6 +7,7 @@ import { HomePage } from './components/HomePage';
 import { NavRail } from './components/NavRail';
 import { FloatingChatButton } from './components/kb/FloatingChatButton';
 import { KbChatSessionsPanel, type KbChatSessionsPanelHandle } from './components/kb/KbChatSessionsPanel';
+import { KbChatSessionsProvider } from './components/kb/KbChatSessionsProvider';
 import { UpdateNotification } from './components/UpdateNotification';
 import { PreloadToast } from './components/PreloadToast';
 import { AppErrorBoundary } from './components/AppErrorBoundary';
@@ -339,6 +340,10 @@ export default function App() {
   return (
     <LanguageProvider initialLocale={locale}>
       <AppErrorBoundary>
+      {/* 会话状态宿主（方案 D 第 3 步）：每个会话标签一个无 DOM 的 controller 常驻于此，
+          面板与 `/chat` 都只是它的消费者 —— 面板是否渲染不再决定会话是否存活。
+          必须包住路由与面板（context 只沿树向下传，同级兄弟取不到）。 */}
+      <KbChatSessionsProvider agentId={selectedAgent}>
       <div className="entry-shell">
         <NavRail />
         <div className="entry-main">
@@ -410,7 +415,6 @@ export default function App() {
         {location.pathname !== CHAT_ROUTE && location.pathname !== '/' && <FloatingChatButton />}
         <KbChatSessionsPanel
           ref={kbChatPanelRef}
-          agentId={selectedAgent}
           onDeleteConversations={handleConversationsDeleted}
         />
         <UpdateNotification />
@@ -426,6 +430,7 @@ export default function App() {
         />
         <VaultSwitchNotice visible={vaultSwitchNotice} />
       </div>
+      </KbChatSessionsProvider>
       </AppErrorBoundary>
     </LanguageProvider>
   );
