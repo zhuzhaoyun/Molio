@@ -179,7 +179,10 @@ var _hmt = _hmt || [];
  *  商品特有的边界（图纸不是识别软件、PCB 不含 MES、妇产超声不是诊断工具、
  *  广东高考不是填报工具、古典诗文/金瓶梅不含全文）**仍走文案**，此处不替代它们。 */
 const DELIVERY_BOUNDARY = `<p class="res-boundary"><strong>这是一份 Markdown 知识资料，不是可运行的软件</strong>，
-        不包含程序、模型权重或 AI 调用服务。买到的是一个解压即可阅读的文件夹。</p>`;
+        不包含程序、模型权重或 AI 调用服务。买到的是一个解压即可阅读的文件夹。</p>
+      <p class="res-boundary">解压后，Obsidian 与 Molio（墨流）可以直接打开；
+        <strong>放进你自己的环境，Claude Code、Codex 这类 Agent 也能直接读它</strong>。
+        这是它和电子书最根本的区别。</p>`;
 
 function renderCta(m: MarketListing): { cta: string; note: string } {
   const price = formatPriceYuan(m.priceCents);
