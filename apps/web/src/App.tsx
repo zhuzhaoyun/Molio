@@ -24,6 +24,7 @@ import { kbChatSessionsStore } from './stores/kbChatSessionsStore';
 import { usePendingPrefill, skillPrefillStore } from './stores/skillPrefillStore';
 import { SkillEditor, type SkillFormValues } from './components/settings/SkillEditor';
 import { DEFAULT_ROUTE, CHAT_ROUTE, RESTORABLE_ROUTES, isFullscreenRoute } from './routes';
+import { FORM_SWITCH_EXIT_MS } from './stores/formSwitchStore';
 import './styles/rail.css';
 import './styles/home.css';
 import './styles/knowledge.css';
@@ -94,6 +95,8 @@ export default function App() {
   const navigate = useNavigate();
   const location = useLocation();
   const [defaultAgentId, setDefaultAgentId] = useState<string | null>(null);
+  // 「最小化」的退场阶段：为 true 时 /chat shell 播退场动画，播完（FORM_SWITCH_EXIT_MS）才导航。
+  const [leaving, setLeaving] = useState(false);
   // 当前 runtime 选择迁移到 chatRuntimeStore（composer 的 runtime/model pill 与
   // App 共享同一事实源）；此处只订阅 agentId，往下喂给 KbChatSessionsProvider（各会话控制器
   // 与知识库页共用）——App 级 useChat 已于 L2a 退役。
@@ -316,10 +319,22 @@ export default function App() {
    * 回落到默认落点。读 `window.history.state` 而不读 `location`：点击时取值，不存在渲染期陈旧问题。
    */
   const handleMinimize = () => {
-    kbChatSessionsStore.setPanelOpen(true);
-    const inAppHistory = (window.history.state as { idx?: number } | null)?.idx ?? 0;
-    if (inAppHistory > 0) navigate(-1);
-    else navigate(DEFAULT_ROUTE);
+    if (leaving) return; // 退场动画进行中，忽略重复点击（否则会排两次导航）
+    setLeaving(true);
+    window.setTimeout(() => {
+      setLeaving(false);
+
+      const inAppHistory = (window.history.state as { idx?: number } | null)?.idx ?? 0;
+      if (inAppHistory > 0) navigate(-1);
+      else navigate(DEFAULT_ROUTE);
+
+      // 面板要「从右下角升起」而不是硬闪 —— 关键在于**先让它以收起态挂载、再翻成展开**：
+      // 直接置 true 会让它带着终态挂载，CSS 过渡无从触发（那正是原先生硬的来源）。
+      // 双 rAF：第一帧让 React 提交挂载，第二帧 class 变化才真的产生可过渡的起始态。
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => kbChatSessionsStore.setPanelOpen(true));
+      });
+    }, FORM_SWITCH_EXIT_MS);
   };
 
   // 视图切换（路由变化）→ 退出消息勾选态。`messageSelectionStore` 是模块级全局单例，
@@ -367,6 +382,7 @@ export default function App() {
                   onOpenRuntimes={() => navigate('/settings?tab=runtimes')}
                   onNewChat={handleNewChat}
                   onMinimize={handleMinimize}
+                  leaving={leaving}
                   onOpenConversation={(conversationId) => {
                     // 就地切换活动会话并触发加载（复用面板已有的切换语义：运行中 → 新开标签）。
                     kbChatPanelRef.current?.openConversation(conversationId);

@@ -8,6 +8,7 @@ import { NoRuntimeCard } from './NoRuntimeCard';
 import { AgentsUnavailableCard } from './AgentsUnavailableCard';
 import { FirstRunOnboarding } from './home/FirstRunOnboarding';
 import { messageSelectionStore } from '../stores/messageSelectionStore';
+import { isFormSwitchToFullscreen, FORM_SWITCH_ENTER_MS } from '../stores/formSwitchStore';
 import {
   kbChatSessionsStore, useKbChatActiveSessionId, useKbChatSessions,
   sessionComposerKey, sessionComposerMountKey,
@@ -49,6 +50,8 @@ interface Props {
   onNewChat: () => void;
   /** 页头「最小化」：会话降级回悬浮面板，并返回用户来的地方（L2b）。 */
   onMinimize: () => void;
+  /** 「最小化」的退场阶段：App 播完这一下才导航（见 App.handleMinimize）。 */
+  leaving?: boolean;
   /** 输入框历史下拉：打开某个历史会话（就地切换活动会话）。 */
   onOpenConversation?: (conversationId: string) => void;
   /** 输入框历史下拉删除会话后通知上层做收敛。 */
@@ -73,6 +76,7 @@ export function HomePage({
   onOpenRuntimes,
   onNewChat,
   onMinimize,
+  leaving,
   onOpenConversation,
   onDeleteConversations,
 }: Props) {
@@ -147,6 +151,25 @@ export function HomePage({
    * 动作完全不同（一个去检查后端/重试，一个去装运行时）。
    * null = 两态都不是，正常渲染输入框。
    */
+  /**
+   * 形态交接动效的类名（两个根节点共用）。
+   *
+   * - `--entering`：本次挂载来自面板头部的「全屏」按钮（幂等读取，StrictMode 双渲染下安全）。
+   * - `--leaving`：点了「最小化」的退场阶段，由 App 传入；播完才真正导航。
+   */
+  const [entering, setEntering] = useState(() => isFormSwitchToFullscreen());
+  // 动画播完就摘掉这个类：否则它会一直挂着，与之后的 `--leaving` 并存 ——
+  // 两条规则都设 `animation`，谁生效就取决于 CSS 源码顺序（当前是靠后者在后面侥幸生效）。
+  // 结束态与基础样式一致（opacity 1 / 无位移），所以摘类不会产生跳变。
+  useEffect(() => {
+    if (!entering) return;
+    const t = window.setTimeout(() => setEntering(false), FORM_SWITCH_ENTER_MS);
+    return () => window.clearTimeout(t);
+  }, [entering]);
+  const pageClass = ['home-page', entering && 'home-page--entering', leaving && 'home-page--leaving']
+    .filter(Boolean)
+    .join(' ');
+
   const composerFallback = agentsUnavailable ? (
     <AgentsUnavailableCard onRetry={onRetryAgents} />
   ) : noRuntime ? noRuntimeCard : null;
@@ -164,7 +187,7 @@ export function HomePage({
         ? [{ vaultId: activeSession.vaultId, filePath: activeSession.filePath }]
         : [];
     return (
-      <div className="home-page chat-active">
+      <div className={`${pageClass} chat-active`}>
         <div className="home-chat-col">
         {/* Header */}
         <div className="home-header">
@@ -253,7 +276,7 @@ export function HomePage({
 
   // ── landing：无活动标签 / 活动标签为空（且未绑定持久化会话）──
   return (
-    <div className="home-page home-landing">
+    <div className={`${pageClass} home-landing`}>
       <div className="home-hero-view">
         {/* 首次运行引导 —— 只在落地页出现（有会话说明人已经在用了，不再打扰） */}
         <FirstRunOnboarding />

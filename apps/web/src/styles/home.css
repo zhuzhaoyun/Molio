@@ -12,6 +12,45 @@
   overflow-y: auto;
 }
 
+/* ── 全屏态 ⇄ 悬浮面板 的形态交接（L2b 动效）────────────────────────────
+   两端是不同的 React 树、不同路由，所以不做真正的 FLIP morph（跨树测量 + 幽灵层的
+   复杂度和闪烁风险都高）。连贯性改由两件事拿到：**共用一条轴**（右下角 —— 悬浮面板
+   与悬浮按钮所在的位置）与**共用曲线**（沿用面板既有的进出曲线，不引入新词汇）。
+
+   时长为 FORM_SWITCH_*_MS（见 stores/formSwitchStore.ts，CSS 读不到 TS 常量，改一边要改两边）：
+   离开 160ms / 进入 200ms。位移 10px，比面板自身开合的 16px 略小 —— 整页尺度上等量位移
+   会显得更重。 */
+@keyframes home-shell-enter {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+}
+@keyframes home-shell-leave {
+  to {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+}
+
+/* 进入：由面板「全屏」按钮触发（其它方式到达 /chat 不播，见 formSwitchStore）。 */
+.home-page--entering {
+  animation: home-shell-enter 200ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+/* 离开：点「最小化」，播完这一下才真正导航（see App.handleMinimize）。用 both 留住终态，
+   否则动画结束会闪回不透明的一帧再被卸载。 */
+.home-page--leaving {
+  animation: home-shell-leave 160ms cubic-bezier(0.55, 0.06, 0.68, 0.19) both;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .home-page--entering,
+  .home-page--leaving {
+    animation: none;
+  }
+}
+
 /* ── Landing page ── */
 .home-landing {
   position: relative;

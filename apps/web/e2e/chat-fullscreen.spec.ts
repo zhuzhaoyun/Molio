@@ -213,6 +213,11 @@ test.describe('/chat 全屏态与面板共享活动会话', () => {
 
     await page.locator('[data-testid="home-minimize-btn"]').click();
 
+    // 退场阶段：导航被**有意**延后 FORM_SWITCH_EXIT_MS，好让 shell 的退场动画播得出来。
+    // 这是一条同步断言（不重试）：点击刚返回时计时器还没到，URL 必须仍在 /chat。
+    // 后接的重试型断言再等它落到位。把这段延时写成契约，避免以后被当「多余延迟」删掉。
+    expect(page.url()).toContain('/chat');
+
     // 只有回退分支会落到 /history；默认落点是 /knowledge —— 故本断言能区分两个分支。
     // 不用 `/history$/`：页面若镜像出查询串（如 ?limit=）会让 `$` 失配而误红。
     await expect(page).toHaveURL(/\/history(\?|$)/);
@@ -240,6 +245,10 @@ test.describe('/chat 全屏态与面板共享活动会话', () => {
     await page.goto('http://localhost:5173/');
     await expect(page).toHaveURL(/\/chat$/);
     await expect(page.locator('.home-header')).toBeVisible({ timeout: 5_000 });
+
+    // 入口重定向到达 `/chat` **不是**用户按的形态切换 → 不该播入场动画。
+    // 只有面板头部的「全屏」按钮才置位（见 formSwitchStore 的理由：装饰性入场没有信息量）。
+    await expect(page.locator('.home-page')).not.toHaveClass(/home-page--entering/);
 
     await page.locator('[data-testid="home-minimize-btn"]').click();
 

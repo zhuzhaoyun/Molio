@@ -7,6 +7,7 @@ import {
 } from '../../stores/kbChatSessionsStore';
 import { useCurrentContext } from '../../stores/currentContextStore';
 import { CHAT_ROUTE, isFullscreenRoute } from '../../routes';
+import { FORM_SWITCH_EXIT_MS, markFormSwitchToFullscreen } from '../../stores/formSwitchStore';
 import { ChatSessionTabBar } from './ChatSessionTabBar';
 import { KbChatSession } from './KbChatSession';
 import { useKbChatSessionApi } from './KbChatSessionsProvider';
@@ -159,6 +160,7 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
   // 形态切换过渡：切换瞬间加 --morphing 启用几何过渡，260ms 后移除
   const [morphing, setMorphing] = useState(false);
   const morphTimerRef = useRef<number | null>(null);
+  const fullscreenTimerRef = useRef<number | null>(null);
   const panelElRef = useRef<HTMLDivElement>(null);
   // handleEl 记录手柄元素：is-dragging 加在手柄上（pointerdown 的 e.currentTarget），
   // 结束/兜底时须从「同一个手柄」移除（此前误从面板移除 → is-dragging 永远残留）。
@@ -413,6 +415,26 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
     morphTimerRef.current = window.setTimeout(() => setMorphing(false), 260);
   }, []);
   useEffect(() => () => { if (morphTimerRef.current) window.clearTimeout(morphTimerRef.current); }, []);
+
+  /**
+   * 面板头部「全屏」：面板先播它**既有的** 160ms 下落，落下后再换页，
+   * 由 `/chat` shell 播 200ms 升起 —— 两段共用同一条轴（右下角）与同一族曲线，
+   * 读起来是同一个东西长大成整页，而不是两个界面互相替换。
+   *
+   * 为什么要延时导航：面板在 `/chat` 上是 `return null`（同一会话不得同屏两份），
+   * 一旦导航它就被卸载，CSS 过渡再也没有机会播 —— 那是原先生硬的直接来源。
+   * 同理，置一个一次性标记告诉 shell「这次到场是用户按的」，冷启动/深链不播。
+   */
+  const handleEnterFullscreen = useCallback(() => {
+    if (fullscreenTimerRef.current) return; // 退场中，忽略重复点击
+    markFormSwitchToFullscreen();
+    kbChatSessionsStore.setPanelOpen(false);
+    fullscreenTimerRef.current = window.setTimeout(() => {
+      fullscreenTimerRef.current = null;
+      navigate(CHAT_ROUTE);
+    }, FORM_SWITCH_EXIT_MS);
+  }, [navigate]);
+  useEffect(() => () => { if (fullscreenTimerRef.current) window.clearTimeout(fullscreenTimerRef.current); }, []);
   // 按钮切换：先交还几何（含手动 inline），再切形态并启用过渡动画
   const toggleDock = useCallback(() => {
     clearInlinePos();
@@ -784,11 +806,8 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
         onDeleteConversations={resetConversations}
         onClosePanel={() => kbChatSessionsStore.setPanelOpen(false)}
         // 进入全屏态：会话不变（还是当前活动标签），只是换个承载它的视图。
-        // 先收起面板 —— 全屏 shell 就是同一会话的另一个视图，同时留一个面板就是同屏双视图。
-        onEnterFullscreen={() => {
-          kbChatSessionsStore.setPanelOpen(false);
-          navigate(CHAT_ROUTE);
-        }}
+        // 形态交接见 handleEnterFullscreen（面板先下落，再换页，由 shell 升起）。
+        onEnterFullscreen={handleEnterFullscreen}
         docked={docked}
         onToggleDock={toggleDock}
         onHeaderDragStart={onHeaderDragStart}
