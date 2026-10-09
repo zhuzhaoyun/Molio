@@ -26,11 +26,14 @@
 //   - [[entities/李白]]   → path-suffix match wiki/entities/李白.md, else leaf
 //   - [[李白|诗仙]]       → target is the part before |
 //   - case-insensitive; spaces/dashes/underscores ignored (en kebab-case)
-//   - non-md targets (images etc.) are skipped
+//   - attachment targets (images, PDF, …) are not dead links, but `![[图.png]]`
+//     EMBEDS are validated against the files on disk in the same pass — a wrong
+//     path there renders as a silently broken image, which nothing else catches.
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { residueRe, codeIntervals, frontmatterEnd, overlaps, protectedIntervals } from './lib/linktext.mjs';
+import { residueRe, codeIntervals, frontmatterEnd, overlaps, protectedIntervals, embedRe, ATTACHMENT_EXT } from './lib/linktext.mjs';
+import { collectAttachments, buildImageIndex, resolveAttachment } from './lib/vault.mjs';
 
 function usage() {
   process.stderr.write(
@@ -56,7 +59,10 @@ function parseArgs(argv) {
   return opts;
 }
 
-const SKIP_EXT = /\.(png|jpe?g|gif|svg|webp|pdf|docx?|xlsx?|pptx?|zip)$/i;
+// Attachment targets are not dead LINKS (they resolve to files, not pages) —
+// they get their own validation below instead of being counted here.
+// Shared with media.mjs so the two checkers cannot drift on what an
+// attachment even is.
 
 function normalizeName(name) {
   return name.replace(/[\s_\-]+/g, '').toLowerCase();
@@ -111,16 +117,22 @@ function main() {
 
   function resolves(raw) {
     let clean = raw.replace(/\.md$/i, '').trim();
-    if (SKIP_EXT.test(raw)) return true; // non-md attachment, not a dead link
+    if (ATTACHMENT_EXT.test(raw)) return true; // attachment, not a dead link — validated separately
     const nFull = normalizeName(clean);
     if (byRelPath.has(nFull)) return true;
     const leaf = clean.includes('/') ? clean.split('/').pop() : clean;
     return byBase.has(normalizeName(leaf ?? clean));
   }
 
+  // Attachment embeds resolve against files on disk, not against pages.
+  const images = collectAttachments(vault);
+  const imageIndex = buildImageIndex(images);
+
   // dead target → occurrences [{file, line}]
   const dead = new Map();
+  const deadEmbeds = new Map(); // attachment embed → occurrences
   let occurrences = 0;
+  let embedOccurrences = 0;
   const residue = [];           // prose residue — linkpass auto-cleans these
   const residueProtected = [];  // inside code/quotes/frontmatter — reported, never auto-cleaned
   for (const p of pages) {
@@ -144,6 +156,20 @@ function main() {
         if (!dead.has(key)) dead.set(key, { target: raw, files: [] });
         dead.get(key).files.push({ file: `wiki/${p.rel}`, line: i + 1 });
       }
+      // `![[图.png]]` embeds: a wrong path here renders as a broken image and
+      // nothing else notices — the wikilink pass above skips attachments, and
+      // media.mjs only runs when the agent remembers to call it.
+      for (const em of ln.matchAll(embedRe())) {
+        const target = em[1].trim();
+        if (!ATTACHMENT_EXT.test(target)) continue;
+        if (overlaps([lineStart + em.index, lineStart + em.index + em[0].length], code)) continue;
+        embedOccurrences++;
+        const r = resolveAttachment(target, imageIndex);
+        if (r.status === 'ok') continue;
+        const key = target.toLowerCase();
+        if (!deadEmbeds.has(key)) deadEmbeds.set(key, { target, reason: r.status, hits: r.hits ?? 0, files: [] });
+        deadEmbeds.get(key).files.push({ file: `wiki/${p.rel}`, line: i + 1 });
+      }
       lineStart += ln.length + 1;
     });
     // Residue scan: same never-touched regions as linkpass cleanup. Matches
@@ -159,35 +185,51 @@ function main() {
   }
 
   const deadList = [...dead.values()].sort((a, b) => b.files.length - a.files.length);
+  const deadEmbedList = [...deadEmbeds.values()].sort((a, b) => b.files.length - a.files.length);
   const report = {
-    ok: deadList.length === 0,
+    ok: deadList.length === 0 && deadEmbedList.length === 0,
     pages: pages.length,
     deadTargets: deadList.length,
     occurrences,
+    images: images.length,
+    embedOccurrences,
+    deadEmbeds: deadEmbedList.length,
     residue: residue.length,
     residueProtected: residueProtected.length,
     residueList: residue.slice(0, 100), // cap: the NOTE is for humans
     residueProtectedList: residueProtected.slice(0, 100),
     dead: deadList,
+    deadEmbedList,
   };
 
   if (opts.json) {
     fs.mkdirSync(path.dirname(path.resolve(opts.json)), { recursive: true });
     fs.writeFileSync(opts.json, JSON.stringify(report, null, 2));
   }
-  process.stderr.write(JSON.stringify({ ok: report.ok, pages: pages.length, deadTargets: deadList.length, occurrences, residue: residue.length, residueProtected: residueProtected.length }) + '\n');
+  process.stderr.write(JSON.stringify({ ok: report.ok, pages: pages.length, deadTargets: deadList.length, occurrences, images: images.length, deadEmbeds: deadEmbedList.length, residue: residue.length, residueProtected: residueProtected.length }) + '\n');
 
   if (!opts.quiet) {
     if (report.ok) {
-      process.stdout.write(`deadcheck: OK — ${pages.length} pages, 0 dead links.\n`);
+      process.stdout.write(`deadcheck: OK — ${pages.length} pages, ${images.length} images, 0 dead links.\n`);
     } else {
-      process.stdout.write(`deadcheck: FAIL — ${deadList.length} dead target(s), ${occurrences} occurrence(s):\n`);
-      for (const d of deadList) {
-        const locs = d.files.slice(0, 3).map(f => `${f.file}:${f.line}`).join(' ');
-        const more = d.files.length > 3 ? ` … (+${d.files.length - 3})` : '';
-        process.stdout.write(`  [[${d.target}]] × ${d.files.length}  <- ${locs}${more}\n`);
+      if (deadList.length) {
+        process.stdout.write(`deadcheck: FAIL — ${deadList.length} dead target(s), ${occurrences} occurrence(s):\n`);
+        for (const d of deadList) {
+          const locs = d.files.slice(0, 3).map(f => `${f.file}:${f.line}`).join(' ');
+          const more = d.files.length > 3 ? ` … (+${d.files.length - 3})` : '';
+          process.stdout.write(`  [[${d.target}]] × ${d.files.length}  <- ${locs}${more}\n`);
+        }
+        process.stdout.write('\nFix before declaring build complete: create (stub) pages for these targets, or rewrite the links to an existing page / plain text. Then re-run deadcheck.\n');
       }
-      process.stdout.write('\nFix before declaring build complete: create (stub) pages for these targets, or rewrite the links to an existing page / plain text. Then re-run deadcheck.\n');
+      if (deadEmbedList.length) {
+        process.stdout.write(`deadcheck: FAIL — ${deadEmbedList.length} broken image/attachment embed(s), ${embedOccurrences} embed(s) checked:\n`);
+        for (const d of deadEmbedList) {
+          const locs = d.files.slice(0, 3).map(f => `${f.file}:${f.line}`).join(' ');
+          const why = d.reason === 'ambiguous' ? `（裸文件名匹配到 ${d.hits} 个同名文件，需写完整路径）` : '';
+          process.stdout.write(`  ![[${d.target}]] × ${d.files.length}${why}  <- ${locs}\n`);
+        }
+        process.stdout.write('Fix: point the embed at a real file (![[wiki/images/<stem>/NNN.png]]) or restore the missing image. Then re-run deadcheck.\n');
+      }
     }
     if (residue.length) {
       process.stdout.write(`deadcheck: NOTE — ${residue.length} legacy link-residue occurrence(s) matching [[T|Y]]Y]] (pre-idempotency linkpass damage; self-copies into new pages):\n`);

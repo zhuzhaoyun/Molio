@@ -74,6 +74,7 @@
       "paths": [
         "apps/web/src/components/kb/*",
         "apps/web/src/hooks/useKnowledge*",
+        "apps/web/src/utils/kbImage*",
         "apps/web/src/hooks/useKbTabs*",
         "apps/web/src/hooks/useScrollMemory*",
         "apps/web/src/stores/kbChatSessionsStore*",
@@ -93,6 +94,7 @@
         "kb-open-vault-error",
         "knowledge",
         "markdown-render",
+        "kb-images",
         "kb-tree-sort-locate",
         "kb-chat-entry",
         "kb-chat-sessions",
@@ -447,6 +449,10 @@
     "markdown-render": {
       "priority": "P1",
       "file": "markdown-render.spec.ts"
+    },
+    "kb-images": {
+      "priority": "P1",
+      "file": "kb-images.spec.ts"
     },
     "navigation": {
       "priority": "P1",

@@ -221,9 +221,16 @@ export function KbMainContent({
   // runs for the small-.md doocs path — never for the CM source view.
   const renderedContent = useMemo(
     () => isSmallMd
-      ? preprocessKbMarkdown(editedContent ?? fileContent?.content ?? '', vaultId ?? undefined)
+      ? preprocessKbMarkdown(
+          editedContent ?? fileContent?.content ?? '',
+          vaultId ?? undefined,
+          // The note's own vault-relative path — needed so `![](图.png)`
+          // resolves against this note's folder (Obsidian's rule) rather than
+          // the SPA origin, which always 404s.
+          selectedFile ?? undefined,
+        )
       : '',
-    [editedContent, fileContent?.content, vaultId, isSmallMd],
+    [editedContent, fileContent?.content, vaultId, isSmallMd, selectedFile],
   );
 
   // Raw text used by the CM viewer — NO doocs preprocessing (those transforms
