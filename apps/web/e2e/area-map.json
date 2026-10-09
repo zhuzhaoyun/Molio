@@ -54,7 +54,8 @@
         "chat-fullscreen",
         "file-ref-navigation",
         "model-switcher",
-        "composer-hints"
+        "composer-hints",
+        "chat-markdown"
       ]
     },
     "kb": {
@@ -306,6 +307,10 @@
     "chat-codeblock": {
       "priority": "P0",
       "file": "chat-codeblock.spec.ts"
+    },
+    "chat-markdown": {
+      "priority": "P1",
+      "file": "chat-markdown.spec.ts"
     },
     "chat-repairing": {
       "priority": "P1",
