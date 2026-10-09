@@ -26,8 +26,7 @@ src/
     sse.ts             SSE 订阅 (EventSource)
   hooks/
     useAgents.ts       获取可用 agent 列表
-    useChat.ts         聊天状态管理 (消息、发送、SSE 订阅)
-    useChatCore.ts     聊天核心逻辑
+    useChatCore.ts     聊天核心逻辑（ChatMessage / ToolEvent 类型的唯一来源）
     useProjects.ts     项目管理
     useKnowledge.ts    知识库状态管理（vault、文件树、排版模式）
     useKbTabs.ts       知识库 Tab 状态管理
@@ -42,9 +41,9 @@ src/
     messageSelectionStore.ts  消息删除勾选态（同模式 + 每气泡精准订阅）
     authStore.ts           登录态快照（同模式；镜像 daemon GET /api/auth/status，App 挂载拉取 + 30s 轮询 + focus 刷新；refresh 永不抛错）
   components/
-    HomePage.tsx       主页：agent 选择 + 聊天面板
+    HomePage.tsx       主页（`/chat`）：landing + 活动会话全屏态
     NavRail.tsx        左侧导航栏
-    ChatPane.tsx       聊天消息列表
+    ChatSessionView.tsx 会话消息列表纯视图（`/chat` 与悬浮面板共用；消息级动作在此）
     ChatComposer.tsx   消息输入框
     UserMessage.tsx    用户消息气泡
     AssistantMessage.tsx 助手消息气泡 (thinking + tool cards)
@@ -183,7 +182,8 @@ pnpm test:e2e     # Playwright E2E 测试（需先运行 pnpm dev）
 
 | 视图 | 路径 | 组件 |
 |------|------|------|
-| 主页 (聊天) | `/` | HomePage, ChatPane, ChatComposer |
+| 入口（非页面） | `/` | `EntryRedirect`（恢复上次路由，否则落默认落点） |
+| 对话 | `/chat` | HomePage（landing / 悬浮面板活动会话的全屏态）+ ChatSessionView, ChatComposer |
 | 知识库 | `/knowledge` | KnowledgeBasePage + kb/* |
 | 历史 | `/history` | HistoryPage |
 | 设置 | `/settings` | SettingsPage（含 RuntimesPanel、ChannelsPanel） |
