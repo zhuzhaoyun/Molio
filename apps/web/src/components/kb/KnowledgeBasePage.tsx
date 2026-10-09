@@ -428,11 +428,13 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
   // NavRail「图谱」入口到来：URL 带 ?panel=graph → 打开/激活图谱标签，随后去掉该参数。
   useEffect(() => {
     if (searchParams.get('panel') !== 'graph') return;
+    // Keep the request until the per-vault tab store exists.
+    if (!kb.activeVault) return;
     openGraphTab();
     const next = new URLSearchParams(searchParams);
     next.delete('panel');
     setSearchParams(next, { replace: true });
-  }, [searchParams, setSearchParams, openGraphTab]);
+  }, [searchParams, setSearchParams, openGraphTab, kb.activeVault]);
 
   // ─── Navigation history: tab-scoped view history ───
   // Records the order of views the user has visited (files AND the graph tab).
@@ -587,19 +589,20 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
     api.resolveFilePath(vaultId, filePath)
       .then((canonical) => {
         if (controller.signal.aborted) return;
-        handleSelectFile(canonical ?? filePath);
+        setPendingUrlNav(null);
+        handleSelectFileRef.current(canonical ?? filePath);
       })
       .catch(() => {
         if (controller.signal.aborted) return;
         // Daemon unreachable / resolve errored — degrade to raw path (pre-fix
         // behavior for this click; file may still open via readFile fallback).
-        handleSelectFile(filePath);
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setPendingUrlNav(null);
+        setPendingUrlNav(null);
+        handleSelectFileRef.current(filePath);
       });
     return () => controller.abort();
-  }, [pendingUrlNav, kb.activeVault?.id, kb.treeVaultId, kb.tree, handleSelectFile]);
+    // Opening a tab changes the selection callback. Keep that callback out of
+    // the dependencies so applying navigation cannot restart its own request.
+  }, [pendingUrlNav, kb.activeVault?.id, kb.treeVaultId, kb.tree]);
 
   // Sync: on mount & vault/tab change, restore active tab's file into selectedFile.
   // This ensures that after navigating away and back, the persisted tab state

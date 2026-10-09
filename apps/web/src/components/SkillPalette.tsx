@@ -75,10 +75,19 @@ export function SkillPalette({ filterText, onSelect, onClose }: Props) {
 
   // Keyboard navigation (document-level for Arrow/Enter/Escape — the textarea
   // keeps focus, but these keys must drive the palette, not the input).
-  // Ignored while loading/errored: the list is empty, and an ArrowDown before
-  // the data lands would clamp activeIdx to -1 and desync the highlight.
+  // Escape always closes; Enter must never send while loading/errored.
+  // List navigation waits for data to avoid clamping the active index to -1.
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        onClose();
+        return;
+      }
+      if (e.key === 'Enter' && (loading || error)) {
+        e.preventDefault();
+        return;
+      }
       if (loading || error) return;
       if (e.key === 'ArrowDown') {
         e.preventDefault();
@@ -90,9 +99,6 @@ export function SkillPalette({ filterText, onSelect, onClose }: Props) {
         e.preventDefault();
         const skill = filtered[activeIdxRef.current];
         if (skill) onSelect(skill);
-      } else if (e.key === 'Escape') {
-        e.preventDefault();
-        onClose();
       }
     },
     [loading, error, filtered, onSelect, onClose],
