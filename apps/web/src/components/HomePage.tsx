@@ -236,10 +236,6 @@ export function HomePage({
             composerDisabled={!selectedAgentName}
             composerDisabledPlaceholder={t('home.noAgent')}
             composerArea={composerFallback ?? undefined}
-            // 输入框位置站的是空状态卡片时，容器不该再扮成一条「输入栏」：
-            // 那道全宽分隔缝与白底会让卡片看起来贴在一块不同的表面上，上下也只剩 10px。
-            // landing 侧用的是 .home-composer-wrap（无装饰），这里对齐它的中性表现。
-            composerBarClassName={composerFallback ? 'home-composer-bar home-composer-bar--card' : undefined}
             onOpenConversation={onOpenConversation}
             onDeleteConversations={onDeleteConversations}
           />

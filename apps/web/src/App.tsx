@@ -154,6 +154,9 @@ export default function App() {
     // 原「首页」路由是 `/`，replace 后得到空串，会被判成 'other' —— 'home' 这个取值因此永远不可达。
     // 显式特判，让 'home' 真正生效（悬浮面板据此跳过主页：见 KbChatSessionsPanel 的 dock effect）。
     const path = location.pathname;
+    // 注意：这里虽然也判 `/chat`，但与 `isFullscreenRoute` 是**两件事** ——
+    // 这条是给路由取「上下文页名」（`/chat` 在上下文里就叫 'home'，沿用它以免牵动
+    // 依赖 page 名的既有逻辑），不是「是否处于全屏态」。别顺手合并成一个判据。
     const page: CurrentContext['page'] = path === CHAT_ROUTE
       ? 'home'
       // 入口地址转瞬即走（EntryRedirect 是声明式重定向），归 'other' 以免被当成主页。
@@ -300,15 +303,23 @@ export default function App() {
   /**
    * 全屏态「最小化」：会话降级回悬浮面板，并把用户送回他来的地方。
    *
-   * 落点判据用 `location.key`：react-router 给**应用的第一个 entry** 的 key 恒为 `'default'`，
-   * 恰好等价于「站内没有上一页」。深链直开（或刷新）`/chat` 时就是这种情况 —— 此时
-   * `navigate(-1)` 会退回浏览器历史里**应用之前**的那一页（可能是别的站点或空白），
-   * 所以回落到默认落点。比 `history.length` 可靠：后者把应用之前的历史也算进去。
+   * 判据是「**站内**还有没有上一页」＝ react-router 在当前 history entry 上记的 `idx` 是否 > 0。
+   *
+   * 不能用 `location.key === 'default'`：key 只在**没有 state.key 时**才回落成 `'default'`，
+   * 而 `replace` 会把当前位置**原地**替换 —— `idx` 保持 0，key 却已被换成生成值。
+   * `EntryRedirect` 正是 `<Navigate ... replace />`，于是「冷启动时恢复上次路由到 `/chat`」
+   * 这条**常规路径**（桌面端每次启动/新窗口都从 `/` 进入）会被误判成「有上一页」：
+   * `navigate(-1)` 在 Electron 里是静默无操作（按钮像坏了），在浏览器里会退出应用 ——
+   * 恰恰是本判据要防的那件事。
+   *
+   * `idx` 由 react-router 维护，0 即「这条历史里我们就是第一条」，此时代码层面没有可回退的站内页，
+   * 回落到默认落点。读 `window.history.state` 而不读 `location`：点击时取值，不存在渲染期陈旧问题。
    */
   const handleMinimize = () => {
     kbChatSessionsStore.setPanelOpen(true);
-    if (location.key === 'default') navigate(DEFAULT_ROUTE);
-    else navigate(-1);
+    const inAppHistory = (window.history.state as { idx?: number } | null)?.idx ?? 0;
+    if (inAppHistory > 0) navigate(-1);
+    else navigate(DEFAULT_ROUTE);
   };
 
   // 视图切换（路由变化）→ 退出消息勾选态。`messageSelectionStore` 是模块级全局单例，

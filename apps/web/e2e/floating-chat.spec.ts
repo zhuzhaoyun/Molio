@@ -117,9 +117,9 @@ test.describe('Floating chat (方案 D)', () => {
     await expect(panel).toBeVisible();
     await expect(panel).toHaveClass(/floating-chat-panel--dock-kb/);
 
-    // 到达主页（`/chat` = 悬浮面板的全屏态）→ 面板整体不渲染：主页自身已经渲染了
-    // 活动会话的 ChatSessionView，再渲染面板会让同一个会话出现两份输入框/消息列表
-    // （L2a；见 KbChatSessionsPanel 的 `if (location.pathname === CHAT_ROUTE) return null;`）。
+    // 到达全屏态（`/chat`）→ 面板整体不渲染：全屏 shell 自身已经渲染了活动会话的
+    // ChatSessionView，再渲染面板会让同一个会话出现两份输入框/消息列表
+    // （L2b 裁决；见 KbChatSessionsPanel 的 `if (isFullscreenRoute(location.pathname)) return null;`）。
     await gotoChatSpa(page);
     await expect(page.locator('.home-page')).toBeVisible({ timeout: 5_000 });
     await expect(panel).toHaveCount(0);

@@ -2,7 +2,7 @@
 import { test, expect } from '@playwright/test';
 import { createTempVault, cleanupTempVault, type TempVault } from './helpers/cleanup';
 import { mockChatRun, mockNoAgents, unmockAll } from './helpers/mock-sse';
-import { gotoChatSpa } from './helpers/navigation';
+import { gotoChatSpa, clickNav } from './helpers/navigation';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -190,30 +190,61 @@ test.describe('/chat 全屏态与面板共享活动会话', () => {
     await expect(page.locator('[data-testid="assistant-message"]').last()).toBeVisible({ timeout: 10_000 });
   });
 
-  test('/chat「最小化」→ 收起为悬浮面板并返回上一页（站内有历史）', async ({ page }) => {
+  // 两条「最小化」用例必须**能区分两个分支**，否则等于没测：
+  //   · 回退分支 → 回到来源页
+  //   · 默认落点分支 → 恒为 `/knowledge`
+  // 所以来源页故意选 `/history`（不是 /knowledge）—— 只有回退分支会落到它。
+
+  test('/chat「最小化」→ 收起为悬浮面板并返回来源页（走回退分支）', async ({ page }) => {
     await mockChatRun(page);
-    await seedSession(page, '最小化回上一页');
-    // SPA 导航进 /chat：留下一条**站内**历史，navigate(-1) 应当能回到知识库页
-    await gotoChatSpa(page);
+    await seedSession(page, '回退分支');
+    // 先收起面板，让后面「从历史页开面板」成为确定性动作（不用 isVisible 软跳过）
+    await page.locator('[data-testid="kb-chat-close"]').click();
+    await expect(page.locator('[data-testid="kb-chat-panel"]')).toHaveClass(/--closed/);
+
+    // 站内导航到历史页 —— react-router 导航，站内确实留了一条可回退的记录
+    await clickNav(page, 'history');
+    await expect(page).toHaveURL(/\/history$/);
+    await expect(page.locator('[data-testid="floating-chat-btn"]')).toBeVisible();
+    await page.locator('[data-testid="floating-chat-btn"]').click();
+    await page.locator('[data-testid="kb-chat-fullscreen"]').click();
+    await expect(page).toHaveURL(/\/chat$/);
     await expect(page.locator('.home-header')).toBeVisible({ timeout: 5_000 });
 
     await page.locator('[data-testid="home-minimize-btn"]').click();
 
-    await expect(page).toHaveURL(/\/knowledge/);
-    await expect(page.locator('[data-testid="kb-chat-panel"]')).toBeVisible();
+    // 只有回退分支会落到 /history；默认落点是 /knowledge —— 故本断言能区分两个分支。
+    // 不用 `/history$/`：页面若镜像出查询串（如 ?limit=）会让 `$` 失配而误红。
+    await expect(page).toHaveURL(/\/history(\?|$)/);
+    await expect(page.locator('[data-testid="kb-chat-panel"]')).not.toHaveClass(/--closed/);
   });
 
-  test('/chat 深链直开（站内无上一页）「最小化」→ 落默认落点 /knowledge', async ({ page }) => {
-    await mockChatRun(page, persisted('deep'));
-    await seedSession(page, '深链最小化');
-    // 整页重载到 /chat：这是应用的**首个** entry，站内没有上一页可回
-    await page.goto('http://localhost:5173/chat');
+  test('/chat 冷启动（入口 replace 落到 /chat）「最小化」→ 落默认落点 /knowledge', async ({ page }) => {
+    await mockChatRun(page, persisted('entry'));
+    // 会话**只种进 localStorage**，不走 seedSession：本用例要复刻的是「应用的**首个** entry
+    // 就是 /chat —— 站内真的没有上一页」。而任何一次 `page.goto` 都会在浏览器历史里留下
+    // 上一页，于是 `navigate(-1)` 会真的退回去，就永远测不出线上那个失败形态
+    // （线上是**静默无操作**：Electron 里 URL 原地不动、浏览器里退出应用）。
+    // addInitScript 在首个导航的页面脚本之前执行，store 模块初始化时就能读到。
+    await page.addInitScript(() => {
+      localStorage.setItem('molio.kb.chatSessions', JSON.stringify([
+        { id: 'seed-entry', title: '入口 replace', conversationId: 'conv-seed', mode: 'qa', vaultId: null, filePath: null },
+      ]));
+      localStorage.setItem('molio.kb.chatActiveSessionId', 'seed-entry');
+      localStorage.setItem('molio.lastRoute', '/chat');
+    });
+
+    // 首个导航：应用从入口 `/` 进来。EntryRedirect 是 <Navigate replace/> ——
+    // **原地替换**首个 entry：idx 仍是 0，但 key 被换成生成值。
+    // 这正是「用 location.key 判有没有上一页」会翻车的那条路径（桌面端每次启动/新窗口都走它）。
+    await page.goto('http://localhost:5173/');
+    await expect(page).toHaveURL(/\/chat$/);
     await expect(page.locator('.home-header')).toBeVisible({ timeout: 5_000 });
 
     await page.locator('[data-testid="home-minimize-btn"]').click();
 
-    // 不得依赖 navigate(-1)：那会把用户送出应用（浏览器历史里应用之前的那一页）
-    await expect(page).toHaveURL(/\/knowledge/);
+    // 旧判据下这里会**静默无操作**（URL 原地停在 /chat）→ 本断言失败，复刻线上形态。
+    await expect(page).toHaveURL(/\/knowledge(\?|$)/);
   });
 
   test('全屏态下卡片占用输入框位置时，容器不再是「输入栏」的样子', async ({ page }) => {
