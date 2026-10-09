@@ -96,6 +96,38 @@ describe('AcpPool', () => {
       assert.equal(pool.__size(), 1);
     });
 
+    it('a concurrent acquirer waits for the in-flight initialize (never returns an unready transport)', async () => {
+      const pool = makePool();
+      // Slow handshake so the ordering is observable. The FIRST acquire spawns
+      // the entry (synchronously registered) and starts initialize; a SECOND
+      // acquire that hits the warm fast-path must await the SAME `ready` promise
+      // rather than returning the entry while initialize is still pending —
+      // otherwise the second caller would fire session/new at a transport that
+      // hasn't completed the handshake (works by stdin-ordering luck, breaks on
+      // any agent that isn't strictly ordered, and hides an init failure).
+      const spec = makeSpec({
+        fingerprint: 'fp-concurrent-ready',
+        envFlags: { FAKE_HERMES_SLOW_INIT_MS: '800' },
+      });
+      const first = pool.acquire(spec); // spawns synchronously, then awaits ready
+      const entry = pool.__getEntry('hermes');
+      assert.ok(entry, 'entry is registered synchronously on spawn');
+      // Register a ready-observer BEFORE the second acquire so microtask order
+      // is deterministic: if acquire awaits ready, this fires first.
+      let readyDone = false;
+      entry!.ready.then(() => { readyDone = true; });
+      const second = pool.acquire(spec); // warm fast-path — MUST await ready
+      await second;
+      assert.equal(
+        readyDone, true,
+        'acquire must not resolve before initialize (ready) completes — a bare '
+        + 'same-entry return would leave readyDone false here',
+      );
+      const [e1] = await Promise.all([first]);
+      assert.equal(e1.id, entry!.id, 'both acquires share the one entry');
+      assert.equal(pool.__size(), 1);
+    });
+
     it('drains and respawns when the fingerprint changes (provider config edited)', async () => {
       const pool = makePool();
       const entry1 = await pool.acquire(makeSpec({ fingerprint: 'fp-A' }));

@@ -169,6 +169,16 @@ export class AcpPool {
     if (existing) {
       if (existing.alive && existing.fingerprint === spec.fingerprint) {
         this.disarmIdleTimer(existing);
+        // Share the in-flight initialize: `existing` is in the map from the
+        // moment it spawns, but its transport isn't usable until `ready`
+        // resolves. A concurrent acquirer (page-reload + queued message, Test
+        // button during a live run) must NOT send session/new ahead of the
+        // handshake completing — await ready so both callers ride the same
+        // initialize. If it rejects, spawnEntry's catch already finalized the
+        // entry; propagate so this caller sees the identical failure instead of
+        // a zombie. Awaiting an already-resolved ready is a single microtask —
+        // negligible on the warm-reuse fast path this pool exists for.
+        await existing.ready;
         return existing;
       }
       // Dead entry, or config changed under our feet — tear down, respawn.

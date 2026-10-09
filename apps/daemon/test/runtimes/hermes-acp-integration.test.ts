@@ -31,11 +31,17 @@ describe('RunManager ACP integration (Hermes)', () => {
     runManager = new RunManager();
     // launch.ts computes envKey as `${def.id.toUpperCase()}_BIN` = 'HERMES_BIN'
     process.env['HERMES_BIN'] = fakeHermesPath;
-    // Fast ACP timeouts for tests (overrides RunManager defaults).
-    // Idle=500ms means "if fake-hermes goes silent for 0.5s, time out";
-    // absolute=2000ms is the safety net.
-    process.env['MOLIO_ACP_IDLE_TIMEOUT_MS'] = '500';
-    process.env['MOLIO_ACP_ABSOLUTE_TIMEOUT_MS'] = '2000';
+    // Fast-but-load-tolerant ACP timeouts for tests (overrides RunManager
+    // defaults). Idle=3000ms means "if fake-hermes goes silent for 3s, time
+    // out"; absolute=10000ms is the safety net. NOT 500/2000: under full-suite
+    // parallel load on Windows, node spawn latency for the fake server alone
+    // can exceed 500ms → initialize idle-times-out → the run fails before
+    // 'models' ever fires and the waiting test hangs for its whole 30s budget
+    // (observed twice on the sendMessage test). 3s keeps the timeout tests
+    // quick while tolerating a loaded dev machine; fixture delays that must
+    // EXCEED the idle budget are scaled to match (search for 4000).
+    process.env['MOLIO_ACP_IDLE_TIMEOUT_MS'] = '3000';
+    process.env['MOLIO_ACP_ABSOLUTE_TIMEOUT_MS'] = '10000';
   });
 
   afterEach(() => {
@@ -223,11 +229,11 @@ describe('RunManager ACP integration (Hermes)', () => {
     process.env['FAKE_HERMES_NO_INIT'] = '1';
     const runId = await runManager.createRun({ agentId: 'hermes', message: 'hi' });
 
-    // With MOLIO_ACP_IDLE_TIMEOUT_MS=500 + FAKE_HERMES_NO_INIT=1, fake-hermes
-    // goes totally silent → idle timer fires after ~500ms with an error
+    // With MOLIO_ACP_IDLE_TIMEOUT_MS=3000 + FAKE_HERMES_NO_INIT=1, fake-hermes
+    // goes totally silent → idle timer fires after ~3s with an error
     // containing 'idle' and 'timeout'.
     await new Promise<void>((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error('timeout test timed out')), 5000);
+      const timer = setTimeout(() => reject(new Error('timeout test timed out')), 8000);
       const unsub = runManager.onEvent(runId, (ev) => {
         if (ev.type === 'error' && ev.message.includes('idle') && ev.message.includes('timeout')) {
           clearTimeout(timer);
@@ -246,9 +252,9 @@ describe('RunManager ACP integration (Hermes)', () => {
 
   it('slow initialize with stderr heartbeat does NOT time out (activity resets idle timer)', async () => {
     // Fake-hermes prints a stderr heartbeat every 100ms while delaying the
-    // initialize response by 1500ms — well past the 500ms idle timeout.
+    // initialize response by 4000ms — past the 3000ms idle timeout.
     // The stderr activity should reset the idle timer, so initialize succeeds.
-    process.env['FAKE_HERMES_SLOW_INIT_MS'] = '1500';
+    process.env['FAKE_HERMES_SLOW_INIT_MS'] = '4000';
     process.env['FAKE_HERMES_INIT_HEARTBEAT'] = '1';
 
     const runId = await runManager.createRun({ agentId: 'hermes', message: 'hi' });
@@ -282,15 +288,15 @@ describe('RunManager ACP integration (Hermes)', () => {
     // list and prints NOTHING to stderr. On a cold first run over a slow/CN
     // line that silent tail exceeds the handshake idle budget, so the handshake
     // fails with "ACP idle timeout: session/new" even though hermes is healthy
-    // and about to respond. Harness sets MOLIO_ACP_IDLE_TIMEOUT_MS=500; a 1200ms
-    // silent session/new therefore trips it. The fix raises the real budget to
-    // 60s (config test above) so the cold fetch fits; this test pins the
-    // failure mode the fix addresses.
-    process.env['FAKE_HERMES_SLOW_SESSION_NEW_MS'] = '1200';
+    // and about to respond. Harness sets MOLIO_ACP_IDLE_TIMEOUT_MS=3000; a
+    // 4000ms silent session/new therefore trips it. The fix raises the real
+    // budget to 60s (config test above) so the cold fetch fits; this test pins
+    // the failure mode the fix addresses.
+    process.env['FAKE_HERMES_SLOW_SESSION_NEW_MS'] = '4000';
     const runId = await runManager.createRun({ agentId: 'hermes', message: 'hi' });
 
     await new Promise<void>((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error('timeout test timed out')), 5000);
+      const timer = setTimeout(() => reject(new Error('timeout test timed out')), 8000);
       const unsub = runManager.onEvent(runId, (ev) => {
         if (ev.type === 'error' && /idle timeout: session\/new/.test(ev.message)) {
           clearTimeout(timer);
@@ -313,7 +319,7 @@ describe('RunManager ACP integration (Hermes)', () => {
     // stderr activity — no heartbeat required (unlike the initialize-heartbeat
     // test). This is exactly why raising idleTimeoutMs fixes the cold-start
     // false-positive: the model-list fetch is silent but finite, so a large
-    // enough budget lets a healthy session/new through. Harness idle=500ms; a
+    // enough budget lets a healthy session/new through. Harness idle=3000ms; a
     // 200ms silent delay stays under it.
     process.env['FAKE_HERMES_SLOW_SESSION_NEW_MS'] = '200';
     const runId = await runManager.createRun({ agentId: 'hermes', message: 'hi' });

@@ -571,7 +571,13 @@ describe('runScriptProcess — real tree kill (orphaned-installer regression)', 
 
       assert.equal(sawStarted, true, 'grandchild must have started before abort');
       assert.equal(result.aborted, true, 'result must be flagged aborted');
-      assert.ok(elapsed < 10_000, `must settle promptly, took ${elapsed}ms`);
+      // 20s ceiling, not 10s: under full-suite parallel load on Windows,
+      // powershell spawn + taskkill /T settle has been observed at 12-14s
+      // (a cold powershell.exe start alone can eat several seconds). The
+      // regression this guards against — an orphaned grandchild holding the
+      // stdio pipe open — never settles at all (the child sleeps 300s), so a
+      // 20s ceiling still discriminates cleanly while tolerating a loaded box.
+      assert.ok(elapsed < 20_000, `must settle promptly, took ${elapsed}ms`);
 
       const gpPid = parseInt(readFileSync(gpPidFile, 'utf8').trim(), 10);
       assert.ok(Number.isFinite(gpPid) && gpPid > 0, 'grandchild pid recorded');
