@@ -128,13 +128,17 @@ async function loginViaDevCode(page: Page, email: string) {
   }
   await page.locator('[data-testid="account-code-input"]').fill(body.devCode as string);
   await page.locator('[data-testid="account-verify-btn"]').click();
+  // 登录成功（非登录意图）→ 弹窗收起并导航资源页（登录后默认落地页）
+  await expect(page.locator(ACCOUNT_MODAL)).not.toBeVisible();
+  await expect(page).toHaveURL(/\/resources$/);
+  // 下方用例断言「我的」页面（资料/上架 Tab）：已登录点账号入口进入 /me，
+  // account-logged-email 在 /me 资料 Tab 渲染
+  await expect(page.locator('[data-testid="nav-account-btn"]')).toHaveClass(/is-logged-in/);
+  await page.locator('[data-testid="nav-account-btn"]').click();
+  await expect(page).toHaveURL(/\/me$/);
   await expect(page.locator('[data-testid="account-logged-email"]')).toHaveText(email, {
     timeout: 10_000,
   });
-  // 账号模块页面化：登录成功（非登录意图）→ 弹窗自动收起，NavRail 导航 /me「我的」页面，
-  // account-logged-email 在 /me 资料 Tab 渲染（上面的断言即等到导航完成）
-  await expect(page.locator(ACCOUNT_MODAL)).not.toBeVisible();
-  await expect(page).toHaveURL(/\/me$/);
 }
 
 test.describe('社区发布 → 展示 → 下载闭环（P1，mock OSS）', () => {
