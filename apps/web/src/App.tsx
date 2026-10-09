@@ -181,12 +181,37 @@ export default function App() {
   }, [navigate]);
 
   // 面板在任意页面常驻可用（方案 D）：跨页保持开启，后台任务继续且可见。
-  // 唯独**全屏态**（`/chat`）下收起：那里由全屏 shell 承担会话呈现，再叠一个悬浮对话
-  // 就是同一会话的同屏双视图（勾选态 / 草稿 / 滚动位置都会打架）。见 isFullscreenRoute。
+  //
+  // 全屏态（`/chat`）是一条**模式**边界，两个方向都要管：
+  //
+  // - **进入**全屏态 → 收起面板：那里由全屏 shell 承担会话呈现，再叠一个悬浮对话就是
+  //   同一会话的同屏双视图（勾选态 / 草稿 / 滚动位置都会打架）。见 isFullscreenRoute。
+  // - **离开**全屏态 → 把会话降级回悬浮面板。这是**降级**而不是消失：会话本身在 App 层
+  //   常驻、run 也没断，但界面上总得有个地方继续展示它，否则用户看到的就是
+  //   「聊天记录直接没了」。凡是离开 `/chat` 的导航都走这里 —— 导航栏、剪藏协议
+  //   `molio://` 落在知识库、运行时设置深链、浏览器后退 —— 所以这条规则写在**路由层**，
+  //   而不是给每个入口各打一个补丁（那样每加一个入口就会漏一次）。
+  //
+  // 只在**确实有会话**时才弹（否则会凭空冒出一个空面板占地方）；非全屏页面之间互相切换
+  // 一律不动面板开关 —— 方案 D 的「跨页保持用户的选择」不能被这条规则破坏。
+  const prevPathRef = useRef(location.pathname);
   useEffect(() => {
-    if (isFullscreenRoute(location.pathname)) {
+    const wasFullscreen = isFullscreenRoute(prevPathRef.current);
+    const isFullscreen = isFullscreenRoute(location.pathname);
+    prevPathRef.current = location.pathname;
+
+    if (isFullscreen) {
       kbChatSessionsStore.setPanelOpen(false);
+      return;
     }
+    if (!wasFullscreen || kbChatSessionsStore.getSessions().length === 0) return;
+
+    // 面板在 `/chat` 上是 `return null`，此刻是**刚挂载**：直接置 true 会让它带着终态
+    // 出现（CSS 无从插值，就是硬闪）。先以收起态完成这一帧、下一帧再翻成展开，
+    // 它既有的 200ms 升起动画才会真的播出来。双 rAF 是为了确保首帧样式已被计算。
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => kbChatSessionsStore.setPanelOpen(true));
+    });
   }, [location.pathname]);
 
   // In-page navigation from molio:// protocol (desktop main → renderer IPC).
@@ -328,12 +353,8 @@ export default function App() {
       if (inAppHistory > 0) navigate(-1);
       else navigate(DEFAULT_ROUTE);
 
-      // 面板要「从右下角升起」而不是硬闪 —— 关键在于**先让它以收起态挂载、再翻成展开**：
-      // 直接置 true 会让它带着终态挂载，CSS 过渡无从触发（那正是原先生硬的来源）。
-      // 双 rAF：第一帧让 React 提交挂载，第二帧 class 变化才真的产生可过渡的起始态。
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => kbChatSessionsStore.setPanelOpen(true));
-      });
+      // 面板的升起**不在这里做** —— 由上面「离开全屏态 → 降级回面板」那条通用规则负责。
+      // 若在这里再打开一次，就只有「点最小化」这一条路径有动效，导航栏/剪藏等路径没有。
     }, FORM_SWITCH_EXIT_MS);
   };
 

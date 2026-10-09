@@ -8,7 +8,9 @@ import { NoRuntimeCard } from './NoRuntimeCard';
 import { AgentsUnavailableCard } from './AgentsUnavailableCard';
 import { FirstRunOnboarding } from './home/FirstRunOnboarding';
 import { messageSelectionStore } from '../stores/messageSelectionStore';
-import { isFormSwitchToFullscreen, FORM_SWITCH_ENTER_MS } from '../stores/formSwitchStore';
+import {
+  isFormSwitchToFullscreen, FORM_SWITCH_ENTER_MS, morphClipInset,
+} from '../stores/formSwitchStore';
 import {
   kbChatSessionsStore, useKbChatActiveSessionId, useKbChatSessions,
   sessionComposerKey, sessionComposerMountKey,
@@ -152,23 +154,39 @@ export function HomePage({
    * null = 两态都不是，正常渲染输入框。
    */
   /**
-   * 形态交接动效的类名（两个根节点共用）。
+   * 形态变形的类名与几何（两个根节点共用），详见 home.css 的说明。
    *
-   * - `--entering`：本次挂载来自面板头部的「全屏」按钮（幂等读取，StrictMode 双渲染下安全）。
-   * - `--leaving`：点了「最小化」的退场阶段，由 App 传入；播完才真正导航。
+   * 让两端读起来是**同一个容器**靠的是几何连续：目的端的框从源端（面板）的矩形长出来，
+   * 圆角 12px→0、阴影随之淡出。所以这里提供的是 `clip-path: inset(...)` 的两端值。
    */
-  const [entering, setEntering] = useState(() => isFormSwitchToFullscreen());
-  // 动画播完就摘掉这个类：否则它会一直挂着，与之后的 `--leaving` 并存 ——
-  // 两条规则都设 `animation`，谁生效就取决于 CSS 源码顺序（当前是靠后者在后面侥幸生效）。
-  // 结束态与基础样式一致（opacity 1 / 无位移），所以摘类不会产生跳变。
+  const [morphFrom] = useState<string | null>(() => {
+    if (!isFormSwitchToFullscreen()) return null;
+    // 没量到几何就不播：宁可不动，也不要从一个错误的矩形长开。
+    return morphClipInset();
+  });
+  const [entering, setEntering] = useState(() => morphFrom !== null);
+  // 播完就摘类：否则它会一直挂着，之后 `--morph-out` 到场时两条规则都设 `animation`，
+  // 谁生效就取决于 CSS 源码顺序。终态与基础样式一致，摘类不产生跳变。
   useEffect(() => {
     if (!entering) return;
     const t = window.setTimeout(() => setEntering(false), FORM_SWITCH_ENTER_MS);
     return () => window.clearTimeout(t);
   }, [entering]);
-  const pageClass = ['home-page', entering && 'home-page--entering', leaving && 'home-page--leaving']
+
+  // 离开的目标几何在**点击时**算（用当前视口），不缓存 —— 窗口可能已被缩放。
+  const morphTo = useMemo(() => {
+    if (!leaving) return null;
+    return morphClipInset();
+  }, [leaving]);
+
+  const pageClass = ['home-page', entering && 'home-page--morph-in', morphTo && 'home-page--morph-out']
     .filter(Boolean)
     .join(' ');
+  const pageStyle: React.CSSProperties | undefined = entering && morphFrom
+    ? ({ '--morph-from': morphFrom } as React.CSSProperties)
+    : morphTo
+      ? ({ '--morph-to': morphTo } as React.CSSProperties)
+      : undefined;
 
   const composerFallback = agentsUnavailable ? (
     <AgentsUnavailableCard onRetry={onRetryAgents} />
@@ -187,7 +205,7 @@ export function HomePage({
         ? [{ vaultId: activeSession.vaultId, filePath: activeSession.filePath }]
         : [];
     return (
-      <div className={`${pageClass} chat-active`}>
+      <div className={`${pageClass} chat-active`} style={pageStyle}>
         <div className="home-chat-col">
         {/* Header */}
         <div className="home-header">
@@ -276,7 +294,7 @@ export function HomePage({
 
   // ── landing：无活动标签 / 活动标签为空（且未绑定持久化会话）──
   return (
-    <div className={`${pageClass} home-landing`}>
+    <div className={`${pageClass} home-landing`} style={pageStyle}>
       <div className="home-hero-view">
         {/* 首次运行引导 —— 只在落地页出现（有会话说明人已经在用了，不再打扰） */}
         <FirstRunOnboarding />

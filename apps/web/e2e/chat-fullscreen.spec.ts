@@ -256,6 +256,51 @@ test.describe('/chat 全屏态与面板共享活动会话', () => {
     await expect(page).toHaveURL(/\/knowledge(\?|$)/);
   });
 
+  // ── 全屏态是「模式」，不是「一页」：离开它必须**降级**而不是消失 ──────────────
+  // 任何离开 `/chat` 的导航（导航栏、剪藏 molio:// 落在知识库、运行时设置深链、
+  // 浏览器后退…）在过去都会让对话凭空不见 —— 会话其实还在跑（控制器在 App 层常驻），
+  // 但界面上没有任何地方展示它。正确的降级是：自动回到悬浮面板。
+
+  test('全屏态下切到别的页面 → 会话自动降级回悬浮面板（不丢对话）', async ({ page }) => {
+    await mockChatRun(page);
+    await seedSession(page, '切页不丢对话');
+    await page.locator('[data-testid="kb-chat-fullscreen"]').click();
+    await expect(page).toHaveURL(/\/chat$/);
+    await expect(page.locator('[data-testid="assistant-message"]').last()).toBeVisible({ timeout: 10_000 });
+
+    // 从全屏切去知识库（走导航栏 —— 真实用户路径）
+    await clickNav(page, 'knowledge');
+    await expect(page).toHaveURL(/\/knowledge/);
+
+    // 对话不该凭空消失：面板自动出现，且展示的是**同一个会话**
+    await expect(page.locator('[data-testid="kb-chat-panel"]')).toBeVisible();
+    await expect(page.locator('[data-testid="kb-chat-panel"] [data-testid="assistant-message"]').last())
+      .toBeVisible({ timeout: 10_000 });
+  });
+
+  test('全屏态下没有会话时切页 → 不该弹出空面板', async ({ page }) => {
+    await mockChatRun(page);
+    await page.goto('http://localhost:5173/chat');
+    await expect(page.locator('.home-landing')).toBeVisible({ timeout: 5_000 });
+
+    await clickNav(page, 'knowledge');
+
+    // 没有会话可降级 → 面板保持收起，不要凭空冒出来占地方
+    await expect(page.locator('[data-testid="kb-chat-panel"]')).toHaveClass(/--closed/);
+  });
+
+  test('非全屏页面之间切换，不会强行打开用户自己关掉的面板', async ({ page }) => {
+    await mockChatRun(page);
+    await seedSession(page, '面板保持关闭');
+    await page.locator('[data-testid="kb-chat-close"]').click();
+    await expect(page.locator('[data-testid="kb-chat-panel"]')).toHaveClass(/--closed/);
+
+    // 知识库 → 历史：两端都不是全屏态，面板的开关状态不该被导航改变
+    await clickNav(page, 'history');
+
+    await expect(page.locator('[data-testid="kb-chat-panel"]')).toHaveClass(/--closed/);
+  });
+
   test('全屏态下卡片占用输入框位置时，容器不再是「输入栏」的样子', async ({ page }) => {
     await mockChatRun(page, persisted('card'));
     await seedSession(page, '卡片容器');
