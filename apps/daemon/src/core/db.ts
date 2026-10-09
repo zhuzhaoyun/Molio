@@ -9,6 +9,7 @@ import Database from 'better-sqlite3';
 import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
+import { molioDataDir } from './data-dir.js';
 import { randomUUID } from 'node:crypto';
 import type { ChatMessage, Project, Conversation, ConversationHistoryItem, ConversationHistoryPage, ListHistoryQuery, Vault, KbHistoryEntry } from '@molio/contracts';
 
@@ -43,9 +44,9 @@ function migrateLegacyDir(): void {
  * Creates the data directory and runs migrations on first open.
  */
 export function openDatabase(dataDir?: string): SqliteDb {
-  if (!dataDir) migrateLegacyDir();
+  if (!dataDir && !process.env['MOLIO_DATA_DIR']?.trim()) migrateLegacyDir();
 
-  const dir = dataDir ?? path.join(os.homedir(), '.molio');
+  const dir = dataDir ?? molioDataDir();
   const file = path.join(dir, 'app.sqlite');
 
   if (dbInstance && dbFile === file) return dbInstance;

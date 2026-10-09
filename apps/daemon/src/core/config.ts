@@ -1,6 +1,6 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import * as os from 'node:os';
+import { molioDataDir, runtimeHome } from './data-dir.js';
 
 /**
  * Compute config paths lazily so tests that override `process.env.USERPROFILE`
@@ -9,13 +9,13 @@ import * as os from 'node:os';
  * the test's beforeEach runs.
  */
 function configDir(): string {
-  return path.join(os.homedir(), '.molio');
+  return molioDataDir();
 }
 function configFile(): string {
   return path.join(configDir(), 'config.json');
 }
 function claudeDir(): string {
-  return path.join(os.homedir(), '.claude');
+  return runtimeHome('claude');
 }
 function claudeSettingsFile(): string {
   return path.join(claudeDir(), 'settings.json');
