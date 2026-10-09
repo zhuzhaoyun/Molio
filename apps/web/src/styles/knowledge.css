@@ -5,13 +5,12 @@
 
 /* ── Shell: 3-column layout ──
    FilePanel (260px) | Content (flex) | ActionBar (220px)
-   停靠问答形态（--kb-dock-w 由悬浮面板拖宽实时驱动）：右缘让出等宽给问答列，
+   停靠问答形态（--chat-dock-w 由悬浮面板拖宽实时驱动）：右缘让出等宽给问答列，
    文档区随之重排（分栏而非覆盖）。浮动形态下该变量为 0，无任何影响。 */
 .kb-shell {
   display: flex;
   height: 100%;
   overflow: hidden;
-  padding-right: var(--kb-dock-w, 0px);
 }
 
 /* ══════════ Column 2: File Panel ══════════ */

@@ -23,8 +23,10 @@ import { messageSelectionStore } from './stores/messageSelectionStore';
 import { kbChatSessionsStore } from './stores/kbChatSessionsStore';
 import { usePendingPrefill, skillPrefillStore } from './stores/skillPrefillStore';
 import { SkillEditor, type SkillFormValues } from './components/settings/SkillEditor';
-import { DEFAULT_ROUTE, CHAT_ROUTE, RESTORABLE_ROUTES, isFullscreenRoute } from './routes';
-import { FORM_SWITCH_EXIT_MS } from './stores/formSwitchStore';
+import {
+  DEFAULT_ROUTE, CHAT_ROUTE, RESTORABLE_ROUTES, isFullscreenRoute, pageNameForPath,
+} from './routes';
+import { requestDegradeToDock } from './stores/formSwitchStore';
 import './styles/rail.css';
 import './styles/home.css';
 import './styles/knowledge.css';
@@ -95,8 +97,6 @@ export default function App() {
   const navigate = useNavigate();
   const location = useLocation();
   const [defaultAgentId, setDefaultAgentId] = useState<string | null>(null);
-  // 「最小化」的退场阶段：为 true 时 /chat shell 播退场动画，播完（FORM_SWITCH_EXIT_MS）才导航。
-  const [leaving, setLeaving] = useState(false);
   // 当前 runtime 选择迁移到 chatRuntimeStore（composer 的 runtime/model pill 与
   // App 共享同一事实源）；此处只订阅 agentId，往下喂给 KbChatSessionsProvider（各会话控制器
   // 与知识库页共用）——App 级 useChat 已于 L2a 退役。
@@ -157,18 +157,12 @@ export default function App() {
     // 原「首页」路由是 `/`，replace 后得到空串，会被判成 'other' —— 'home' 这个取值因此永远不可达。
     // 显式特判，让 'home' 真正生效（悬浮面板据此跳过主页：见 KbChatSessionsPanel 的 dock effect）。
     const path = location.pathname;
-    // 注意：这里虽然也判 `/chat`，但与 `isFullscreenRoute` 是**两件事** ——
-    // 这条是给路由取「上下文页名」（`/chat` 在上下文里就叫 'home'，沿用它以免牵动
-    // 依赖 page 名的既有逻辑），不是「是否处于全屏态」。别顺手合并成一个判据。
-    const page: CurrentContext['page'] = path === CHAT_ROUTE
-      ? 'home'
-      // 入口地址转瞬即走（EntryRedirect 是声明式重定向），归 'other' 以免被当成主页。
-      : path === '/'
-        ? 'other'
-        : path.replace('/', '') as CurrentContext['page'];
-    const known: CurrentContext['page'][] = ['knowledge', 'home', 'history', 'graph', 'settings'];
+    // 注意：这里虽然也涉及 `/chat`，但与 `isFullscreenRoute` 是**两件事** ——
+    // 这条是给路由取「上下文页名」（`/chat` 在上下文里就叫 'home'，沿用既有命名），
+    // 不是「是否处于全屏态」。别顺手合并成一个判据。
+    // 映射本身与「离开全屏时把面板降级到哪一页」共用 pageNameForPath，避免两处漂移。
     currentContextStore.set({
-      page: known.includes(page) ? page : 'other',
+      page: pageNameForPath(path) as CurrentContext['page'],
     });
   }, [location.pathname]);
 
@@ -206,12 +200,15 @@ export default function App() {
     }
     if (!wasFullscreen || kbChatSessionsStore.getSessions().length === 0) return;
 
-    // 面板在 `/chat` 上是 `return null`，此刻是**刚挂载**：直接置 true 会让它带着终态
-    // 出现（CSS 无从插值，就是硬闪）。先以收起态完成这一帧、下一帧再翻成展开，
-    // 它既有的 200ms 升起动画才会真的播出来。双 rAF 是为了确保首帧样式已被计算。
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => kbChatSessionsStore.setPanelOpen(true));
-    });
+    // 降级到**停靠侧边栏**（不是悬浮）：浮动态是浮在内容上的，实测会遮住 settings 的更新卡
+    // 链接、resources 的搜索框与分类、history 的行操作；停靠配 `.entry-main` 的让位才真不遮挡。
+    // 意图交给面板消费 —— 由它落停靠，并播「从内容区宽收窄成侧边栏」的交接（几何由到达端
+    // 自己量，不做任何预测：面板形态按页记忆、悬浮位置持久化，预测必然错位）。
+    //
+    // 直接置 open：面板此刻是刚挂载，若走它「先收起、下一帧再展开」的升起动画，
+    // 收尾那段正是「像从无到有」的来源 —— 现在它必须以不透明、占满内容区宽的状态出现。
+    requestDegradeToDock(pageNameForPath(location.pathname));
+    kbChatSessionsStore.setPanelOpen(true);
   }, [location.pathname]);
 
   // In-page navigation from molio:// protocol (desktop main → renderer IPC).
@@ -344,18 +341,12 @@ export default function App() {
    * 回落到默认落点。读 `window.history.state` 而不读 `location`：点击时取值，不存在渲染期陈旧问题。
    */
   const handleMinimize = () => {
-    if (leaving) return; // 退场动画进行中，忽略重复点击（否则会排两次导航）
-    setLeaving(true);
-    window.setTimeout(() => {
-      setLeaving(false);
-
-      const inAppHistory = (window.history.state as { idx?: number } | null)?.idx ?? 0;
-      if (inAppHistory > 0) navigate(-1);
-      else navigate(DEFAULT_ROUTE);
-
-      // 面板的升起**不在这里做** —— 由上面「离开全屏态 → 降级回面板」那条通用规则负责。
-      // 若在这里再打开一次，就只有「点最小化」这一条路径有动效，导航栏/剪藏等路径没有。
-    }, FORM_SWITCH_EXIT_MS);
+    const inAppHistory = (window.history.state as { idx?: number } | null)?.idx ?? 0;
+    if (inAppHistory > 0) navigate(-1);
+    else navigate(DEFAULT_ROUTE);
+    // 会话降级回停靠面板、以及那段「从内容区宽收窄成侧边栏」的交接，都由上面
+    // 「离开全屏态」那条通用规则负责 —— 导航栏切换、剪藏落点、浏览器后退走的是同一条，
+    // 在这里再做一次就只有「点最小化」这一条路径有交接。
   };
 
   // 视图切换（路由变化）→ 退出消息勾选态。`messageSelectionStore` 是模块级全局单例，
@@ -403,7 +394,6 @@ export default function App() {
                   onOpenRuntimes={() => navigate('/settings?tab=runtimes')}
                   onNewChat={handleNewChat}
                   onMinimize={handleMinimize}
-                  leaving={leaving}
                   onOpenConversation={(conversationId) => {
                     // 就地切换活动会话并触发加载（复用面板已有的切换语义：运行中 → 新开标签）。
                     kbChatPanelRef.current?.openConversation(conversationId);

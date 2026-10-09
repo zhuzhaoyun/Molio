@@ -35,3 +35,20 @@ export const RESTORABLE_ROUTES = [
   '/me',
   '/resources',
 ];
+
+/**
+ * 上下文页名白名单。**严格照搬 App 里原本内联的那一份**（`/me`、`/resources` 不在其中，
+ * 它们归 `'other'`）—— 这次只是把映射收敛到单一位置，不顺手改页名语义：
+ * 面板的停靠记忆按页名分桶，动它会牵动既有行为。
+ */
+const KNOWN_PAGE_NAMES = ['knowledge', 'home', 'history', 'graph', 'settings'] as const;
+
+/**
+ * 路径 → 上下文页名。**单一真值源**：App 写 `currentContextStore`、
+ * 以及「离开全屏时把面板降级到哪一页的停靠」都用它 —— 两处各自内联一份迟早会漂移。
+ * `/chat` 在上下文里叫 `'home'`（沿用既有命名，牵动面小）；`/` 是入口、转瞬即走。
+ */
+export function pageNameForPath(pathname: string): string {
+  const name = pathname === '/' ? 'other' : pathname.replace('/', '');
+  return (KNOWN_PAGE_NAMES as readonly string[]).includes(name) ? name : 'other';
+}

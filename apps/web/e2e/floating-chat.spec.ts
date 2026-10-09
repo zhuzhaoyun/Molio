@@ -318,9 +318,11 @@ test.describe('Floating chat (方案 D)', () => {
     await expect(panel).toBeVisible();
     await page.waitForTimeout(250);
     const vw = page.viewportSize()!.width;
-    // .kb-shell 当前让出的右缘宽度（停靠=面板宽，悬浮=0）
+    // 内容区当前让出的右缘宽度（停靠=面板宽，悬浮=0）。
+    // 读 **.entry-main**（App 外壳）而不是 .kb-shell：让位已从「知识库页自己让」上提为
+    // 全站通用（一条规则覆盖所有页面，新增页面不会漏），见 rail.css 的 --chat-dock-w。
     const shellPad = () => page.evaluate(() =>
-      parseFloat(getComputedStyle(document.querySelector('.kb-shell')!).paddingRight));
+      parseFloat(getComputedStyle(document.querySelector('.entry-main')!).paddingRight));
 
     // KB 页默认停靠 = 页内分栏：从页顶（y=0）占满整高、贴右缘，而非悬浮式 overlay
     let box = (await panel.boundingBox())!;

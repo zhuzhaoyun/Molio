@@ -7,7 +7,9 @@ import {
 } from '../../stores/kbChatSessionsStore';
 import { useCurrentContext } from '../../stores/currentContextStore';
 import { CHAT_ROUTE, isFullscreenRoute } from '../../routes';
-import { markFormSwitchToFullscreen } from '../../stores/formSwitchStore';
+import {
+  FORM_SWITCH_ENTER_MS, FORM_SWITCH_EXIT_MS, shouldDegradeToDock,
+} from '../../stores/formSwitchStore';
 import { ChatSessionTabBar } from './ChatSessionTabBar';
 import { KbChatSession } from './KbChatSession';
 import { useKbChatSessionApi } from './KbChatSessionsProvider';
@@ -81,8 +83,12 @@ function readPanelHeight(): number | null {
 const STORAGE_KEY_DOCK_MODE_BY_PAGE = 'molio.kb.chatDockModeByPage';
 const STORAGE_KEY_FLOAT_POS = 'molio.kb.chatFloatPos';
 
-function defaultDockFor(page: string): 'float' | 'dock' {
-  return page === 'knowledge' ? 'dock' : 'float';
+function defaultDockFor(_page: string): 'float' | 'dock' {
+  // **默认停靠**（含此前默认悬浮的其余页面）：浮动态是浮在内容上的，一定会遮住右侧内容
+  // ——实测 /settings 的更新卡链接、/resources 的搜索框与分类、/history 的行操作都被盖住。
+  // 停靠配 `.entry-main` 的让位才是真的不遮挡，所以它是对所有页面的默认。
+  // 用户若把某页拖成悬浮，那一页的记忆会保留（用户偏好规则：显式选择必须被尊重）。
+  return 'dock';
 }
 
 function readDockModeByPage(): Record<string, 'float' | 'dock'> {
@@ -94,6 +100,10 @@ function readDockModeByPage(): Record<string, 'float' | 'dock'> {
     }
   } catch { /* storage unavailable */ }
   return {};
+}
+/** 形态记忆的写入点（`setDockMode` 与「离开全屏降级」两处共用，避免复制一段持久化逻辑）。 */
+function persistDockByPage(next: Record<string, 'float' | 'dock'>): void {
+  try { localStorage.setItem(STORAGE_KEY_DOCK_MODE_BY_PAGE, JSON.stringify(next)); } catch { /* storage unavailable */ }
 }
 function readFloatPos(): { left: number; top: number } | null {
   try {
@@ -142,6 +152,12 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
   const [dockMode, setDockModeState] = useState<'float' | 'dock'>(() =>
     dockByPage[page] ?? defaultDockFor(page),
   );
+  /** 内容区宽度（`.entry-main` 的 clientWidth 含 padding，所以让位之后它仍是满宽）。 */
+  const contentAreaWidth = useCallback(() => {
+    const el = document.querySelector('.entry-main');
+    return el ? el.clientWidth : window.innerWidth;
+  }, []);
+
   // 按页记忆停靠形态：每页应用自己记住的形态（KB 页默认停靠、其余页默认悬浮）。
   // 面板现已全局可用，因此非 KB 页的形态记忆也要生效——离开 KB 页不再切换形态，
   // 面板保持原样跨页（App 层只在到达 `/chat` 时收起它）。
@@ -151,15 +167,52 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
   // （用例里的「主页」即 `/chat`）。
   useEffect(() => {
     if (page === 'home') return;
+    // 「离开全屏」→ 落到**停靠**（不遮挡；浮动态实测会遮住 settings 的更新卡链接、
+    // resources 的搜索框与分类、history 的行操作），并写进这一页的记忆。
+    // 判断是**幂等**的（不做「消费即清除」）：StrictMode 会双调用 effect，读掉就会走回
+    // 「按页记忆」分支、把刚落的停靠又改回去，开发与生产表现不一致。
+    if (shouldDegradeToDock(page)) {
+      setDockModeState('dock');
+      setDockByPage((prev) => {
+        const next = { ...prev, [page]: 'dock' as const };
+        persistDockByPage(next);
+        return next;
+      });
+      // 交接：先以**占满内容区**的状态出现（不透明、不淡入 —— 淡入正是「像从无到有」的来源），
+      // 再收窄成侧边栏；让位已到位，内容区随之被逐步揭开。
+      setFormSwitching(true);
+      setMorphWidthFrom(contentAreaWidth());
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => setMorphWidthFrom(null));
+      });
+      if (formSwitchTimerRef.current) window.clearTimeout(formSwitchTimerRef.current);
+      formSwitchTimerRef.current = window.setTimeout(() => {
+        formSwitchTimerRef.current = null;
+        setFormSwitching(false);
+      }, FORM_SWITCH_ENTER_MS);
+      return;
+    }
     setDockModeState(dockByPage[page] ?? defaultDockFor(page));
     // 仅响应 page 导航，不含 dockByPage（切换停靠时 setDockMode 已同步 state，无需回读）
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page]);
+  }, [page, contentAreaWidth]);
   // 悬浮位置（left/top）。null = 未移动过 → CSS 默认右下角。持久化。
   const [floatPos, setFloatPos] = useState<{ left: number; top: number } | null>(readFloatPos);
   // 形态切换过渡：切换瞬间加 --morphing 启用几何过渡，260ms 后移除
   const [morphing, setMorphing] = useState(false);
   const morphTimerRef = useRef<number | null>(null);
+  /**
+   * 形态交接（全屏 ⇄ 停靠侧边栏）由**面板自己**驱动：宽度在「面板宽 ⇄ 内容区宽」之间过渡。
+   *
+   * 为什么不让 `/chat` 的 shell 播放：那要**预测**面板会落在哪 —— 而面板形态按页记忆、
+   * 悬浮位置与尺寸也持久化（实测同一面板在 /knowledge 是停靠满高 `0,780,500,720`、
+   * 在 /history 是悬浮 `72,756,500,624`），预测必然错位，表现为「切回局部时位置每次不稳定」。
+   * 宽度是面板自己的属性：量它、改它，都不需要预测任何别的东西。
+   */
+  const [morphWidthFrom, setMorphWidthFrom] = useState<number | null>(null);
+  const [formSwitching, setFormSwitching] = useState(false);
+  const formSwitchTimerRef = useRef<number | null>(null);
+  useEffect(() => () => { if (formSwitchTimerRef.current) window.clearTimeout(formSwitchTimerRef.current); }, []);
   const panelElRef = useRef<HTMLDivElement>(null);
   // handleEl 记录手柄元素：is-dragging 加在手柄上（pointerdown 的 e.currentTarget），
   // 结束/兜底时须从「同一个手柄」移除（此前误从面板移除 → is-dragging 永远残留）。
@@ -180,11 +233,11 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
 
   const docked = dockMode === 'dock';
   // 知识库页停靠 = 还原改动前的「页内分栏」：面板从页顶占满整高、贴右缘，
-  // 文档区经 --kb-dock-w 让出等宽 → 问答与文档分栏而非覆盖。其他页面停靠仍是
+  // 文档区经 --chat-dock-w 让出等宽 → 问答与文档分栏而非覆盖。其他页面停靠仍是
   // 页头之下的悬浮式侧边栏（--dock 基础几何）。
   const dockKb = docked && page === 'knowledge';
   // 停靠形态不应用高度/位置 inline（几何交给 --dock）；悬浮形态应用自定义高度与位置
-  const panelStyle: React.CSSProperties = { width: panelWidth };
+  const panelStyle: React.CSSProperties = { width: morphWidthFrom ?? panelWidth };
   if (!docked) {
     panelStyle.height = panelHeight ?? undefined;
     if (floatPos) {
@@ -193,16 +246,16 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
     }
   }
 
-  // 停靠形态的文档区联动：把面板当前宽度同步到根节点的 --kb-dock-w，
+  // 停靠形态的文档区联动：把面板当前宽度同步到根节点的 --chat-dock-w，
   // .kb-shell 的 padding-right 消费它 → 文档区实时重排（拖宽时逐帧跟随，无需逐帧 setState）。
   // ResizeObserver 监听面板宽度变化（拖拽/提交/重载初始化都覆盖），只在
   // 「停靠 + 打开 + KB 页」时生效，其余情况置 0（文档区恢复全宽）。
   const syncDockVar = useCallback(() => {
     const el = panelElRef.current;
     if (!el) return;
-    const active = dockMode === 'dock' && panelOpen && page === 'knowledge';
-    document.documentElement.style.setProperty('--kb-dock-w', active ? `${el.offsetWidth}px` : '0px');
-  }, [dockMode, panelOpen, page]);
+    const active = dockMode === 'dock' && panelOpen;
+    document.documentElement.style.setProperty('--chat-dock-w', active ? `${el.offsetWidth}px` : '0px');
+  }, [dockMode, panelOpen]);
   useEffect(() => {
     const el = panelElRef.current;
     if (!el) return;
@@ -211,7 +264,7 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
     syncDockVar();
     return () => {
       ro.disconnect();
-      document.documentElement.style.setProperty('--kb-dock-w', '0px');
+      document.documentElement.style.setProperty('--chat-dock-w', '0px');
     };
   }, [syncDockVar]);
 
@@ -258,7 +311,7 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
       dragWidthRef.current = null;
       const left = parseFloat(el.style.left);
       // 保持 inline width 为提交值（而非清空）——避免中间帧闪回 CSS 基础宽 500，
-      // 让 ResizeObserver/--kb-dock-w 误同步到旧宽度。
+      // 让 ResizeObserver/--chat-dock-w 误同步到旧宽度。
       el.style.width = `${w}px`;
       if (docked) {
         // 停靠：几何交给 CSS right:0，清掉 inline left
@@ -397,7 +450,7 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
     setDockModeState(mode);
     setDockByPage((prev) => {
       const next = { ...prev, [page]: mode };
-      try { localStorage.setItem(STORAGE_KEY_DOCK_MODE_BY_PAGE, JSON.stringify(next)); } catch { /* storage unavailable */ }
+      persistDockByPage(next);
       return next;
     });
   }, [page]);
@@ -424,20 +477,28 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
    * 所以面板「消失」与 shell「出现」在视觉上是同一帧同一处，没有缝 ——
    * 面板的离场被 shell 的变形**吸收**掉了，而不是两段各播各的。
    */
+  /**
+   * 进全屏：把面板宽度**拉长到内容区宽**，拉满之后才换页。
+   *
+   * 拉满那一刻，面板与 `/chat` 的 shell 占据的是**同一个矩形**，所以「面板卸载 / shell 挂载」
+   * 在视觉上是同一帧同一处 —— 交接没有缝。这是由面板自己驱动的，不预测任何几何
+   * （见 morphWidthFrom 的说明）。
+   */
   const handleEnterFullscreen = useCallback(() => {
-    const box = (el: Element | null) => {
-      const r = el?.getBoundingClientRect();
-      return r ? { top: r.top, right: r.right, bottom: r.bottom, left: r.left } : null;
-    };
-    // 同时量面板与它所在的内容盒：`clip-path: inset()` 是相对元素自己的边框盒算的，
-    // 而 shell 不占满视口（左边是导航栏），两者一起才换算得出正确的内缩量。
-    markFormSwitchToFullscreen(
-      box(panelElRef.current),
-      box(document.querySelector('.entry-main')),
-    );
-    kbChatSessionsStore.setPanelOpen(false);
-    navigate(CHAT_ROUTE);
-  }, [navigate]);
+    if (formSwitchTimerRef.current) return; // 交接中，忽略重复点击
+    setFormSwitching(true);
+    setMorphWidthFrom(contentAreaWidth());
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => setMorphWidthFrom(null));
+    });
+    formSwitchTimerRef.current = window.setTimeout(() => {
+      formSwitchTimerRef.current = null;
+      setFormSwitching(false);
+      setMorphWidthFrom(null);
+      kbChatSessionsStore.setPanelOpen(false);
+      navigate(CHAT_ROUTE);
+    }, FORM_SWITCH_EXIT_MS);
+  }, [navigate, contentAreaWidth]);
   // 按钮切换：先交还几何（含手动 inline），再切形态并启用过渡动画
   const toggleDock = useCallback(() => {
     clearInlinePos();
@@ -766,7 +827,8 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
         (panelOpen ? '' : ' floating-chat-panel--closed') +
         (docked ? ' floating-chat-panel--dock' : '') +
         (dockKb ? ' floating-chat-panel--dock-kb' : '') +
-        (morphing ? ' floating-chat-panel--morphing' : '')
+        (morphing ? ' floating-chat-panel--morphing' : '') +
+        (formSwitching ? ' floating-chat-panel--form-switch' : '')
       }
       data-testid="kb-chat-panel"
       style={panelStyle}
@@ -809,7 +871,7 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
         onDeleteConversations={resetConversations}
         onClosePanel={() => kbChatSessionsStore.setPanelOpen(false)}
         // 进入全屏态：会话不变（还是当前活动标签），只是换个承载它的视图。
-        // 形态交接见 handleEnterFullscreen（面板先下落，再换页，由 shell 升起）。
+        // 形态交接见 handleEnterFullscreen（面板宽度拉满到内容区宽后才换页，交接无缝）。
         onEnterFullscreen={handleEnterFullscreen}
         docked={docked}
         onToggleDock={toggleDock}

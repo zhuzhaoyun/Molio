@@ -195,7 +195,7 @@ test.describe('/chat 全屏态与面板共享活动会话', () => {
   //   · 默认落点分支 → 恒为 `/knowledge`
   // 所以来源页故意选 `/history`（不是 /knowledge）—— 只有回退分支会落到它。
 
-  test('/chat「最小化」→ 收起为悬浮面板并返回来源页（走回退分支）', async ({ page }) => {
+  test('/chat「最小化」→ 降级为停靠面板并返回来源页（走回退分支）', async ({ page }) => {
     await mockChatRun(page);
     await seedSession(page, '回退分支');
     // 先收起面板，让后面「从历史页开面板」成为确定性动作（不用 isVisible 软跳过）
@@ -213,15 +213,19 @@ test.describe('/chat 全屏态与面板共享活动会话', () => {
 
     await page.locator('[data-testid="home-minimize-btn"]').click();
 
-    // 退场阶段：导航被**有意**延后 FORM_SWITCH_EXIT_MS，好让 shell 的退场动画播得出来。
-    // 这是一条同步断言（不重试）：点击刚返回时计时器还没到，URL 必须仍在 /chat。
-    // 后接的重试型断言再等它落到位。把这段延时写成契约，避免以后被当「多余延迟」删掉。
-    expect(page.url()).toContain('/chat');
-
     // 只有回退分支会落到 /history；默认落点是 /knowledge —— 故本断言能区分两个分支。
     // 不用 `/history$/`：页面若镜像出查询串（如 ?limit=）会让 `$` 失配而误红。
     await expect(page).toHaveURL(/\/history(\?|$)/);
-    await expect(page.locator('[data-testid="kb-chat-panel"]')).not.toHaveClass(/--closed/);
+
+    // 降级落在**停靠**（不是悬浮）：浮动态会遮住落点页面的右侧内容，停靠配让位才不遮挡。
+    // 形态交接的几何由面板自己驱动（宽度从内容区宽收窄成侧边栏），见 KbChatSessionsPanel。
+    const panel = page.locator('[data-testid="kb-chat-panel"]');
+    await expect(panel).not.toHaveClass(/--closed/);
+    await expect(panel).toHaveClass(/floating-chat-panel--dock/);
+    await expect
+      .poll(() => page.evaluate(() =>
+        parseFloat(getComputedStyle(document.querySelector('.entry-main')!).paddingRight)))
+      .toBeGreaterThan(0); // 内容区确实为它让出了等宽
   });
 
   test('/chat 冷启动（入口 replace 落到 /chat）「最小化」→ 落默认落点 /knowledge', async ({ page }) => {
@@ -261,7 +265,7 @@ test.describe('/chat 全屏态与面板共享活动会话', () => {
   // 浏览器后退…）在过去都会让对话凭空不见 —— 会话其实还在跑（控制器在 App 层常驻），
   // 但界面上没有任何地方展示它。正确的降级是：自动回到悬浮面板。
 
-  test('全屏态下切到别的页面 → 会话自动降级回悬浮面板（不丢对话）', async ({ page }) => {
+  test('全屏态下切到别的页面 → 会话自动降级为停靠面板（不丢对话、不遮挡）', async ({ page }) => {
     await mockChatRun(page);
     await seedSession(page, '切页不丢对话');
     await page.locator('[data-testid="kb-chat-fullscreen"]').click();
@@ -273,9 +277,18 @@ test.describe('/chat 全屏态与面板共享活动会话', () => {
     await expect(page).toHaveURL(/\/knowledge/);
 
     // 对话不该凭空消失：面板自动出现，且展示的是**同一个会话**
-    await expect(page.locator('[data-testid="kb-chat-panel"]')).toBeVisible();
+    const panel = page.locator('[data-testid="kb-chat-panel"]');
+    await expect(panel).toBeVisible();
     await expect(page.locator('[data-testid="kb-chat-panel"] [data-testid="assistant-message"]').last())
       .toBeVisible({ timeout: 10_000 });
+
+    // 而且必须是**停靠**：浮动态是浮在内容上的，会遮住落点页面右侧的控件
+    // （实测 settings 的更新卡链接、resources 的搜索框与分类、history 的行操作都被盖住）。
+    await expect(panel).toHaveClass(/floating-chat-panel--dock/);
+    await expect
+      .poll(() => page.evaluate(() =>
+        parseFloat(getComputedStyle(document.querySelector('.entry-main')!).paddingRight)))
+      .toBeGreaterThan(0);
   });
 
   test('全屏态下没有会话时切页 → 不该弹出空面板', async ({ page }) => {

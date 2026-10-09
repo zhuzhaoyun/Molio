@@ -574,13 +574,6 @@ test.describe('History', () => {
 
       // 回历史页，经勾选模式删除该对话。
       await clickNav(page, 'history');
-      // 离开全屏态会自动收起为悬浮面板（L2b：全屏是模式，离开即降级回面板），而面板是
-      // fixed + z-index:90，会盖住右侧行的 ⋯ 操作。本用例与面板无关，先确定性地收起它。
-      const panel = page.locator('[data-testid=kb-chat-panel]');
-      await expect(panel).not.toHaveClass(/--closed/, { timeout: 5_000 });
-      await page.locator('[data-testid=kb-chat-close]').click();
-      await expect(panel).toHaveClass(/--closed/);
-
       const row = rowByTitle(page, 'Stale Conv');
       await row.hover();
       await row.locator('[data-testid=history-row-overflow]').click();
