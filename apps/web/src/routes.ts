@@ -9,6 +9,18 @@ export const DEFAULT_ROUTE = '/knowledge';
 export const CHAT_ROUTE = '/chat';
 
 /**
+ * 是否处于「全屏态」—— `/chat` 是悬浮对话面板的**显式全屏形态**（L2b）。
+ *
+ * 三处消费者必须共用同一个判据，否则「全屏态下谁让位」会各说各话：
+ * 面板整体的早返回、`/chat` 上收起面板的 effect、以及不渲染悬浮按钮的例外。
+ * 语义是「全屏 shell 承担了会话呈现，别的入口全部让位」—— 而不是
+ * 「主页是个特例」。同一会话不能被渲染两份（勾选态 / 草稿 / 滚动位置都会打架）。
+ */
+export function isFullscreenRoute(pathname: string): boolean {
+  return pathname === CHAT_ROUTE;
+}
+
+/**
  * 入口可恢复的路由白名单。写进 `localStorage` 的历史值只有落在其中才认，
  * 否则回落 `DEFAULT_ROUTE`。
  *

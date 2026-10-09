@@ -23,7 +23,7 @@ import { messageSelectionStore } from './stores/messageSelectionStore';
 import { kbChatSessionsStore } from './stores/kbChatSessionsStore';
 import { usePendingPrefill, skillPrefillStore } from './stores/skillPrefillStore';
 import { SkillEditor, type SkillFormValues } from './components/settings/SkillEditor';
-import { DEFAULT_ROUTE, CHAT_ROUTE, RESTORABLE_ROUTES } from './routes';
+import { DEFAULT_ROUTE, CHAT_ROUTE, RESTORABLE_ROUTES, isFullscreenRoute } from './routes';
 import './styles/rail.css';
 import './styles/home.css';
 import './styles/knowledge.css';
@@ -174,12 +174,11 @@ export default function App() {
     return () => window.removeEventListener(OPEN_RUNTIME_SETTINGS_EVENT, handler);
   }, [navigate]);
 
-  // 面板在除整页对话外的任意页面常驻可用（方案 D）：跨页保持开启，后台任务继续且可见。
-  // 唯独到达 `/chat` 时收起——它自身就是一个聊天页（占满整屏的 HomePage），
-  // 再叠一个悬浮对话会在同屏出现两个聊天框。
-  // 第 3 步 `/chat` 也不再是聊天页后，本 effect 与下方渲染处的例外一并删除。
+  // 面板在任意页面常驻可用（方案 D）：跨页保持开启，后台任务继续且可见。
+  // 唯独**全屏态**（`/chat`）下收起：那里由全屏 shell 承担会话呈现，再叠一个悬浮对话
+  // 就是同一会话的同屏双视图（勾选态 / 草稿 / 滚动位置都会打架）。见 isFullscreenRoute。
   useEffect(() => {
-    if (location.pathname === CHAT_ROUTE) {
+    if (isFullscreenRoute(location.pathname)) {
       kbChatSessionsStore.setPanelOpen(false);
     }
   }, [location.pathname]);
@@ -298,6 +297,20 @@ export default function App() {
     });
   };
 
+  /**
+   * 全屏态「最小化」：会话降级回悬浮面板，并把用户送回他来的地方。
+   *
+   * 落点判据用 `location.key`：react-router 给**应用的第一个 entry** 的 key 恒为 `'default'`，
+   * 恰好等价于「站内没有上一页」。深链直开（或刷新）`/chat` 时就是这种情况 —— 此时
+   * `navigate(-1)` 会退回浏览器历史里**应用之前**的那一页（可能是别的站点或空白），
+   * 所以回落到默认落点。比 `history.length` 可靠：后者把应用之前的历史也算进去。
+   */
+  const handleMinimize = () => {
+    kbChatSessionsStore.setPanelOpen(true);
+    if (location.key === 'default') navigate(DEFAULT_ROUTE);
+    else navigate(-1);
+  };
+
   // 视图切换（路由变化）→ 退出消息勾选态。`messageSelectionStore` 是模块级全局单例，
   // 面板态与全屏态共用；若不清理，切到另一视图会凭空冒出删除确认条（选中的消息 id 在
   // 新视图里恰好也存在时 pruneStale 拦不住）。
@@ -342,6 +355,7 @@ export default function App() {
                   onRetryAgents={refreshAgents}
                   onOpenRuntimes={() => navigate('/settings?tab=runtimes')}
                   onNewChat={handleNewChat}
+                  onMinimize={handleMinimize}
                   onOpenConversation={(conversationId) => {
                     // 就地切换活动会话并触发加载（复用面板已有的切换语义：运行中 → 新开标签）。
                     kbChatPanelRef.current?.openConversation(conversationId);
@@ -375,10 +389,10 @@ export default function App() {
           </Suspense>
         </div>
         {/* 全局悬浮对话面板（方案 D）：面板常驻挂载 + CSS --closed 隐藏，保 ref 恒有效。
-            悬浮按钮在除整页对话外的任意页面显示——那里自己就是聊天页，按钮等于第二个聊天框；
+            悬浮按钮在全屏态（`/chat`）不渲染——那里 shell 就是对话本身，按钮等于第二个聊天框；
             面板展开时按钮自动让位（FloatingChatButton 在 panelOpen 时返回 null）。
             `/`（入口）也排除：它转瞬即走，挂上会闪一帧。 */}
-        {location.pathname !== CHAT_ROUTE && location.pathname !== '/' && <FloatingChatButton />}
+        {!isFullscreenRoute(location.pathname) && location.pathname !== '/' && <FloatingChatButton />}
         <KbChatSessionsPanel
           ref={kbChatPanelRef}
         />

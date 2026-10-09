@@ -63,6 +63,7 @@ const en: Record<string, string> = {
 
   // ── HomePage ──
   'home.newChat': 'New chat',
+  'home.minimize': 'Minimize to panel',
   'home.noAgent': 'No agent selected — set a default in Runtimes',
   'home.tagline': 'Ink stored in the library, flowing through all things',
   'home.onboarding.title': 'Start with a knowledge base',

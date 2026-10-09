@@ -1,12 +1,12 @@
 // apps/web/src/components/kb/KbChatSessionsPanel.tsx
 import { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, forwardRef } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import {
   kbChatSessionsStore, useKbChatSessions, useKbChatActiveSessionId, useKbChatPanelOpen,
   MAX_CHAT_SESSIONS,
 } from '../../stores/kbChatSessionsStore';
 import { useCurrentContext } from '../../stores/currentContextStore';
-import { CHAT_ROUTE } from '../../routes';
+import { CHAT_ROUTE, isFullscreenRoute } from '../../routes';
 import { ChatSessionTabBar } from './ChatSessionTabBar';
 import { KbChatSession } from './KbChatSession';
 import { useKbChatSessionApi } from './KbChatSessionsProvider';
@@ -114,6 +114,7 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
   _props, ref,
 ) {
   const location = useLocation();
+  const navigate = useNavigate();
   const sessions = useKbChatSessions();
   const activeSessionId = useKbChatActiveSessionId();
   // 上下文改从全局 store 读（方案 D：面板常驻 App 层，任意页面可用，不依赖 KB 页 props）
@@ -143,10 +144,10 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
   // 按页记忆停靠形态：每页应用自己记住的形态（KB 页默认停靠、其余页默认悬浮）。
   // 面板现已全局可用，因此非 KB 页的形态记忆也要生效——离开 KB 页不再切换形态，
   // 面板保持原样跨页（App 层只在到达 `/chat` 时收起它）。
-  // `/chat` 例外（其上下文页名为 'home'）：L2a 后 `/chat` = 悬浮面板的全屏态，该页自身
-  // 渲染活动会话的 ChatSessionView，面板整体返回 null（见下方 CHAT_ROUTE 早返回）、悬浮按钮
-  // 也不渲染——若在此把停靠切成悬浮，会先跳到悬浮几何再消失。回归保护见
-  // e2e/floating-chat.spec.ts 的「主页是例外」用例（该用例里的「主页」即 `/chat`）。
+  // 全屏态例外：`/chat` 由全屏 shell 承担会话呈现，面板整体返回 null（见下方
+  // isFullscreenRoute 早返回）、悬浮按钮也不渲染——若在此把停靠切成悬浮，会先跳到悬浮
+  // 几何再消失。回归保护见 e2e/floating-chat.spec.ts 的「主页是例外」用例
+  // （用例里的「主页」即 `/chat`）。
   useEffect(() => {
     if (page === 'home') return;
     setDockModeState(dockByPage[page] ?? defaultDockFor(page));
@@ -720,13 +721,16 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
     runWikiOp, openQa, openConversation: handleOpenConversation, resetConversations,
   }), [runWikiOp, openQa, handleOpenConversation, resetConversations]);
 
-  // `/chat` 自身渲染活动会话的 ChatSessionView（全屏态与面板共用同一份状态）。
-  // 此时不渲染面板的任何 DOM：否则同一个会话会同时出现在两个视图 → 输入框/消息列表/
-  // 删除确认条在 DOM 里都是两份（`[data-testid="composer-input"]` 等定位器命中两个元素，
-  // Playwright strict mode violation）。控制器在 App 层 Provider 常驻，面板 DOM 缺席不影响
-  // 后台会话存活（面板渲染已退化为纯呈现层）。用 location（与路由同步）而非 currentContext.page：
-  // 后者在 effect 里更新，会有一帧的滞后窗口。
-  if (location.pathname === CHAT_ROUTE) return null;
+  // **全屏态让位**（L2b 裁决）：`/chat` 由全屏 shell 渲染活动会话，面板整体不渲染任何 DOM。
+  // 否则同一个会话会同时出现在两个视图 → 输入框/消息列表/删除确认条在 DOM 里都是两份
+  // （`[data-testid="composer-input"]` 等定位器命中两个元素，Playwright strict mode violation），
+  // 且勾选态、草稿、滚动位置这三个**跟着会话走**的东西会开始互相打架。
+  //
+  // 这与「真相源是否统一」无关 —— L2a 之后两态确实共用同一份状态，但**同屏双视图**本身
+  // 就是错的。判据与 `App.tsx` 的两处例外共用 `isFullscreenRoute`，避免各说各话。
+  // 控制器在 App 层 Provider 常驻，面板 DOM 缺席不影响后台会话存活（面板渲染已退化为纯呈现层）。
+  // 用 location（与路由同步）而非 currentContext.page：后者在 effect 里更新，会有一帧的滞后窗口。
+  if (isFullscreenRoute(location.pathname)) return null;
 
   // 面板头部活动会话的模式标签
   return (
@@ -779,6 +783,12 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
         onOpenConversation={handleOpenConversation}
         onDeleteConversations={resetConversations}
         onClosePanel={() => kbChatSessionsStore.setPanelOpen(false)}
+        // 进入全屏态：会话不变（还是当前活动标签），只是换个承载它的视图。
+        // 先收起面板 —— 全屏 shell 就是同一会话的另一个视图，同时留一个面板就是同屏双视图。
+        onEnterFullscreen={() => {
+          kbChatSessionsStore.setPanelOpen(false);
+          navigate(CHAT_ROUTE);
+        }}
         docked={docked}
         onToggleDock={toggleDock}
         onHeaderDragStart={onHeaderDragStart}

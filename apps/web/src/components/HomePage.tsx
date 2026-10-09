@@ -47,6 +47,8 @@ interface Props {
   onOpenRuntimes: () => void;
   /** 页头「+」：新建一个会话标签。 */
   onNewChat: () => void;
+  /** 页头「最小化」：会话降级回悬浮面板，并返回用户来的地方（L2b）。 */
+  onMinimize: () => void;
   /** 输入框历史下拉：打开某个历史会话（就地切换活动会话）。 */
   onOpenConversation?: (conversationId: string) => void;
   /** 输入框历史下拉删除会话后通知上层做收敛。 */
@@ -70,6 +72,7 @@ export function HomePage({
   onRetryAgents,
   onOpenRuntimes,
   onNewChat,
+  onMinimize,
   onOpenConversation,
   onDeleteConversations,
 }: Props) {
@@ -189,6 +192,22 @@ export function HomePage({
             >
               <PanelIcon size={16} />
             </button>
+            {/* 与面板头部的「全屏」互逆：这里把会话降级回悬浮面板并离开全屏态 */}
+            <button
+              type="button"
+              data-testid="home-minimize-btn"
+              className="icon-only"
+              aria-label={t('home.minimize')}
+              title={t('home.minimize')}
+              onClick={onMinimize}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M9 3v4a2 2 0 0 1-2 2H3" />
+                <path d="M15 3v4a2 2 0 0 0 2 2h4" />
+                <path d="M9 21v-4a2 2 0 0 0-2-2H3" />
+                <path d="M15 21v-4a2 2 0 0 1 2-2h4" />
+              </svg>
+            </button>
           </div>
         </div>
 
@@ -217,6 +236,10 @@ export function HomePage({
             composerDisabled={!selectedAgentName}
             composerDisabledPlaceholder={t('home.noAgent')}
             composerArea={composerFallback ?? undefined}
+            // 输入框位置站的是空状态卡片时，容器不该再扮成一条「输入栏」：
+            // 那道全宽分隔缝与白底会让卡片看起来贴在一块不同的表面上，上下也只剩 10px。
+            // landing 侧用的是 .home-composer-wrap（无装饰），这里对齐它的中性表现。
+            composerBarClassName={composerFallback ? 'home-composer-bar home-composer-bar--card' : undefined}
             onOpenConversation={onOpenConversation}
             onDeleteConversations={onDeleteConversations}
           />

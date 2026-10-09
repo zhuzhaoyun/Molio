@@ -11,6 +11,8 @@ import * as path from 'path';
  * @priority P1
  *
  * L2a：`/chat` 是悬浮对话面板的「全屏态」——两者展示**同一个活动会话**（同一份 store / 状态）。
+ * L2b：把全屏态**显式化**——`/chat` 页头「最小化」⇄ 面板头部「全屏」两个互逆入口；
+ *      位处输入框的卡片不再被塞进「输入栏」的装饰里。
  * Prerequisites: `pnpm dev`.
  */
 
@@ -150,5 +152,84 @@ test.describe('/chat 全屏态与面板共享活动会话', () => {
     await page.goto('http://localhost:5173/chat');
     await expect(page.locator('[data-testid="no-runtime-card"]')).toBeVisible({ timeout: 5_000 });
     await expect(page.locator('[data-testid="composer-input"]')).toBeHidden();
+  });
+
+  // ── L2b：把「全屏态」显式化（两个互逆入口 + 卡片容器适配）──────────────
+
+  /** 在知识库页开面板、发一句、等回复 —— 让 store 里存在一个带消息的活动会话。 */
+  async function seedSession(page: import('@playwright/test').Page, text: string) {
+    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+    await page.locator('[data-testid="kb-btn-ask"]').click();
+    await page.locator('[data-testid="kb-chat-panel"] [data-testid="composer-input"]').fill(text);
+    await page.locator('[data-testid="composer-send"]').click();
+    await expect(
+      page.locator('[data-testid="kb-chat-panel"] [data-testid="assistant-message"]').last(),
+    ).toBeVisible({ timeout: 10_000 });
+  }
+
+  /** 冷启动到 /chat 时 controller 要从 DB 恢复历史，否则会话没消息 → 落到 landing。 */
+  const persisted = (suffix: string) => ({
+    persistedMessages: [
+      { id: `l2b-u-${suffix}`, role: 'user', content: '问一句', timestamp: Date.now() },
+      { id: `l2b-a-${suffix}`, role: 'assistant', content: '答一句', timestamp: Date.now() + 1, agentId: 'claude' },
+    ],
+  });
+
+  test('面板头部的「全屏」按钮 → 进入 /chat 全屏态，且面板让位', async ({ page }) => {
+    await mockChatRun(page);
+    await seedSession(page, '全屏入口');
+
+    await page.locator('[data-testid="kb-chat-fullscreen"]').click();
+
+    await expect(page).toHaveURL(/\/chat$/);
+    await expect(page.locator('.home-header')).toBeVisible({ timeout: 5_000 });
+    // 全屏态由 shell 承担，面板必须让位 —— 同一会话不得同屏渲染两份
+    await expect(page.locator('[data-testid="kb-chat-panel"]')).toHaveCount(0);
+    // 进来的是同一个会话，而不是空的 /chat
+    await expect(page.locator('[data-testid="assistant-message"]').last()).toBeVisible({ timeout: 10_000 });
+  });
+
+  test('/chat「最小化」→ 收起为悬浮面板并返回上一页（站内有历史）', async ({ page }) => {
+    await mockChatRun(page);
+    await seedSession(page, '最小化回上一页');
+    // SPA 导航进 /chat：留下一条**站内**历史，navigate(-1) 应当能回到知识库页
+    await gotoChatSpa(page);
+    await expect(page.locator('.home-header')).toBeVisible({ timeout: 5_000 });
+
+    await page.locator('[data-testid="home-minimize-btn"]').click();
+
+    await expect(page).toHaveURL(/\/knowledge/);
+    await expect(page.locator('[data-testid="kb-chat-panel"]')).toBeVisible();
+  });
+
+  test('/chat 深链直开（站内无上一页）「最小化」→ 落默认落点 /knowledge', async ({ page }) => {
+    await mockChatRun(page, persisted('deep'));
+    await seedSession(page, '深链最小化');
+    // 整页重载到 /chat：这是应用的**首个** entry，站内没有上一页可回
+    await page.goto('http://localhost:5173/chat');
+    await expect(page.locator('.home-header')).toBeVisible({ timeout: 5_000 });
+
+    await page.locator('[data-testid="home-minimize-btn"]').click();
+
+    // 不得依赖 navigate(-1)：那会把用户送出应用（浏览器历史里应用之前的那一页）
+    await expect(page).toHaveURL(/\/knowledge/);
+  });
+
+  test('全屏态下卡片占用输入框位置时，容器不再是「输入栏」的样子', async ({ page }) => {
+    await mockChatRun(page, persisted('card'));
+    await seedSession(page, '卡片容器');
+    // 破坏运行时列表 → 冷启动回 /chat：会话恢复，输入框位置换成空状态卡片
+    await page.unroute('**/api/agents');
+    await mockNoAgents(page);
+    await page.goto('http://localhost:5173/chat');
+    await expect(page.locator('[data-testid="no-runtime-card"]')).toBeVisible({ timeout: 5_000 });
+
+    // 容器仍带着「输入栏」的装饰（全宽分隔缝 + 白底 + 10px 内边距），卡片像被塞进页脚。
+    // 卡片在位时容器让出这套装饰。
+    const bar = page.locator('.home-composer-bar');
+    await expect(bar).toHaveClass(/home-composer-bar--card/);
+    await expect(bar).toHaveCSS('border-top-width', '0px');
+    await expect(bar).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
   });
 });
