@@ -51,11 +51,13 @@ test.describe('/chat 全屏态与面板共享活动会话', () => {
 
   test('/chat 冷启动：有持久化活动会话时不闪 landing（历史加载中即为全屏态）', async ({ page }) => {
     await mockChatRun(page);
-    // 覆盖 mockChatRun 的即时历史响应：延迟 1.5s，制造一个可观测的「历史加载中」窗口。
-    // 覆盖必须「后注册」（Playwright 后注册的 route 优先）。afterEach 的 unmockAll 会
-    // 用同一 pattern unroute 掉它。
+    // 覆盖 mockChatRun 的即时历史响应：延迟 HISTORY_DELAY_MS，制造一个**比断言超时更宽**的
+    // 「历史加载中」窗口。覆盖必须「后注册」（Playwright 后注册的 route 优先）。
+    // afterEach 的 unmockAll 会用同一 pattern unroute 掉它。
+    const HISTORY_DELAY_MS = 4_000;
+    const LOADING_ASSERT_MS = 2_000; // 必须 < HISTORY_DELAY_MS：落在加载窗口内
     await page.route('**/api/conversations/*/messages', async (route) => {
-      await new Promise((r) => setTimeout(r, 1500));
+      await new Promise((r) => setTimeout(r, HISTORY_DELAY_MS));
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -79,9 +81,13 @@ test.describe('/chat 全屏态与面板共享活动会话', () => {
     ).toBeVisible({ timeout: 10_000 });
 
     // 冷启动整页重载到 /chat：活动标签已绑定 conversation，历史仍在加载中。
-    // 这一段内页面必须是全屏 shell —— 绝不能回落 landing（hero + FirstRunOnboarding）。
     await page.goto('http://localhost:5173/chat');
-    await expect(page.locator('.home-header')).toBeVisible({ timeout: 5_000 });
+    // 关键断言：**在加载窗口内**（< HISTORY_DELAY_MS）全屏 shell 必须已就位。
+    // 这里用短超时是有意的 —— 若判据退回「有消息」，此刻仍是 landing（`.home-header` 不存在，
+    // 直到 ~HISTORY_DELAY_MS 历史到达才出现），断言会在窗口内超时失败。用默认 5s 会一直重试
+    // 到 flash 结束后才通过，等于测不出东西。
+    await expect(page.locator('.home-header')).toBeVisible({ timeout: LOADING_ASSERT_MS });
+    // 加载窗口内 landing 绝不能出现。
     await expect(page.locator('.home-landing')).toHaveCount(0);
     await expect(page.locator('.home-hero-view')).toHaveCount(0);
 
