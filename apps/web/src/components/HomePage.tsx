@@ -10,6 +10,7 @@ import { FirstRunOnboarding } from './home/FirstRunOnboarding';
 import { messageSelectionStore } from '../stores/messageSelectionStore';
 import {
   kbChatSessionsStore, useKbChatActiveSessionId, useKbChatSessions,
+  sessionComposerKey, sessionComposerMountKey,
 } from '../stores/kbChatSessionsStore';
 import { useKbChatSessionState, useKbChatSessionApi } from './kb/KbChatSessionsProvider';
 
@@ -28,12 +29,6 @@ const LOGO_MAIN_URL = `${import.meta.env.BASE_URL}images/main.png`;
 
 /** 无活动会话时（首次发送前）落地页输入框的草稿命名空间。 */
 const LANDING_COMPOSER_KEY = 'chat:landing';
-
-/** 活动会话的输入框命名空间 —— 必须与 KB 面板 `KbChatSession` 完全一致，
- *  两个视图（面板态 / `/chat` 全屏态）才能共享同一份 composer 草稿。 */
-function sessionComposerKey(id: string, filePath: string | null | undefined): string {
-  return `kb:${id}:${filePath ?? ''}`;
-}
 
 interface Props {
   selectedAgentName: string | null;
@@ -63,8 +58,9 @@ interface Props {
  *
  * 数据源是 `kbChatSessionsStore` 的**活动标签**（与悬浮面板同一份会话状态，见
  * `KbChatSessionsProvider`）；不再是 App 级独立会话。两种形态：
- *  - 活动标签有消息 → 全屏 shell（页头 + `ChatSessionView(活动标签)` + 产出面板 dock）；
- *  - 无活动标签 / 活动标签为空 → landing（hero + 首次引导 + 输入框），首次发送建标签。
+ *  - 活动标签有消息，**或**已绑定持久化 conversation（历史仍在加载）→ 全屏 shell
+ *    （页头 + `ChatSessionView(活动标签)` + 产出面板 dock）；
+ *  - 真正的无会话 / 空会话 → landing（hero + 首次引导 + 输入框），首次发送建标签。
  */
 export function HomePage({
   selectedAgentName,
@@ -120,15 +116,21 @@ export function HomePage({
     [activeSessionId, getApi, t],
   );
 
-  // controller 就绪 → 投递挂起的首条消息。目标已成为活动会话且其 state 已发布即为就绪信号。
+  // controller 就绪（其 imperative API 已注册）→ 投递挂起的首条消息。
+  // 不要求目标会话仍是「活动」会话：API 一旦注册即可投递，否则 activeSessionId 在
+  // controller 发布前被改动时，输入框已清空的文本会永远卡住（静默丢失）。
   useEffect(() => {
     if (!pendingSend) return;
-    if (pendingSend.id !== activeSessionId || state == null) return;
     const api = getApi(pendingSend.id);
-    if (!api) return;
-    setPendingSend(null);
-    api.send(pendingSend.text);
-  }, [pendingSend, activeSessionId, state, getApi]);
+    if (api) {
+      setPendingSend(null);
+      api.send(pendingSend.text);
+      return;
+    }
+    // 有界兜底：目标标签已被关闭 / 建标签后被移除 → 放弃这条挂起发送，避免永久卡死
+    // （正常路径下 controller 一挂载即注册 API，effect 会因 runningMap/getApi 变化重跑并投递）。
+    if (!sessions.some((s) => s.id === pendingSend.id)) setPendingSend(null);
+  }, [pendingSend, getApi, sessions]);
 
   // 无可用代理时用空状态卡片替代输入框（判定照搬原 landing 分支）。
   const noRuntime = agentsReady && hasNoUsableAgent;
@@ -147,9 +149,13 @@ export function HomePage({
   ) : noRuntime ? noRuntimeCard : null;
 
   const hasMessages = (state?.messages.length ?? 0) > 0;
+  // 全屏 shell 判据：有消息 **或** 活动标签已绑定一个持久化 conversation（DB 历史
+  // 仍在加载中）。返回型会话在历史到达前 messages 仍是空的——若按空处理会回落到
+  // landing，闪一下 hero + FirstRunOnboarding。landing 只服务真正的「无会话」。
+  const shellMode = hasMessages || (activeSession?.conversationId ?? null) !== null;
 
-  // ── 全屏 shell：活动标签有消息 ──
-  if (hasMessages && state && activeSession) {
+  // ── 全屏 shell：活动标签有消息，或其持久化历史仍在加载 ──
+  if (shellMode && activeSession) {
     const initialFileRefs: FileRef[] =
       activeSession.mode === 'qa' && activeSession.filePath && activeSession.vaultId
         ? [{ vaultId: activeSession.vaultId, filePath: activeSession.filePath }]
@@ -164,7 +170,7 @@ export function HomePage({
             <span className="home-header-title">Molio</span>
           </div>
           <div className="home-header-right">
-            {!state.isRunning && (
+            {state && !state.isRunning && (
               <button type="button" data-testid="new-chat-btn" className="icon-only" onClick={onNewChat} title={t('home.newChat')}>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <line x1="12" y1="5" x2="12" y2="19" />
@@ -186,34 +192,38 @@ export function HomePage({
           </div>
         </div>
 
-        <ChatSessionView
-          messages={state.messages}
-          isRunning={state.isRunning}
-          activity={state.activity}
-          conversationId={state.conversationId}
-          onSend={state.buildSend()}
-          onSubmitForm={(text) => state.send(text)}
-          onCancel={state.cancel}
-          onSubmitToolResult={state.submitToolResult}
-          onRegenerate={state.regenerateLast}
-          onEdit={state.editAndResend}
-          onContinue={() => state.send('继续')}
-          onRequestDelete={(id) => messageSelectionStore.enterSelection(id, state.messages)}
-          onDeleteMessages={state.deleteMessages}
-          // composerKey/composerMountKey 与面板 `KbChatSession` 完全一致：
-          // 面板态与全屏态共享同一份草稿、同一套 @ 上下文播种。
-          composerKey={sessionComposerKey(activeSession.id, activeSession.filePath)}
-          composerMountKey={`${activeSession.id}:${activeSession.filePath ?? ''}`}
-          composerInitialFileRefs={initialFileRefs}
-          composerDisabled={!selectedAgentName}
-          composerDisabledPlaceholder={t('home.noAgent')}
-          composerArea={composerFallback ?? undefined}
-          onOpenConversation={onOpenConversation}
-          onDeleteConversations={onDeleteConversations}
-        />
+        {/* state 尚未发布（controller 挂载中 / 历史加载中）时不渲染消息区，
+            但也绝不回落到 landing（见 shellMode）。 */}
+        {state && (
+          <ChatSessionView
+            messages={state.messages}
+            isRunning={state.isRunning}
+            activity={state.activity}
+            conversationId={state.conversationId}
+            onSend={state.buildSend()}
+            onSubmitForm={(text) => state.send(text)}
+            onCancel={state.cancel}
+            onSubmitToolResult={state.submitToolResult}
+            onRegenerate={state.regenerateLast}
+            onEdit={state.editAndResend}
+            onContinue={() => state.send('继续')}
+            onRequestDelete={(id) => messageSelectionStore.enterSelection(id, state.messages)}
+            onDeleteMessages={state.deleteMessages}
+            // composerKey/composerMountKey 与面板 `KbChatSession` 同源（R5：逐字一致）：
+            // 面板态与全屏态共享同一份草稿、同一套 @ 上下文播种。
+            composerKey={sessionComposerKey(activeSession.id, activeSession.filePath)}
+            composerMountKey={sessionComposerMountKey(activeSession.id, activeSession.filePath)}
+            composerInitialFileRefs={initialFileRefs}
+            composerDisabled={!selectedAgentName}
+            composerDisabledPlaceholder={t('home.noAgent')}
+            composerArea={composerFallback ?? undefined}
+            onOpenConversation={onOpenConversation}
+            onDeleteConversations={onDeleteConversations}
+          />
+        )}
         </div>
 
-      {dockOpen && (
+      {dockOpen && state && (
         <Suspense fallback={null}>
           <SessionOutputPanel messages={state.messages} />
         </Suspense>
@@ -222,7 +232,7 @@ export function HomePage({
     );
   }
 
-  // ── landing：无活动标签 / 活动标签为空 ──
+  // ── landing：无活动标签 / 活动标签为空（且未绑定持久化会话）──
   return (
     <div className="home-page home-landing">
       <div className="home-hero-view">

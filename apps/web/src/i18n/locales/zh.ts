@@ -191,9 +191,6 @@ const zh: Record<string, string> = {
   'output.appendFile': '文件尾部追加了内容',
   'output.editNoSource': '此处改动缺少可对比的原文',
 
-  // ── App ──
-  'app.vaultSwitchReset': '已切换知识库，会话已重置',
-
   // ── RuntimePage ──
   'runtimes.title': '运行时',
   'runtimes.agentsTab': '代理',

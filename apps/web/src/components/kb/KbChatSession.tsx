@@ -9,6 +9,7 @@ import { messageSelectionStore } from '../../stores/messageSelectionStore';
 import { type FileRef } from '../ChatComposer';
 import { useI18n } from '../../i18n';
 import type { ChatSessionTab } from '../../stores/kbChatSessionsStore';
+import { sessionComposerKey, sessionComposerMountKey } from '../../stores/kbChatSessionsStore';
 import { useKbChatSessionState } from './KbChatSessionsProvider';
 
 export type { KbChatSessionApi, KbChatSessionState } from './KbChatSessionController';
@@ -58,8 +59,9 @@ export function KbChatSession({
           // composerKey（草稿命名空间）同样带 filePath：播种出的 @ 文本会被存成
           // 草稿，若草稿只按会话分桶，重指向时旧文件的 @ 草稿会压过新种子；
           // 按会话:文件 分桶后，新文件无草稿 → 新种子胜出，切回旧文件还能恢复其草稿。
-          composerMountKey={`${session.id}:${session.filePath ?? ''}`}
-          composerKey={`kb:${session.id}:${session.filePath ?? ''}`}
+          // 两个 key 与全屏态（HomePage）共用同一真值源（见 kbChatSessionsStore）——R5 要求逐字一致。
+          composerMountKey={sessionComposerMountKey(session.id, session.filePath)}
+          composerKey={sessionComposerKey(session.id, session.filePath)}
           composerInitialFileRefs={initialFileRefs}
           // 面板保留既有 DOM 结构/类名与空态（空态含「就此提问」的选中文本预览）
           logClassName="file-chat-messages"

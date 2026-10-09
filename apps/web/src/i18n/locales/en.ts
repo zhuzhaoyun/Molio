@@ -192,9 +192,6 @@ const en: Record<string, string> = {
   'output.appendFile': 'Content appended to end of file',
   'output.editNoSource': 'Change lacks a comparable original',
 
-  // ── App ──
-  'app.vaultSwitchReset': 'Vault switched, conversation reset',
-
   // ── RuntimePage ──
   'runtimes.title': 'Runtimes',
   'runtimes.agentsTab': 'Agents',

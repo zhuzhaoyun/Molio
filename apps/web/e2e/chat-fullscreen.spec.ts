@@ -49,6 +49,47 @@ test.describe('/chat 全屏态与面板共享活动会话', () => {
     await expect(page.locator('.home-hero-view')).toBeHidden();
   });
 
+  test('/chat 冷启动：有持久化活动会话时不闪 landing（历史加载中即为全屏态）', async ({ page }) => {
+    await mockChatRun(page);
+    // 覆盖 mockChatRun 的即时历史响应：延迟 1.5s，制造一个可观测的「历史加载中」窗口。
+    // 覆盖必须「后注册」（Playwright 后注册的 route 优先）。afterEach 的 unmockAll 会
+    // 用同一 pattern unroute 掉它。
+    await page.route('**/api/conversations/*/messages', async (route) => {
+      await new Promise((r) => setTimeout(r, 1500));
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          messages: [
+            { id: 'cf-cold-u1', role: 'user', content: '冷启动', timestamp: Date.now() },
+            { id: 'cf-cold-a1', role: 'assistant', content: 'Hello, how can I help you?', timestamp: Date.now() + 1, agentId: 'claude' },
+          ],
+        }),
+      });
+    });
+
+    // 先在 KB 面板聊一句 → 该会话写入持久化 conversationId（localStorage）。
+    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+    await page.locator('[data-testid="kb-btn-ask"]').click();
+    await page.locator('[data-testid="kb-chat-panel"] [data-testid="composer-input"]').fill('冷启动');
+    await page.locator('[data-testid="composer-send"]').click();
+    await expect(
+      page.locator('[data-testid="kb-chat-panel"] [data-testid="assistant-message"]').last(),
+    ).toBeVisible({ timeout: 10_000 });
+
+    // 冷启动整页重载到 /chat：活动标签已绑定 conversation，历史仍在加载中。
+    // 这一段内页面必须是全屏 shell —— 绝不能回落 landing（hero + FirstRunOnboarding）。
+    await page.goto('http://localhost:5173/chat');
+    await expect(page.locator('.home-header')).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('.home-landing')).toHaveCount(0);
+    await expect(page.locator('.home-hero-view')).toHaveCount(0);
+
+    // 历史到达后消息渲染出来，仍是全屏态（未闪回 landing）。
+    await expect(page.locator('[data-testid="assistant-message"]').last()).toBeVisible({ timeout: 10_000 });
+    await expect(page.locator('.home-landing')).toHaveCount(0);
+  });
+
   test('/chat 冷启动：没有任何标签时显示 landing', async ({ page }) => {
     await mockChatRun(page);
     await page.goto('http://localhost:5173/knowledge');
