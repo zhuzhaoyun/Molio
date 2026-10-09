@@ -89,7 +89,7 @@ src/
       WikiChatPanel.tsx       Wiki 对话面板
     account/           账号组件（用户模块 M3；合规勾选 M5；「我的」页面化）
       AccountPage.tsx      「我的」独立页面（/me，页内 Tab：资料/已购/上架[仅管理员]；未登录直达时内嵌登录表单）
-      AccountModal.tsx     登录弹窗（纯登录职责；NavRail 分流：未登录点击 → 弹窗，已登录 → 导航 /me；登录成功非意图场景自动导航 /me）
+      AccountModal.tsx     登录弹窗（纯登录职责；NavRail 分流：未登录点击 → 弹窗，已登录 → 导航 /me；登录成功非意图场景自动导航 /resources 资源页，已登录点账号入口才去 /me）
       PurchasesSection.tsx 我的已购分区（/me?tab=purchases；GET /api/market/purchases + 下载按钮重复下载最新版）
       ListingsSection.tsx  我的上架分区（/me?tab=listings；查看/下架/恢复，前身 MyListingsPanel 弹层）
       LoginForm.tsx        验证码登录表单（邮箱 → 验证码两步 + 重发倒计时；注册=登录）；发送验证码前须勾选「用户协议 + 隐私政策」（个保法前置，链接 molio.cn/terms|privacy）
@@ -150,7 +150,7 @@ pnpm build        # vite build
 pnpm preview      # vite preview
 pnpm typecheck    # tsc --noEmit
 pnpm test         # node:test 单测（graph engine 纯函数 + settings 迁移，Node 24 原生 TS）
-pnpm test:e2e     # Playwright E2E 测试（需先运行 pnpm dev）
+pnpm test:e2e     # Playwright 自动启动隔离的 daemon/cloud/web（先关闭占用测试端口的服务）
 ```
 
 ## E2E 同步规则（强制）

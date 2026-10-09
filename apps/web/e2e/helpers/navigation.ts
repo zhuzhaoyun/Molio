@@ -2,17 +2,12 @@
  * Navigation helpers for E2E tests.
  * Centralises common page.goto + wait patterns.
  */
-import type { Page } from '@playwright/test';
+import { expect, type Page } from '@playwright/test';
 
-/** Navigate to home page and wait for network idle (with timeout fallback). */
+/** Navigate to home and wait for the app shell instead of persistent SSE/HMR. */
 export async function gotoHome(page: Page) {
   await page.goto('/');
-  // networkidle can hang when persistent connections (SSE, HMR) keep the network busy.
-  // Race with a 5s timeout so we never block indefinitely.
-  await Promise.race([
-    page.waitForLoadState('networkidle'),
-    page.waitForTimeout(5_000),
-  ]);
+  await expect(page.locator('[data-view="knowledge"]')).toBeVisible({ timeout: 20_000 });
 }
 
 /** Click a NavRail button by its data-view attribute. */

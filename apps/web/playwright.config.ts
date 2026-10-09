@@ -1,4 +1,7 @@
 import { defineConfig, devices } from '@playwright/test';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 const isCI = !!process.env.CI;
 /** 云端认证服务（apps/cloud）dev 地址——webServer 健康检查与 daemon env 单点共用。 */
@@ -10,6 +13,13 @@ const CLOUD_BASE_URL = 'http://localhost:3200';
  * 整体平移：daemon（MOLIO_PORT）+ vite 代理（MOLIO_DAEMON）+ spec 直连同一端口。
  */
 const DAEMON_PORT = Number(process.env.MOLIO_E2E_DAEMON_PORT ?? 3100);
+const DATA_DIR = process.env.MOLIO_E2E_DATA_DIR ?? mkdtempSync(join(tmpdir(), 'molio-e2e-data-'));
+process.env.MOLIO_E2E_DATA_DIR = DATA_DIR;
+process.env.MOLIO_CLAUDE_HOME = join(DATA_DIR, 'claude');
+process.env.MOLIO_CODEX_HOME = join(DATA_DIR, 'codex');
+// Reuse is explicit: a running desktop/dev daemon may use the user's database
+// and a different auth backend, so a successful health check is insufficient.
+const reuseServers = !isCI && process.env.MOLIO_E2E_REUSE_SERVERS === '1';
 
 export default defineConfig({
   testDir: './e2e',
@@ -50,7 +60,7 @@ export default defineConfig({
     {
       command: 'pnpm --filter @molio/cloud dev',
       url: `${CLOUD_BASE_URL}/health`,
-      reuseExistingServer: !isCI,
+      reuseExistingServer: reuseServers,
       timeout: 60_000,
       env: {
         MOLIO_ENV: 'local',
@@ -66,14 +76,18 @@ export default defineConfig({
     {
       command: 'pnpm --filter @molio/daemon dev',
       url: `http://localhost:${DAEMON_PORT}/api/health`,
-      reuseExistingServer: !isCI,
+      reuseExistingServer: reuseServers,
       timeout: 60_000,
-      env: { MOLIO_AUTH_URL: CLOUD_BASE_URL, MOLIO_PORT: String(DAEMON_PORT) },
+      env: {
+        MOLIO_AUTH_URL: CLOUD_BASE_URL, MOLIO_PORT: String(DAEMON_PORT),
+        MOLIO_DATA_DIR: DATA_DIR, MOLIO_DEBUG_LOG_DIR: join(DATA_DIR, 'debug'),
+        MOLIO_CLAUDE_HOME: join(DATA_DIR, 'claude'), MOLIO_CODEX_HOME: join(DATA_DIR, 'codex'),
+      },
     },
     {
       command: 'pnpm --filter @molio/web dev',
       url: 'http://localhost:5173',
-      reuseExistingServer: !isCI,
+      reuseExistingServer: reuseServers,
       timeout: 60_000,
       env: { MOLIO_DAEMON: `http://localhost:${DAEMON_PORT}` },
     },
@@ -82,7 +96,7 @@ export default defineConfig({
     {
       command: 'node e2e/fixtures/mock-oss.mjs',
       port: 3199,
-      reuseExistingServer: !isCI,
+      reuseExistingServer: reuseServers,
     },
   ],
 });

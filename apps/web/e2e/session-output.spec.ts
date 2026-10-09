@@ -189,16 +189,16 @@ test.describe('Home 会话产出面板', () => {
 
       // 去重：5 个唯一文件（4 md + 1 py），hot.md 的相对形态不产生第二行
       await expect(panel.locator('[data-testid="session-output-write"]')).toHaveCount(5);
-      await expect(panel.locator(`[data-path="${hotAbs}"]`)).toHaveCount(1);
+      await expect(panel.locator(`[data-path=${JSON.stringify(hotAbs)}]`)).toHaveCount(1);
 
       // md 预览正常渲染（不是「无法读取」错误）
-      await panel.locator(`[data-path="${hotAbs}"]`).click();
+      await panel.locator(`[data-path=${JSON.stringify(hotAbs)}]`).click();
       await expect(panel.locator('[data-testid="session-output-preview"]')).toContainText('热点', { timeout: 5_000 });
       await panel.locator('[data-testid="session-output-preview-back"]').click();
 
       // .py 脚本 → 等宽代码视图原文展示，不被 markdown 吞掉
       const pyAbs = `${vault.path}/scripts/build_report.py`;
-      await panel.locator(`[data-path="${pyAbs}"]`).click();
+      await panel.locator(`[data-path=${JSON.stringify(pyAbs)}]`).click();
       const codeView = panel.locator('.session-output-preview-code');
       await expect(codeView).toBeVisible({ timeout: 5_000 });
       await expect(codeView).toContainText('print("build report")');

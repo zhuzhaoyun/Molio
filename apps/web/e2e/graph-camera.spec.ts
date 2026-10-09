@@ -94,6 +94,17 @@ test.describe('Graph camera framing', () => {
     expect(Math.max(...ys)).toBeLessThanOrEqual(view.y + view.h + tol);
   };
 
+  const waitForSettle = async (page: Page) => {
+    // d3's default cooling needs 300 ticks; a fixed 4s is shorter than a
+    // normal 60Hz simulation and even less reliable on busy machines.
+    await page.waitForFunction(() => {
+      const e = (window as unknown as {
+        __graphEngine?: { getSimState(): { alpha: number } };
+      }).__graphEngine;
+      return !!e && e.getSimState().alpha < 0.001;
+    }, undefined, { timeout: 15_000 });
+  };
+
   test('scope switch re-frames the camera after the layout settles (both directions)', async ({ page }) => {
     await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 10_000 });
@@ -106,7 +117,8 @@ test.describe('Graph camera framing', () => {
       undefined,
       { timeout: 15_000 },
     );
-    await page.waitForTimeout(3_500); // 等全量图收敛
+    await waitForSettle(page);
+    await expect(async () => { await expectAllNodesFramed(page); }).toPass({ timeout: 5_000 });
 
     // ── 进入局部图（dir scope）：立即落位 → 收敛后重新取景 ──
     const folder = page.locator('.kb-tree-group-label').filter({ hasText: 'notes' }).first();
@@ -118,7 +130,8 @@ test.describe('Graph camera framing', () => {
     // 搜索按钮出现 = 子图数据已到、立即落位已执行 → 此刻的视口就是「落位瞬间」
     await expect(pane.locator('[data-testid="graph-search-open"]')).toBeVisible({ timeout: 10_000 });
     const enterEarly = await readVp(page);
-    await page.waitForTimeout(4_000); // 等仿真收敛 + 过渡动画
+    await waitForSettle(page);
+    await expect(async () => { await expectAllNodesFramed(page); }).toPass({ timeout: 5_000 });
     const enterSettled = await readVp(page);
 
     expect(enterEarly).not.toBeNull();
@@ -132,7 +145,8 @@ test.describe('Graph camera framing', () => {
     await pane.locator('[data-testid="graph-scope-back"]').click();
     await page.waitForTimeout(800); // 等全量数据到达 + 立即落位
     const backEarly = await readVp(page);
-    await page.waitForTimeout(4_000);
+    await waitForSettle(page);
+    await expect(async () => { await expectAllNodesFramed(page); }).toPass({ timeout: 5_000 });
     const backSettled = await readVp(page);
 
     expect(backEarly).not.toBeNull();
@@ -192,10 +206,10 @@ test.describe('Graph camera framing', () => {
     await expect(pane.locator('[data-testid="graph-scope-back"]')).toBeVisible({ timeout: 10_000 });
     // 未开副格 → 主格图谱 tab 是唯一 GraphPage 实例
     await expect(pane.locator('[data-testid="graph-search-open"]')).toBeVisible({ timeout: 15_000 });
-    await page.waitForTimeout(4_000); // 等收敛 + 收敛后取景
+    await waitForSettle(page);
 
     // 整张 1 跳邻域都在视口内（16 邻居的包围盒超出 k=1.5 的可视范围 → 旧实现会失败）
-    await expectAllNodesFramed(page);
+    await expect(async () => { await expectAllNodesFramed(page); }).toPass({ timeout: 5_000 });
     // 圆心仍是视觉锚点（fit 不移动相机，靠 selectNode 选中）
     const selected = await page.evaluate(
       () => (window as unknown as { __graphEngine?: { getSelectedKey(): string | null } }).__graphEngine?.getSelectedKey() ?? null,
