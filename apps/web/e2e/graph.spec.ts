@@ -26,10 +26,19 @@ test.describe('Graph as tab', () => {
   test.afterAll(async () => { if (vault) await cleanupTempVault(vault); });
 
   test('NavRail 图谱 opens a graph tab in the KB workspace', async ({ page }) => {
+    // Hold vault resolution until after the click: the graph intent must survive
+    // opening the page before its per-vault tab store has been created.
+    let release!: () => void;
+    const pending = new Promise<void>(resolve => { release = resolve; });
+    await page.route('**/api/knowledge/vaults', async route => {
+      await pending;
+      await route.continue();
+    });
     await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 10_000 });
 
     await clickNav(page, 'graph');
+    release();
 
     // 图谱标签被打开并激活 → 图谱 pane 渲染（graph-open 才挂载 GraphPage）
     await expect(page.locator('.graph-page')).toBeVisible({ timeout: 10_000 });
