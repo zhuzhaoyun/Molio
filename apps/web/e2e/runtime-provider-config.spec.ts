@@ -444,10 +444,14 @@ test.describe('Hermes provider config', () => {
     await panel.locator('.rt-provider-form__actions .rt-btn').first().click();
     await expect(panel.locator('.rt-provider-form__status--ok')).toBeVisible({ timeout: 5_000 });
 
-    // daemon wrote the live hermes-native files
+    // daemon wrote the live hermes-native files. yaml-regex 一律容忍可选引号：
+    // daemon 用 yaml Document 合并编辑，set 到既有节点会**保留该节点原有的引号
+    // 风格**——真实 hermes 安装器的模板标量全是带引号的（provider: "anthropic"），
+    // 所以真机上写出来是 `provider: "zai"`；CI（无 hermes → skip） never exercises
+    // this. 2026-10-09 首次真机全量 E2E 三个用例全挂在无引号正则上。
     const yaml = fs.readFileSync(configYaml, 'utf8');
-    expect(yaml).toMatch(/provider:\s*zai/);
-    expect(yaml).toMatch(/default:\s*glm-4\.6/);
+    expect(yaml).toMatch(/provider:\s*"?zai"?/);
+    expect(yaml).toMatch(/default:\s*"?glm-4\.6"?/);
     const env = fs.readFileSync(dotEnv, 'utf8');
     expect(env).toMatch(/^GLM_API_KEY=sk-e2e-hermes-test$/m);
     expect(env).toMatch(/^GLM_BASE_URL=https:\/\/open\.bigmodel\.cn\/api\/paas\/v4$/m);
@@ -484,8 +488,8 @@ test.describe('Hermes provider config', () => {
 
     // daemon wrote the live hermes-native files
     const yaml = fs.readFileSync(configYaml, 'utf8');
-    expect(yaml).toMatch(/provider:\s*deepseek/);
-    expect(yaml).toMatch(/default:\s*deepseek-chat/);
+    expect(yaml).toMatch(/provider:\s*"?deepseek"?/);
+    expect(yaml).toMatch(/default:\s*"?deepseek-chat"?/);
     const env = fs.readFileSync(dotEnv, 'utf8');
     expect(env).toMatch(/^DEEPSEEK_API_KEY=sk-e2e-deepseek$/m);
 
@@ -541,9 +545,9 @@ test.describe('Hermes provider config', () => {
     await expect(panel.locator('.rt-provider-form__status--ok')).toBeVisible({ timeout: 5_000 });
 
     const yaml = fs.readFileSync(configYaml, 'utf8');
-    expect(yaml).toMatch(/provider:\s*custom/);
-    expect(yaml).toMatch(/base_url:\s*https:\/\/relay\.e2e\.example\/v1/);
-    expect(yaml).toMatch(/api_key:\s*sk-e2e-custom/);
+    expect(yaml).toMatch(/provider:\s*"?custom"?/);
+    expect(yaml).toMatch(/base_url:\s*"?https:\/\/relay\.e2e\.example\/v1"?/);
+    expect(yaml).toMatch(/api_key:\s*"?sk-e2e-custom"?/);
     // the seeded anthropic key stays in .env, but no custom key is written there
     const env = fs.existsSync(dotEnv) ? fs.readFileSync(dotEnv, 'utf8') : '';
     expect(env).not.toContain('sk-e2e-custom');
