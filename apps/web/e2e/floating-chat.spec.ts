@@ -820,14 +820,17 @@ test.describe('Floating chat (方案 D)', () => {
     await expect(btn).toBeVisible();
     const vw = page.viewportSize()!.width;
 
-    // 抓住中心拖向右缘：进入吸附区（中心距缘 <48px）→ 实时磁吸贴缘 + 压扁预告
+    // 抓住中心拖向右缘：进入吸附区（中心距缘 <48px）→ 磁吸到距缘 10px + 压扁预告
     const bb = (await btn.boundingBox())!;
     await page.mouse.move(bb.x + 26, bb.y + 26);
     await page.mouse.down();
     await page.mouse.move(vw - 30, 300, { steps: 8 });
     await expect(btn).toHaveClass(/floating-chat-btn--swallow-right/);
+    // 吸附预告的三件套里，箭头必须有（指向缘的雪佛龙，::before content 已设）
+    const hint = await btn.evaluate((el) => getComputedStyle(el as HTMLElement, '::before').content);
+    expect(hint).not.toBe('none');
     let box = (await btn.boundingBox())!;
-    expect(Math.abs(box.x + box.width - vw)).toBeLessThan(3); // 磁吸：右缘已贴住
+    expect(Math.abs(box.x + box.width - (vw - 10))).toBeLessThan(3); // 磁吸：钉在距缘 10px（缝隙透辉光）
 
     // 吸附状态下松手 → 自动吸进缘里隐藏（只露 12px 小签）
     await page.mouse.up();

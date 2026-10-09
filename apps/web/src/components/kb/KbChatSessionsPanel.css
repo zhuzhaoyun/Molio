@@ -170,22 +170,71 @@ html {
   box-shadow: 0 10px 28px rgba(0, 0, 0, 0.3);
   transition: transform 120ms ease, box-shadow 120ms ease;
 }
-/* 拖近任意缘的实时预告：朝缘压扁——「正在被吸进去」，吸附状态松手即隐藏 */
-.floating-chat-btn--swallow-left {
+/* 拖近任意缘的实时吸附预告 = 三件事一起说「松手会藏进这条缘」：
+   1) 朝缘压扁；2) 按钮与缘的缝隙里透出朝缘方向的 accent 辉光（box-shadow
+   不会被自身的 overflow:hidden 裁掉，正好做「缝隙里的光」）；3) 缘侧一枚
+   指向边缘的白色箭头（呼吸闪烁）。 */
+.floating-chat-btn.floating-chat-btn--swallow-left {
   transform: scaleX(0.55);
   transform-origin: left center;
+  box-shadow: -10px 0 22px 0 rgba(201, 100, 66, 0.55), -24px 0 44px 6px rgba(201, 100, 66, 0.3);
 }
-.floating-chat-btn--swallow-right {
+.floating-chat-btn.floating-chat-btn--swallow-right {
   transform: scaleX(0.55);
   transform-origin: right center;
+  box-shadow: 10px 0 22px 0 rgba(201, 100, 66, 0.55), 24px 0 44px 6px rgba(201, 100, 66, 0.3);
 }
-.floating-chat-btn--swallow-top {
+.floating-chat-btn.floating-chat-btn--swallow-top {
   transform: scaleY(0.55);
   transform-origin: center top;
+  box-shadow: 0 -10px 22px 0 rgba(201, 100, 66, 0.55), 0 -24px 44px 6px rgba(201, 100, 66, 0.3);
 }
-.floating-chat-btn--swallow-bottom {
+.floating-chat-btn.floating-chat-btn--swallow-bottom {
   transform: scaleY(0.55);
   transform-origin: center bottom;
+  box-shadow: 0 10px 22px 0 rgba(201, 100, 66, 0.55), 0 24px 44px 6px rgba(201, 100, 66, 0.3);
+}
+/* 吸附预告的指向箭头：border 折出的雪佛龙，指向按钮将藏入的那条缘。
+   父级在压扁（scale .55），箭头用反向缩放抵消，否则会被一起压扁看不清。 */
+.floating-chat-btn--swallow-left::before,
+.floating-chat-btn--swallow-right::before,
+.floating-chat-btn--swallow-top::before,
+.floating-chat-btn.floating-chat-btn--swallow-bottom::before {
+  content: '';
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  border-radius: 1px;
+  filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.45));
+  animation: chat-btn-hint-blink 1s ease-in-out infinite;
+}
+.floating-chat-btn.floating-chat-btn--swallow-right::before {
+  right: 4px; top: 50%;
+  border-top: 3px solid rgba(255, 255, 255, 0.95);
+  border-right: 3px solid rgba(255, 255, 255, 0.95);
+  transform: scaleX(1.82) translateY(-50%) rotate(45deg);
+}
+.floating-chat-btn.floating-chat-btn--swallow-left::before {
+  left: 4px; top: 50%;
+  border-bottom: 3px solid rgba(255, 255, 255, 0.95);
+  border-left: 3px solid rgba(255, 255, 255, 0.95);
+  transform: scaleX(1.82) translateY(-50%) rotate(45deg);
+}
+.floating-chat-btn.floating-chat-btn--swallow-top::before {
+  top: 4px; left: 50%;
+  border-top: 3px solid rgba(255, 255, 255, 0.95);
+  border-left: 3px solid rgba(255, 255, 255, 0.95);
+  transform: scaleY(1.82) translateX(-50%) rotate(-45deg);
+}
+.floating-chat-btn.floating-chat-btn--swallow-bottom::before {
+  bottom: 4px; left: 50%;
+  border-bottom: 3px solid rgba(255, 255, 255, 0.95);
+  border-right: 3px solid rgba(255, 255, 255, 0.95);
+  transform: scaleY(1.82) translateX(-50%) rotate(-45deg);
+}
+@keyframes chat-btn-hint-blink {
+  0%, 100% { opacity: 0.7; }
+  50%      { opacity: 1; }
 }
 
 /* ── 释放后的滑动（吸附/藏边/唤回）：一次性类启用 transition，超时由 JS 摘除 ── */
@@ -208,35 +257,44 @@ html {
   transition: left 200ms cubic-bezier(0.16, 1, 0.3, 1), top 200ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-/* ── 隐藏态：按钮吸进缘里，只露 12px 圆弧小签 + 一道白色抓握痕（四缘通用） ──
-   几何由 inline left/top 表达（右缘隐藏 = 元素左侧 12px 在视口内）；
-   品牌标淡出——露出的弧面上只读出「一条可以拉的东西」。 */
+/* ── 隐藏态：按钮吸进缘里，只露 12px 圆弧小签 + 一枚**指向外**的箭头 ──
+   （右缘隐藏 → 箭头朝左：从这里拉出来）。几何由 inline left/top 表达；
+   品牌标淡出——露出的弧面上只读出「箭头 + 可以拉」。 */
 .floating-chat-btn--hidden .floating-chat-btn__logo {
   opacity: 0;
 }
 .floating-chat-btn--hidden::after {
   content: '';
   position: absolute;
-  border-radius: 1.5px;
-  background: rgba(255, 255, 255, 0.7);
+  width: 7px;
+  height: 7px;
+  border-radius: 1px;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.3));
 }
-/* 左右缘隐藏：小签是竖条 */
+/* 右缘隐藏：签在元素左侧 12px，箭头朝左（拉出方向） */
 .floating-chat-btn--edge-right.floating-chat-btn--hidden::after {
-  left: 4px; top: 50%; transform: translateY(-50%);
-  width: 3px; height: 14px;
+  left: 2.5px; top: 50%;
+  border-bottom: 2.5px solid rgba(255, 255, 255, 0.9);
+  border-left: 2.5px solid rgba(255, 255, 255, 0.9);
+  transform: translateY(-50%) rotate(45deg);
 }
 .floating-chat-btn--edge-left.floating-chat-btn--hidden::after {
-  right: 4px; top: 50%; transform: translateY(-50%);
-  width: 3px; height: 14px;
+  right: 2.5px; top: 50%;
+  border-top: 2.5px solid rgba(255, 255, 255, 0.9);
+  border-right: 2.5px solid rgba(255, 255, 255, 0.9);
+  transform: translateY(-50%) rotate(45deg);
 }
-/* 上下缘隐藏：小签是横条 */
 .floating-chat-btn--edge-bottom.floating-chat-btn--hidden::after {
-  top: 4px; left: 50%; transform: translateX(-50%);
-  width: 14px; height: 3px;
+  top: 2.5px; left: 50%;
+  border-top: 2.5px solid rgba(255, 255, 255, 0.9);
+  border-left: 2.5px solid rgba(255, 255, 255, 0.9);
+  transform: translateX(-50%) rotate(-45deg);
 }
 .floating-chat-btn--edge-top.floating-chat-btn--hidden::after {
-  bottom: 4px; left: 50%; transform: translateX(-50%);
-  width: 14px; height: 3px;
+  bottom: 2.5px; left: 50%;
+  border-bottom: 2.5px solid rgba(255, 255, 255, 0.9);
+  border-right: 2.5px solid rgba(255, 255, 255, 0.9);
+  transform: translateX(-50%) rotate(-45deg);
 }
 /* 悬停/聚焦：探出 14px 预览（不承诺；点击才唤回） */
 .floating-chat-btn--hidden {

@@ -20,6 +20,7 @@ import { useI18n } from '../../i18n';
 const BTN_SIZE = 52;
 const TAB_VISIBLE = 12;   // 隐藏态露出的签宽
 const EDGE_MARGIN = 8;    // 自由态/恢复时的最小可见边距
+const SNAP_GAP = 10;      // 吸附预告时按钮与缘的间隙（辉光填充这里）
 const SNAP_ZONE = 48;     // 拖拽中中心距缘 < 48px → 磁吸（松手即隐藏）
 const DRAG_THRESHOLD = 6; // 位移超过才算拖（否则是点击）
 const LOGO_URL = `${import.meta.env.BASE_URL}images/main.png`;
@@ -203,9 +204,9 @@ export function FloatingChatButton() {
     el.classList.toggle('floating-chat-btn--swallow-top', edge === 'top');
     el.classList.toggle('floating-chat-btn--swallow-bottom', edge === 'bottom');
     d.edge = edge;
-    // 磁吸：垂直轴钉死在缘上（flush），平行轴继续跟手
-    d.x = edge === 'left' ? 0 : edge === 'right' ? window.innerWidth - BTN_SIZE : rawX;
-    d.y = edge === 'top' ? 0 : edge === 'bottom' ? window.innerHeight - BTN_SIZE : rawY;
+    // 磁吸：垂直轴钉在距缘 SNAP_GAP 处（缝隙由辉光填充，见 CSS），平行轴继续跟手
+    d.x = edge === 'left' ? SNAP_GAP : edge === 'right' ? window.innerWidth - BTN_SIZE - SNAP_GAP : rawX;
+    d.y = edge === 'top' ? SNAP_GAP : edge === 'bottom' ? window.innerHeight - BTN_SIZE - SNAP_GAP : rawY;
     el.style.left = `${d.x}px`;
     el.style.top = `${d.y}px`;
   }, []);
