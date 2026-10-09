@@ -48,8 +48,8 @@ export function NavRail() {
   /**
    * 竞态兜底：整页加载后 authStore 快照未决（首拉 /api/auth/status 尚未落定）时
    * 点账号入口会误走「打开登录弹窗」分支。快照落定发现其实已登录 → 收起弹窗；
-   * 有挂起的登录意图则续接原动作（下载/发布门槛场景），否则导航 /me——
-   * 用户点击账号入口的意图就是进入「我的」。
+   * 有挂起的登录意图则续接原动作（下载/发布门槛场景），否则导航资源页——
+   * 与 onLoggedIn 登录成功后的默认落地页保持一致。
    */
   useEffect(() => {
     if (!accountOpen || auth?.loggedIn !== true) return;
@@ -58,7 +58,7 @@ export function NavRail() {
     setIntentOpen(false);
     setAccountOpen(false);
     if (resume) resume();
-    else navigate('/me');
+    else navigate('/resources');
   }, [accountOpen, auth?.loggedIn, navigate]);
 
   return (
@@ -274,8 +274,9 @@ export function NavRail() {
           // 登录意图：把画面让给续接动作（如下载/发布向导自动打开），不抢导航
           resume();
         } else {
-          // 用户主动点账号按钮登录：登录的目的地就是「我的」页面
-          navigate('/me');
+          // 用户主动点账号按钮登录：登录成功统一落地资源页（默认目的地；
+          // 已登录再点账号入口才去「我的」）
+          navigate('/resources');
         }
       }}
     />
