@@ -14,6 +14,7 @@ import {
   scanTree,
   countFiles,
   resolveCanonicalPath,
+  listPublishableTopDirs,
   isPrunedDirName,
   PRUNE_DIR_NAMES,
   MAX_DIR_ENTRIES,
@@ -923,5 +924,28 @@ describe('vault scan pruning + bounded backstop', () => {
     it('MAX_TOTAL is set and generous', () => {
       assert.ok(MAX_TOTAL >= 10000 && MAX_TOTAL <= 100000);
     });
+  });
+});
+
+// 2026-10：发布/升版两处共用的一级目录规则。发布页目录选择与升版打包 include 兜底
+// 都走这里，规则漂移过一次（升版静默丢 .molio），故单独立测。
+describe('listPublishableTopDirs', () => {
+  let vp: string;
+  before(() => { vp = mkdtempSync(join(tmpdir(), 'molio-topdirs-')); });
+  after(() => { rmSync(vp, { recursive: true, force: true }); });
+
+  it('收非隐藏目录与 .molio，排除其他点目录，忽略散文件，按名排序', () => {
+    mkdirSync(join(vp, 'wiki'), { recursive: true });
+    mkdirSync(join(vp, 'raw'), { recursive: true });
+    mkdirSync(join(vp, '.molio', 'assets'), { recursive: true });
+    mkdirSync(join(vp, '.obsidian'), { recursive: true });
+    mkdirSync(join(vp, '.claude'), { recursive: true });
+    writeFileSync(join(vp, 'README.md'), 'hi');
+
+    assert.deepEqual(listPublishableTopDirs(vp), ['.molio', 'raw', 'wiki']);
+  });
+
+  it('目录不存在 → 抛出（调用方自行决定降级，不静默返回空表）', () => {
+    assert.throws(() => listPublishableTopDirs(join(vp, 'nope')));
   });
 });

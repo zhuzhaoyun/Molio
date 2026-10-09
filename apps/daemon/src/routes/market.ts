@@ -7,6 +7,7 @@ import type Database from 'better-sqlite3';
 import { AuthCloudError, type AuthClient } from '../core/auth/auth-client.js';
 import { MarketClient, putToSignedUrl } from '../core/market/client.js';
 import { packVaultToZip } from '../core/market/packager.js';
+import { listPublishableTopDirs } from '../core/knowledge.js';
 import { denyCrossOrigin } from './auth.js';
 import type { MarketPublishSuggestion } from '@molio/contracts';
 import { suggestPublishMeta } from '../core/market/suggest.js';
@@ -275,6 +276,13 @@ export function marketRoutes(db: Database.Database, auth: AuthClient, opts: Mark
     try {
       let include: string[] | undefined;
       try { include = JSON.parse(parsed && typeof parsed['include'] === 'string' ? parsed['include'] : '[]') as string[]; } catch { /* ignore */ }
+      // 升版表单不显示目录选择、也就不传 include，语义是「整个 vault」。但打包器缺省
+      // 排除所有点目录，`.molio` 会因此被静默丢掉——故兜底为一级可发布目录，让它走
+      // explicitDir 豁免通道（与发布页 GET /vaults/:id/top-dirs 同一规则）。
+      // 读目录失败时不吞错：回落 undefined，交给 packVaultToZip 报它自己的 vault_not_found。
+      if (!include?.length) {
+        try { include = listPublishableTopDirs(vaultPath); } catch { include = undefined; }
+      }
       pack = await packVaultToZip(vaultPath, { maxBytes: MAX_ZIP_BYTES, include: include?.length ? include : undefined });
       const previews = previewFiles.length > 0 ? await checkPreviews(previewFiles) : []; // 不传 = 沿用旧图
       const upd = await client.update(
