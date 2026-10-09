@@ -437,4 +437,62 @@ test.describe('KB chat sessions', () => {
     await item.locator('[data-testid="composer-history-delete"]').click();
     await expect(page.locator('[data-testid="composer-history-item"]')).toHaveCount(0);
   });
+
+  test('后台会话流式输出不清空当前会话的勾选态（pruneSelection 门控）', async ({ page }) => {
+    // 面板把每个会话标签都挂载（非活动者 display:none），messageSelectionStore 是模块级单例。
+    // 旧逻辑：任意视图的 messages 变化都会用自己的 id 集合 pruneStale → 后台标签一动就
+    // 清空当前标签的勾选态。回归保护：非活动视图（pruneSelection=false）不得 prune。
+    //
+    // 长脚本 + frameDelay：每个 SSE 连接都会收到完整流，保证 A 进入勾选态后 B 仍在后台输出。
+    const delta = (t: string) => ({ type: 'text_delta', delta: t });
+    const longStream = [
+      { type: 'status', label: 'running', model: 'claude-sonnet-4-5' },
+      ...Array.from({ length: 24 }, (_, i) => delta(i === 23 ? '末句-END' : '继续 ')),
+      { type: 'turn_end', stopReason: 'end_turn' },
+      { type: 'usage', usage: { input_tokens: 10, output_tokens: 5 }, costUsd: 0.001 },
+    ];
+    await mockChatRun(page, { frameDelay: 200, script: longStream });
+    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+
+    const panel = page.locator('[data-testid="kb-chat-panel"]');
+    // 每个会话都常驻一份 DOM，非活动者 display:none —— 一律限定到可见（活动）会话。
+    const activeSession = panel.locator('.file-chat-session:visible');
+    const activeInput = activeSession.locator('[data-testid="composer-input"]');
+    const activeSend = activeSession.locator('[data-testid="composer-send"]');
+    const activeMsgs = activeSession.locator('.file-chat-messages');
+
+    // 会话 A：发一条并等它跑完（末句出现 = 流结束，消息集稳定，勾选 id 不会被自身流变化冲掉）。
+    await page.locator('[data-testid="kb-btn-ask"]').click();
+    await activeInput.fill('A 的问题');
+    await activeSend.click();
+    await expect(activeMsgs).toContainText('末句-END', { timeout: 20_000 });
+
+    // 新建会话 B（成为活动标签）。
+    await page.locator('[data-testid="kb-chat-session-new"]').click();
+    await expect(page.locator('[data-testid="kb-chat-session-tab"]')).toHaveCount(2);
+
+    // 在 B 里发一条（长流）→ B 先流式一段时间。
+    await activeInput.fill('B 的问题');
+    await activeSend.click();
+    await expect(activeMsgs.locator('[data-testid="assistant-message"]')).toBeVisible({ timeout: 10_000 });
+
+    // 切回会话 A —— A 活动、持有勾选态；B 退到后台继续流式输出。
+    await page.locator('[data-testid="kb-chat-session-tab"]').first().click();
+    await expect(activeMsgs).toContainText('A 的问题');
+
+    // A 进入勾选态：末条助手 ⋯ → 删除 → 预勾选 user + assistant = 2。
+    const aLastAssistant = activeMsgs.locator('[data-testid="assistant-message"]').last();
+    await aLastAssistant.hover();
+    await aLastAssistant.locator('[data-testid="msg-overflow-btn"]').click();
+    await panel.locator('[data-testid="overflow-item-delete"]').click();
+    await expect(activeSession.locator('[data-testid="selection-confirm-bar"]')).toContainText('已选 2 条');
+
+    // 关键窗口：等后台会话 B 再来几个 token（B 的 messages 因此变化）。
+    // 旧逻辑会用 B 的 id 集合 pruneStale —— A 的选中 id 不在其中，被静默清空成「已选 0 条」。
+    await page.waitForTimeout(1_500);
+
+    // 门控生效：A 的勾选态不受后台会话影响，条数不变。
+    await expect(activeSession.locator('[data-testid="selection-confirm-bar"]')).toContainText('已选 2 条');
+  });
 });

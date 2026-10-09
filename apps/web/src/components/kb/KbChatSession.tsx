@@ -12,8 +12,6 @@ import type { ChatSessionTab } from '../../stores/kbChatSessionsStore';
 import { sessionComposerKey, sessionComposerMountKey } from '../../stores/kbChatSessionsStore';
 import { useKbChatSessionState } from './KbChatSessionsProvider';
 
-export type { KbChatSessionApi, KbChatSessionState } from './KbChatSessionController';
-
 interface KbChatSessionViewProps {
   session: ChatSessionTab;
   /** 面板里非活动标签渲染为 display:none；由调用方给（`/chat` 恒为 true） */
@@ -53,6 +51,9 @@ export function KbChatSession({
           onContinue={() => state.send('继续')}
           onRequestDelete={(id) => messageSelectionStore.enterSelection(id, state.messages)}
           onDeleteMessages={state.deleteMessages}
+          // 只有活动标签是勾选态宿主：非活动标签（display:none）不得用自己消息集裁剪
+          // 全局单例里的选中 id，否则后台会话流式输出会清空当前会话的勾选态。
+          pruneSelection={active}
           // key 带 filePath：openQa 把活跃会话重新指向新文件时（updateSession），
           // 重挂载 composer 让 initialFileRefs 重新播种 @ —— 否则 store 变了、
           // 挂载过的输入框永远不更新（#4 语义此前对 UI 无效）。

@@ -57,6 +57,14 @@ export interface ChatSessionViewProps {
   /** 历史下拉（仅全屏态需要） */
   onOpenConversation?: (conversationId: string) => void;
   onDeleteConversations?: (ids: string[]) => void;
+  /**
+   * 本视图是否为「勾选态的宿主」——决定它是否在 messages 变化时裁剪全局选中集合。
+   * 面板把每个会话标签都挂载（非活动者 display:none），而 messageSelectionStore 是
+   * **模块级单例**，非活动视图的 pruneStale 会拿它自己的消息集去裁剪别的会话的选中 id，
+   * 导致「后台标签流式输出时，当前标签的勾选态被静默清空」。故非活动视图不得 prune。
+   * 默认 true（`/chat` 只有单个视图，行为不变）。
+   */
+  pruneSelection?: boolean;
 }
 
 /**
@@ -87,6 +95,7 @@ export function ChatSessionView({
   composerMountKey,
   onOpenConversation,
   onDeleteConversations,
+  pruneSelection = true,
 }: ChatSessionViewProps) {
   const { t } = useI18n();
   const logRef = useRef<HTMLDivElement>(null);
@@ -99,10 +108,14 @@ export function ChatSessionView({
 
   // Prune stale selected ids whenever the message set changes (streaming,
   // regenerate, etc. may have removed a selected bubble).
+  // 仅在「勾选态宿主」视图里裁剪：面板把每个会话标签都挂载（非活动者 display:none），
+  // messageSelectionStore 又是模块级单例 —— 非活动视图若也 prune，就会拿它自己的消息集
+  // 去裁剪别的会话的选中 id，导致后台标签流式输出时静默清空当前标签的勾选态。
   useEffect(() => {
+    if (!pruneSelection) return;
     const present = new Set(messages.map((m) => m.id));
     messageSelectionStore.pruneStale(present);
-  }, [messages]);
+  }, [messages, pruneSelection]);
 
   // Find the last assistant message ID so only that card stays interactive
   const lastAssistant = useMemo(() => findLastAssistant(messages), [messages]);
