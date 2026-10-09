@@ -49,11 +49,27 @@ test('内链：商品页 ID 必须是合法 ULID', () => {
   assert.deepEqual(bad, [], `以下商品页内链的 ID 不是合法 ULID：\n${bad.join('\n')}`);
 });
 
-test('内链：blog/ 下的商品页相对路径必须带 ../', () => {
+function resolvesToProductRoot(href, file) {
+  const resolved = new URL(href, `https://molio.cn/${file}`);
+  return /^\/resource\/[^/]+\.html$/.test(resolved.pathname);
+}
+
+test('商品页路径校验接受绝对与根相对链接，拒绝博客目录下的错误路径', () => {
+  const product = 'resource/01M110NNMKNWXKBXT01HVJ06ZW.html';
+  const file = 'blog/example.html';
+  for (const href of [`../${product}`, `/${product}`, `https://molio.cn/${product}`, `//molio.cn/${product}`]) {
+    assert.equal(resolvesToProductRoot(href, file), true, href);
+  }
+  for (const href of [product, `./${product}`, `/blog/${product}`]) {
+    assert.equal(resolvesToProductRoot(href, file), false, href);
+  }
+});
+
+test('内链：blog/ 下的商品页链接必须解析到站点根目录', () => {
   const bad = [];
   for (const file of blogPages()) {
     for (const { href } of productLinks(file)) {
-      if (!href.startsWith('../resource/')) bad.push(`${rel(file)} → ${href}`);
+      if (!resolvesToProductRoot(href, rel(file))) bad.push(`${rel(file)} → ${href}`);
     }
   }
   assert.deepEqual(
