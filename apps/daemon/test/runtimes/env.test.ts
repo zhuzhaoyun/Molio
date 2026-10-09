@@ -529,6 +529,81 @@ describe('buildSpawnEnv', () => {
     });
   });
 
+  // Error-driven (2026-10-09): hermes chat on Windows died with its own
+  // pm/shell.py "no bash found" error (text mentions the WSL stub). Root
+  // cause: hermes's PortableGit WAS extracted under
+  // %LOCALAPPDATA%\hermes\tools\git-2.53.0+3-win32-x64\ but its tools/
+  // facts.json had no git entry (installer registration gap), system Git
+  // lives on D: (outside hermes's fixed C:-based roots), and PATH's only
+  // bash.exe is the WSL launcher stub hermes rejects. Fix: inject
+  // HERMES_GIT_BASH_PATH (hermes's first-priority override) at the spawn
+  // boundary — staged PortableGit first, system Git fallback.
+  describe('hermes HERMES_GIT_BASH_PATH injection (Windows)', () => {
+    const isWindows = process.platform === 'win32';
+    let tmp: string;
+    let savedLocalAppData: string | undefined;
+
+    beforeEach(() => {
+      tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'molio-hermes-env-'));
+      savedLocalAppData = process.env['LOCALAPPDATA'];
+      process.env['LOCALAPPDATA'] = tmp;
+    });
+
+    afterEach(() => {
+      if (savedLocalAppData !== undefined) process.env['LOCALAPPDATA'] = savedLocalAppData;
+      else delete process.env['LOCALAPPDATA'];
+      try { fs.rmSync(tmp, { recursive: true, force: true }); } catch { /* ignore */ }
+    });
+
+    it('should prefer the hermes staged PortableGit bash over system git', { skip: !isWindows ? 'Windows only' : undefined }, () => {
+      const stagedBash = path.join(tmp, 'hermes', 'tools', 'git-2.53.0+3-win32-x64', 'bin', 'bash.exe');
+      fs.mkdirSync(path.dirname(stagedBash), { recursive: true });
+      fs.writeFileSync(stagedBash, ''); // existsSync-only probe; never executed
+
+      const def = makeDef({ id: 'hermes' });
+      const env = buildSpawnEnv(def, {});
+
+      assert.equal(env['HERMES_GIT_BASH_PATH'], stagedBash);
+    });
+
+    it('should fall back to system git-bash when the staged store has no git', { skip: !isWindows ? 'Windows only' : undefined }, () => {
+      // tmp LOCALAPPDATA is empty — no hermes/tools at all.
+      const def = makeDef({ id: 'hermes' });
+      const env = buildSpawnEnv(def, {});
+      const got = env['HERMES_GIT_BASH_PATH'];
+
+      if (got) {
+        assert.ok(got.endsWith('bash.exe'), `Expected bash.exe path, got: ${got}`);
+        assert.ok(
+          !got.toLowerCase().startsWith(tmp.toLowerCase()),
+          `Fallback must not point into the empty staged store, got: ${got}`,
+        );
+      }
+      // Host without any Git → unset, no crash.
+    });
+
+    it('should not override HERMES_GIT_BASH_PATH if already set', () => {
+      const def = makeDef({ id: 'hermes' });
+      const env = buildSpawnEnv(def, { HERMES_GIT_BASH_PATH: 'C:\\custom\\bash.exe' });
+
+      assert.equal(env['HERMES_GIT_BASH_PATH'], 'C:\\custom\\bash.exe');
+    });
+
+    it('should not set HERMES_GIT_BASH_PATH for non-hermes agents', () => {
+      const def = makeDef({ id: 'claude' });
+      const env = buildSpawnEnv(def, {});
+
+      assert.equal(env['HERMES_GIT_BASH_PATH'], undefined);
+    });
+
+    it('should not set HERMES_GIT_BASH_PATH on non-Windows', { skip: isWindows ? 'non-Windows only' : undefined }, () => {
+      const def = makeDef({ id: 'hermes' });
+      const env = buildSpawnEnv(def, {});
+
+      assert.equal(env['HERMES_GIT_BASH_PATH'], undefined);
+    });
+  });
+
   describe('agent .env file loading', () => {
     const testAgentId = '_molio_test_agent';
     const configDir = path.join(os.homedir(), `.${testAgentId}`);
