@@ -9,13 +9,16 @@ import type { AgentEvent } from '@molio/contracts';
  *  - request(method, params): sends a request on stdin, returns a Promise resolved by the matching response
  *  - notify(method, params): sends a notification (no response expected)
  *
- * Lifecycle: 1 AcpTransport instance = 1 long-running agent process = 1 ACP session.
- * The transport is owned by RunState.acp; RunManager constructs it after spawn and
- * drives initialize / session/new / session/prompt / session/cancel through it.
+ * Lifecycle: 1 AcpTransport instance = 1 long-running agent process = **N ACP
+ * sessions**. The transport is owned by an AcpPool entry (one warm process per
+ * agent); each Molio run registers its session via registerSession() and
+ * receives only the session/update notifications carrying its own sessionId.
+ * (Hermes supports this natively — acp_adapter keeps a `_sessions` dict and
+ * cancels per session; verified in the installed source.)
  *
  * Turn boundary: `session/prompt` is a request — its Promise resolution IS the turn
  * end (stopReason comes from PromptResponse). session/update notifications streamed
- * during the await are mapped to AgentEvents and emitted via onEvent.
+ * during the await are mapped to AgentEvents and routed to the session's sink.
  *
  * ── Activity-based timeouts ──
  *
@@ -25,6 +28,15 @@ import type { AgentEvent } from '@molio/contracts';
  * still printing (loading plugins, connecting providers), the request stays
  * pending. Only a truly hung agent (no output for `idleTimeoutMs`) times out.
  * An `absoluteTimeoutMs` safety-net cap is also enforced.
+ *
+ * ── Timeout blast radius (pooled process) ──
+ *
+ * A request sent with `options.sessionId` is **session-scoped**: its timeout
+ * rejects only that request (failing the owning run) and does NOT kill the
+ * shared process — other conversations' sessions must survive one hung prompt.
+ * Requests WITHOUT a sessionId (initialize, session/new) are transport-level:
+ * their timeout kills the child, since a process that can't complete a
+ * handshake is useless to every session.
  */
 
 export interface RequestOptions {
@@ -38,6 +50,34 @@ export interface RequestOptions {
    * If undefined, no absolute cap (request waits indefinitely, subject to idle timer).
    */
   absoluteTimeoutMs?: number;
+  /**
+   * Session scope. When set:
+   *  - idle/absolute timeouts reject this request WITHOUT killing the shared
+   *    child process (one hung session must not take down the others);
+   *  - the request is counted by hasPendingFor(sessionId) so the pool can tell
+   *    "process died mid-prompt for THIS session" from "died while idle".
+   * Leave unset for transport-level requests (initialize, session/new) whose
+   * failure means the whole process is unusable.
+   */
+  sessionId?: string;
+}
+
+export interface AcpTransportHooks {
+  /**
+   * Receives transport-level diagnostic events that can't be attributed to a
+   * single session: buffer overflow, non-JSON stdout (Python tracebacks),
+   * mapUpdate failures, unsupported server requests without a sessionId.
+   * The pool broadcasts these to all attached sessions.
+   */
+  onTransportEvent?: (ev: AgentEvent) => void;
+  /**
+   * Kills the child process when a TRANSPORT-LEVEL request times out (no
+   * sessionId — initialize/session/new) or the transport enters a degraded
+   * state. Called AFTER the pending request is rejected so callers fail fast
+   * instead of leaking a hung process. Session-scoped timeouts never call
+   * this. Default no-op keeps tests/mocks simple.
+   */
+  killChild?: () => void;
 }
 
 interface PendingEntry {
@@ -47,6 +87,8 @@ interface PendingEntry {
   absoluteTimer?: ReturnType<typeof setTimeout>;
   idleTimeoutMs?: number;
   method: string;
+  /** Present when the request is session-scoped (see RequestOptions.sessionId). */
+  sessionId?: string;
 }
 
 export class AcpTransport {
@@ -57,20 +99,34 @@ export class AcpTransport {
   private pending = new Map<number, PendingEntry>();
   private nextId = 1;
   private cancelledSessionIds = new Set<string>();
+  /** sessionId → event sink. session/update notifications are demuxed by sessionId. */
+  private sessions = new Map<string, (ev: AgentEvent) => void>();
 
   constructor(
     /** Writes a complete JSON-RPC frame (including trailing newline) to the agent's stdin. */
     private readonly send: (json: string) => void,
-    /** Emits a mapped Molio AgentEvent. */
-    private readonly onEvent: (ev: AgentEvent) => void,
-    /**
-     * Kills the child process when a timeout fires or the transport enters a
-     * degraded state. Called AFTER the pending request is rejected so the run
-     * fails fast instead of leaking a hung process that only cancelRun or the
-     * 30-min TTL would clean up. Default no-op keeps tests/mocks simple.
-     */
-    private readonly killChild: () => void = () => {},
+    private readonly hooks: AcpTransportHooks = {},
   ) {}
+
+  /** Register an event sink for a session. Updates for unregistered sessions are dropped. */
+  registerSession(sessionId: string, sink: (ev: AgentEvent) => void): void {
+    this.sessions.set(sessionId, sink);
+  }
+
+  /**
+   * Remove a session's sink (run finished/cancelled/detached). Also clears its
+   * cancelled marker so cancelledSessionIds doesn't accumulate stale entries
+   * across the long-lived pooled process.
+   */
+  unregisterSession(sessionId: string): void {
+    this.sessions.delete(sessionId);
+    this.cancelledSessionIds.delete(sessionId);
+  }
+
+  /** Test/inspection: currently registered session ids. */
+  sessionIds(): string[] {
+    return [...this.sessions.keys()];
+  }
 
   /** Feed a chunk of stdout (string or Buffer) — splits newline-delimited JSON frames. */
   feed(chunk: string | Buffer): void {
@@ -95,7 +151,7 @@ export class AcpTransport {
       const dropped = this.buffer.length;
       this.buffer = '';
       const msg = `ACP buffer overflow — dropped ${dropped} bytes without a complete newline`;
-      this.onEvent({ type: 'error', message: msg });
+      this.hooks.onTransportEvent?.({ type: 'error', message: msg });
       this.rejectOldestPending(new Error(msg));
     }
   }
@@ -111,16 +167,19 @@ export class AcpTransport {
    * Send a JSON-RPC request and return the response's `result`.
    * Rejects on: idle timeout (no activity), absolute timeout (safety net),
    * JSON-RPC error response, or rejectAll() (process exit).
+   * Timeouts on session-scoped requests (options.sessionId) do NOT kill the
+   * child; transport-level timeouts do (see AcpTransportHooks.killChild).
    */
   request(method: string, params: unknown, options: RequestOptions = {}): Promise<unknown> {
     const id = this.nextId++;
-    const { idleTimeoutMs, absoluteTimeoutMs } = options;
+    const { idleTimeoutMs, absoluteTimeoutMs, sessionId } = options;
     return new Promise((resolve, reject) => {
       const entry: PendingEntry = {
         resolve,
         reject,
         method,
         idleTimeoutMs,
+        sessionId,
       };
 
       if (idleTimeoutMs !== undefined) {
@@ -131,10 +190,7 @@ export class AcpTransport {
           if (this.pending.delete(id)) {
             this.clearEntryTimers(entry);
             reject(new Error(`ACP absolute timeout: ${method} (${absoluteTimeoutMs}ms)`));
-            // Kill the child so a hung agent doesn't leak — without this the
-            // process keeps running until cancelRun or natural exit, which
-            // could be never on a true hang.
-            this.killChild();
+            this.maybeKillChildOnTimeout(entry);
           }
         }, absoluteTimeoutMs);
       }
@@ -147,7 +203,7 @@ export class AcpTransport {
   /**
    * Reset idle timers on all pending requests. Call when the agent produces
    * ANY output (stdout chunk arrived via feed(), or stderr data arrived in
-   * RunManager's stderr handler).
+   * the pool's stderr handler).
    */
   noteActivity(): void {
     for (const [id, entry] of this.pending) {
@@ -162,7 +218,11 @@ export class AcpTransport {
     this.send(JSON.stringify({ jsonrpc: '2.0', method, params }) + '\n');
   }
 
-  /** Reject all pending requests — call when the child process exits unexpectedly. */
+  /**
+   * Reject all pending requests and drop all session sinks — call when the
+   * child process exits. The pool snapshots per-session state (cancelled /
+   * had-pending-prompt) BEFORE calling this, since rejectAll clears both maps.
+   */
   rejectAll(error: Error): void {
     for (const [, entry] of this.pending) {
       this.clearEntryTimers(entry);
@@ -170,8 +230,9 @@ export class AcpTransport {
     }
     this.pending.clear();
     // No further session/update notifications can arrive — drop the cancelled
-    // markers so the set doesn't accumulate stale entries across re-used runs.
+    // markers and session sinks so nothing routes to a dead process's runs.
     this.cancelledSessionIds.clear();
+    this.sessions.clear();
   }
 
   /**
@@ -180,8 +241,8 @@ export class AcpTransport {
    * stdout delivers a frame that can't be associated with any specific request:
    * non-JSON output (Python traceback to stdout) or buffer overflow. The
    * caller has already decided the transport is degraded; rejecting the oldest
-   * request lets RunManager's catch handler surface the error and finish the
-   * run instead of waiting for the idle/absolute timeout.
+   * request lets the owning run's catch handler surface the error and finish
+   * the run instead of waiting for the idle/absolute timeout.
    *
    * No-op when nothing is pending — the caller is responsible for emitting
    * any standalone error event in that case (see feed() overflow path).
@@ -195,10 +256,21 @@ export class AcpTransport {
     entry.reject(error);
   }
 
-  /** Test/inspection: are there any in-flight requests? Used by RunManager to
-   *  decide whether a process exit was a mid-prompt crash or a clean shutdown. */
+  /** Test/inspection: are there any in-flight requests? */
   hasPending(): boolean {
     return this.pending.size > 0;
+  }
+
+  /**
+   * Does a specific session have an in-flight request (e.g. a pending
+   * session/prompt)? The pool uses this on process exit to distinguish a
+   * mid-prompt crash ('failed') from a clean shutdown while idle.
+   */
+  hasPendingFor(sessionId: string): boolean {
+    for (const entry of this.pending.values()) {
+      if (entry.sessionId === sessionId) return true;
+    }
+    return false;
   }
 
   /** Mark a session as cancelled — subsequent session/update notifications for it are dropped. */
@@ -216,6 +288,15 @@ export class AcpTransport {
     return this.cancelledSessionIds.has(sessionId);
   }
 
+  /** Kill the child on a timeout — only for transport-level requests. */
+  private maybeKillChildOnTimeout(entry: PendingEntry): void {
+    // Session-scoped timeout: reject already failed the owning run; killing
+    // the shared process would take down every other conversation's session.
+    // The pool's idle-TTL / crash handling owns the process lifecycle.
+    if (entry.sessionId) return;
+    this.hooks.killChild?.();
+  }
+
   private armIdleTimer(
     id: number,
     entry: PendingEntry,
@@ -226,9 +307,7 @@ export class AcpTransport {
       if (this.pending.delete(id)) {
         this.clearEntryTimers(entry);
         entry.reject(new Error(`ACP idle timeout: ${method} (no activity for ${idleTimeoutMs}ms)`));
-        // Kill the child so a hung agent doesn't leak — same rationale as
-        // the absolute-timer path.
-        this.killChild();
+        this.maybeKillChildOnTimeout(entry);
       }
     }, idleTimeoutMs);
   }
@@ -248,12 +327,15 @@ export class AcpTransport {
       // Not valid JSON. Surface as a raw event so the line is preserved in
       // events.jsonl for remote diagnosis. If a request is pending, the
       // agent is likely spewing a Python traceback to stdout (instead of
-      // stderr) — reject the oldest pending request so RunManager's catch
+      // stderr) — reject the oldest pending request so the owning run's catch
       // handler surfaces a diagnostic immediately, rather than the user
-      // waiting for the idle timeout (handshake 15s / prompt 5min) with
+      // waiting for the idle timeout (handshake 60s / prompt 5min) with
       // no clue what went wrong. Truncate the raw line so a huge traceback
       // doesn't bloat the event log.
-      this.onEvent({ type: 'raw', line: line.length > 500 ? line.slice(0, 500) + '…' : line });
+      this.hooks.onTransportEvent?.({
+        type: 'raw',
+        line: line.length > 500 ? line.slice(0, 500) + '…' : line,
+      });
       this.rejectOldestPending(
         new Error(
           `ACP protocol violation: agent wrote non-JSON to stdout: ${line.slice(0, 120)}`,
@@ -277,21 +359,25 @@ export class AcpTransport {
       return;
     }
 
-    // Notification from agent
+    // Notification from agent — demux by sessionId to the owning run's sink.
     if (msg.method === 'session/update' && msg.params) {
       const sessionId: string | undefined = msg.params.sessionId;
       if (sessionId && this.cancelledSessionIds.has(sessionId)) return;
+      const sink = sessionId ? this.sessions.get(sessionId) : undefined;
+      // Unregistered session (detached run, or a session this Molio instance
+      // doesn't own) — drop silently.
+      if (!sink) return;
       // mapUpdate touches an unstable ACP schema (tool calls, usage). A
       // malformed update (circular ref in JSON.stringify, unexpected shape)
-      // would throw out of mapUpdate, escape the while loop in feed(), and
-      // silently drop any subsequent buffered frames. Surface it as a raw
-      // event so the line is preserved in events.jsonl for diagnosis, and
-      // keep processing the rest of the buffer.
+      // or a throwing downstream sink would escape the while loop in feed()
+      // and silently drop any subsequent buffered frames. Surface it as a
+      // transport-level raw event so the line is preserved for diagnosis,
+      // and keep processing the rest of the buffer.
       try {
-        this.mapUpdate(msg.params.update);
+        this.mapUpdate(msg.params.update, sink);
       } catch (err) {
         const errMsg = (err as Error).message ?? String(err);
-        this.onEvent({
+        this.hooks.onTransportEvent?.({
           type: 'raw',
           line: `[mapUpdate error] ${errMsg}: ${JSON.stringify(msg.params.update).slice(0, 400)}`,
         });
@@ -307,6 +393,16 @@ export class AcpTransport {
     }
 
     // Other notifications (no id) — nothing to answer, safe to ignore.
+  }
+
+  /** Route a diagnostic event to the session's sink when attributable, else transport-level. */
+  private emitForSessionOrTransport(sessionId: string | undefined, ev: AgentEvent): void {
+    const sink = sessionId ? this.sessions.get(sessionId) : undefined;
+    if (sink) {
+      try { sink(ev); } catch { /* sink error — don't break the frame loop */ }
+    } else {
+      this.hooks.onTransportEvent?.(ev);
+    }
   }
 
   /**
@@ -325,6 +421,7 @@ export class AcpTransport {
    * agent can degrade instead of waiting forever.
    */
   private handleServerRequest(msg: any): void {
+    const sessionId: string | undefined = msg.params?.sessionId;
     if (msg.method === 'session/request_permission') {
       const options: any[] = Array.isArray(msg.params?.options) ? msg.params.options : [];
       const byKind = (kind: string) => options.find((o) => o?.kind === kind);
@@ -336,7 +433,7 @@ export class AcpTransport {
         ?? options[0];
       const toolTitle = msg.params?.toolCall?.title ?? msg.params?.toolCall?.kind ?? '';
       if (chosen && typeof chosen.optionId === 'string') {
-        this.onEvent({
+        this.emitForSessionOrTransport(sessionId, {
           type: 'raw',
           line: `[acp] auto-approved permission request${toolTitle ? ` (${toolTitle})` : ''}: ${chosen.optionId}`,
         });
@@ -346,7 +443,7 @@ export class AcpTransport {
           result: { outcome: { outcome: 'selected', optionId: chosen.optionId } },
         }) + '\n');
       } else {
-        this.onEvent({
+        this.emitForSessionOrTransport(sessionId, {
           type: 'raw',
           line: `[acp] permission request has no selectable options — answering cancelled${toolTitle ? ` (${toolTitle})` : ''}`,
         });
@@ -359,7 +456,7 @@ export class AcpTransport {
       return;
     }
 
-    this.onEvent({
+    this.emitForSessionOrTransport(sessionId, {
       type: 'raw',
       line: `[acp] unsupported server request: ${msg.method}`,
     });
@@ -370,7 +467,7 @@ export class AcpTransport {
     }) + '\n');
   }
 
-  private mapUpdate(update: any): void {
+  private mapUpdate(update: any, sink: (ev: AgentEvent) => void): void {
     if (!update || typeof update !== 'object') return;
     const tag: string | undefined = update.sessionUpdate;
 
@@ -378,14 +475,14 @@ export class AcpTransport {
       case 'agent_message_chunk': {
         const text = update.content?.text;
         if (typeof text === 'string') {
-          this.onEvent({ type: 'text_delta', delta: text });
+          sink({ type: 'text_delta', delta: text });
         }
         return;
       }
       case 'agent_thought_chunk': {
         const text = update.content?.text;
         if (typeof text === 'string') {
-          this.onEvent({ type: 'thinking_delta', delta: text });
+          sink({ type: 'thinking_delta', delta: text });
         }
         return;
       }
@@ -393,7 +490,7 @@ export class AcpTransport {
         // ToolCallStart — rawInput is the tool input params
         const id = update.toolCallId;
         if (typeof id === 'string') {
-          this.onEvent({
+          sink({
             type: 'tool_use',
             id,
             name: typeof update.title === 'string' ? update.title : '',
@@ -407,7 +504,7 @@ export class AcpTransport {
         const id = update.toolCallId;
         if (typeof id === 'string') {
           const content = stringifyToolOutput(update.rawOutput);
-          this.onEvent({
+          sink({
             type: 'tool_result',
             toolUseId: id,
             content,
@@ -431,7 +528,7 @@ export class AcpTransport {
         return;
       default:
         // Unknown variant — surface as raw so we notice when the protocol grows.
-        this.onEvent({ type: 'raw', line: JSON.stringify(update) });
+        sink({ type: 'raw', line: JSON.stringify(update) });
     }
   }
 }

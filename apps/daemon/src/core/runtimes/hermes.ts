@@ -34,10 +34,24 @@ export const hermesAgentDef: RuntimeAgentDef = {
 
   transport: 'acp-jsonrpc',
   acp: {
-    // Handshake phase (initialize + session/new): hermes-acp is chatty —
-    // prints MCP/plugin loading progress to stderr throughout. 15s of total
-    // silence means the process is genuinely hung.
-    idleTimeoutMs: 15000,
+    // Handshake phase (initialize + session/new). hermes-acp IS chatty during
+    // initialize and the early session/new build — plugin loading, tools.registry
+    // checks, and "Created ACP session" all print to stderr, each line resetting
+    // the idle timer. But the FINAL step of session/new (enumerating
+    // `availableModels`) is SILENT: hermes fetches the provider model list over
+    // the network (refreshing provider_models_cache) and prints nothing until the
+    // JSON-RPC response lands. Measured on a warm install: initialize ~2.6s,
+    // session/new ~7-11s total with a 2-6s silent tail. On a COLD first run
+    // (cold .pyc, cold model caches) over a slow/CN line to the provider, that
+    // silent tail blows past 15s — the old budget — and the handshake
+    // false-times-out even though hermes is healthy and about to respond
+    // (observed 2026-10-05: "ACP idle timeout: session/new (no activity for
+    // 15000ms)", last stderr = the benign MCP-discovery retry warning, i.e. it
+    // went silent right before the model-list fetch). 60s comfortably covers the
+    // cold build while still catching a genuinely hung process; because the idle
+    // timer resets on ANY stderr, a chatty hermes is never affected. Override
+    // via MOLIO_ACP_IDLE_TIMEOUT_MS for extreme networks.
+    idleTimeoutMs: 60000,
     // Prompt phase (session/prompt): the agent can be silent for a LONG time
     // in real workflows — not just first-token latency (system prompt compile,
     // tool def loading) but also while a TOOL runs. A subprocess-based tool
@@ -68,6 +82,98 @@ export const hermesAgentDef: RuntimeAgentDef = {
   ],
 
   installUrl: 'https://github.com/NousResearch/hermes-agent',
+
+  // One-click install via the official installer scripts. The PyPI package
+  // (hermes-agent) is stale — upstream ships weekly date-versioned releases on
+  // GitHub only — so wrapping the official scripts is the only current path.
+  // The scripts clone the repo, bootstrap uv + a venv, and (on Windows) fetch
+  // PortableGit; those GitHub downloads are hardcoded, hence the long timeout
+  // and the MOLIO_HERMES_REPO_URL mirror passthrough in the install engine.
+  install: {
+    source: {
+      type: 'script',
+      scripts: {
+        'win32-x64': 'https://hermes-agent.nousresearch.com/install.ps1',
+        'win32-arm64': 'https://hermes-agent.nousresearch.com/install.ps1',
+        'darwin-x64': 'https://hermes-agent.nousresearch.com/install.sh',
+        'darwin-arm64': 'https://hermes-agent.nousresearch.com/install.sh',
+        'linux-x64': 'https://hermes-agent.nousresearch.com/install.sh',
+        'linux-arm64': 'https://hermes-agent.nousresearch.com/install.sh',
+      },
+      // Browser tooling pulls a full Chromium (~150MB+) and computer-use pulls
+      // the cua-driver from GitHub — both skipped by default (Molio drives
+      // hermes via ACP chat, neither tool is used). Users can add them later
+      // via `hermes pm install agent-browser` / `hermes pm install cua-driver`.
+      // -NonInteractive / --non-interactive are added by the install engine.
+      platformArgs: {
+        win32: ['-SkipBrowser', '-SkipComputerUse'],
+        posix: ['--skip-browser', '--skip-computer-use'],
+      },
+      // Drive the installer through its official stage protocol (one process
+      // per stage) instead of a single full-ladder run, so the engine can
+      // inject the mirrorLockfile rewrite after the clone and report/abort
+      // per stage. `setup`/`gateway` need user input — the engine's
+      // -NonInteractive flag makes the installer skip them with exit 0 (kept
+      // in the list for full-ladder parity). timeoutMs below is PER-STAGE.
+      stages: [
+        'prerequisites', 'repository', 'venv', 'python-deps',
+        'config', 'products', 'setup', 'gateway', 'complete',
+      ],
+      // After the clone lands (repository) but before pm starts pulling its
+      // tool set (python-deps), rewrite pm/lock.json's GitHub/nodejs URLs to
+      // CN-reachable mirrors. Without this, ffmpeg (~169MB, GitHub Releases
+      // CDN) trickle-throttles at ~300KB/s on CN lines and the install dies
+      // on the per-stage timeout — the CDN connects fine, it just never
+      // finishes, so pm's own fallback mirror never triggers. Integrity stays
+      // anchored by the lockfile's sha256 pins.
+      mirrorLockfile: {
+        afterStage: 'repository',
+        relPath: 'hermes-agent/pm/lock.json',
+        homeEnv: 'HERMES_HOME',
+        defaultHome: {
+          win32: '%LOCALAPPDATA%\\hermes',
+          posix: '~/.hermes',
+        },
+      },
+      // The installer's clone historically used `--filter=tree:0` (treeless).
+      // On the next products/update run hermes's own
+      // `gitlock.convert_treeless_checkout` migrates that to `blob:none` by
+      // re-fetching the ENTIRE commit history (~100–120MB via `git fetch
+      // --refetch`) — two python subprocess caps of 900s each, which together
+      // blow our 1800s per-stage budget on slow/CN lines. Observed 2026-10-05:
+      // the products stage timed out at 1800s while the second `--refetch` was
+      // still writing a 104MB pack (it landed ~9min later), and because the
+      // migration only stamps the new filter on success, EVERY retry re-paid the
+      // full backfill. Stamp `blob:none` ourselves right after the clone so
+      // convert_treeless_checkout's gate (`filter != tree:0 → return False`)
+      // short-circuits and the backfill never runs. Fresh installs already clone
+      // with `blob:none`, so this only touches legacy treeless checkouts and is
+      // a logged no-op elsewhere. Best-effort — never fails the install.
+      repairGitConfig: {
+        afterStage: 'repository',
+        repoRelPath: 'hermes-agent',
+        homeEnv: 'HERMES_HOME',
+        defaultHome: {
+          win32: '%LOCALAPPDATA%\\hermes',
+          posix: '~/.hermes',
+        },
+        key: 'remote.origin.partialclonefilter',
+        fromValue: 'tree:0',
+        toValue: 'blob:none',
+      },
+      // Source install: git clone + uv bootstrap + dependency sync, then pm
+      // pulls its default tool set from GitHub releases. With `stages` set,
+      // this is a PER-STAGE budget; 30min per stage comfortably covers the
+      // worst single stage (python-deps: ffmpeg ~169MB even through a mirror,
+      // plus PyPI sync). pm downloads are resumable (cache/partials keyed by
+      // sha256, 6h GC grace) so a timeout isn't fatal — a retry continues
+      // where it left off. Matches acp.absoluteTimeoutMs's 30min reasoning.
+      timeoutMs: 1_800_000,
+      // --check validates the [acp] extra is importable; --version yields the
+      // installed version string for the done event.
+      verifyArgs: [['--check'], ['--version']],
+    },
+  },
 };
 
 // ─── Just-in-time [acp] extra auto-repair ───

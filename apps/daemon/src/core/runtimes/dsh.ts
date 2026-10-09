@@ -8,12 +8,12 @@ import type { RuntimeAgentDef } from '@molio/contracts';
  * JSON-RPC server over stdio (PoC-verified 2026-10-04 on 0.2.0-rc.2):
  * initialize → protocolVersion 1, agentInfo "deepseek-harness-acp";
  * session/new works WITHOUT an API key and returns `configOptions` instead
- * of hermes-style `models.availableModels` — RunManager.initAcp parses both
- * shapes and emits the unified `models` event either way.
+ * of hermes-style `models.availableModels` — RunManager.initAcpPooled parses
+ * both shapes and emits the unified `models` event either way.
  *
  * Models: the `model` configOption is a grouped select whose option `value`
  * is a JSON-encoded [provider, model] tuple, e.g.
- * '["deepseek-official","deepseek-v4-pro"]'. initAcp matches the user's
+ * '["deepseek-official","deepseek-v4-pro"]'. initAcpPooled matches the user's
  * selected model id against the tuple's model slug and applies it via
  * `session/set_config_option` right after session/new. 'default'/unset →
  * dsh's own default (currently deepseek-v4-flash) is left untouched.
@@ -45,9 +45,10 @@ import type { RuntimeAgentDef } from '@molio/contracts';
  *
  * stderr: dsh prints non-fatal diagnostics ("dsh: warning: N entry did not
  * activate", plugin-activation ValidationErrors, Node experimental
- * warnings). RunManager.handleAcpStderr treats dsh stderr as `raw` unless a
- * line is an explicit error — escalating warnings to `error` events would
- * make the frontend set streaming:false and swallow the reply stream.
+ * warnings). classifyAcpStderrLine (streams/acp-pool.ts — the pool owns the
+ * shared process's stderr) treats dsh stderr as `raw` unless a line is an
+ * explicit error — escalating warnings to `error` events would make the
+ * frontend set streaming:false and swallow the reply stream.
  */
 export const dshAgentDef: RuntimeAgentDef = {
   id: 'dsh',
@@ -101,8 +102,8 @@ export const dshAgentDef: RuntimeAgentDef = {
   },
 
   // Ids are the tuple model slugs (option value = '["deepseek-official",<id>]')
-  // so initAcp can match a user selection against configOptions; labels mirror
-  // dsh's own display names. Shown before the first run — session/new's
+  // so initAcpPooled can match a user selection against configOptions; labels
+  // mirror dsh's own display names. Shown before the first run — session/new's
   // configOptions replace this list dynamically via the `models` event.
   fallbackModels: [
     { id: 'default', label: 'Default' },

@@ -354,6 +354,206 @@ test.describe('Codex provider config', () => {
   });
 });
 
+test.describe('Hermes provider config', () => {
+  // Same resolution as daemon hermes-config.ts resolveHermesHome():
+  // HERMES_HOME env → win %LOCALAPPDATA%\hermes → POSIX ~/.hermes
+  const hermesHome = process.env.HERMES_HOME
+    || (process.platform === 'win32'
+      ? path.join(process.env.LOCALAPPDATA ?? path.join(os.homedir(), 'AppData', 'Local'), 'hermes')
+      : path.join(os.homedir(), '.hermes'));
+  const configYaml = path.join(hermesHome, 'config.yaml');
+  const dotEnv = path.join(hermesHome, '.env');
+  let backupDir = '';
+  const backups: { src: string; bak: string }[] = [];
+  const suiteCreated: string[] = []; // 跑前不存在的文件，afterAll 删掉
+
+  test.beforeAll(() => {
+    backupDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hermes-e2e-backup-'));
+    for (const src of [configYaml, dotEnv]) {
+      if (fs.existsSync(src) && fs.statSync(src).isFile()) {
+        const bak = path.join(backupDir, path.basename(src));
+        fs.copyFileSync(src, bak);
+        backups.push({ src, bak });
+      } else {
+        suiteCreated.push(src);
+      }
+    }
+  });
+
+  test.afterAll(() => {
+    for (const { src, bak } of backups) {
+      fs.copyFileSync(bak, src);
+    }
+    for (const src of suiteCreated) {
+      fs.rmSync(src, { force: true }); // 本来就不存在的，删掉而不是留下测试垃圾
+    }
+    fs.rmSync(backupDir, { recursive: true, force: true });
+  });
+
+  test.beforeEach(async ({ page }) => {
+    // Seed the deterministic precondition via the daemon API BEFORE goto —
+    // ProviderConfig loads live hermes state on mount, and seeding afterwards
+    // would race the mount-load (same reasoning as the Codex suite).
+    const title = test.info().title;
+    const precondition = title.includes('saved-key hint')
+      // apiKey so hasKey=true at mount — the hint under test reads it
+      ? { presetId: 'anthropic', apiKey: 'sk-e2e-saved' }
+      // anthropic ≠ the UI's deepseek default → observable "async load applied" marker
+      : { presetId: 'anthropic' };
+    const seedRes = await fetch(`${DAEMON_API}/agents/hermes/provider`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(precondition),
+    });
+    expect(seedRes.ok, `failed to seed hermes provider precondition: ${seedRes.status}`).toBeTruthy();
+
+    await page.goto('/');
+    await page.locator('[data-view="settings"]').click();
+    await expect(page.locator('.settings-shell')).toBeVisible();
+    await page.locator('.settings-tab-btn').filter({ hasText: /Runtime|运行时/ }).click({ timeout: 5_000 });
+    await expect(page.locator('.rt-shell')).toBeVisible();
+
+    const hermesCard = page.locator('.rt-agent-card').filter({ hasText: 'Hermes' });
+    // agent 列表是异步扫描渲染的，先等卡片出现再判断安装状态
+    await hermesCard.first().waitFor({ state: 'visible', timeout: 15_000 }).catch(() => {});
+    const installed = await hermesCard.count() > 0
+      && await hermesCard.locator('.rt-badge--ok').count() > 0;
+    test.skip(!installed, 'Hermes Agent not installed in this environment');
+  });
+
+  test('save zai provider and verify hermes native files', async ({ page }) => {
+    const hermesCard = page.locator('.rt-agent-card').filter({ hasText: 'Hermes' });
+    await hermesCard.locator('.rt-provider-toggle').click();
+    const panel = hermesCard.locator('.rt-provider-config');
+    await expect(panel).toBeVisible();
+
+    // hermes native-config hint shown
+    await expect(panel.locator('[data-testid="hermes-config-hint"]')).toContainText('config.yaml');
+
+    // async state load applied (seeded anthropic ≠ deepseek default) — safe to interact
+    await expect(panel.locator('.rt-provider-form__select').first()).toHaveValue('anthropic');
+
+    await panel.locator('.rt-provider-form__select').first().selectOption('zai');
+
+    // zai pre-fills the 国内 bigmodel.cn endpoint (its keys don't work on api.z.ai)
+    await expect(panel.locator('[data-testid="hermes-baseurl-field"]'))
+      .toHaveValue('https://open.bigmodel.cn/api/paas/v4');
+
+    await panel.locator('[data-testid="hermes-model-field"]').fill('glm-4.6');
+    await panel.locator('.rt-provider-form__input[type="password"]').fill('sk-e2e-hermes-test');
+    await panel.locator('.rt-provider-form__actions .rt-btn').first().click();
+    await expect(panel.locator('.rt-provider-form__status--ok')).toBeVisible({ timeout: 5_000 });
+
+    // daemon wrote the live hermes-native files. yaml-regex 一律容忍可选引号：
+    // daemon 用 yaml Document 合并编辑，set 到既有节点会**保留该节点原有的引号
+    // 风格**——真实 hermes 安装器的模板标量全是带引号的（provider: "anthropic"），
+    // 所以真机上写出来是 `provider: "zai"`；CI（无 hermes → skip） never exercises
+    // this. 2026-10-09 首次真机全量 E2E 三个用例全挂在无引号正则上。
+    const yaml = fs.readFileSync(configYaml, 'utf8');
+    expect(yaml).toMatch(/provider:\s*"?zai"?/);
+    expect(yaml).toMatch(/default:\s*"?glm-4\.6"?/);
+    const env = fs.readFileSync(dotEnv, 'utf8');
+    expect(env).toMatch(/^GLM_API_KEY=sk-e2e-hermes-test$/m);
+    expect(env).toMatch(/^GLM_BASE_URL=https:\/\/open\.bigmodel\.cn\/api\/paas\/v4$/m);
+
+    // GET provider reflects live state, never the key itself
+    const state = await page.evaluate(async (api) => {
+      const res = await fetch(`${api}/agents/hermes/provider`);
+      return res.json();
+    }, DAEMON_API);
+    expect(state.presetHint).toBe('zai');
+    expect(state.hasKey).toBe(true);
+    expect(JSON.stringify(state)).not.toContain('sk-e2e-hermes-test');
+  });
+
+  test('save deepseek provider and verify hermes native files', async ({ page }) => {
+    const hermesCard = page.locator('.rt-agent-card').filter({ hasText: 'Hermes' });
+    await hermesCard.locator('.rt-provider-toggle').click();
+    const panel = hermesCard.locator('.rt-provider-config');
+    await expect(panel).toBeVisible();
+
+    // async state load applied (seeded anthropic ≠ deepseek default) — safe to interact
+    await expect(panel.locator('.rt-provider-form__select').first()).toHaveValue('anthropic');
+
+    await panel.locator('.rt-provider-form__select').first().selectOption('deepseek');
+
+    // deepseek supports a DEEPSEEK_BASE_URL override but pre-fills nothing —
+    // hermes's built-in endpoint (api.deepseek.com/v1) applies while blank
+    await expect(panel.locator('[data-testid="hermes-baseurl-field"]')).toHaveValue('');
+
+    await panel.locator('[data-testid="hermes-model-field"]').fill('deepseek-chat');
+    await panel.locator('.rt-provider-form__input[type="password"]').fill('sk-e2e-deepseek');
+    await panel.locator('.rt-provider-form__actions .rt-btn').first().click();
+    await expect(panel.locator('.rt-provider-form__status--ok')).toBeVisible({ timeout: 5_000 });
+
+    // daemon wrote the live hermes-native files
+    const yaml = fs.readFileSync(configYaml, 'utf8');
+    expect(yaml).toMatch(/provider:\s*"?deepseek"?/);
+    expect(yaml).toMatch(/default:\s*"?deepseek-chat"?/);
+    const env = fs.readFileSync(dotEnv, 'utf8');
+    expect(env).toMatch(/^DEEPSEEK_API_KEY=sk-e2e-deepseek$/m);
+
+    // GET provider reflects live state, never the key itself
+    const state = await page.evaluate(async (api) => {
+      const res = await fetch(`${api}/agents/hermes/provider`);
+      return res.json();
+    }, DAEMON_API);
+    expect(state.presetHint).toBe('deepseek');
+    expect(state.hasKey).toBe(true);
+    expect(JSON.stringify(state)).not.toContain('sk-e2e-deepseek');
+  });
+
+  test('shows saved-key hint when .env already has a key', async ({ page }) => {
+    // beforeEach seeded anthropic + apiKey BEFORE mount → mount-load sees hasKey=true
+    const hermesCard = page.locator('.rt-agent-card').filter({ hasText: 'Hermes' });
+    await hermesCard.locator('.rt-provider-toggle').click();
+    const panel = hermesCard.locator('.rt-provider-config');
+    await expect(panel).toBeVisible();
+
+    // Secrets never round-trip to the UI — the field stays empty…
+    const keyInput = panel.locator('.rt-provider-form__input[type="password"]');
+    await expect(keyInput).toHaveValue('');
+    // …but the saved-key hint makes that explicit instead of looking "unsaved"
+    await expect(panel.locator('[data-testid="hermes-key-saved-hint"]')).toBeVisible();
+
+    // Typing a replacement key hides the hint
+    await keyInput.fill('sk-replacement');
+    await expect(panel.locator('[data-testid="hermes-key-saved-hint"]')).toHaveCount(0);
+  });
+
+  test('custom provider requires base url and writes config.yaml only', async ({ page }) => {
+    const hermesCard = page.locator('.rt-agent-card').filter({ hasText: 'Hermes' });
+    await hermesCard.locator('.rt-provider-toggle').click();
+    const panel = hermesCard.locator('.rt-provider-config');
+    await expect(panel.locator('.rt-provider-form__select').first()).toHaveValue('anthropic');
+
+    await panel.locator('.rt-provider-form__select').first().selectOption('custom');
+    const baseUrlField = panel.locator('[data-testid="hermes-baseurl-field"]');
+    await expect(baseUrlField).toBeVisible();
+    await expect(baseUrlField).toHaveValue(''); // custom starts empty
+
+    // Save without base url → daemon 400 → error status, no success
+    await panel.locator('[data-testid="hermes-model-field"]').fill('gpt-x');
+    await panel.locator('.rt-provider-form__input[type="password"]').fill('sk-e2e-custom');
+    await panel.locator('.rt-provider-form__actions .rt-btn').first().click();
+    await expect(panel.locator('.rt-provider-form__status--err')).toBeVisible({ timeout: 5_000 });
+
+    // Fill base url → save succeeds; everything lands in config.yaml (custom
+    // has no envKey — key travels as model.api_key, endpoint as model.base_url)
+    await baseUrlField.fill('https://relay.e2e.example/v1');
+    await panel.locator('.rt-provider-form__actions .rt-btn').first().click();
+    await expect(panel.locator('.rt-provider-form__status--ok')).toBeVisible({ timeout: 5_000 });
+
+    const yaml = fs.readFileSync(configYaml, 'utf8');
+    expect(yaml).toMatch(/provider:\s*"?custom"?/);
+    expect(yaml).toMatch(/base_url:\s*"?https:\/\/relay\.e2e\.example\/v1"?/);
+    expect(yaml).toMatch(/api_key:\s*"?sk-e2e-custom"?/);
+    // the seeded anthropic key stays in .env, but no custom key is written there
+    const env = fs.existsSync(dotEnv) ? fs.readFileSync(dotEnv, 'utf8') : '';
+    expect(env).not.toContain('sk-e2e-custom');
+  });
+});
+
 test.describe('dsh provider config', () => {
   // dsh credentials live in ~/.molio/config.json (agents.dsh.env) — dsh reads
   // DEEPSEEK_API_KEY / DEEPSEEK_BASE_URL solely from env (no backing file).

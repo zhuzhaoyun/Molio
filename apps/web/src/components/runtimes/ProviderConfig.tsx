@@ -4,6 +4,7 @@ import { useI18n } from '../../i18n';
 import {
   CLAUDE_PROVIDERS,
   CODEX_PROVIDERS,
+  HERMES_PROVIDERS,
   DSH_PROVIDERS,
   detectProvider,
   detectDshProvider,
@@ -11,6 +12,7 @@ import {
   buildDshEnv,
   type ProviderPreset,
   type CodexProviderPreset,
+  type HermesProviderPreset,
   type DshProviderPreset,
 } from './providers';
 
@@ -32,7 +34,7 @@ export function ProviderConfig({ agentId }: ProviderConfigProps) {
   const { t } = useI18n();
   const [expanded, setExpanded] = useState(false);
 
-  // Form state
+  // Form state — hermes defaults to the first 国内 preset (deepseek); claude to deepseek.
   const [providerId, setProviderId] = useState('deepseek');
   const [apiKey, setApiKey] = useState('');
   const [customBaseUrl, setCustomBaseUrl] = useState('');
@@ -41,13 +43,19 @@ export function ProviderConfig({ agentId }: ProviderConfigProps) {
   const [saveState, setSaveState] = useState<SaveState>('idle');
 
   const isCodex = agentId === 'codex';
+  const isHermes = agentId === 'hermes';
   const isDsh = agentId === 'dsh';
   const [codexModel, setCodexModel] = useState('');
+  const [hermesModel, setHermesModel] = useState('');
   const [codexWireApi, setCodexWireApi] = useState<'responses' | 'chat'>('responses');
   // auth.json already holds an OPENAI_API_KEY — the key field stays empty by
   // design (secrets are never sent back to the UI), so show a hint instead of
   // letting the blank field look like "nothing was saved".
   const [hasSavedKey, setHasSavedKey] = useState(false);
+  // Hermes only: whether a real provider has been chosen. A fresh install ships
+  // `provider: auto` + a built-in base_url — that is NOT configured, and the
+  // collapsed card must say so instead of showing a misleading provider name.
+  const [hermesConfigured, setHermesConfigured] = useState(false);
 
   /**
    * 用户是否已经动过表单。挂载期的配置加载是异步的，而卡片本身要等 agent 扫描
@@ -63,6 +71,28 @@ export function ProviderConfig({ agentId }: ProviderConfigProps) {
 
   // Load current config on mount
   useEffect(() => {
+    if (isHermes) {
+      api.getAgentProvider(agentId).then((raw) => {
+        const s = raw as { presetHint: string; provider: string | null; baseUrl: string | null; model: string | null; hasKey: boolean; configured?: boolean };
+        // Factual disk state — always refresh (drives the collapsed "not
+        // configured" label even if the user is mid-edit).
+        setHermesConfigured(!!s.configured);
+        if (touchedRef.current) return; // 用户已在编辑，不覆盖表单字段
+        // Only adopt the backend's preset when hermes is ACTUALLY configured.
+        // A fresh install reports provider:'auto' + a built-in base_url
+        // (configured:false) — adopting it would show a deliberate-looking
+        // 'custom (OpenAI compatible)' choice that was never made.
+        if (s.configured && HERMES_PROVIDERS.some((p) => p.id === s.presetHint)) {
+          setProviderId(s.presetHint);
+        }
+        if (s.model) setHermesModel(s.model);
+        if (s.baseUrl) setCustomBaseUrl(s.baseUrl);
+        if (s.hasKey) setHasSavedKey(true);
+      }).catch(() => {
+        // Ignore — defaults are fine
+      });
+      return;
+    }
     if (isCodex) {
       api.getAgentProvider(agentId).then((raw) => {
         if (touchedRef.current) return; // 用户已在编辑，不覆盖
@@ -118,17 +148,38 @@ export function ProviderConfig({ agentId }: ProviderConfigProps) {
     }).catch(() => {
       // Ignore — defaults are fine
     });
-  }, [agentId, isCodex, isDsh]);
+  }, [agentId, isCodex, isHermes, isDsh]);
 
-  const provider: ProviderPreset | CodexProviderPreset | DshProviderPreset = isDsh
+  const provider: ProviderPreset | CodexProviderPreset | HermesProviderPreset | DshProviderPreset = isDsh
     ? DSH_PROVIDERS.find((p) => p.id === providerId) ?? DSH_PROVIDERS[0]
     : isCodex
       ? CODEX_PROVIDERS.find((p) => p.id === providerId) ?? CODEX_PROVIDERS[0]
-      : CLAUDE_PROVIDERS.find((p) => p.id === providerId) ?? CLAUDE_PROVIDERS[0];
+      : isHermes
+        ? HERMES_PROVIDERS.find((p) => p.id === providerId) ?? HERMES_PROVIDERS[0]
+        : CLAUDE_PROVIDERS.find((p) => p.id === providerId) ?? CLAUDE_PROVIDERS[0];
 
-  const providers: { id: string; name: string }[] = isDsh ? DSH_PROVIDERS : isCodex ? CODEX_PROVIDERS : CLAUDE_PROVIDERS;
+  const providers: { id: string; name: string }[] = isDsh
+    ? DSH_PROVIDERS
+    : isCodex
+      ? CODEX_PROVIDERS
+      : isHermes
+        ? HERMES_PROVIDERS
+        : CLAUDE_PROVIDERS;
+
+  /** Hermes preset driving the current selection (baseUrl field visibility etc.). */
+  const hermesPreset = isHermes ? HERMES_PROVIDERS.find((p) => p.id === providerId) : undefined;
 
   const handleProviderChange = useCallback((id: string) => {
+    if (isHermes) {
+      setProviderId(id);
+      markTouched();
+      setApiKey('');
+      // Pre-fill the preset's default base url (e.g. zai → bigmodel.cn 国内
+      // endpoint); presets without one clear the field.
+      const p = HERMES_PROVIDERS.find((x) => x.id === id);
+      setCustomBaseUrl(p?.defaultBaseUrl ?? '');
+      return;
+    }
     if (isDsh) {
       setProviderId(id);
       markTouched();
@@ -163,12 +214,27 @@ export function ProviderConfig({ agentId }: ProviderConfigProps) {
     } else {
       setMapping(EMPTY_MAPPING);
     }
-  }, [isCodex, isDsh, markTouched]);
+  }, [isCodex, isHermes, isDsh, markTouched]);
 
   const handleSave = useCallback(async () => {
     setSaveState('saving');
     try {
-      if (isDsh) {
+      if (isHermes) {
+        const body: Record<string, unknown> = { presetId: providerId };
+        if (hermesModel.trim()) body.model = hermesModel.trim();
+        if (apiKey) body.apiKey = apiKey;
+        // Only send baseUrl where the daemon will actually use it: custom
+        // (model.base_url) or presets with a *_BASE_URL env override.
+        const p = HERMES_PROVIDERS.find((x) => x.id === providerId);
+        if (customBaseUrl.trim() && (p?.isCustom || p?.baseUrlEnvKey)) {
+          body.baseUrl = customBaseUrl.trim();
+        }
+        await api.updateAgentProvider(agentId, body);
+        if (apiKey) setHasSavedKey(true);
+        // A real provider was just written — the card should stop saying
+        // "not configured" once collapsed.
+        setHermesConfigured(true);
+      } else if (isDsh) {
         const env = buildDshEnv(providerId, apiKey, customBaseUrl);
         await api.updateAgentConfig(agentId, { env });
       } else if (isCodex) {
@@ -195,11 +261,16 @@ export function ProviderConfig({ agentId }: ProviderConfigProps) {
     } catch (err) {
       setSaveState('error');
     }
-  }, [agentId, isCodex, isDsh, providerId, apiKey, customBaseUrl, mapping, codexModel, codexWireApi]);
+  }, [agentId, isCodex, isHermes, isDsh, providerId, apiKey, customBaseUrl, mapping, codexModel, codexWireApi, hermesModel]);
 
   const isThirdParty = providerId !== 'anthropic';
 
   if (!expanded) {
+    // A fresh hermes install is not configured — say so instead of showing the
+    // form-default provider name (which reads like a saved, working choice).
+    const currentLabel = isHermes && !hermesConfigured
+      ? t('runtimes.providerNotConfigured')
+      : provider.name;
     return (
       <button
         className="rt-btn rt-btn--sm rt-btn--ghost rt-provider-toggle"
@@ -207,8 +278,8 @@ export function ProviderConfig({ agentId }: ProviderConfigProps) {
       >
         <span className="rt-provider-toggle__icon">⚙</span>
         {t('runtimes.provider')}
-        <span className="rt-provider-toggle__current">
-          {provider.name}
+        <span className="rt-provider-toggle__current" data-testid="provider-current-label">
+          {currentLabel}
         </span>
       </button>
     );
@@ -243,6 +314,50 @@ export function ProviderConfig({ agentId }: ProviderConfigProps) {
 
         {isCodex && (
           <p className="rt-provider-form__hint">{t('runtimes.codexConfigHint')}</p>
+        )}
+
+        {isHermes && (
+          <p className="rt-provider-form__hint" data-testid="hermes-config-hint">
+            {t('runtimes.hermesConfigHint')}
+          </p>
+        )}
+
+        {isHermes && (
+          <>
+            {/* Model — free-form; blank = hermes default (session/new returns
+                the live model list, so no per-preset suggestions here) */}
+            <label className="rt-provider-form__field">
+              <span className="rt-provider-form__label">{t('runtimes.model')}</span>
+              <input
+                data-testid="hermes-model-field"
+                type="text"
+                className="rt-provider-form__input"
+                value={hermesModel}
+                onChange={(e) => { setHermesModel(e.target.value); markTouched(); }}
+                placeholder="deepseek-chat"
+              />
+              <span className="rt-provider-form__hint">{t('runtimes.hermesModelHint')}</span>
+            </label>
+
+            {/* Base URL — required for custom; optional override for presets
+                that support a *_BASE_URL env (hidden for anthropic/openrouter) */}
+            {(hermesPreset?.isCustom || hermesPreset?.baseUrlEnvKey) && (
+              <label className="rt-provider-form__field">
+                <span className="rt-provider-form__label">
+                  {t('runtimes.baseUrl')}
+                  {hermesPreset?.isCustom && ' *'}
+                </span>
+                <input
+                  data-testid="hermes-baseurl-field"
+                  type="url"
+                  className="rt-provider-form__input"
+                  value={customBaseUrl}
+                  onChange={(e) => { setCustomBaseUrl(e.target.value); markTouched(); }}
+                  placeholder="https://api.example.com/v1"
+                />
+              </label>
+            )}
+          </>
         )}
 
         {isCodex && providerId === 'official' && (
@@ -309,8 +424,8 @@ export function ProviderConfig({ agentId }: ProviderConfigProps) {
           </>
         )}
 
-        {/* API Key */}
-        {(isDsh || (isCodex ? providerId !== 'official' : providerId !== 'anthropic')) && (
+        {/* API Key — hermes presets all take a key, so always show it there; dsh always too */}
+        {(isDsh || (isCodex ? providerId !== 'official' : isHermes ? true : providerId !== 'anthropic')) && (
           <label className="rt-provider-form__field">
             <span className="rt-provider-form__label">
               {t('runtimes.apiKey')}
@@ -336,16 +451,19 @@ export function ProviderConfig({ agentId }: ProviderConfigProps) {
                 {t('runtimes.getApiKey')} →
               </a>
             )}
-            {isCodex && hasSavedKey && !apiKey && (
-              <p className="rt-provider-form__hint" data-testid="codex-key-saved-hint">
-                {t('runtimes.codexKeySavedHint')}
+            {(isCodex || isHermes) && hasSavedKey && !apiKey && (
+              <p
+                className="rt-provider-form__hint"
+                data-testid={isCodex ? 'codex-key-saved-hint' : 'hermes-key-saved-hint'}
+              >
+                {isCodex ? t('runtimes.codexKeySavedHint') : t('runtimes.hermesKeySavedHint')}
               </p>
             )}
           </label>
         )}
 
-        {/* Base URL (for custom provider) */}
-        {!isCodex && !isDsh && providerId === 'custom' && (
+        {/* Base URL (for claude custom provider) */}
+        {!isCodex && !isHermes && !isDsh && providerId === 'custom' && (
           <label className="rt-provider-form__field">
             <span className="rt-provider-form__label">{t('runtimes.baseUrl')}</span>
             <input
@@ -373,8 +491,8 @@ export function ProviderConfig({ agentId }: ProviderConfigProps) {
           </label>
         )}
 
-        {/* Model mapping for third-party providers */}
-        {!isCodex && !isDsh && isThirdParty && (
+        {/* Model mapping for claude third-party providers */}
+        {!isCodex && !isHermes && !isDsh && isThirdParty && (
           <div className="rt-provider-form__mapping">
             <button
               type="button"

@@ -292,7 +292,10 @@ export function getWellKnownToolchainDirs(): string[] {
       path.join(home, '.bun', 'bin'),
       path.join(home, '.local', 'bin'),
       // Hermes Agent — official PowerShell installer (iex ...) drops the venv
-      // here. Resolving via well-known dir avoids depending on PATH propagation:
+      // here: `%LOCALAPPDATA%\hermes\hermes-agent\venv\Scripts\hermes-acp.exe`
+      // (VERIFIED on a real Windows install — this is the only resolution path
+      // on Windows, there is no `~/.local/bin` shim fallback like on POSIX).
+      // Resolving via well-known dir avoids depending on PATH propagation:
       // a daemon started before the installer updated PATH can't see the new
       // entry, since Windows processes inherit PATH as a startup snapshot.
       path.join(home, 'AppData', 'Local', 'hermes', 'hermes-agent', 'venv', 'Scripts'),
@@ -357,6 +360,16 @@ export function getWellKnownToolchainDirs(): string[] {
       path.join(home, '.volta', 'bin'),
       '/opt/homebrew/bin',
       '/usr/local/bin',
+      // Hermes Agent — the official install.sh (uv-based) puts the binary in a
+      // `.hermes` venv: `~/.hermes/hermes-agent/.hermes/bin/hermes-acp` (observed
+      // on a real macOS install; `~/.local/bin/hermes-acp` is a shim that execs
+      // it, already covered above). The older `venv/bin` layout is kept as a
+      // fallback since it is guarded by existsSync (harmless if absent).
+      // Well-known resolution avoids depending on PATH propagation to an
+      // already-running daemon. NOTE: the win32 twin uses `venv\Scripts` — that
+      // layout was verified on a real Windows install and differs from POSIX.
+      path.join(home, '.hermes', 'hermes-agent', '.hermes', 'bin'),
+      path.join(home, '.hermes', 'hermes-agent', 'venv', 'bin'),
     );
 
     const nvmDir = path.join(home, '.nvm', 'versions', 'node');

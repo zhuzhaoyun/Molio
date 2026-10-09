@@ -31,11 +31,17 @@ describe('RunManager ACP integration (Hermes)', () => {
     runManager = new RunManager();
     // launch.ts computes envKey as `${def.id.toUpperCase()}_BIN` = 'HERMES_BIN'
     process.env['HERMES_BIN'] = fakeHermesPath;
-    // Fast ACP timeouts for tests (overrides RunManager defaults).
-    // Idle=500ms means "if fake-hermes goes silent for 0.5s, time out";
-    // absolute=2000ms is the safety net.
-    process.env['MOLIO_ACP_IDLE_TIMEOUT_MS'] = '500';
-    process.env['MOLIO_ACP_ABSOLUTE_TIMEOUT_MS'] = '2000';
+    // Fast-but-load-tolerant ACP timeouts for tests (overrides RunManager
+    // defaults). Idle=3000ms means "if fake-hermes goes silent for 3s, time
+    // out"; absolute=10000ms is the safety net. NOT 500/2000: under full-suite
+    // parallel load on Windows, node spawn latency for the fake server alone
+    // can exceed 500ms → initialize idle-times-out → the run fails before
+    // 'models' ever fires and the waiting test hangs for its whole 30s budget
+    // (observed twice on the sendMessage test). 3s keeps the timeout tests
+    // quick while tolerating a loaded dev machine; fixture delays that must
+    // EXCEED the idle budget are scaled to match (search for 4000).
+    process.env['MOLIO_ACP_IDLE_TIMEOUT_MS'] = '3000';
+    process.env['MOLIO_ACP_ABSOLUTE_TIMEOUT_MS'] = '10000';
   });
 
   afterEach(() => {
@@ -111,12 +117,13 @@ describe('RunManager ACP integration (Hermes)', () => {
   });
 
   it('canAcceptMessage returns false while ACP session is initializing (P1-3)', async () => {
-    // P1-3: during initAcp, run.acp exists but sessionId is '' (session/new
-    // hasn't resolved). canAcceptMessage must return false so callers like
-    // WeixinService don't fire session/prompt at a half-initialized session.
+    // P1-3: during initAcpPooled, run.acp is undefined (pool acquire still
+    // spawning/initializing) or exists with sessionId '' (session/new hasn't
+    // resolved). canAcceptMessage must return false in both windows so callers
+    // like WeixinService don't fire session/prompt at a half-initialized session.
     process.env['FAKE_HERMES_SLOW_INIT_MS'] = '5000';
     const runId = await runManager.createRun({ agentId: 'hermes', message: 'hi' });
-    // Let initAcp's sync part run (sets run.acp = { sessionId: '' }).
+    // Let initAcpPooled's sync part run (pool acquire is awaiting initialize).
     await new Promise((r) => setTimeout(r, 50));
     assert.equal(runManager.canAcceptMessage(runId), false);
     runManager.cancelRun(runId);
@@ -132,34 +139,48 @@ describe('RunManager ACP integration (Hermes)', () => {
     runManager.cancelRun(runId);
   });
 
-  it('cancelRun marks session cancelled and terminates the process', async () => {
+  it('cancelRun terminates the run but keeps the pooled process warm for reuse', async () => {
+    // Pooled cancel semantics: cancelRun detaches THIS run's session and marks
+    // it canceled, but the shared process must survive — killing it (the old
+    // 1-run-1-process behavior) is exactly what made every retry / new
+    // conversation pay the ~14s cold start again.
     const runId = await runManager.createRun({ agentId: 'hermes', message: 'hi' });
     await collectEvents(runId, (ev) => ev.type === 'models');
 
+    const pool = runManager.__getAcpPool();
+    const entryBefore = pool.__getEntry('hermes');
+    assert.ok(entryBefore, 'pool must hold the warm hermes process');
+    const pidBefore = entryBefore.child.pid;
+
     runManager.cancelRun(runId);
-    // The run must reach a terminal status — the close handler decides
-    // 'canceled' (if isCancelled) or 'failed' (if mid-prompt). Either is
-    // acceptable; what matters is that it doesn't hang forever.
-    await new Promise<void>((resolve) => {
-      const check = () => {
-        const info = runManager.getRunInfo(runId);
-        if (info && ['succeeded', 'failed', 'canceled'].includes(info.status)) resolve();
-        else setTimeout(check, 30);
-      };
-      check();
-    });
+    await waitForStatus(runId, 'canceled');
+
+    assert.equal(entryBefore.alive, true, 'process must SURVIVE cancelRun');
+    assert.equal(pool.__getEntry('hermes'), entryBefore, 'entry must stay pooled');
+
+    // A second run reuses the same process: same entry, same pid — and since
+    // the pool runs `initialize` only at spawn, reuse means no second handshake.
+    const runId2 = await runManager.createRun({ agentId: 'hermes', message: 'hi again' });
+    const events2 = await collectEvents(runId2, (ev) => ev.type === 'turn_end');
+    assert.ok(events2.some((e) => e.type === 'models'), 'reused session still reports models');
+    assert.ok(events2.some((e) => e.type === 'text_delta'), 'reused process must stream a reply');
+
+    const entryAfter = pool.__getEntry('hermes');
+    assert.equal(entryAfter, entryBefore, 'second run must reuse the same pool entry');
+    assert.equal(entryAfter?.child.pid, pidBefore, 'second run must ride the same OS process');
   });
 
   it('cancelRun + process exit does not emit spurious prompt-failed error', async () => {
-    // OCR fix: the close handler's rejectAll() clears cancelledSessionIds
-    // before the pending session/prompt's .catch runs. Without the
-    // TERMINAL_STATUSES guard, .catch sees isCancelled=false and emits a
-    // misleading "prompt failed: hermes-acp process exited" error event for
-    // a run the user already cancelled — polluting the UI with a red banner
-    // for an intentional action.
+    // OCR fix: rejectAll() clears cancelledSessionIds before the pending
+    // session/prompt's .catch runs. Without the TERMINAL_STATUSES guard,
+    // .catch sees isCancelled=false and emits a misleading "prompt failed:
+    // hermes-acp process exited" error event for a run the user already
+    // cancelled — polluting the UI with a red banner for an intentional action.
     //
-    // Reproduce: hang the prompt so a session/prompt is genuinely pending
-    // when cancelRun fires. Without the fix, the .catch would emit the error.
+    // Pooled repro: hang the prompt so a session/prompt is genuinely pending,
+    // cancelRun (detaches the session but keeps the process alive), then drain
+    // the pool — the pool's process-exit path. Its rejectAll rejects the
+    // still-pending prompt against an already-terminal run.
     process.env['FAKE_HERMES_PROMPT_HANG_WITH_STDERR'] = '1';
 
     const runId = await runManager.createRun({ agentId: 'hermes', message: 'hi' });
@@ -174,19 +195,13 @@ describe('RunManager ACP integration (Hermes)', () => {
     });
 
     runManager.cancelRun(runId);
-    // cancelRun sets run.status='canceled' synchronously, then SIGTERMs the
-    // child after session/cancel resolves. Wait for the process to exit and
-    // the close handler to fire — that's the path that triggers rejectAll.
-    await new Promise<void>((resolve) => {
-      const check = () => {
-        const info = runManager.getRunInfo(runId);
-        if (info && ['succeeded', 'failed', 'canceled'].includes(info.status)) resolve();
-        else setTimeout(check, 30);
-      };
-      check();
-    });
-    // Grace period for the close handler's rejectAll + .catch microtask to fire
-    // after the process actually exits.
+    await waitForStatus(runId, 'canceled');
+
+    // Kill the warm process the pooled way (drain = provider-config change /
+    // shutdown). finalizeEntry's rejectAll fires the pending prompt's .catch —
+    // the exact race the terminal guard must swallow.
+    runManager.drainAcpPool('hermes');
+    // Grace period for the rejectAll + .catch microtask to fire.
     await new Promise((r) => setTimeout(r, 200));
     unsub?.();
 
@@ -214,11 +229,11 @@ describe('RunManager ACP integration (Hermes)', () => {
     process.env['FAKE_HERMES_NO_INIT'] = '1';
     const runId = await runManager.createRun({ agentId: 'hermes', message: 'hi' });
 
-    // With MOLIO_ACP_IDLE_TIMEOUT_MS=500 + FAKE_HERMES_NO_INIT=1, fake-hermes
-    // goes totally silent → idle timer fires after ~500ms with an error
+    // With MOLIO_ACP_IDLE_TIMEOUT_MS=3000 + FAKE_HERMES_NO_INIT=1, fake-hermes
+    // goes totally silent → idle timer fires after ~3s with an error
     // containing 'idle' and 'timeout'.
     await new Promise<void>((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error('timeout test timed out')), 5000);
+      const timer = setTimeout(() => reject(new Error('timeout test timed out')), 8000);
       const unsub = runManager.onEvent(runId, (ev) => {
         if (ev.type === 'error' && ev.message.includes('idle') && ev.message.includes('timeout')) {
           clearTimeout(timer);
@@ -237,9 +252,9 @@ describe('RunManager ACP integration (Hermes)', () => {
 
   it('slow initialize with stderr heartbeat does NOT time out (activity resets idle timer)', async () => {
     // Fake-hermes prints a stderr heartbeat every 100ms while delaying the
-    // initialize response by 1500ms — well past the 500ms idle timeout.
+    // initialize response by 4000ms — past the 3000ms idle timeout.
     // The stderr activity should reset the idle timer, so initialize succeeds.
-    process.env['FAKE_HERMES_SLOW_INIT_MS'] = '1500';
+    process.env['FAKE_HERMES_SLOW_INIT_MS'] = '4000';
     process.env['FAKE_HERMES_INIT_HEARTBEAT'] = '1';
 
     const runId = await runManager.createRun({ agentId: 'hermes', message: 'hi' });
@@ -253,12 +268,70 @@ describe('RunManager ACP integration (Hermes)', () => {
 
   it('hermes def uses generous cold-start timeouts', () => {
     const def = getAgentDef('hermes')!;
-    assert.equal(def.acp?.idleTimeoutMs, 15000);
+    // 60s handshake idle (raised from 15s). session/new's final step — building
+    // `availableModels` — is a SILENT network fetch of the provider model list;
+    // a cold first run over a slow/CN line exceeds 15s and false-times-out a
+    // healthy hermes ("ACP idle timeout: session/new"). 60s covers the cold
+    // build while the activity-reset idle timer still catches a true hang. See
+    // the silent-tail tests below and the hermes.ts idleTimeoutMs comment.
+    assert.equal(def.acp?.idleTimeoutMs, 60000);
     // 5min prompt idle — accommodates long-running tool calls (OCR, doc
     // conversion) where hermes itself is silent while a subprocess runs.
     assert.equal(def.acp?.promptIdleTimeoutMs, 300000);
     assert.equal(def.acp?.absoluteTimeoutMs, 1800000);
     assert.equal(def.acp?.cancelTimeoutMs, 5000);
+  });
+
+  it('session/new silent tail exceeding the idle budget times out naming session/new', async () => {
+    // Reproduces the reporter's bug (2026-10-05). The tail of session/new
+    // enumerates `availableModels` via a network fetch of the provider model
+    // list and prints NOTHING to stderr. On a cold first run over a slow/CN
+    // line that silent tail exceeds the handshake idle budget, so the handshake
+    // fails with "ACP idle timeout: session/new" even though hermes is healthy
+    // and about to respond. Harness sets MOLIO_ACP_IDLE_TIMEOUT_MS=3000; a
+    // 4000ms silent session/new therefore trips it. The fix raises the real
+    // budget to 60s (config test above) so the cold fetch fits; this test pins
+    // the failure mode the fix addresses.
+    process.env['FAKE_HERMES_SLOW_SESSION_NEW_MS'] = '4000';
+    const runId = await runManager.createRun({ agentId: 'hermes', message: 'hi' });
+
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('timeout test timed out')), 8000);
+      const unsub = runManager.onEvent(runId, (ev) => {
+        if (ev.type === 'error' && /idle timeout: session\/new/.test(ev.message)) {
+          clearTimeout(timer);
+          unsub?.();
+          resolve();
+        }
+      });
+      if (!unsub) {
+        clearTimeout(timer);
+        reject(new Error(`run ${runId} not found`));
+      }
+    });
+
+    delete process.env['FAKE_HERMES_SLOW_SESSION_NEW_MS'];
+  });
+
+  it('session/new silent tail under the idle budget succeeds WITHOUT a heartbeat', async () => {
+    // Complement to the test above: a silent session/new tail is only fatal when
+    // it EXCEEDS the idle budget. Under it, the handshake completes with zero
+    // stderr activity — no heartbeat required (unlike the initialize-heartbeat
+    // test). This is exactly why raising idleTimeoutMs fixes the cold-start
+    // false-positive: the model-list fetch is silent but finite, so a large
+    // enough budget lets a healthy session/new through. Harness idle=3000ms; a
+    // 200ms silent delay stays under it.
+    process.env['FAKE_HERMES_SLOW_SESSION_NEW_MS'] = '200';
+    const runId = await runManager.createRun({ agentId: 'hermes', message: 'hi' });
+
+    const events = await collectEvents(runId, (ev) => ev.type === 'models');
+    assert.ok(
+      events.some((e) => e.type === 'models'),
+      'a silent-but-fast session/new should complete and emit the models event',
+    );
+
+    runManager.cancelRun(runId);
+    delete process.env['FAKE_HERMES_SLOW_SESSION_NEW_MS'];
   });
 
   it('process exit before session/new rejects init promise and fails run', async () => {
@@ -284,12 +357,14 @@ describe('RunManager ACP integration (Hermes)', () => {
     // lines during session/prompt (provider connection), then goes totally
     // silent. The idle timer fires after MOLIO_ACP_PROMPT_IDLE_TIMEOUT_MS.
     //
-    // Verifies two diagnostic fixes:
-    //  (a) handleAcpStderr emits INFO lines as `raw` events (not dropped) so
+    // Verifies two diagnostic fixes (now on the pool, which owns the shared
+    // process's stderr — classifyAcpStderrLine + entry-level lastStderrLine):
+    //  (a) INFO stderr lines are emitted as `raw` events (not dropped) so
     //      they land in events.jsonl for reporters to share.
     //  (b) The timeout error message includes `last stderr: "..."` so a
     //      screenshot of the chat error is enough to diagnose, no log file
-    //      needed.
+    //      needed. The prompt timeout is session-scoped, so the process (and
+    //      its stderr buffer) is still alive when the message is built.
     process.env['MOLIO_ACP_PROMPT_IDLE_TIMEOUT_MS'] = '500';
     process.env['FAKE_HERMES_PROMPT_HANG_WITH_STDERR'] = '1';
 

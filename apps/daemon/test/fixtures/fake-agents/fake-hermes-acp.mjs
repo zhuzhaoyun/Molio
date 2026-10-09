@@ -16,6 +16,11 @@
 //   - FAKE_HERMES_INIT_HEARTBEAT=1: print a stderr heartbeat every 100ms while
 //     delaying initialize — simulates real hermes printing "loading plugin X"
 //     progress, used to verify the idle-timer reset logic
+//   - FAKE_HERMES_SLOW_SESSION_NEW_MS=2000: delay the session/new response with
+//     NO stderr/stdout at all — mimics real hermes's silent `availableModels`
+//     network fetch at the tail of session/new (see hermes.ts idleTimeoutMs).
+//     Whether this times out depends purely on idleTimeoutMs vs the delay, so it
+//     reproduces the "ACP idle timeout: session/new" cold-start false-positive.
 //   - FAKE_HERMES_EXIT_AFTER_INIT=1: exit right after initialize (process-exit test)
 //   - FAKE_HERMES_EXIT_DURING_PROMPT=1: exit mid-prompt after streaming some
 //     notifications but before responding — used to verify the close handler
@@ -46,18 +51,28 @@ const NO_INIT = process.env['FAKE_HERMES_NO_INIT'] === '1';
 const INIT_ERROR = process.env['FAKE_HERMES_INIT_ERROR'] === '1';
 const SLOW_INIT_MS = Number(process.env['FAKE_HERMES_SLOW_INIT_MS'] ?? '0');
 const INIT_HEARTBEAT = process.env['FAKE_HERMES_INIT_HEARTBEAT'] === '1';
+const SLOW_SESSION_NEW_MS = Number(process.env['FAKE_HERMES_SLOW_SESSION_NEW_MS'] ?? '0');
 const EXIT_AFTER_INIT = process.env['FAKE_HERMES_EXIT_AFTER_INIT'] === '1';
 const EXIT_DURING_PROMPT = process.env['FAKE_HERMES_EXIT_DURING_PROMPT'] === '1';
 const PROMPT_MODE = process.env['FAKE_HERMES_PROMPT_MODE'] ?? 'normal';
 const PROMPT_HANG_WITH_STDERR = process.env['FAKE_HERMES_PROMPT_HANG_WITH_STDERR'] === '1';
 
-const SESSION_ID = 'fake-session-0001';
+// Multi-session support (mirrors real hermes's _sessions dict): every
+// session/new gets a UNIQUE id so pooled-process tests can run several
+// sessions against one fake server and assert event demux by sessionId.
+let sessionCounter = 0;
+function newSessionId() {
+  sessionCounter += 1;
+  return `fake-session-${String(sessionCounter).padStart(4, '0')}`;
+}
+/** Sessions created by this process (for prompt/cancel sessionId echo). */
+const knownSessions = new Set();
 
 function send(obj) {
   process.stdout.write(JSON.stringify(obj) + '\n');
 }
 
-/** Hermes-style timestamp: "YYYY-MM-DD HH:MM:SS" (matches handleAcpStderr regex). */
+/** Hermes-style timestamp: "YYYY-MM-DD HH:MM:SS" (matches classifyAcpStderrLine regex). */
 function ts() {
   return new Date().toISOString().replace('T', ' ').replace(/\.\d+Z$/, '');
 }
@@ -101,26 +116,39 @@ function handleRequest(msg) {
   }
 
   if (msg.method === 'session/new') {
-    send({
-      jsonrpc: '2.0', id: msg.id, result: {
-        sessionId: SESSION_ID,
-        models: {
-          availableModels: [
-            { modelId: 'fake:model-a', name: 'Model A' },
-            { modelId: 'fake:model-b', name: 'Model B' },
-          ],
-          currentModelId: 'fake:model-a',
+    const respond = () => {
+      const sessionId = newSessionId();
+      knownSessions.add(sessionId);
+      send({
+        jsonrpc: '2.0', id: msg.id, result: {
+          sessionId,
+          models: {
+            availableModels: [
+              { modelId: 'fake:model-a', name: 'Model A' },
+              { modelId: 'fake:model-b', name: 'Model B' },
+            ],
+            currentModelId: 'fake:model-a',
+          },
+          modes: { availableModes: [{ id: 'default', name: 'Default' }], currentModeId: 'default' },
         },
-        modes: { availableModes: [{ id: 'default', name: 'Default' }], currentModeId: 'default' },
-      },
-    });
-    // Session-init notifications (real hermes pushes these on connect)
-    send({
-      jsonrpc: '2.0', method: 'session/update',
-      params: { sessionId: SESSION_ID, update: {
-        sessionUpdate: 'available_commands_update', availableCommands: [],
-      } },
-    });
+      });
+      // Session-init notifications (real hermes pushes these on connect)
+      send({
+        jsonrpc: '2.0', method: 'session/update',
+        params: { sessionId, update: {
+          sessionUpdate: 'available_commands_update', availableCommands: [],
+        } },
+      });
+    };
+    if (SLOW_SESSION_NEW_MS > 0) {
+      // Delay with ZERO stderr/stdout — mimics the silent `availableModels`
+      // network fetch at the tail of a real session/new. No heartbeat, so the
+      // idle timer is NOT reset: whether this times out is purely
+      // idleTimeoutMs vs SLOW_SESSION_NEW_MS.
+      setTimeout(respond, SLOW_SESSION_NEW_MS);
+    } else {
+      respond();
+    }
     return;
   }
 
@@ -151,24 +179,29 @@ function handleRequest(msg) {
       send({ jsonrpc: '2.0', id: msg.id, result: { stopReason: 'refusal' } });
       return;
     }
-    // Stream a text delta + a tool call, then end the turn
+    // Stream a text delta + a tool call, then end the turn. Echo the
+    // request's sessionId (multi-session demux depends on it); fall back to
+    // the newest known session for callers that omit it.
+    const sid = typeof msg.params?.sessionId === 'string'
+      ? msg.params.sessionId
+      : [...knownSessions].pop();
     send({
       jsonrpc: '2.0', method: 'session/update',
-      params: { sessionId: SESSION_ID, update: {
+      params: { sessionId: sid, update: {
         sessionUpdate: 'agent_message_chunk',
         content: { type: 'text', text: 'Hello from fake hermes' },
       } },
     });
     send({
       jsonrpc: '2.0', method: 'session/update',
-      params: { sessionId: SESSION_ID, update: {
+      params: { sessionId: sid, update: {
         sessionUpdate: 'tool_call',
         toolCallId: 'tc-1', title: 'Bash', rawInput: { command: 'echo hi' },
       } },
     });
     send({
       jsonrpc: '2.0', method: 'session/update',
-      params: { sessionId: SESSION_ID, update: {
+      params: { sessionId: sid, update: {
         sessionUpdate: 'tool_call_update',
         toolCallId: 'tc-1', status: 'completed', rawOutput: 'hi\n',
       } },
