@@ -242,6 +242,17 @@ test.describe('/chat 全屏态与面板共享活动会话', () => {
       localStorage.setItem('molio.kb.chatActiveSessionId', 'seed-entry');
       localStorage.setItem('molio.lastRoute', '/chat');
     });
+    // 最小化是手势路径：必须发起「同一个表面」的 VT（计数探针须在应用代码前安装）
+    await page.addInitScript(() => {
+      (window as unknown as { __vtCalls: number }).__vtCalls = 0;
+      const orig = document.startViewTransition?.bind(document);
+      if (orig) {
+        (document as unknown as { startViewTransition: typeof orig }).startViewTransition = (cb) => {
+          (window as unknown as { __vtCalls: number }).__vtCalls += 1;
+          return orig(cb);
+        };
+      }
+    });
 
     // 首个导航：应用从入口 `/` 进来。EntryRedirect 是 <Navigate replace/> ——
     // **原地替换**首个 entry：idx 仍是 0，但 key 被换成生成值。
@@ -251,10 +262,12 @@ test.describe('/chat 全屏态与面板共享活动会话', () => {
     await expect(page.locator('.home-header')).toBeVisible({ timeout: 5_000 });
 
     // 入口重定向到达 `/chat` **不是**用户按的形态切换 → 不该播入场动画。
-    // 只有面板头部的「全屏」按钮才置位（见 formSwitchStore 的理由：装饰性入场没有信息量）。
+    // 「动效回答手势」——非手势路径不发起 VT（理由见 stores/surfaceTransition.ts）。
     await expect(page.locator('.home-page')).not.toHaveClass(/home-page--entering/);
 
     await page.locator('[data-testid="home-minimize-btn"]').click();
+    // 最小化发起了一次「同一个表面」形变（全屏 shell → 停靠面板）
+    expect(await page.evaluate(() => (window as unknown as { __vtCalls: number }).__vtCalls)).toBeGreaterThanOrEqual(1);
 
     // 旧判据下这里会**静默无操作**（URL 原地停在 /chat）→ 本断言失败，复刻线上形态。
     await expect(page).toHaveURL(/\/knowledge(\?|$)/);

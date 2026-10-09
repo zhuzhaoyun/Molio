@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense } from 'react';
+import { flushSync } from 'react-dom';
 import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { useAgents } from './hooks/useAgents';
 import { HomePage } from './components/HomePage';
@@ -26,7 +27,7 @@ import { SkillEditor, type SkillFormValues } from './components/settings/SkillEd
 import {
   DEFAULT_ROUTE, CHAT_ROUTE, RESTORABLE_ROUTES, isFullscreenRoute, pageNameForPath,
 } from './routes';
-import { requestDegradeToDock } from './stores/formSwitchStore';
+import { withSurfaceTransition, notifySurfaceSettled, surfaceSettled } from './stores/surfaceTransition';
 import './styles/rail.css';
 import './styles/home.css';
 import './styles/knowledge.css';
@@ -190,6 +191,8 @@ export default function App() {
   // 一律不动面板开关 —— 方案 D 的「跨页保持用户的选择」不能被这条规则破坏。
   const prevPathRef = useRef(location.pathname);
   useEffect(() => {
+    // 任何路由变化落地 → 放行等待「到达端」的表面形变（见 handleMinimize 的 surfaceSettled）
+    notifySurfaceSettled();
     const wasFullscreen = isFullscreenRoute(prevPathRef.current);
     const isFullscreen = isFullscreenRoute(location.pathname);
     prevPathRef.current = location.pathname;
@@ -202,12 +205,9 @@ export default function App() {
 
     // 降级到**停靠侧边栏**（不是悬浮）：浮动态是浮在内容上的，实测会遮住 settings 的更新卡
     // 链接、resources 的搜索框与分类、history 的行操作；停靠配 `.entry-main` 的让位才真不遮挡。
-    // 意图交给面板消费 —— 由它落停靠，并播「从内容区宽收窄成侧边栏」的交接（几何由到达端
-    // 自己量，不做任何预测：面板形态按页记忆、悬浮位置持久化，预测必然错位）。
-    //
-    // 直接置 open：面板此刻是刚挂载，若走它「先收起、下一帧再展开」的升起动画，
-    // 收尾那段正是「像从无到有」的来源 —— 现在它必须以不透明、占满内容区宽的状态出现。
-    requestDegradeToDock(pageNameForPath(location.pathname));
+    // 形态落位由面板在渲染期推导（上一页是 'home' → 停靠，见 KbChatSessionsPanel 的
+    // prevPageRef 推导），首帧即正确；这里只负责把面板重新打开（会话得有地方继续展示）。
+    // 不包 VT：浏览器后退 / 剪藏落点等非手势路径不播动画（动效回答手势）。
     kbChatSessionsStore.setPanelOpen(true);
   }, [location.pathname]);
 
@@ -342,11 +342,19 @@ export default function App() {
    */
   const handleMinimize = () => {
     const inAppHistory = (window.history.state as { idx?: number } | null)?.idx ?? 0;
-    if (inAppHistory > 0) navigate(-1);
-    else navigate(DEFAULT_ROUTE);
-    // 会话降级回停靠面板、以及那段「从内容区宽收窄成侧边栏」的交接，都由上面
-    // 「离开全屏态」那条通用规则负责 —— 导航栏切换、剪藏落点、浏览器后退走的是同一条，
-    // 在这里再做一次就只有「点最小化」这一条路径有交接。
+    // 最小化是**手势**：包一层「同一个表面」形变 —— 全屏 shell 的矩形收进目标页的停靠
+    // 面板。形态落位（停靠）由面板渲染期推导保证（上一页是 'home'），首帧即正确。
+    // navigate(-1) 是异步 pop 导航：flushSync 只换得了面板开关，真正换页要等 popstate ——
+    // 所以 update 以 surfaceSettled() 告知「已到终态」，VT 抓新快照前会等它
+    // （路由 effect 到达时 notifySurfaceSettled() 放行）。
+    withSurfaceTransition(async () => {
+      flushSync(() => {
+        kbChatSessionsStore.setPanelOpen(true);
+      });
+      if (inAppHistory > 0) navigate(-1);
+      else navigate(DEFAULT_ROUTE);
+      await surfaceSettled();
+    });
   };
 
   // 视图切换（路由变化）→ 退出消息勾选态。`messageSelectionStore` 是模块级全局单例，

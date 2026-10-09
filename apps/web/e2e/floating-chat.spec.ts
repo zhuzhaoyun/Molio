@@ -17,6 +17,19 @@ import * as path from 'path';
 
 let vault: TempVault;
 
+/** startViewTransition 调用计数探针：断言「同一个表面」形变确实发起 / 被跳过。
+ *  必须在 goto 前经 addInitScript 安装（早于应用代码执行）。 */
+const VT_COUNTER_SCRIPT = () => {
+  (window as unknown as { __vtCalls: number }).__vtCalls = 0;
+  const orig = document.startViewTransition?.bind(document);
+  if (orig) {
+    (document as unknown as { startViewTransition: typeof orig }).startViewTransition = (cb) => {
+      (window as unknown as { __vtCalls: number }).__vtCalls += 1;
+      return orig(cb);
+    };
+  }
+};
+
 test.describe('Floating chat (方案 D)', () => {
   test.beforeAll(async () => {
     vault = await createTempVault('e2e-floating-chat');
@@ -150,11 +163,10 @@ test.describe('Floating chat (方案 D)', () => {
     expect(open.props).toContain('transform');
     expect(open.duration).toContain('0.2s');
 
-    // 收起：类名立即切换（CSS 状态），visibility 延迟到动画结束再隐藏
+    // 收起：类名切换走 VT（回调在旧快照抓取后一帧执行，用可重试断言），
+    // visibility 延迟到动画结束再隐藏
     await page.locator('[data-testid="kb-chat-close"]').click();
-    const closedClass = await panel.evaluate((el) =>
-      el.classList.contains('floating-chat-panel--closed'));
-    expect(closedClass).toBe(true);
+    await expect(panel).toHaveClass(/floating-chat-panel--closed/);
     await expect(panel).toBeHidden();
     const visibility = await panel.evaluate((el) => getComputedStyle(el as HTMLElement).visibility);
     expect(visibility).toBe('hidden');
@@ -308,7 +320,8 @@ test.describe('Floating chat (方案 D)', () => {
     expect(Math.abs(hGrown.y + hGrown.height - bottomPinned)).toBeLessThan(4);
   });
 
-  test('停靠切换按钮：悬浮 ⇄ 页内分栏（带形态过渡），停靠时文档区让出宽度、拖宽联动', async ({ page }) => {
+  test('停靠切换按钮：悬浮 ⇄ 页内分栏（同一个表面形变），停靠时文档区让出宽度、拖宽联动', async ({ page }) => {
+    await page.addInitScript(VT_COUNTER_SCRIPT);
     await mockChatRun(page);
     await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
@@ -332,15 +345,18 @@ test.describe('Floating chat (方案 D)', () => {
     // 文档区让出等宽 → 问答与文档分栏（不被覆盖）
     expect(Math.abs((await shellPad()) - dockWidth)).toBeLessThan(4);
 
-    // 切悬浮：--morphing 临时启用几何过渡（left/right/top/height 可过渡），随后恢复全宽
+    // 切悬浮：走「同一个表面」的 View Transition（面板 ↔ 全屏 shell ↔ 悬浮按钮互斥
+    // 持有同一个 view-transition-name，浏览器实测两端矩形做形变）；终态几何断言在下方不变
     const toggle = page.locator('[data-testid="kb-chat-dock-toggle"]');
     await expect(toggle).toBeVisible();
     await toggle.click();
-    const morphProps = await panel.evaluate((el) => getComputedStyle(el as HTMLElement).transitionProperty);
-    expect(morphProps).toContain('left');
-    expect(morphProps).toContain('right');
-    expect(morphProps).toContain('top');
-    expect(morphProps).toContain('height');
+    // VT 确实发起了（startViewTransition 调用计数探针在 goto 前通过 addInitScript 安装）
+    expect(await page.evaluate(() => (window as unknown as { __vtCalls: number }).__vtCalls)).toBeGreaterThanOrEqual(1);
+    // 形变结束即摘名：常驻名字会让命名元素命中测试失效（拖拽/点击全哑），
+    // 这个断言守住「结束必摘名」的清理契约
+    await page.waitForTimeout(450);
+    const vtName = await panel.evaluate((el) => getComputedStyle(el as HTMLElement).viewTransitionName);
+    expect(['none', '']).toContain(vtName);
     await page.waitForTimeout(300); // 等形态过渡结束
     box = (await panel.boundingBox())!;
     // 悬浮：右缘距视口 24px，文档区恢复全宽（不再被让出）
@@ -356,6 +372,8 @@ test.describe('Floating chat (方案 D)', () => {
     expect(Math.abs((await shellPad()) - box.width)).toBeLessThan(4);
 
     // 停靠形态下左缘拖宽 → 文档区同步重排（拖宽联动）
+    // 等形变彻底收尾（300ms 动画 + 快照就绪）再落指针：形变进行中命中测试在快照层上
+    await page.waitForTimeout(500);
     const handle = page.locator('[data-testid="kb-chat-resize-handle"]');
     const hb = (await handle.boundingBox())!;
     await page.mouse.move(hb.x + 4, hb.y + 300);
@@ -373,6 +391,28 @@ test.describe('Floating chat (方案 D)', () => {
     box = (await panel.boundingBox())!;
     expect(Math.abs(box.x + box.width - (vw - 24))).toBeLessThan(4);
     expect(await shellPad()).toBeLessThan(4);
+  });
+
+  test('减少动态偏好：形态切换不发起 VT、直接落位（几何仍正确）', async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await page.addInitScript(VT_COUNTER_SCRIPT);
+    await mockChatRun(page);
+    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+
+    await page.locator('[data-testid="kb-btn-ask"]').click();
+    const panel = page.locator('[data-testid="kb-chat-panel"]');
+    await expect(panel).toBeVisible();
+    await page.waitForTimeout(250);
+
+    await page.locator('[data-testid="kb-chat-dock-toggle"]').click();
+    await page.waitForTimeout(150);
+    const vw = page.viewportSize()!.width;
+    // JS 层短路：一次 VT 都没发起
+    expect(await page.evaluate(() => (window as unknown as { __vtCalls: number }).__vtCalls)).toBe(0);
+    // 但形态照常切换：悬浮终态几何正确
+    const box = (await panel.boundingBox())!;
+    expect(Math.abs(box.x + box.width - (vw - 24))).toBeLessThan(4);
   });
 
   test('停靠态单击顶部空白区不脱离（仅真实拖动才变悬浮）', async ({ page }) => {

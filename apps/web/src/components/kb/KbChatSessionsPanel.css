@@ -79,26 +79,22 @@
   display: none;
 }
 
-/* 形态切换过渡：按钮停靠/悬浮时临时加此 class 启用几何过渡。
-   拖拽移动/改宽时不启用 —— 避免过渡与逐帧 inline 写入打架。 */
-.floating-chat-panel--morphing {
-  transition:
-    left 220ms cubic-bezier(0.16, 1, 0.3, 1),
-    right 220ms cubic-bezier(0.16, 1, 0.3, 1),
-    top 220ms cubic-bezier(0.16, 1, 0.3, 1),
-    bottom 220ms cubic-bezier(0.16, 1, 0.3, 1),
-    width 220ms cubic-bezier(0.16, 1, 0.3, 1),
-    height 220ms cubic-bezier(0.16, 1, 0.3, 1),
-    border-radius 220ms cubic-bezier(0.16, 1, 0.3, 1),
-    box-shadow 220ms cubic-bezier(0.16, 1, 0.3, 1);
+/* ─── 「同一个表面」形变（L2b）────────────────────────────────────────
+   对话面板（停靠/悬浮）、/chat 全屏 shell、右下角悬浮按钮是同一块对话表面的
+   不同形态。view-transition-name（kb-chat-surface）由 stores/surfaceTransition.ts
+   在**过渡期间**动态挂/摘（常驻名字会让命名元素在 VT 结束后命中测试失效，
+   见该文件头注释），状态切换包进一次 startViewTransition：浏览器实测前后
+   两个真实矩形，GPU 合成地做几何形变 + 内容交叉淡化 —— 这就是「三种状态
+   是同一个东西」的观感来源。一条曲线一个时长统一全部路径。 */
+/* 统一节奏：300ms + 标准强调曲线。old/new 设 height:100% 让宽高各自过渡
+   （VT 默认按快照纵横比缩放，大跨度形变会失真 —— 这是官方文档的标准配方）。 */
+::view-transition-group(kb-chat-surface) {
+  animation-duration: 300ms;
+  animation-timing-function: cubic-bezier(0.2, 0, 0, 1);
 }
-
-/* 形态交接（全屏 ⇄ 停靠侧边栏）：宽度在「面板宽 ⇄ 内容区宽」之间过渡 —— 由面板自己驱动，
-   所以不需要预测任何几何（见 KbChatSessionsPanel 里的 morphWidthFrom 说明）。
-   与 --morphing 分开：那条是停靠⇄悬浮的位置/高度过渡（220ms），这条位移量大得多、
-   时长与曲线都不同（320ms 缓入缓出）。 */
-.floating-chat-panel--form-switch {
-  transition: width 320ms cubic-bezier(0.4, 0, 0.2, 1);
+::view-transition-old(kb-chat-surface),
+::view-transition-new(kb-chat-surface) {
+  height: 100%;
 }
 
 /* 全局悬浮对话按钮（面板收起时显示） */
@@ -232,13 +228,17 @@ body.kb-moving {
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
 }
 
-/* 减少动态偏好：禁用进出动画、按钮弹性与形态过渡，保持瞬时但立即可见 */
+/* 减少动态偏好：禁用进出动画、按钮弹性与全部形变（VT 由 JS 层短路 + 这里 CSS 兜底），
+   保持瞬时但立即可见 */
 @media (prefers-reduced-motion: reduce) {
   .floating-chat-panel,
-  .floating-chat-panel--closed,
-  .floating-chat-panel--morphing,
-  .floating-chat-panel--form-switch {
+  .floating-chat-panel--closed {
     transition: none;
+  }
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation: none !important;
   }
   .floating-chat-btn {
     animation: none;
