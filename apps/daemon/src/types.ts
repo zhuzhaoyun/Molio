@@ -21,11 +21,17 @@ export interface BufferedEvent {
 
 /**
  * ACP-specific state for runs using transport: 'acp-jsonrpc'.
- * 1 Molio run = 1 AcpTransport = 1 ACP session = 1 long-running agent process.
+ * 1 Molio run = 1 ACP session — but the process is SHARED: an AcpPool entry
+ * (one warm process per agentId) owns the AcpTransport, and multiple runs
+ * attach their sessions to it. Cancelling/finishing a run detaches its
+ * session; the process survives for the other runs and is evicted after the
+ * pool's idle TTL.
  */
 export interface RunAcpState {
   transport: AcpTransport;
   sessionId: string;
+  /** AcpPool entry id owning the shared process (liveness checks, stderr lookup, detach). */
+  poolEntryId: string;
 }
 
 /**

@@ -1,10 +1,11 @@
 /**
  * GET/PUT /api/agents/:agentId/provider route tests — hermes dispatch.
  *
- * The provider endpoints never touch RunManager, so a stub is enough.
- * HERMES_HOME + MOLIO_DATA_DIR are redirected to temp dirs: hermes-config
- * resolves the home lazily per call and config.ts resolves its dir lazily,
- * so no real ~/.hermes or ~/.molio is touched.
+ * The provider endpoints touch RunManager only via drainAcpPool (PUT recycles
+ * the warm hermes process after config changes), so a stub with that one
+ * method is enough. HERMES_HOME + MOLIO_DATA_DIR are redirected to temp dirs:
+ * hermes-config resolves the home lazily per call and config.ts resolves its
+ * dir lazily, so no real ~/.hermes or ~/.molio is touched.
  */
 import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
@@ -21,7 +22,11 @@ let savedDataDir: string | undefined;
 
 function makeApp(): Hono {
   const app = new Hono();
-  app.route('/api/agents', agentsRoutes({} as unknown as RunManager));
+  // Stub: PUT /provider calls runManager.drainAcpPool('hermes') to recycle the
+  // pooled warm process. Missing it → TypeError → Hono 500 (regression caught
+  // by the full suite; the stub must grow with the route's RunManager surface).
+  const stub = { drainAcpPool: () => {} } as unknown as RunManager;
+  app.route('/api/agents', agentsRoutes(stub));
   return app;
 }
 

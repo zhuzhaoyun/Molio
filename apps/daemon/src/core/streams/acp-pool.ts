@@ -234,6 +234,20 @@ export class AcpPool {
     }
   }
 
+  /**
+   * Re-arm idle eviction for an entry that ended up with zero sessions
+   * WITHOUT going through detachSession — e.g. the attacher bailed after a
+   * successful acquire (run cancelled mid-handshake, session/new answered
+   * with a JSON-RPC error). Without this the warm process would sit
+   * session-less and timer-less until the next acquire or shutdown.
+   * No-op when the entry is gone, dead, or still has sessions.
+   */
+  armIdleIfSessionless(entryId: string): void {
+    const entry = this.findEntryById(entryId);
+    if (!entry || !entry.alive || entry.sessions.size > 0) return;
+    this.armIdleTimer(entry);
+  }
+
   /** Drain (kill) an agent's pooled process — e.g. after provider config changes. */
   drain(agentId: string, reason = 'drain'): void {
     const entry = this.entries.get(agentId);

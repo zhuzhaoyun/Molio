@@ -26,7 +26,8 @@
 //     no-silent-fallback rule)
 //   - FAKE_DSH_STDERR_SAMPLE=1: on session/prompt, write one benign
 //     "dsh: warning:" line and one "dsh: error:" line to stderr, then stream
-//     the turn normally. Verifies RunManager.handleAcpStderr's dsh branch:
+//     the turn normally. Verifies classifyAcpStderrLine's dsh branch
+//     (streams/acp-pool.ts — the pool owns the shared process's stderr):
 //     warnings → raw events (no streaming:false swallow), explicit errors →
 //     error events.
 //   - FAKE_DSH_NO_API_KEY=1: session/prompt fails with the VERBATIM -32603

@@ -265,6 +265,12 @@ export function agentsRoutes(runManager: RunManager): Hono {
           500,
         );
       }
+      // Recycle the pooled warm hermes process (if any): it was spawned with
+      // the OLD config.yaml/.env, and hermes loads those at startup — keeping
+      // it alive would silently answer with the previous provider/credentials.
+      // The next run respawns via AcpPool.acquire. (acquire's fingerprint check
+      // is the fallback for hand-edited config that bypasses this route.)
+      runManager.drainAcpPool('hermes');
       return c.json({ ok: true });
     }
 

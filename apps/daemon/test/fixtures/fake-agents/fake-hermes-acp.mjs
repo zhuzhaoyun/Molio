@@ -72,7 +72,7 @@ function send(obj) {
   process.stdout.write(JSON.stringify(obj) + '\n');
 }
 
-/** Hermes-style timestamp: "YYYY-MM-DD HH:MM:SS" (matches handleAcpStderr regex). */
+/** Hermes-style timestamp: "YYYY-MM-DD HH:MM:SS" (matches classifyAcpStderrLine regex). */
 function ts() {
   return new Date().toISOString().replace('T', ' ').replace(/\.\d+Z$/, '');
 }

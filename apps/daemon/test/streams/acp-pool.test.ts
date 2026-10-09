@@ -381,6 +381,45 @@ describe('AcpPool', () => {
         else process.env['MOLIO_ACP_POOL_IDLE_MS'] = prev;
       }
     });
+
+    it('armIdleIfSessionless evicts an entry whose session never attached (init bailed after acquire)', async () => {
+      // initAcpPooled can bail after a successful acquire (run cancelled
+      // mid-handshake, session/new answered with a JSON-RPC error) — no
+      // detachSession ever runs, so without an explicit arm the warm process
+      // would sit session-less and timer-less until shutdown.
+      const prev = process.env['MOLIO_ACP_POOL_IDLE_MS'];
+      process.env['MOLIO_ACP_POOL_IDLE_MS'] = '250';
+      try {
+        const pool = makePool();
+        const entry = await pool.acquire(makeSpec({ fingerprint: 'fp-idle-sessionless' }));
+        pool.armIdleIfSessionless(entry.id);
+        await sleep(600);
+        assert.equal(entry.alive, false, 'session-less entry must be evicted after TTL');
+        assert.equal(pool.__getEntry('hermes'), undefined);
+      } finally {
+        if (prev === undefined) delete process.env['MOLIO_ACP_POOL_IDLE_MS'];
+        else process.env['MOLIO_ACP_POOL_IDLE_MS'] = prev;
+      }
+    });
+
+    it('armIdleIfSessionless is a no-op while a session is attached or the id is unknown', async () => {
+      const prev = process.env['MOLIO_ACP_POOL_IDLE_MS'];
+      process.env['MOLIO_ACP_POOL_IDLE_MS'] = '250';
+      try {
+        const pool = makePool();
+        const entry = await pool.acquire(makeSpec({ fingerprint: 'fp-idle-noop' }));
+        const s1 = await createAndAttach(pool, entry);
+        pool.armIdleIfSessionless(entry.id);
+        await sleep(500);
+        assert.equal(entry.alive, true, 'attached session must block idle eviction');
+        pool.detachSession(entry.id, s1.sessionId);
+        // Unknown/stale entry ids must not throw.
+        pool.armIdleIfSessionless('acp-hermes-does-not-exist');
+      } finally {
+        if (prev === undefined) delete process.env['MOLIO_ACP_POOL_IDLE_MS'];
+        else process.env['MOLIO_ACP_POOL_IDLE_MS'] = prev;
+      }
+    });
   });
 
   describe('misc queries', () => {

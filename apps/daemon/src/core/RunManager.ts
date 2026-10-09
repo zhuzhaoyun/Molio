@@ -1,6 +1,6 @@
 import { spawn, type ChildProcess } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
-import { mkdirSync, createWriteStream, type WriteStream } from 'node:fs';
+import { randomUUID, createHash } from 'node:crypto';
+import { mkdirSync, createWriteStream, readFileSync, type WriteStream } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import type {
@@ -21,12 +21,13 @@ import { resolveClaudeModels } from './runtimes/claude-models.js';
 import { createClaudeStreamHandler } from './streams/claude-stream.js';
 import { createCodexStreamHandler } from './streams/codex-stream.js';
 import { createJsonEventStreamHandler } from './streams/json-event-stream.js';
-import { AcpTransport } from './streams/acp-transport.js';
+import { AcpPool, type AcpSpawnSpec, type PoolEntry } from './streams/acp-pool.js';
 import { formatAcpInitFailure } from './acp-errors.js';
 import { ensureAcpExtra, HermesRepairError } from './runtimes/hermes.js';
+import { resolveHermesHome } from './runtimes/hermes-config.js';
 import type { StreamHandler } from '@molio/contracts';
 import { createJsonlParser } from './streams/jsonl-parser.js';
-import { loadConfig, getAgentConfig, buildAgentEnv } from './config.js';
+import { loadConfig, getAgentConfig, buildAgentEnv, type AgentConfig } from './config.js';
 import { buildTranscript, type TranscriptMessage } from './transcript.js';
 import type { RunState, BufferedEvent } from '../types.js';
 import { TurnTextCollector, type PersistedToolEvent } from './turn-text-collector.js';
@@ -167,6 +168,14 @@ const DEFAULT_AGENT_CACHE_TTL_MS = 30_000;
 export class RunManager {
   private runs = new Map<string, RunState>();
   private runsLogDir: string;
+  /**
+   * Shared warm-process pool for ACP agents (hermes/dsh): one long-running
+   * process per agentId, one ACP session per run. New conversations / retries /
+   * page reloads reuse the warm process instead of paying the ~14s cold start.
+   * The pool owns process lifecycle (spawn/initialize, crash handling, idle
+   * eviction); RunManager owns session lifecycle (session/new, prompt, cancel).
+   */
+  private readonly acpPool = new AcpPool();
   // Throttles the per-event "emit listeners=0" diagnostic per run — kept on the
   // dbgLog channel (stdout + debug file, NOT stderr) so it never reads as ERROR.
   private readonly noSubscriberWarn = new ThrottledWarn({ sink: (m) => dbgLog(m) });
@@ -456,7 +465,6 @@ export class RunManager {
 
     const mergedEnv = buildAgentEnv(opts.agentId, agentConfig);
     const env = buildSpawnEnv(def, mergedEnv);
-    env['MOLIO_RUN_ID'] = runId;
     const args = def.buildArgs(
       opts.message,
       { model: opts.model },
@@ -476,31 +484,98 @@ export class RunManager {
         })
       : args;
 
-    // ── Just-in-time [acp] extra auto-repair (Hermes only) ─────────────────
-    // Before spawning, probe `hermes-acp --check`. If the venv is missing the
-    // [acp] extra (agent-client-protocol), auto-install it into the venv so
-    // the user doesn't have to drop into a terminal. Other missing modules
-    // surface as an error with a copyable manual-fix command. See
-    // runtimes/hermes.ts:ensureAcpExtra for the full state machine.
-    // Gated on def.acp.preflightRepair: the probe assumes `--check` is a valid
-    // invocation, which is hermes-specific — dsh rejects unknown flags with
-    // exit 1, so running the probe against it would fail every run pre-spawn.
-    if (def.transport === 'acp-jsonrpc' && def.acp?.preflightRepair) {
-      try {
-        await ensureAcpExtra(result.binary, {
-          onProgress: (message) => {
-            this.emitEvent(run, { type: 'repairing', message });
-          },
-        });
-      } catch (err) {
-        const message = err instanceof HermesRepairError
-          ? formatAcpInitFailure(err, undefined, result.binary)
-          : `ACP pre-spawn repair failed: ${err instanceof Error ? err.message : String(err)}`;
-        this.emitEvent(run, { type: 'error', message });
-        this.finishRun(run, 'failed', 1, null);
-        return runId;
+    if (def.transport === 'acp-jsonrpc') {
+      // ── ACP path (Hermes, DeepSeek Harness) — pooled warm process ─────────
+      // No per-run spawn: AcpPool keeps ONE process per agent (initialize runs
+      // once); this run gets its own ACP session via initAcpPooled. New
+      // conversations / retries / page reloads reuse the warm process instead
+      // of paying the ~14s cold start. MOLIO_RUN_ID is deliberately NOT
+      // injected — the process outlives any single run (and nothing consumes
+      // the variable). ACP schema requires cwd to be absolute; resolve against
+      // process.cwd() so a relative MOLIO_CWD env var doesn't silently break
+      // session/new.
+      const acpCwd = path.resolve(opts.cwd || agentConfig.env?.['MOLIO_CWD'] || process.cwd());
+      const acp = def.acp!;
+      // Test escape hatch: env overrides for ACP handshake timeouts so
+      // integration tests don't wait the full 60s idle / 30min absolute
+      // defaults. Fallbacks match hermes.ts (idle 60s covers session/new's
+      // silent availableModels network fetch on a cold start).
+      const envIdle = Number(process.env.MOLIO_ACP_IDLE_TIMEOUT_MS);
+      const idleTimeout = envIdle > 0 ? envIdle : (acp.idleTimeoutMs ?? 60000);
+      const envAbsolute = Number(process.env.MOLIO_ACP_ABSOLUTE_TIMEOUT_MS);
+      const absoluteTimeout = envAbsolute > 0 ? envAbsolute : (acp.absoluteTimeoutMs ?? 1800000);
+
+      // ── Just-in-time [acp] extra auto-repair (Hermes only) ───────────────
+      // Before spawning, probe `hermes-acp --check`. If the venv is missing
+      // the [acp] extra (agent-client-protocol), auto-install it so the user
+      // doesn't have to drop into a terminal. See runtimes/hermes.ts:
+      // ensureAcpExtra for the full state machine.
+      // Gated on def.acp.preflightRepair: the probe assumes `--check` is a
+      // valid invocation, which is hermes-specific — dsh rejects unknown flags
+      // with exit 1, so running the probe against it would fail pre-spawn.
+      // Skipped when a warm process is already alive: repair only matters
+      // pre-spawn, and every-run re-probing was the "why does it check the
+      // install integrity before EVERY answer" complaint.
+      if (acp.preflightRepair && !this.acpPool.hasLiveEntry(opts.agentId)) {
+        try {
+          await ensureAcpExtra(result.binary, {
+            onProgress: (message) => {
+              this.emitEvent(run, { type: 'repairing', message });
+            },
+          });
+        } catch (err) {
+          const message = err instanceof HermesRepairError
+            ? formatAcpInitFailure(err, undefined, result.binary)
+            : `ACP pre-spawn repair failed: ${err instanceof Error ? err.message : String(err)}`;
+          this.emitEvent(run, { type: 'error', message });
+          this.finishRun(run, 'failed', 1, null);
+          return runId;
+        }
       }
+
+      const spec: AcpSpawnSpec = {
+        agentId: opts.agentId,
+        binary: result.binary,
+        args: spawnArgs,
+        env,
+        cwd: acpCwd,
+        shell: isCmd,
+        fingerprint: this.buildAcpFingerprint(opts.agentId, result.binary, agentConfig),
+        idleTimeoutMs: idleTimeout,
+        absoluteTimeoutMs: absoluteTimeout,
+      };
+
+      this.initAcpPooled(run, def, spec, acpCwd, opts.model)
+        .then(() => {
+          // After init, drive the first session/prompt with the user's message.
+          // Subsequent turns go through sendMessage. Terminal guard: the user
+          // may have cancelled while init was in flight — sendMessage would
+          // throw, and its error would land on an already-cancelled run.
+          if (opts.message && run.acp?.sessionId && !TERMINAL_STATUSES.has(run.status)) {
+            this.sendMessage(runId, opts.message);
+          }
+        })
+        .catch((err) => {
+          // The run was cancelled while init was in flight (user hit stop, or
+          // shutdown fired cancelAll) — it's already terminal. Don't drop an
+          // "ACP init failed" banner on top of an intentional cancellation
+          // (same spirit as sendMessage's .catch guard for cancelled prompts).
+          if (TERMINAL_STATUSES.has(run.status)) return;
+          this.finishRun(run, 'failed', 1, null);
+          // The pool decorates acquire/session-new failures with the entry's
+          // last stderr line (the entry — and its stderr buffer — dies with
+          // the failure, so snapshot it on the error).
+          const lastStderr = (err as { acpLastStderrLine?: string }).acpLastStderrLine
+            ?? run.lastStderrLine;
+          this.emitEvent(run, { type: 'error', message: formatAcpInitFailure(err, lastStderr, run.binaryPath ?? spec.binary) });
+        });
+
+      return runId;
     }
+
+    // ── stdio-jsonl path (Claude/Codex/Gemini/Qwen) — existing behavior ──
+    // 1 run = 1 process, so the run id travels with the spawn env.
+    env['MOLIO_RUN_ID'] = runId;
 
     const child: ChildProcess = spawn(result.binary, spawnArgs, {
       env,
@@ -522,70 +597,6 @@ export class RunManager {
 
     child.stdout?.setEncoding('utf8');
     const stderrDecoder = createStderrDecoder();
-
-    if (def.transport === 'acp-jsonrpc') {
-      // ── ACP path (Hermes, DeepSeek Harness) — long-running JSON-RPC server over stdio ──
-      // No stdin prompt, no selectParser. Drive initialize/session/new/session/prompt via AcpTransport.
-      // ACP schema requires cwd to be absolute; resolve against process.cwd()
-      // so a relative MOLIO_CWD env var doesn't silently break session/new.
-      const acpCwd = path.resolve(opts.cwd || agentConfig.env?.['MOLIO_CWD'] || process.cwd());
-      this.initAcp(run, def, child, acpCwd, opts.model)
-        .then(() => {
-          // After init, drive the first session/prompt with the user's message.
-          // Subsequent turns go through sendMessage.
-          if (opts.message && run.acp) {
-            this.sendMessage(runId, opts.message);
-          }
-        })
-        .catch((err) => {
-          // Initialization already emitted its own error event; just ensure the run is finished.
-          if (!TERMINAL_STATUSES.has(run.status)) {
-            this.finishRun(run, 'failed', 1, null);
-          }
-          this.emitEvent(run, { type: 'error', message: formatAcpInitFailure(err, run.lastStderrLine, run.binaryPath) });
-        });
-
-      child.stderr?.on('data', (chunk: Buffer) => {
-        const text = stderrDecoder ? stderrDecoder(chunk) : chunk.toString('utf8');
-        // stderr counts as activity — reset idle timers on pending ACP requests
-        // so cold-start plugin loading doesn't trip the timeout.
-        run.acp?.transport.noteActivity();
-        this.handleAcpStderr(run, text);
-      });
-
-      child.on('error', (err) => {
-        this.emitEvent(run, { type: 'error', message: `Spawn error: ${err.message}` });
-        this.finishRun(run, 'failed', 1, null);
-      });
-
-      child.on('close', (code) => {
-        run.acp?.transport.flush();
-        const hadPending = run.acp?.transport.hasPending() ?? false;
-        const wasCancelled = run.acp
-          ? run.acp.transport.isCancelled(run.acp.sessionId)
-          : false;
-        run.acp?.transport.rejectAll(new Error(`${def.bin} process exited (code=${code})`));
-        // ACP runs are long-running — the process exiting is never a "clean
-        // success" on its own. Decide terminal status by what triggered it:
-        //   - cancelRun marked the session → 'canceled'
-        //   - prompt was in-flight when the process died → 'failed' (mid-prompt crash)
-        //   - otherwise (clean shutdown after a normal turn) → fall back to exit code
-        //     so a graceful agent-initiated exit still resolves as succeeded.
-        let status: 'succeeded' | 'failed' | 'canceled';
-        if (wasCancelled) {
-          status = 'canceled';
-        } else if (hadPending) {
-          status = 'failed';
-        } else {
-          status = code === 0 ? 'succeeded' : 'failed';
-        }
-        this.finishRun(run, status, code, null);
-      });
-
-      return runId;
-    }
-
-    // ── stdio-jsonl path (Claude/Codex/Gemini/Qwen) — existing behavior ──
 
     // Runtime identity hint — prepended to the first message so the agent
     // CLI knows which runtime it is running as inside Molio.
@@ -677,79 +688,124 @@ export class RunManager {
   }
 
   /**
-   * ACP initialization — runs after spawn, drives initialize + session/new.
-   * Fire-and-forget from createRun so runId is returned immediately; failures
-   * emit error events and finish the run. On success, sets run.acp and pushes
-   * models to the frontend.
+   * ACP initialization on the POOLED process — acquires (or spawns +
+   * initializes) the agent's warm process from AcpPool, then creates this
+   * run's own ACP session on it. Fire-and-forget from createRun so runId is
+   * returned immediately; failures are decorated + rethrown for createRun's
+   * catch to format. On success, sets run.acp (transport + sessionId +
+   * poolEntryId), attaches the session sink, and pushes models to the frontend.
    *
    * `model` is the user-selected model id (undefined/'default' = agent's own
    * default). dsh applies it post-session/new via session/set_config_option;
    * hermes has no model-set RPC and ignores it.
    */
-  private async initAcp(
+  private async initAcpPooled(
     run: RunState,
     def: RuntimeAgentDef,
-    child: ChildProcess,
+    spec: AcpSpawnSpec,
     cwd: string,
     model?: string | null,
   ): Promise<void> {
-    const transport = new AcpTransport(
-      (json) => {
-        if (child.stdin?.writable) child.stdin.write(json, 'utf8');
-      },
-      {
-        onTransportEvent: (ev) => this.emitEvent(run, ev),
-        // On idle/absolute timeout the transport rejects the pending request,
-        // then calls this to kill the child so a hung hermes-acp/dsh doesn't leak
-        // until the 30-min TTL. Tree-kills on Windows (the cmd.exe wrapper's node
-        // grandchild would otherwise be orphaned); SIGTERM→SIGKILL on POSIX.
-        killChild: () => killAgentProcessTree(child),
-      },
-    );
+    // acquire: reuse a live warm process (the fast path — no spawn, no
+    // initialize, no ~14s cold start), or create a fresh one. Concurrent
+    // acquires for the same agent share one spawn/initialize (pool dedups via
+    // the entry's ready promise).
+    let entry: PoolEntry;
+    try {
+      entry = await this.acpPool.acquire(spec);
+    } catch (err) {
+      // The pool decorates acquire failures with the dying entry's last stderr
+      // line; snapshot it on the run as a fallback for createRun's error format.
+      const decorated = (err as { acpLastStderrLine?: string }).acpLastStderrLine;
+      if (decorated && !run.lastStderrLine) run.lastStderrLine = decorated;
+      throw err;
+    }
 
-    // Assign to run.acp early (sessionId filled in after session/new) so the
-    // stderr handler in createRun can reset the transport's idle timer during
-    // initialize / session/new — before this, run.acp was undefined and stderr
-    // activity during cold start wouldn't reset the timeout.
-    run.acp = { transport, sessionId: '' };
+    const transport = entry.transport;
+    // Assign run.acp early (sessionId filled in after session/new) so a
+    // cancelRun landing mid-handshake can find the transport + pool entry.
+    run.acp = { transport, sessionId: '', poolEntryId: entry.id };
+    // Point run.child/binaryPath at the pooled process: canAcceptMessage's
+    // stdin check and the `[binary: …]` error suffix read these. The pool owns
+    // the child's lifecycle — RunManager must NEVER kill it directly (other
+    // runs' sessions may be riding the same process).
+    run.child = entry.child;
+    run.binaryPath = spec.binary;
 
-    child.stdout?.setEncoding('utf8');
-    child.stdout?.on('data', (chunk: string) => transport.feed(chunk));
-
-    const acp = def.acp!;
-    // Test escape hatch: env overrides for ACP timeouts so integration tests
-    // don't have to wait the full 60s idle / 30min absolute defaults. Fallbacks
-    // match hermes.ts so a def missing an acp field still gets the right cap
-    // (idle 60s covers session/new's silent availableModels network fetch on a
-    // cold start; absolute fell back to 5min, not 30min, before this was fixed).
-    const envIdle = Number(process.env.MOLIO_ACP_IDLE_TIMEOUT_MS);
-    const idleTimeout = envIdle > 0 ? envIdle : (acp.idleTimeoutMs ?? 60000);
-    const envAbsolute = Number(process.env.MOLIO_ACP_ABSOLUTE_TIMEOUT_MS);
-    const absoluteTimeout = envAbsolute > 0 ? envAbsolute : (acp.absoluteTimeoutMs ?? 1800000);
-
-    // initialize
-    await transport.request(
-      'initialize',
-      { protocolVersion: 1, clientCapabilities: {} },
-      { idleTimeoutMs: idleTimeout, absoluteTimeoutMs: absoluteTimeout },
-    );
-
-    // session/new — slow (loads plugins, connects provider).
-    // cwd is required by ACP schema ("Must be an absolute path").
-    const session: any = await transport.request(
-      'session/new',
-      { mcpServers: [], cwd },
-      { idleTimeoutMs: idleTimeout, absoluteTimeoutMs: absoluteTimeout },
-    );
+    // session/new — transport-level request (sent WITHOUT options.sessionId):
+    // a process that can't create sessions is useless to every run, so a
+    // timeout here goes through the pool's killChild hook and finalizes the
+    // entry. Cheap on a warm process; per-run workspace isolation lives in the
+    // cwd param (the process's OS-level cwd is just wherever the first
+    // acquirer happened to be). ACP schema requires an absolute path.
+    let session: any;
+    try {
+      session = await transport.request(
+        'session/new',
+        { mcpServers: [], cwd },
+        { idleTimeoutMs: spec.idleTimeoutMs, absoluteTimeoutMs: spec.absoluteTimeoutMs },
+      );
+    } catch (err) {
+      // Snapshot the entry-level stderr line for diagnostics — the entry may
+      // already be finalized (and gone from the pool) by the time createRun's
+      // catch formats the error message.
+      if (entry.lastStderrLine) {
+        run.lastStderrLine ??= entry.lastStderrLine;
+        (err as Error & { acpLastStderrLine?: string }).acpLastStderrLine ??= entry.lastStderrLine;
+      }
+      // A JSON-RPC error leaves the entry alive with zero sessions — arm idle
+      // eviction so the warm process doesn't linger until shutdown. (A timeout
+      // already finalized the entry; arming is then a no-op.)
+      this.acpPool.armIdleIfSessionless(entry.id);
+      throw err;
+    }
     const sessionId: string = session?.sessionId;
     if (!sessionId) {
+      this.acpPool.armIdleIfSessionless(entry.id);
       throw new Error('session/new returned no sessionId');
     }
     run.acp.sessionId = sessionId;
-    // Route this session's session/update notifications to the run's event
-    // stream (the transport demuxes by sessionId; unregistered sessions are
-    // dropped).
-    transport.registerSession(sessionId, (ev) => this.emitEvent(run, ev));
+
+    // The user may have hit stop (or shutdown fired cancelAll) while
+    // session/new was in flight — the run is already terminal. Don't attach:
+    // cancel the orphaned session best-effort (session-scoped, so even a
+    // timeout can't kill the shared process) and bail before registering a
+    // sink that would keep the entry's session map non-empty forever.
+    if (TERMINAL_STATUSES.has(run.status)) {
+      transport.request('session/cancel', { sessionId }, { absoluteTimeoutMs: 5000, sessionId })
+        .catch(() => { /* orphan cleanup is best-effort */ });
+      this.acpPool.armIdleIfSessionless(entry.id);
+      return;
+    }
+
+    // Attach BEFORE any session/update for this session can arrive: routes
+    // notifications to the run's event stream (the transport demuxes by
+    // sessionId), replays buffered cold-start diagnostics into this run, and
+    // registers the process-death callback that terminates the run.
+    this.acpPool.attachSession(entry, sessionId, {
+      sink: (ev) => {
+        // Terminal guard: ignore late events after cancel/finish (detach
+        // mostly prevents them, but finalizeEntry's broadcast can race a
+        // concurrent finishRun).
+        if (TERMINAL_STATUSES.has(run.status)) return;
+        this.emitEvent(run, ev);
+      },
+      onProcessExit: (info) => {
+        // The shared process died (crash / drain / transport-level timeout /
+        // idle eviction). Pick this run's terminal status exactly like the old
+        // per-run close handler did: cancelled session → canceled; a prompt in
+        // flight or non-zero exit → failed; clean exit → succeeded.
+        const status = info.wasCancelled
+          ? 'canceled'
+          : info.hadPendingPrompt || info.code !== 0
+            ? 'failed'
+            : 'succeeded';
+        if (status === 'failed' && !run.error) {
+          run.error = info.exitError.message;
+        }
+        this.finishRun(run, status, info.code, null);
+      },
+    });
 
     // Capture available models for the frontend. Two session/new shapes exist:
     //  - hermes: session.models.availableModels [{modelId, name}] + currentModelId
@@ -784,10 +840,12 @@ export class RunManager {
               + dshModels.entries.map((m) => m.id).join(', '),
             );
           }
+          // Session-scoped (sessionId in options): a set_config_option timeout
+          // must not kill the shared process other conversations are riding.
           await transport.request(
             'session/set_config_option',
             { sessionId, configId: 'model', value: match.value },
-            { idleTimeoutMs: idleTimeout, absoluteTimeoutMs: absoluteTimeout },
+            { idleTimeoutMs: spec.idleTimeoutMs, absoluteTimeoutMs: spec.absoluteTimeoutMs, sessionId },
           );
           currentModelId = match.id;
         }
@@ -809,48 +867,64 @@ export class RunManager {
   }
 
   /**
-   * Hermes stderr is verbose (plugin registration, provider connection, MCP tools).
-   * Persist every line to events.jsonl (via `raw` events — frontend ignores them,
-   * but the log is shareable with reporters for diagnosis), and surface only
-   * ERROR / Python tracebacks as `error` events so the UI isn't spammed.
-   *
-   * Also tracks the last non-empty stderr line on the run so idle/absolute
-   * timeout error messages can include it — when hermes goes silent mid-prompt,
-   * the last stderr line is the only clue about what it was doing right before.
+   * Config fingerprint for a pooled ACP process. acquire() compares it against
+   * the live entry's fingerprint — a mismatch (provider config changed, binary
+   * moved, env edited) drains the old process and respawns, so stale
+   * credentials never survive into the next message. Also covers hand-edits to
+   * hermes' config.yaml/.env, which don't go through Molio's PUT /provider
+   * route and therefore can't trigger its explicit drain hook.
    */
-  private handleAcpStderr(run: RunState, text: string): void {
-    if (!text) return;
-    const def = getAgentDef(run.agentId);
-    const lines = text.split(/\r?\n/);
-    for (const raw of lines) {
-      const line = raw.trim();
-      if (!line) continue;
-      run.lastStderrLine = line;
-      if (def?.id === 'dsh') {
-        // dsh (Node) writes non-fatal diagnostics to stderr: "dsh: warning: N
-        // entry did not activate", plugin-activation ValidationError detail
-        // lines, Node ExperimentalWarnings, fetch notices. Escalating those to
-        // `error` events would flip the frontend to streaming:false and
-        // swallow the reply stream, so only explicit error headers surface —
-        // everything else stays a log-only `raw` event. ACP-level failures
-        // reach the UI through JSON-RPC error responses, not stderr.
-        const isExplicitError = /^dsh:\s*error\b/i.test(line) || /^Error:/i.test(line);
-        this.emitEvent(run, isExplicitError
-          ? { type: 'error', message: line }
-          : { type: 'raw', line });
-        continue;
-      }
-      // Hermes log format: YYYY-MM-DD HH:MM:SS [LEVEL] logger: message
-      const isInfoLevel = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} \[(INFO|WARNING|DEBUG)\]/;
-      if (isInfoLevel.test(line)) {
-        // Persist to events.jsonl as a raw event — frontend ignores `raw`,
-        // but the JSONL log is shareable for remote diagnosis.
-        this.emitEvent(run, { type: 'raw', line });
-      } else {
-        // ERROR / Python traceback / non-log stderr — surface in UI.
-        this.emitEvent(run, { type: 'error', message: line });
+  private buildAcpFingerprint(
+    agentId: string,
+    binary: string,
+    agentConfig: AgentConfig,
+  ): string {
+    const hash = createHash('sha256');
+    hash.update(binary);
+    hash.update('\0');
+    hash.update(agentConfig.binaryPath ?? '');
+    hash.update('\0');
+    // Stable env subset: keys sorted so property order can't churn the
+    // fingerprint. Per-run volatile env (MOLIO_RUN_ID etc.) is no longer
+    // injected into ACP spawns, so everything here is config, not noise.
+    const envEntries = Object.entries(agentConfig.env ?? {})
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+    hash.update(JSON.stringify(envEntries));
+    if (agentId === 'hermes') {
+      // Hash hermes' native config files: PUT /provider writes them, and users
+      // may hand-edit them — either way a live process started with the old
+      // contents must be recycled.
+      try {
+        const home = resolveHermesHome();
+        for (const file of ['config.yaml', '.env']) {
+          hash.update('\0');
+          try {
+            hash.update(readFileSync(path.join(home, file)));
+          } catch {
+            hash.update('missing');
+          }
+        }
+      } catch {
+        hash.update('\0no-home');
       }
     }
+    return hash.digest('hex');
+  }
+
+  /**
+   * Drain an agent's pooled ACP process — called by PUT /:agentId/provider
+   * after writing new provider config, so the next message spawns a fresh
+   * process with the new credentials instead of riding the warm one.
+   * (acquire()'s fingerprint check is the fallback for config changes that
+   * don't go through the route.)
+   */
+  drainAcpPool(agentId: string): void {
+    this.acpPool.drain(agentId, 'provider-config-changed');
+  }
+
+  /** Test seam: the ACP process pool (integration tests assert reuse/drain). */
+  __getAcpPool(): AcpPool {
+    return this.acpPool;
   }
 
   /**
@@ -879,12 +953,16 @@ export class RunManager {
     if (TERMINAL_STATUSES.has(run.status)) return false;
     const def = getAgentDef(run.agentId);
     if (!def?.multiTurn) return false;
-    // ACP runs additionally require a live session — stdin can still be
-    // writable while the internal session is dead (process in a weird half-
-    // alive state). Without this check, sendMessage would fire session/prompt
-    // at a stale sessionId and the user wouldn't learn it's broken until the
-    // idle timeout fires 5min later.
-    if (def.transport === 'acp-jsonrpc' && !run.acp?.sessionId) return false;
+    // ACP runs additionally require a live session on a LIVE pooled process —
+    // the shared process may have crashed, been drained (provider config
+    // change), or been idle-evicted since this run's last turn, and its stdin
+    // can look writable while the internal session is dead. Without this
+    // check, sendMessage would fire session/prompt at a stale sessionId and
+    // the user wouldn't learn it's broken until the idle timeout 5min later.
+    if (def.transport === 'acp-jsonrpc') {
+      if (!run.acp?.sessionId) return false;
+      if (!this.acpPool.isEntryAlive(run.acp.poolEntryId)) return false;
+    }
     return run.stdinOpen && !!run.child?.stdin?.writable;
   }
 
@@ -905,10 +983,10 @@ export class RunManager {
         throw new Error('Run is already in a terminal state — start a new run instead');
       }
       if (!run.acp) throw new Error('ACP session not initialized');
-      const { transport, sessionId } = run.acp;
-      // initAcp sets sessionId='' before session/new resolves; if session/new
-      // failed, run.acp exists but sessionId is empty. Guard against sending
-      // a malformed session/prompt with an empty sessionId.
+      const { transport, sessionId, poolEntryId } = run.acp;
+      // initAcpPooled sets sessionId='' before session/new resolves; if
+      // session/new failed, run.acp exists but sessionId is empty. Guard
+      // against sending a malformed session/prompt with an empty sessionId.
       if (!sessionId) throw new Error('ACP session not initialized — sessionId is empty');
       const acp = def.acp!;
       // Prompt phase uses a longer idle timeout than handshake — hermes goes
@@ -928,12 +1006,19 @@ export class RunManager {
         : (acp.absoluteTimeoutMs ?? 1800000);
       // Fire-and-forget: events flow in via session/update notifications during the await;
       // turn_end is emitted when the prompt response arrives.
+      // Session-scoped (sessionId in options): a hung prompt times out THIS
+      // run only — the shared process survives for the other conversations.
       transport.request(
         'session/prompt',
         { sessionId, prompt: [{ type: 'text', text: message }] },
-        { idleTimeoutMs: promptIdle, absoluteTimeoutMs: absoluteTimeout },
+        { idleTimeoutMs: promptIdle, absoluteTimeoutMs: absoluteTimeout, sessionId },
       )
         .then((resp: any) => {
+          // The run may have been cancelled (or the process drained → run
+          // failed via onProcessExit) while the prompt was in flight — don't
+          // emit a late turn_end that would resurrect the UI's streaming state
+          // or trigger onTurnComplete on a terminal run.
+          if (TERMINAL_STATUSES.has(run.status)) return;
           this.emitEvent(run, {
             type: 'turn_end',
             stopReason: mapAcpStopReason(resp?.stopReason),
@@ -946,20 +1031,23 @@ export class RunManager {
         .catch((err: Error) => {
           // If the session was cancelled, the cancel flow already handles termination — don't spam errors.
           if (transport.isCancelled(sessionId)) return;
-          // cancelRun sets run.status='canceled' synchronously, then the
-          // child exits and close handler's rejectAll rejects this prompt.
-          // By the time .catch runs, rejectAll has already cleared
-          // cancelledSessionIds (so isCancelled above returns false even for
-          // a cancelled session). Guard on terminal status to suppress the
-          // spurious "prompt failed: hermes-acp process exited" error event
-          // for runs the user already cancelled.
+          // cancelRun sets run.status='canceled' synchronously, then the pool's
+          // finalizeEntry rejectAll rejects this prompt. By the time .catch
+          // runs, rejectAll has already cleared cancelledSessionIds (so
+          // isCancelled above returns false even for a cancelled session).
+          // Guard on terminal status to suppress the spurious "prompt failed:
+          // hermes-acp process exited" error event for runs the user already
+          // cancelled or that onProcessExit already terminated.
           if (TERMINAL_STATUSES.has(run.status)) return;
           // Append the last stderr line hermes printed before going silent —
           // when idle/absolute timeout fires, the error alone gives reporters
           // no clue what hermes was doing. The last stderr line is usually
           // "connecting to provider X" or similar, which is the actual cause.
+          // Pool-level now: stderr belongs to the shared process, so read it
+          // from the entry (run.lastStderrLine is only set on init failures).
           // Also include the binary path so users can spot "wrong install" cases.
-          const lastStderr = run.lastStderrLine ? ` (last stderr: "${run.lastStderrLine}")` : '';
+          const stderrLine = this.acpPool.getLastStderrLine(poolEntryId) ?? run.lastStderrLine;
+          const lastStderr = stderrLine ? ` (last stderr: "${stderrLine}")` : '';
           const binarySuffix = run.binaryPath ? ` [binary: ${run.binaryPath}]` : '';
           // Agents report config problems in their own vocabulary (e.g. dsh's
           // "store DEEPSEEK_API_KEY through the credentials service" — a
@@ -1061,13 +1149,31 @@ export class RunManager {
     run.turnText.flush();
 
     if (def?.transport === 'acp-jsonrpc' && run.acp) {
-      const { transport, sessionId } = run.acp;
+      const { transport, sessionId, poolEntryId } = run.acp;
       transport.markCancelled(sessionId);
       const cancelTimeout = def.acp?.cancelTimeoutMs ?? 5000;
       // Cancel is a short ack — strict absolute deadline, no idle timer.
-      transport.request('session/cancel', { sessionId }, { absoluteTimeoutMs: cancelTimeout })
-        .catch(() => { /* cancel itself failed — fall through to the kill */ })
-        .finally(() => killAgentProcessTree(run.child));
+      // Session-scoped (sessionId in options): even a cancel timeout must not
+      // kill the shared process other conversations are riding. Fire-and-forget
+      // — the detach below is what actually frees this run.
+      if (sessionId) {
+        transport.request('session/cancel', { sessionId }, { absoluteTimeoutMs: cancelTimeout, sessionId })
+          .catch(() => { /* cancel ack failed — session is detached anyway */ });
+      }
+      // Detach NOW (before any late session/update races in): stops routing
+      // events to this run and — when it was the entry's last session — arms
+      // the pool's idle-eviction timer. The process itself SURVIVES: that's
+      // the point of the pool (next conversation/retry/reload reuses it
+      // instead of paying the cold start).
+      this.acpPool.detachSession(poolEntryId, sessionId);
+      // Mirror the non-ACP tail: emit the canceled status so SSE listeners
+      // close cleanly, and close the JSONL log. finishRun can't do this — it
+      // early-returns on the 'canceled' status set synchronously above.
+      if (!wasTerminal) {
+        this.emitEvent(run, { type: 'status', label: 'canceled' });
+        try { run.eventsLogStream?.end(); } catch { /* ignore */ }
+        run.eventsLogStream = null;
+      }
       return;
     }
 
@@ -1095,6 +1201,11 @@ export class RunManager {
     for (const [id] of this.runs) {
       this.cancelRun(id, reason);
     }
+    // Drain pooled ACP processes: cancelAll runs on daemon shutdown (SIGINT,
+    // graceful close, desktop shutdown request) and in test cleanup — warm
+    // hermes/dsh processes must not outlive their owner. cancelRun alone only
+    // detaches sessions and deliberately keeps the shared process alive.
+    this.acpPool.drainAll(`cancelAll:${reason}`);
   }
 
   /**
@@ -1178,6 +1289,14 @@ export class RunManager {
     run.exitCode = code;
     run.stdinOpen = false;
     run.updatedAt = Date.now();
+
+    // Detach the ACP session from the pooled process (idempotent — cancelRun
+    // may have detached already). Arms the pool's idle-eviction timer when
+    // this was the entry's last session; the process itself survives for the
+    // other runs riding it.
+    if (run.acp?.poolEntryId && run.acp.sessionId) {
+      this.acpPool.detachSession(run.acp.poolEntryId, run.acp.sessionId);
+    }
 
     // Stop subagent activity tracking; emit a final snapshot so the UI can
     // flip running workers to their terminal state.
