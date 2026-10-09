@@ -575,6 +575,37 @@ test.describe('Floating chat (方案 D)', () => {
     expect(box.x + box.width).toBeLessThan(vw - 90); // 不再贴右缘
   });
 
+  test('恢复持久化悬浮位置时按当前视口 clamp：窗口变小后切悬浮不得落到视口外', async ({ page }) => {
+    // 用户 2026-10-09 真实踩坑：在大视口下保存的 floatPos（left:1611）+ 宽 720，
+    // 窗口变小后停靠→悬浮，面板被渲染到视口外（x:1611 > vw）→「侧边栏消失，悬浮不见」。
+    // 宽/高恢复各有 CSS max 兜底，唯独 left/top 裸用——恢复时必须按视口 clamp。
+    await mockChatRun(page);
+    await page.addInitScript(() => {
+      localStorage.setItem('molio.kb.chatFloatPos', JSON.stringify({ left: 1611, top: 158 }));
+      localStorage.setItem('molio.kb.chatPanelWidth', '720');
+      localStorage.setItem('molio.kb.chatPanelHeight', '772');
+    });
+    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+
+    // 默认停靠：打开即侧边栏（可正常看到）
+    await page.locator('[data-testid="kb-btn-ask"]').click();
+    const panel = page.locator('[data-testid="kb-chat-panel"]');
+    await expect(panel).toBeVisible();
+    await page.waitForTimeout(250);
+
+    // 切悬浮：面板必须落在当前视口内——至少留 80px 横向 / 48px 纵向可见条带
+    //（与拖拽 clampMoveX/clampMoveY 的语义一致，不要求完整可见，但必须摸得到、拖得回）
+    await page.locator('[data-testid="kb-chat-dock-toggle"]').click();
+    await page.waitForTimeout(300);
+    const { width: vw, height: vh } = page.viewportSize()!;
+    const box = (await panel.boundingBox())!;
+    expect(box.x).toBeLessThanOrEqual(vw - 80);
+    expect(box.x + box.width).toBeGreaterThanOrEqual(80);
+    expect(box.y).toBeLessThanOrEqual(vh - 48);
+    expect(box.y + box.height).toBeGreaterThanOrEqual(48);
+  });
+
   test('活跃标签加粗 + 标签字号 13px（P0 视觉精修）', async ({ page }) => {
     await mockChatRun(page);
     await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);

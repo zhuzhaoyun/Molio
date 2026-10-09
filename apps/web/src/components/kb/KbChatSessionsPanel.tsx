@@ -46,6 +46,15 @@ function clampPanelWidth(w: number): number {
   const max = Math.min(PANEL_WIDTH_MAX, vwMax);
   return Math.min(max, Math.max(PANEL_WIDTH_MIN, Math.round(w)));
 }
+/** 悬浮位置按当前视口 clamp：持久化的 left/top 可能是在更大的窗口里保存的（换显示器 /
+    缩窗之后），恢复时裸用会把面板整个摆到视口外——宽/高各有 CSS max 兜底，位置是
+    唯一没有保护的恢复值（2026-10-09「停靠切悬浮后面板消失」的根因）。语义与拖拽
+    clampMoveX/clampMoveY 一致：至少留 80px 横向 / 48px 纵向可见条带，摸得到就拖得回。 */
+function clampFloatPos(p: { left: number; top: number }, w: number): { left: number; top: number } {
+  const left = Math.min(Math.max(Math.round(p.left), -(w - 80)), window.innerWidth - 80);
+  const top = Math.min(Math.max(Math.round(p.top), 8), window.innerHeight - 48);
+  return { left, top };
+}
 function readPanelWidth(): number {
   try {
     const raw = localStorage.getItem(STORAGE_KEY_WIDTH);
@@ -241,8 +250,11 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
   if (!docked) {
     panelStyle.height = panelHeight ?? undefined;
     if (floatPos) {
-      panelStyle.left = floatPos.left;
-      panelStyle.top = floatPos.top;
+      // 恢复经 clamp：持久化值可能出自更大的窗口（见 clampFloatPos 注释）。在渲染处而非
+      // readFloatPos 处 clamp——窗口此后再变小、任意一次重渲染也会重新收敛到视口内。
+      const pos = clampFloatPos(floatPos, panelWidth);
+      panelStyle.left = pos.left;
+      panelStyle.top = pos.top;
     }
   }
 
