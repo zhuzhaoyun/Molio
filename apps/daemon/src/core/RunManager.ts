@@ -2,7 +2,7 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { randomUUID, createHash } from 'node:crypto';
 import { mkdirSync, createWriteStream, readFileSync, type WriteStream } from 'node:fs';
 import path from 'node:path';
-import os from 'node:os';
+import { molioDataDir } from './data-dir.js';
 import type {
   AgentEvent, AgentInfo, RuntimeAgentDef, RunInfo, RunStatus, ChatMessage,
 } from '@molio/contracts';
@@ -188,7 +188,7 @@ export class RunManager {
   private agentProbeInFlight: Promise<AgentInfo[]> | null = null;
 
   constructor(detectDeps: AgentDetectDeps = {}) {
-    this.runsLogDir = path.join(os.homedir(), '.molio', 'runs');
+    this.runsLogDir = path.join(molioDataDir(), 'runs');
     this.detectDeps = detectDeps;
   }
 
