@@ -29,10 +29,8 @@ const DAEMON_API = `http://localhost:${process.env.MOLIO_E2E_DAEMON_PORT ?? '310
  */
 
 test.describe('Runtime provider config', () => {
-  // These tests write to the REAL ~/.claude/settings.json (Claude provider env
-  // lives there since the settings.json migration). Back it up and restore it so
-  // the suite never clobbers the developer's actual Claude credentials/models.
-  const claudeSettingsJson = path.join(os.homedir(), '.claude', 'settings.json');
+  // The daemon and assertions share the isolated runtime home from config.
+  const claudeSettingsJson = path.join(process.env.MOLIO_CLAUDE_HOME!, 'settings.json');
   let claudeSettingsBackup: string | null = null;
 
   test.beforeAll(() => {
@@ -44,6 +42,8 @@ test.describe('Runtime provider config', () => {
   test.afterAll(() => {
     if (claudeSettingsBackup !== null) {
       fs.writeFileSync(claudeSettingsJson, claudeSettingsBackup);
+    } else {
+      fs.rmSync(claudeSettingsJson, { force: true });
     }
   });
 
@@ -203,7 +203,7 @@ test.describe('Runtime provider config', () => {
 });
 
 test.describe('Codex provider config', () => {
-  const codexDir = path.join(os.homedir(), '.codex');
+  const codexDir = process.env.MOLIO_CODEX_HOME!;
   const configToml = path.join(codexDir, 'config.toml');
   const authJson = path.join(codexDir, 'auth.json');
   let backupDir = '';

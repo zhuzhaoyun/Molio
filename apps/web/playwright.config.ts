@@ -26,6 +26,14 @@ const DAEMON_PORT = Number(process.env.MOLIO_E2E_DAEMON_PORT ?? 3100);
  */
 // Workers re-import this config; share one run directory without deleting an open SQLite DB.
 const E2E_DATA_DIR = process.env.MOLIO_E2E_DATA_DIR ??= mkdtempSync(join(tmpdir(), `molio-e2e-daemon-${DAEMON_PORT}-`));
+/* 运行时目录一并隔离（MOLIO_CLAUDE_HOME / MOLIO_CODEX_HOME，见 core/data-dir.ts）：
+   runtime-provider-config 直接断言这个 CLAUDE_HOME，不再备份/还原开发者真实的
+   ~/.claude/settings.json。写到 process.env 是为了让 spec 进程也能读到同一个路径。 */
+process.env.MOLIO_CLAUDE_HOME = join(E2E_DATA_DIR, 'claude');
+process.env.MOLIO_CODEX_HOME = join(E2E_DATA_DIR, 'codex');
+// Reuse is explicit: a running desktop/dev daemon may use the user's database
+// and a different auth backend, so a successful health check is insufficient.
+const reuseServers = !isCI && process.env.MOLIO_E2E_REUSE_SERVERS === '1';
 
 export default defineConfig({
   testDir: './e2e',
@@ -66,7 +74,7 @@ export default defineConfig({
     {
       command: 'pnpm --filter @molio/cloud dev',
       url: `${CLOUD_BASE_URL}/health`,
-      reuseExistingServer: !isCI,
+      reuseExistingServer: reuseServers,
       timeout: 60_000,
       env: {
         MOLIO_ENV: 'local',
@@ -82,18 +90,21 @@ export default defineConfig({
     {
       command: 'pnpm --filter @molio/daemon dev',
       url: `http://localhost:${DAEMON_PORT}/api/health`,
-      reuseExistingServer: !isCI,
+      reuseExistingServer: reuseServers,
       timeout: 60_000,
       env: {
         MOLIO_AUTH_URL: CLOUD_BASE_URL,
         MOLIO_PORT: String(DAEMON_PORT),
         MOLIO_DATA_DIR: E2E_DATA_DIR,
+        MOLIO_DEBUG_LOG_DIR: join(E2E_DATA_DIR, 'debug'),
+        MOLIO_CLAUDE_HOME: join(E2E_DATA_DIR, 'claude'),
+        MOLIO_CODEX_HOME: join(E2E_DATA_DIR, 'codex'),
       },
     },
     {
       command: 'pnpm --filter @molio/web dev',
       url: 'http://localhost:5173',
-      reuseExistingServer: !isCI,
+      reuseExistingServer: reuseServers,
       timeout: 60_000,
       env: { MOLIO_DAEMON: `http://localhost:${DAEMON_PORT}` },
     },
@@ -102,7 +113,7 @@ export default defineConfig({
     {
       command: 'node e2e/fixtures/mock-oss.mjs',
       port: 3199,
-      reuseExistingServer: !isCI,
+      reuseExistingServer: reuseServers,
     },
   ],
 });
