@@ -6,7 +6,7 @@
  * (same pattern as vaultStore). Consumers:
  *  - RuntimeModelPill (composer): reads + writes both fields;
  *  - App.tsx: hydrates agentId from config default and syncs 设置页 changes;
- *  - useChat / KbChatSession: read a snapshot at send time to pass `model`
+ *  - KbChatSessionController: read a snapshot at send time to pass `model`
  *    to POST /api/runs (per-message effect — no session binding needed).
  *
  * 持久化语义（用户偏好规则：显式选择必须记住，不得静默回退）：

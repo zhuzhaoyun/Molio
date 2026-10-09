@@ -16,7 +16,7 @@
         "apps/web/src/components/ThinkingBlock.*",
         "apps/web/src/components/ToolCard.*",
         "apps/web/src/components/ToolGroup.*",
-        "apps/web/src/components/ChatPane.*",
+        "apps/web/src/components/ChatSessionView.*",
         "apps/web/src/components/CodeBlock.*",
         "apps/web/src/components/SaveToKbButton.*",
         "apps/web/src/components/SaveAsSkillButton.*",

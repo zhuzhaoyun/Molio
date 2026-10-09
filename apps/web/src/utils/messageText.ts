@@ -3,7 +3,7 @@
 // 判定依据：消息里最终有多少个工具（finalTools）；某段文本到达时若已完成
 // 全部工具（done >= finalTools），它就是最后一个工具之后产出的最终答案，
 // 否则是执行过程中的自言自语（进工作块的过程流）。
-import type { ChatMessage } from '../hooks/useChat';
+import type { ChatMessage } from '../hooks/useChatCore';
 
 /** 一段实时文本增量 + 到达时已完成的工具数（work-block 叙事交错的插入锚点）。 */
 export interface MessageSegment {

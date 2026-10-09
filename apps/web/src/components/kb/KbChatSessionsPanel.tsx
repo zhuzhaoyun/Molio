@@ -142,9 +142,11 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
   );
   // 按页记忆停靠形态：每页应用自己记住的形态（KB 页默认停靠、其余页默认悬浮）。
   // 面板现已全局可用，因此非 KB 页的形态记忆也要生效——离开 KB 页不再切换形态，
-  // 面板保持原样跨页（App 层只在到达主页时收起它）。
-  // 主页例外：面板在主页不可见（App 层收起且不渲染悬浮按钮），若在此把停靠切成悬浮，
-  // 会先跳到悬浮几何再消失——回归保护见 e2e/floating-chat.spec.ts 的「主页是例外」用例。
+  // 面板保持原样跨页（App 层只在到达 `/chat` 时收起它）。
+  // `/chat` 例外（其上下文页名为 'home'）：L2a 后 `/chat` = 悬浮面板的全屏态，该页自身
+  // 渲染活动会话的 ChatSessionView，面板整体返回 null（见下方 CHAT_ROUTE 早返回）、悬浮按钮
+  // 也不渲染——若在此把停靠切成悬浮，会先跳到悬浮几何再消失。回归保护见
+  // e2e/floating-chat.spec.ts 的「主页是例外」用例（该用例里的「主页」即 `/chat`）。
   useEffect(() => {
     if (page === 'home') return;
     setDockModeState(dockByPage[page] ?? defaultDockFor(page));

@@ -3,7 +3,7 @@
 // 运行中 = 当前动作 + 静态底条 + 思考 + 工具行 + meta（模型·时间）；完成后 = 折叠成摘要头 + meta，
 // 展开可看思考与工具行。旧的步骤列表（work-timeline-step）已删除 —— 工具行本身就地渲染，杜绝与时间线容余。
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
-import type { ChatMessage } from '../hooks/useChat';
+import type { ChatMessage } from '../hooks/useChatCore';
 import { deriveStepsForMessage } from '../utils/workSteps';
 import { bucketSegmentsByDone, type MessageSegment } from '../utils/messageText';
 import { UNGROUPABLE, type ToolItem } from '../utils/toolGroups';

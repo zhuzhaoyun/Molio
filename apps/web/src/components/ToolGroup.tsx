@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useI18n } from '../i18n';
-import type { ToolEvent } from '../hooks/useChat';
+import type { ToolEvent } from '../hooks/useChatCore';
 
 interface Props {
   tools: ToolEvent[];

@@ -95,7 +95,8 @@ export default function App() {
   const location = useLocation();
   const [defaultAgentId, setDefaultAgentId] = useState<string | null>(null);
   // 当前 runtime 选择迁移到 chatRuntimeStore（composer 的 runtime/model pill 与
-  // App 共享同一事实源）；此处只订阅 agentId 供 useChat / KB 面板消费。
+  // App 共享同一事实源）；此处只订阅 agentId，往下喂给 KbChatSessionsProvider（各会话控制器
+  // 与知识库页共用）——App 级 useChat 已于 L2a 退役。
   const selectedAgent = useChatAgentId();
   const activeVault = useActiveVault();
   // 共享 config 快照（configStore，in-flight 去重）。首帧不再等 daemon：

@@ -5,7 +5,7 @@ import { useI18n } from '../i18n';
 import { MessageToolbar, type ToolbarAction } from './MessageToolbar';
 import { useSelectMode, useIsSelected } from '../stores/messageSelectionStore';
 import { MessageCheckbox } from './MessageCheckbox';
-import type { ChatMessage } from '../hooks/useChat';
+import type { ChatMessage } from '../hooks/useChatCore';
 
 interface Props {
   message: ChatMessage;
