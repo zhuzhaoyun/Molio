@@ -216,9 +216,9 @@ test.describe('Floating chat (方案 D)', () => {
     const panel = page.locator('[data-testid="kb-chat-panel"]');
     await expect(panel).toBeVisible();
     await page.waitForTimeout(250);
-    // 默认停靠 → 切悬浮才有顶缘高度 handle
+    // 默认停靠 → 切悬浮才有顶缘高度 handle（等形变收尾：形变期间表面是快照、摸不到）
     await page.locator('[data-testid="kb-chat-dock-toggle"]').click();
-    await page.waitForTimeout(300);
+    await page.waitForTimeout(500);
 
     // 默认高度 = 撑满视口（100vh - 96px：top 72 + bottom 24）
     const vp = page.viewportSize()!;
@@ -541,7 +541,7 @@ test.describe('Floating chat (方案 D)', () => {
     await expect(panel).toBeVisible();
     await page.waitForTimeout(250);
     await page.locator('[data-testid="kb-chat-dock-toggle"]').click();
-    await page.waitForTimeout(300);
+    await page.waitForTimeout(500); // 等形变收尾：形变期间表面是快照、摸不到
     const before = (await panel.boundingBox())!;
 
     // 拖标签栏右侧空区（避开左缘宽度手柄/顶缘高度手柄/标签/按钮）向左上移动
@@ -587,7 +587,7 @@ test.describe('Floating chat (方案 D)', () => {
     await expect(panel).toBeVisible();
     await page.waitForTimeout(250);
     await page.locator('[data-testid="kb-chat-dock-toggle"]').click();
-    await page.waitForTimeout(300);
+    await page.waitForTimeout(500); // 等形变收尾：形变期间表面是快照、摸不到
     const vw = page.viewportSize()!.width;
 
     // 悬浮 → 向右拖至右缘（越过 8px 阈值）→ 停靠
@@ -763,5 +763,135 @@ test.describe('Floating chat (方案 D)', () => {
     await expect(panel).toBeVisible();
     await expect(panel).toHaveClass(/floating-chat-panel--dock-kb/);
     await expect(page.locator('[data-testid="kb-chat-dock-toggle"]')).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  // ── 悬浮按钮：品牌标 + 拖拽定位（磁吸/藏边）──────────────────────────
+
+  test('悬浮按钮：图标为品牌标；拖到缘附近松手磁吸停靠（持久化、不误开面板）', async ({ page }) => {
+    await mockChatRun(page);
+    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+    const btn = page.locator('[data-testid="floating-chat-btn"]');
+    await expect(btn).toBeVisible();
+    await expect(btn.locator('img.floating-chat-btn__logo')).toHaveCount(1);
+    // logo 尺寸必须被按钮容纳（144% 裁切）：img 是替换元素，若用 inset 撑尺寸
+    // 会取固有尺寸 965px 铺满整页（实测踩过）——这条断言守死；
+    // 按钮本体必须 overflow:hidden，否则 75px 的 img 圆溢出、可见尺寸变成 75（偏大）
+    expect(await btn.evaluate((el) => getComputedStyle(el as HTMLElement).overflow)).toBe('hidden');
+    const logoBox = (await btn.locator('img.floating-chat-btn__logo').boundingBox())!;
+    expect(logoBox.width).toBeLessThan(80);
+    expect(logoBox.height).toBeLessThan(80);
+    const btnBox = (await btn.boundingBox())!;
+    expect(Math.abs(logoBox.x + logoBox.width / 2 - (btnBox.x + btnBox.width / 2))).toBeLessThan(2);
+    expect(Math.abs(logoBox.y + logoBox.height / 2 - (btnBox.y + btnBox.height / 2))).toBeLessThan(2);
+
+    // 从默认位抓起中心，拖到右缘附近松手 → 磁吸：距右缘 4px
+    const vw = page.viewportSize()!.width;
+    const bb = (await btn.boundingBox())!;
+    await page.mouse.move(bb.x + 26, bb.y + 26);
+    await page.mouse.down();
+    await page.mouse.move(vw - 30, 300, { steps: 10 });
+    await page.mouse.up();
+    await page.waitForTimeout(450); // 等吸附动画结束
+    let box = (await btn.boundingBox())!;
+    expect(Math.abs(box.x + box.width - (vw - 4))).toBeLessThan(3);
+    // 拖拽没有误开面板
+    await expect(page.locator('[data-testid="kb-chat-panel"]')).toHaveClass(/--closed/);
+
+    // 重载 → 停靠位保持
+    await page.reload();
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+    await expect(btn).toBeVisible();
+    box = (await btn.boundingBox())!;
+    expect(Math.abs(box.x + box.width - (vw - 4))).toBeLessThan(3);
+  });
+
+  test('悬浮按钮：中间松手 = 自由位持久化', async ({ page }) => {
+    await mockChatRun(page);
+    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+    const btn = page.locator('[data-testid="floating-chat-btn"]');
+    await expect(btn).toBeVisible();
+
+    const bb = (await btn.boundingBox())!;
+    await page.mouse.move(bb.x + 26, bb.y + 26);
+    await page.mouse.down();
+    await page.mouse.move(400, 300, { steps: 10 });
+    await page.mouse.up();
+    await page.waitForTimeout(150);
+    let box = (await btn.boundingBox())!;
+    expect(Math.abs(box.x - 374)).toBeLessThan(4); // 中心跟到 (400,300)
+    expect(Math.abs(box.y - 274)).toBeLessThan(4);
+
+    await page.reload();
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+    await expect(btn).toBeVisible();
+    box = (await btn.boundingBox())!;
+    expect(Math.abs(box.x - 374)).toBeLessThan(4);
+    expect(Math.abs(box.y - 274)).toBeLessThan(4);
+  });
+
+  test('悬浮按钮：压入边缘隐藏 → 点小签唤回（不开面板）→ 重载保持隐藏', async ({ page }) => {
+    await mockChatRun(page);
+    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+    const btn = page.locator('[data-testid="floating-chat-btn"]');
+    const panel = page.locator('[data-testid="kb-chat-panel"]');
+    await expect(btn).toBeVisible();
+    const vw = page.viewportSize()!.width;
+
+    // 抓住中心往右缘里压（clamp 允许压出，留 8px 可抓）→ 松手隐藏
+    const bb = (await btn.boundingBox())!;
+    await page.mouse.move(bb.x + 26, bb.y + 26);
+    await page.mouse.down();
+    await page.mouse.move(vw - 40, 300, { steps: 6 });
+    // 还没进藏边区（压入 <14px）：无吞没预告
+    await expect(btn).not.toHaveClass(/floating-chat-btn--swallow/);
+    await page.mouse.move(vw - 4, 300, { steps: 6 });
+    // 压入藏边区：松手前就有「被吸进去」的压扁预告
+    await expect(btn).toHaveClass(/floating-chat-btn--swallow-right/);
+    await page.mouse.up();
+    await page.waitForTimeout(450);
+    await expect(btn).toHaveClass(/floating-chat-btn--hidden/);
+    await page.mouse.move(600, 400); // 移开指针：小签 :hover 探出 14px 是交互态，量的是静息几何
+    await page.waitForTimeout(250); // 等探出回位过渡（160ms）走完
+    let box = (await btn.boundingBox())!;
+    expect(Math.abs(box.x - (vw - 12))).toBeLessThan(2); // 只露 12px 小签（元素左缘在 vw-12）
+
+    // 点可见的小签部分 → 唤回停靠位，不开面板
+    await btn.click({ position: { x: 4, y: 26 } });
+    await page.waitForTimeout(400);
+    await expect(btn).not.toHaveClass(/floating-chat-btn--hidden/);
+    box = (await btn.boundingBox())!;
+    expect(Math.abs(box.x + box.width - (vw - 4))).toBeLessThan(3);
+    await expect(panel).toHaveClass(/--closed/);
+
+    // 再藏 → 重载保持隐藏（用户显式选择被尊重）
+    const bb2 = (await btn.boundingBox())!;
+    await page.mouse.move(bb2.x + 26, bb2.y + 26);
+    await page.mouse.down();
+    await page.mouse.move(vw - 4, 300, { steps: 10 });
+    await page.mouse.up();
+    await page.waitForTimeout(450);
+    await expect(btn).toHaveClass(/floating-chat-btn--hidden/);
+    await page.reload();
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('[data-testid="floating-chat-btn"]')).toHaveClass(/floating-chat-btn--hidden/);
+  });
+
+  test('悬浮按钮：持久化位置在视口外时恢复按视口 clamp', async ({ page }) => {
+    // 种一个「视口左侧外」的位置：clamp 后应落在左缘 8px 处，且纵向 158 原样保留。
+    // 断言有判别力：无 clamp 的实现按钮停在默认右下角（x≈1204, y≈644），两条都会炸。
+    await page.addInitScript(() => {
+      localStorage.setItem('molio.kb.chatBtnPos', JSON.stringify({ edge: null, x: -500, y: 158, hidden: false }));
+    });
+    await mockChatRun(page);
+    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+    const btn = page.locator('[data-testid="floating-chat-btn"]');
+    await expect(btn).toBeVisible();
+    const box = (await btn.boundingBox())!;
+    expect(box.x).toBeLessThan(100);
+    expect(Math.abs(box.y - 158)).toBeLessThan(3);
   });
 });

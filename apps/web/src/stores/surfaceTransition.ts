@@ -88,6 +88,19 @@ export function skipSurfaceTransition(): void {
   running = null;
 }
 
+// 形变进行中的**任意**点击都立即打断它：VT 的快照层在 top layer，动画期间
+// 表面元素被置为 visibility:hidden、点击会穿到下层页面（实测 Chromium 144，
+// pointer-events:none 对覆盖层无效）。用户在形变里点的意图就是「别动画了」——
+// 捕获阶段拦住、立刻跳过，后续交互即刻恢复。代价是那一击本身不落到控件上
+// （可接受：比冻结 300ms 强得多）。
+if (typeof window !== 'undefined') {
+  window.addEventListener(
+    'pointerdown',
+    () => { if (running) skipSurfaceTransition(); },
+    { capture: true },
+  );
+}
+
 export function withSurfaceTransition(update: () => void | Promise<void>): void {
   const doc = document as DocumentWithVT;
   if (!surfaceTransitionAvailable() || typeof doc.startViewTransition !== 'function') {

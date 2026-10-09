@@ -96,8 +96,24 @@
 ::view-transition-new(kb-chat-surface) {
   height: 100%;
 }
+/* 形变进行中快照层不拦截指针：VT 覆盖层在 top layer，默认会把 ~300ms 里的
+   点击/拖拽整个吃掉（实测：面板头部拖拽开不了、按钮拖不动）。形变是视觉层，
+   交互必须穿透。 */
+::view-transition {
+  pointer-events: none;
+}
+/* **排除 root 快照**：VT 默认连整页一起抓来交叉淡化，快照层盖满全视口——
+   实测（Chromium 144）形变进行中**整页**的命中测试都被路由到 <html>，
+   页面冻结 ~300ms（pointer-events:none 救不了）。root 不参与形变后，
+   只有表面自身的快照区不可交互，页面其余部分全程可用；
+   副作用是页面内容不再淡切、瞬时就位——对话表面在既有页面上形变，更干净。 */
+html {
+  view-transition-name: none;
+}
 
-/* 全局悬浮对话按钮（面板收起时显示） */
+/* 全局悬浮对话按钮（面板收起时显示）。
+   位置默认右下角；拖拽后的自由/停靠/隐藏几何由 inline left/top 接管
+   （FloatingChatButton 持久化 + 恢复 clamp），CSS 只保留默认位。 */
 .floating-chat-btn {
   position: fixed;
   right: 24px;
@@ -105,12 +121,14 @@
   width: 52px;
   height: 52px;
   border-radius: 50%;
+  overflow: hidden; /* logo 是 144% 的 img，必须裁进圆里（否则可见 75px = 偏大） */
   background: var(--accent);
   color: #fff;
   border: none;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
   z-index: 90;
-  cursor: pointer;
+  cursor: grab;
+  touch-action: none; /* 指针拖拽不被滚动劫持 */
   display: flex;
   align-items: center;
   justify-content: center;
@@ -122,16 +140,95 @@
   from { opacity: 0; transform: scale(0.6); }
   to   { opacity: 1; transform: scale(1); }
 }
-.floating-chat-btn svg {
-  width: 24px;
-  height: 24px;
-  flex-shrink: 0;
+/* 图标 = Molio 品牌标（public/images/main.png）：圆形裁切 + 放大 120%
+   —— 放大过头波浪圆环会贴着按钮边缘（实测反馈），120% 时环外留 ~13% 呼吸边。
+   img 不参与命中/拖拽。注意必须显式 width/height：img 是替换元素，inset 撑不满
+   （width:auto 取固有尺寸 965px → 图片铺满整页），实测踩过。 */
+.floating-chat-btn__logo {
+  position: absolute;
+  left: -10%;
+  top: -10%;
+  width: 120%;
+  height: 120%;
+  pointer-events: none;
+  user-select: none;
+  border-radius: 50%;
+  transition: opacity 120ms ease;
 }
-.floating-chat-btn:hover {
-  background: var(--accent-strong);
+/* 悬停提示：轻微放大 + 阴影加深（logo 盖住了底色，单换 background 看不见） */
+.floating-chat-btn:hover:not(.is-dragging) {
+  transform: scale(1.08);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.28);
 }
 .floating-chat-btn:active {
   transform: scale(0.96);
+}
+/* 拖拽中：跟手 1:1（left/top 无过渡），微放大 + 阴影加深 = 抓起感 */
+.floating-chat-btn.is-dragging {
+  cursor: grabbing;
+  transform: scale(1.06);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.3);
+  transition: transform 120ms ease, box-shadow 120ms ease;
+}
+/* 压入藏边区的实时预告：朝缘压扁——「正在被吸进去」，松手确认成隐藏 */
+.floating-chat-btn--swallow-left {
+  transform: scaleX(0.55);
+  transform-origin: left center;
+}
+.floating-chat-btn--swallow-right {
+  transform: scaleX(0.55);
+  transform-origin: right center;
+}
+
+/* ── 释放后的滑动（吸附/藏边/唤回）：一次性类启用 transition，超时由 JS 摘除 ── */
+.floating-chat-btn--snap {
+  transition: left 260ms cubic-bezier(0.34, 1.56, 0.64, 1), top 260ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+/* 落缘压扁：延迟到滑动到位（240ms）再播，scaleX 挤一下 = 「磁铁吸上去」 */
+.floating-chat-btn--impact {
+  animation: chat-btn-squash 120ms cubic-bezier(0.34, 1.56, 0.64, 1) 240ms;
+}
+@keyframes chat-btn-squash {
+  0%   { transform: scale(1, 1); }
+  40%  { transform: scale(0.88, 1.06); }
+  100% { transform: scale(1, 1); }
+}
+.floating-chat-btn--hide {
+  transition: left 240ms cubic-bezier(0.55, 0.06, 0.68, 0.19), top 240ms cubic-bezier(0.55, 0.06, 0.68, 0.19);
+}
+.floating-chat-btn--restore {
+  transition: left 200ms cubic-bezier(0.16, 1, 0.3, 1), top 200ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* ── 隐藏态：按钮压入缘里，只露 12px 圆弧小签 + 一道白色抓握痕 ──
+   几何由 inline left 表达（右缘隐藏 = 元素左侧 12px 在视口内）；
+   品牌标淡出——露出的弧面上只读出「一条可以拉的东西」。 */
+.floating-chat-btn--hidden .floating-chat-btn__logo {
+  opacity: 0;
+}
+.floating-chat-btn--hidden::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 14px;
+  border-radius: 1.5px;
+  background: rgba(255, 255, 255, 0.7);
+}
+.floating-chat-btn--edge-right.floating-chat-btn--hidden::after { left: 4px; }
+.floating-chat-btn--edge-left.floating-chat-btn--hidden::after { right: 4px; }
+/* 悬停/聚焦：探出 14px 预览（不承诺；点击才唤回） */
+.floating-chat-btn--hidden {
+  transition: transform 160ms ease-out;
+}
+.floating-chat-btn--edge-right.floating-chat-btn--hidden:hover,
+.floating-chat-btn--edge-right.floating-chat-btn--hidden:focus-visible {
+  transform: translateX(-14px);
+}
+.floating-chat-btn--edge-left.floating-chat-btn--hidden:hover,
+.floating-chat-btn--edge-left.floating-chat-btn--hidden:focus-visible {
+  transform: translateX(14px);
 }
 
 /* 发布面板占住 KB 右侧 pane 时，悬浮按钮让位。
@@ -243,6 +340,15 @@ body.kb-moving {
   .floating-chat-btn {
     animation: none;
     transition: background 120ms ease;
+  }
+  .floating-chat-btn--snap,
+  .floating-chat-btn--hide,
+  .floating-chat-btn--restore,
+  .floating-chat-btn--hidden {
+    transition: none;
+  }
+  .floating-chat-btn--impact {
+    animation: none;
   }
   .floating-chat-btn:active {
     transform: none;
