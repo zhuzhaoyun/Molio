@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { stream } from 'hono/streaming';
 import type { RunManager } from '../core/RunManager.js';
-import { getAgentConfig, setAgentConfig } from '../core/config.js';
+import { getAgentConfig, setAgentConfig, loadConfig } from '../core/config.js';
 import { getAgentDef } from '../core/runtimes/registry.js';
 import { installAgent } from '../core/runtimes/install.js';
 import {
@@ -14,11 +14,17 @@ import type { InstallEvent } from '@molio/contracts';
 
 export function agentsRoutes(runManager: RunManager): Hono {
   const app = new Hono();
+  let scan: { at: number; config: string; agents: ReturnType<RunManager['detectAgents']> } | null = null;
 
-  // GET / — list detected agents (re-scans each call)
+  // Version probes are synchronous subprocesses. Reuse a short-lived snapshot
+  // so simultaneous windows do not block all daemon requests with duplicate scans.
   app.get('/', (c) => {
-    const agents = runManager.detectAgents();
-    return c.json({ agents });
+    const config = JSON.stringify(loadConfig().agents);
+    if (!scan || c.req.query('refresh') === '1' || scan.config !== config || Date.now() - scan.at >= 30_000) {
+      const agents = runManager.detectAgents();
+      scan = { at: Date.now(), config: JSON.stringify(loadConfig().agents), agents };
+    }
+    return c.json({ agents: scan.agents });
   });
 
   // POST /:agentId/test — test agent connectivity with a short run

@@ -117,8 +117,8 @@ const AUTH_JSON_HEADERS = { 'Content-Type': 'application/json' } as const;
 export const api = {
   // ─── Agents ───
 
-  async listAgents(): Promise<AgentInfo[]> {
-    const res = await fetch(`${BASE}/agents`);
+  async listAgents(opts?: { refresh?: boolean }): Promise<AgentInfo[]> {
+    const res = await fetch(`${BASE}/agents${opts?.refresh ? '?refresh=1' : ''}`);
     if (!res.ok) throw new Error(`Failed to fetch agents: ${res.status}`);
     const data = await res.json();
     return data.agents;

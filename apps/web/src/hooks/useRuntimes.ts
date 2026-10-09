@@ -101,7 +101,7 @@ export function useRuntimes() {
     if (rescanState.status === 'running') return;
     setRescanState({ status: 'running' });
     try {
-      const agentsData = await api.listAgents();
+      const agentsData = await api.listAgents({ refresh: true });
       setAgents(agentsData);
       const count = agentsData.filter((a) => a.available).length;
       setRescanState({ status: 'done', count });
