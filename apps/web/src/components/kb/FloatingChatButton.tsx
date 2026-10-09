@@ -1,7 +1,6 @@
 // apps/web/src/components/kb/FloatingChatButton.tsx
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useKbChatPanelOpen, kbChatSessionsStore } from '../../stores/kbChatSessionsStore';
-import { withSurfaceTransitionSync } from '../../stores/surfaceTransition';
 import { useI18n } from '../../i18n';
 
 /** 全局悬浮对话按钮：面板收起时显示，点击展开多会话面板。
@@ -19,6 +18,7 @@ import { useI18n } from '../../i18n';
 
 const BTN_SIZE = 52;
 const TAB_VISIBLE = 12;   // 隐藏态露出的签宽
+const TUCK = 20;          // 吸附预告时嵌入缘里的深度（正圆不变形，滑进口缘）
 const EDGE_MARGIN = 8;    // 自由态/恢复时的最小可见边距
 const SNAP_GAP = 10;      // 吸附预告时按钮与缘的间隙（辉光填充这里）
 const SNAP_ZONE = 48;     // 拖拽中中心距缘 < 48px → 磁吸（松手即隐藏）
@@ -109,27 +109,15 @@ export function FloatingChatButton() {
   } | null>(null);
   // 拖完松手浏览器仍会派发 click——用这个标记吞掉，避免「拖完误开面板」
   const swallowClickRef = useRef(false);
-  const glideTimerRef = useRef<number | null>(null);
-  useEffect(() => () => { if (glideTimerRef.current) window.clearTimeout(glideTimerRef.current); }, []);
-
   const style: React.CSSProperties | undefined = pos
     ? { left: derivedLeft(pos), top: derivedTop(pos) }
     : undefined;
-
-  /** 释放后的一次性滑动动画：加类启用 transition，超时统一摘掉。
-   *  时机与时长成对写在 settle() 里；reduced-motion 下 CSS 直接置 none。 */
-  const finishGlide = useCallback((classes: string[], removeAfterMs: number) => {
+  /** 唤回的一次性滑动：加类启用 transition，超时摘掉；reduced-motion 由 CSS 置 none。 */
+  const glide = useCallback((cls: string, ms: number) => {
     const el = btnRef.current;
     if (!el) return;
-    for (const c of classes) el.classList.add(c);
-    if (glideTimerRef.current) window.clearTimeout(glideTimerRef.current);
-    glideTimerRef.current = window.setTimeout(() => {
-      glideTimerRef.current = null;
-      el.classList.remove(
-        'floating-chat-btn--snap', 'floating-chat-btn--impact',
-        'floating-chat-btn--hide', 'floating-chat-btn--restore',
-      );
-    }, removeAfterMs);
+    el.classList.add(cls);
+    window.setTimeout(() => el.classList.remove(cls), ms);
   }, []);
 
   const settle = useCallback(() => {
@@ -153,14 +141,14 @@ export function FloatingChatButton() {
         y: d.edge === 'left' || d.edge === 'right' ? Math.round(d.y) : null,
         hidden: true,
       };
-      finishGlide(['floating-chat-btn--hide'], 300);
+      glide('floating-chat-btn--hide', 300);
     } else {
       // 自由位：原地落定，无滑动
       next = { edge: null, x: clampFreeX(d.x), y: clampY(d.y), hidden: false };
     }
     setPos(next);
     persistBtnPos(next);
-  }, [finishGlide]);
+  }, []);
   const settleRef = useRef(settle);
   useEffect(() => { settleRef.current = settle; }, [settle]);
 
@@ -204,9 +192,9 @@ export function FloatingChatButton() {
     el.classList.toggle('floating-chat-btn--swallow-top', edge === 'top');
     el.classList.toggle('floating-chat-btn--swallow-bottom', edge === 'bottom');
     d.edge = edge;
-    // 磁吸：垂直轴钉在距缘 SNAP_GAP 处（缝隙由辉光填充，见 CSS），平行轴继续跟手
-    d.x = edge === 'left' ? SNAP_GAP : edge === 'right' ? window.innerWidth - BTN_SIZE - SNAP_GAP : rawX;
-    d.y = edge === 'top' ? SNAP_GAP : edge === 'bottom' ? window.innerHeight - BTN_SIZE - SNAP_GAP : rawY;
+    // 磁吸：垂直轴钉在「嵌入 TUCK」处（正圆滑进缘口，不变形——压扁方案被否），平行轴继续跟手
+    d.x = edge === 'left' ? -TUCK : edge === 'right' ? window.innerWidth - BTN_SIZE + TUCK : rawX;
+    d.y = edge === 'top' ? -TUCK : edge === 'bottom' ? window.innerHeight - BTN_SIZE + TUCK : rawY;
     el.style.left = `${d.x}px`;
     el.style.top = `${d.y}px`;
   }, []);
@@ -239,11 +227,11 @@ export function FloatingChatButton() {
       const next: BtnPos = { ...p, hidden: false };
       setPos(next);
       persistBtnPos(next);
-      finishGlide(['floating-chat-btn--restore'], 280);
+      glide('floating-chat-btn--restore', 280);
       return;
     }
-    withSurfaceTransitionSync(() => kbChatSessionsStore.setPanelOpen(true));
-  }, [finishGlide]);
+    kbChatSessionsStore.setPanelOpen(true);
+  }, []);
 
   if (panelOpen) return null; // 面板展开时不显示按钮
   const cls =

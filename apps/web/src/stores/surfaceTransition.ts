@@ -21,12 +21,12 @@ type DocumentWithVT = Document & {
   startViewTransition?: (update: () => void | Promise<void>) => unknown;
 };
 
-/** 当前可见的对话表面（面板展开 > 悬浮按钮 > 全屏 shell，按同屏互斥顺序判定）。 */
+/** 当前可见的对话表面（面板展开 > 全屏 shell；按钮**不是**表面形态——
+ *  它是启动器：52px 的商标标被 VT 放大到整页是实测被否的突兀效果，
+ *  按钮开合走自己的 CSS 升起/淡出语言）。 */
 function surfaceElement(): HTMLElement | null {
   const panel = document.querySelector<HTMLElement>('[data-testid="kb-chat-panel"]');
   if (panel && !panel.classList.contains('floating-chat-panel--closed')) return panel;
-  const btn = document.querySelector<HTMLElement>('[data-testid="floating-chat-btn"]');
-  if (btn) return btn;
   return document.querySelector<HTMLElement>('.home-page.chat-active');
 }
 
@@ -36,7 +36,7 @@ function nameSurface(): void {
 
 function clearSurfaceNames(): void {
   for (const el of document.querySelectorAll<HTMLElement>(
-    '[data-testid="kb-chat-panel"], [data-testid="floating-chat-btn"], .home-page.chat-active',
+    '[data-testid="kb-chat-panel"], .home-page.chat-active',
   )) {
     el.style.removeProperty('view-transition-name');
   }

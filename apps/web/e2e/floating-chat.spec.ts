@@ -830,7 +830,7 @@ test.describe('Floating chat (方案 D)', () => {
     const hint = await btn.evaluate((el) => getComputedStyle(el as HTMLElement, '::before').content);
     expect(hint).not.toBe('none');
     let box = (await btn.boundingBox())!;
-    expect(Math.abs(box.x + box.width - (vw - 10))).toBeLessThan(3); // 磁吸：钉在距缘 10px（缝隙透辉光）
+    expect(Math.abs(box.x - (vw - 32))).toBeLessThan(3); // 磁吸：半嵌入——可见 32px（嵌入 20px）
 
     // 吸附状态下松手 → 自动吸进缘里隐藏（只露 12px 小签）
     await page.mouse.up();

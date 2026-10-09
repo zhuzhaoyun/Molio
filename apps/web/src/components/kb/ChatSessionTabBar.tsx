@@ -237,16 +237,20 @@ export function ChatSessionTabBar({ sessions, activeSessionId, runningSessionIds
           <line x1="5" y1="12" x2="19" y2="12" />
         </svg>
       </button>
-      <button
-        type="button"
-        className="chat-session-tab-fullscreen"
-        data-testid="kb-chat-fullscreen"
-        aria-label="全屏"
-        title="全屏"
-        onClick={onEnterFullscreen}
-      >
-        <ExpandIcon />
-      </button>
+      {/* 「全屏」只在有会话时可用：没有任何标签时全屏 = 落到一个无头 landing，
+          用户会被困在没有最小化按钮的页面里（2026-10-10 用户实测踩中） */}
+      {sessions.length > 0 && (
+        <button
+          type="button"
+          className="chat-session-tab-fullscreen"
+          data-testid="kb-chat-fullscreen"
+          aria-label="全屏"
+          title="全屏"
+          onClick={onEnterFullscreen}
+        >
+          <ExpandIcon />
+        </button>
+      )}
       <button
         type="button"
         className="chat-session-tab-dock"

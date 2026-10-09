@@ -152,14 +152,15 @@ export function HomePage({
     <AgentsUnavailableCard onRetry={onRetryAgents} />
   ) : noRuntime ? noRuntimeCard : null;
 
-  const hasMessages = (state?.messages.length ?? 0) > 0;
-  // 全屏 shell 判据：有消息 **或** 活动标签已绑定一个持久化 conversation（DB 历史
-  // 仍在加载中）。返回型会话在历史到达前 messages 仍是空的——若按空处理会回落到
-  // landing，闪一下 hero + FirstRunOnboarding。landing 只服务真正的「无会话」。
-  const shellMode = hasMessages || (activeSession?.conversationId ?? null) !== null;
+  // 全屏 shell 判据：**有活动标签即为全屏态**。landing 只服务真正的「无会话」。
+  // 旧判据「有消息或已绑定 conversation」会让全新空会话（用户刚新建、还没发第一条）
+  // 点「全屏」落到 landing——landing 没有 header 和最小化按钮，用户被困在无头页面
+  // （2026-10-10 用户实测踩中）。空会话的全屏态 = header + 空消息区 + composer，
+  // 语义自洽；「无会话」才回到 hero + FirstRunOnboarding。
+  const shellMode = activeSession != null;
 
-  // ── 全屏 shell：活动标签有消息，或其持久化历史仍在加载 ──
-  if (shellMode && activeSession) {
+  // ── 全屏 shell：存在活动标签 ──
+  if (activeSession) {
     const initialFileRefs: FileRef[] =
       activeSession.mode === 'qa' && activeSession.filePath && activeSession.vaultId
         ? [{ vaultId: activeSession.vaultId, filePath: activeSession.filePath }]
@@ -272,9 +273,9 @@ export function HomePage({
         <div className="home-composer-wrap">
           {composerFallback ?? (
             <ChatComposer
-              // 有活动会话（可能刚新建、尚无消息）时沿用其命名空间，与全屏 shell 的
-              // composerKey 一致 → 两态之间切换不丢草稿。
-              composerKey={activeSession ? sessionComposerKey(activeSession.id, activeSession.filePath) : LANDING_COMPOSER_KEY}
+              // landing 只在「无任何活动标签」时可达（有活动标签在上方就 return 进
+              // 全屏 shell 了），composer 固定用落地页命名空间。
+              composerKey={LANDING_COMPOSER_KEY}
               isRunning={state?.isRunning ?? false}
               onSend={handleLandingSend}
               onCancel={state ? state.cancel : () => {}}
