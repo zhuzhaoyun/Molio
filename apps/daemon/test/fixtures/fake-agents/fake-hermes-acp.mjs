@@ -57,7 +57,16 @@ const EXIT_DURING_PROMPT = process.env['FAKE_HERMES_EXIT_DURING_PROMPT'] === '1'
 const PROMPT_MODE = process.env['FAKE_HERMES_PROMPT_MODE'] ?? 'normal';
 const PROMPT_HANG_WITH_STDERR = process.env['FAKE_HERMES_PROMPT_HANG_WITH_STDERR'] === '1';
 
-const SESSION_ID = 'fake-session-0001';
+// Multi-session support (mirrors real hermes's _sessions dict): every
+// session/new gets a UNIQUE id so pooled-process tests can run several
+// sessions against one fake server and assert event demux by sessionId.
+let sessionCounter = 0;
+function newSessionId() {
+  sessionCounter += 1;
+  return `fake-session-${String(sessionCounter).padStart(4, '0')}`;
+}
+/** Sessions created by this process (for prompt/cancel sessionId echo). */
+const knownSessions = new Set();
 
 function send(obj) {
   process.stdout.write(JSON.stringify(obj) + '\n');
@@ -108,9 +117,11 @@ function handleRequest(msg) {
 
   if (msg.method === 'session/new') {
     const respond = () => {
+      const sessionId = newSessionId();
+      knownSessions.add(sessionId);
       send({
         jsonrpc: '2.0', id: msg.id, result: {
-          sessionId: SESSION_ID,
+          sessionId,
           models: {
             availableModels: [
               { modelId: 'fake:model-a', name: 'Model A' },
@@ -124,7 +135,7 @@ function handleRequest(msg) {
       // Session-init notifications (real hermes pushes these on connect)
       send({
         jsonrpc: '2.0', method: 'session/update',
-        params: { sessionId: SESSION_ID, update: {
+        params: { sessionId, update: {
           sessionUpdate: 'available_commands_update', availableCommands: [],
         } },
       });
@@ -168,24 +179,29 @@ function handleRequest(msg) {
       send({ jsonrpc: '2.0', id: msg.id, result: { stopReason: 'refusal' } });
       return;
     }
-    // Stream a text delta + a tool call, then end the turn
+    // Stream a text delta + a tool call, then end the turn. Echo the
+    // request's sessionId (multi-session demux depends on it); fall back to
+    // the newest known session for callers that omit it.
+    const sid = typeof msg.params?.sessionId === 'string'
+      ? msg.params.sessionId
+      : [...knownSessions].pop();
     send({
       jsonrpc: '2.0', method: 'session/update',
-      params: { sessionId: SESSION_ID, update: {
+      params: { sessionId: sid, update: {
         sessionUpdate: 'agent_message_chunk',
         content: { type: 'text', text: 'Hello from fake hermes' },
       } },
     });
     send({
       jsonrpc: '2.0', method: 'session/update',
-      params: { sessionId: SESSION_ID, update: {
+      params: { sessionId: sid, update: {
         sessionUpdate: 'tool_call',
         toolCallId: 'tc-1', title: 'Bash', rawInput: { command: 'echo hi' },
       } },
     });
     send({
       jsonrpc: '2.0', method: 'session/update',
-      params: { sessionId: SESSION_ID, update: {
+      params: { sessionId: sid, update: {
         sessionUpdate: 'tool_call_update',
         toolCallId: 'tc-1', status: 'completed', rawOutput: 'hi\n',
       } },

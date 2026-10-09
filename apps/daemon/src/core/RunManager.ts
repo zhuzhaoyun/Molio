@@ -697,12 +697,14 @@ export class RunManager {
       (json) => {
         if (child.stdin?.writable) child.stdin.write(json, 'utf8');
       },
-      (ev) => this.emitEvent(run, ev),
-      // On idle/absolute timeout the transport rejects the pending request,
-      // then calls this to kill the child so a hung hermes-acp/dsh doesn't leak
-      // until the 30-min TTL. Tree-kills on Windows (the cmd.exe wrapper's node
-      // grandchild would otherwise be orphaned); SIGTERM→SIGKILL on POSIX.
-      () => killAgentProcessTree(child),
+      {
+        onTransportEvent: (ev) => this.emitEvent(run, ev),
+        // On idle/absolute timeout the transport rejects the pending request,
+        // then calls this to kill the child so a hung hermes-acp/dsh doesn't leak
+        // until the 30-min TTL. Tree-kills on Windows (the cmd.exe wrapper's node
+        // grandchild would otherwise be orphaned); SIGTERM→SIGKILL on POSIX.
+        killChild: () => killAgentProcessTree(child),
+      },
     );
 
     // Assign to run.acp early (sessionId filled in after session/new) so the
@@ -744,6 +746,10 @@ export class RunManager {
       throw new Error('session/new returned no sessionId');
     }
     run.acp.sessionId = sessionId;
+    // Route this session's session/update notifications to the run's event
+    // stream (the transport demuxes by sessionId; unregistered sessions are
+    // dropped).
+    transport.registerSession(sessionId, (ev) => this.emitEvent(run, ev));
 
     // Capture available models for the frontend. Two session/new shapes exist:
     //  - hermes: session.models.availableModels [{modelId, name}] + currentModelId

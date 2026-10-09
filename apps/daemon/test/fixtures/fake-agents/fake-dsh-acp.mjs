@@ -50,7 +50,15 @@ const MODEL_MISSING = process.env['FAKE_DSH_MODEL_MISSING'] === '1';
 const STDERR_SAMPLE = process.env['FAKE_DSH_STDERR_SAMPLE'] === '1';
 const NO_API_KEY = process.env['FAKE_DSH_NO_API_KEY'] === '1';
 
-const SESSION_ID = 'fake-dsh-session-0001';
+// Multi-session support: every session/new gets a UNIQUE id so pooled-process
+// tests can run several sessions against one fake server (same protocol shape
+// as real dsh, which also keys sessions internally).
+let sessionCounter = 0;
+function newSessionId() {
+  sessionCounter += 1;
+  return `fake-dsh-session-${String(sessionCounter).padStart(4, '0')}`;
+}
+const knownSessions = new Set();
 
 // dsh model configOption leaf values are JSON-encoded [provider, model] tuples.
 const tuple = (provider, model) => JSON.stringify([provider, model]);
@@ -86,9 +94,11 @@ function handleRequest(msg) {
           { name: 'DeepSeek V4 Flash', value: tuple('deepseek-official', 'deepseek-v4-flash') },
           { name: 'DeepSeek-V4-Pro', value: tuple('deepseek-official', 'deepseek-v4-pro') },
         ];
+    const sessionId = newSessionId();
+    knownSessions.add(sessionId);
     send({
       jsonrpc: '2.0', id: msg.id, result: {
-        sessionId: SESSION_ID,
+        sessionId,
         // dsh shape: configOptions (grouped select), NOT models.availableModels.
         configOptions: [
           {
@@ -144,24 +154,28 @@ function handleRequest(msg) {
       process.stderr.write('dsh: warning: 1 entry did not activate\n');
       process.stderr.write('dsh: error: provider key missing\n');
     }
+    // Echo the request's sessionId in all updates (multi-session demux).
+    const sid = typeof msg.params?.sessionId === 'string'
+      ? msg.params.sessionId
+      : [...knownSessions].pop();
     const streamTurn = () => {
       send({
         jsonrpc: '2.0', method: 'session/update',
-        params: { sessionId: SESSION_ID, update: {
+        params: { sessionId: sid, update: {
           sessionUpdate: 'agent_message_chunk',
           content: { type: 'text', text: 'Hello from fake dsh' },
         } },
       });
       send({
         jsonrpc: '2.0', method: 'session/update',
-        params: { sessionId: SESSION_ID, update: {
+        params: { sessionId: sid, update: {
           sessionUpdate: 'tool_call',
           toolCallId: 'tc-1', title: 'Bash', rawInput: { command: 'echo hi' },
         } },
       });
       send({
         jsonrpc: '2.0', method: 'session/update',
-        params: { sessionId: SESSION_ID, update: {
+        params: { sessionId: sid, update: {
           sessionUpdate: 'tool_call_update',
           toolCallId: 'tc-1', status: 'completed', rawOutput: 'hi\n',
         } },
@@ -187,7 +201,7 @@ function handleRequest(msg) {
       send({
         jsonrpc: '2.0', id: reqId, method: 'session/request_permission',
         params: {
-          sessionId: SESSION_ID,
+          sessionId: sid,
           toolCall: { title: 'Bash', kind: 'execute' },
           options,
         },
