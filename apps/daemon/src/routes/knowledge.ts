@@ -337,7 +337,13 @@ export function knowledgeRoutes(
     }
 
     try {
-      const absPath = resolveFilePath(vault.path, relPath);
+      // Match text-file resolution so bare ![[image.png]] embeds can find
+      // nested attachments. The canonical resolver also checks vault bounds.
+      const canonical = resolveCanonicalPath(vault.path, relPath);
+      if (!canonical) {
+        return c.json({ error: { code: 'NOT_FOUND', message: `File not found: ${relPath}` } }, 404);
+      }
+      const absPath = resolveFilePath(vault.path, canonical);
       const ext = path.extname(absPath).toLowerCase();
       const mime = RAW_MIME[ext] ?? 'application/octet-stream';
       const stat = statSync(absPath);

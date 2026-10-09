@@ -62,6 +62,28 @@ describe('Knowledge routes — file operations', () => {
 
   // ─── File CRUD ───
 
+  describe('raw attachments', () => {
+    it('serves a nested image by basename and encoded full path', async () => {
+      mkdirSync(join(vaultDir, 'wiki/images/book'), { recursive: true });
+      const relative = 'wiki/images/book/图 (1).png';
+      const image = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
+      writeFileSync(join(vaultDir, relative), image);
+      for (const target of ['图 (1).png', relative]) {
+        const res = await app.request(`/api/knowledge/vaults/${vaultId}/raw/${encodeURIComponent(target)}`);
+        assert.equal(res.status, 200);
+        assert.equal(res.headers.get('Content-Type'), 'image/png');
+        assert.deepEqual(Buffer.from(await res.arrayBuffer()), image);
+      }
+    });
+
+    it('does not fall back by basename for wrong directories or vault escapes', async () => {
+      for (const target of ['missing/图 (1).png', '../secret.png']) {
+        const res = await app.request(`/api/knowledge/vaults/${vaultId}/raw/${encodeURIComponent(target)}`);
+        assert.equal(res.status, 404);
+      }
+    });
+  });
+
   describe('POST /vaults/:id/files/* — create/write file', () => {
     it('should create a new file at vault root', async () => {
       const res = await app.request(`/api/knowledge/vaults/${vaultId}/files/hello.md`, {

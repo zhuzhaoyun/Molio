@@ -506,4 +506,131 @@ describe('linkpass CJK guard + residue cleanup (issue #257)', () => {
       fs.rmSync(vault3, { recursive: true, force: true });
     }
   });
+
+  // Emphasis markers are transparent to the guards, exactly like link syntax.
+  // `精神**对数学**的发展` renders as the bolded word 对数学 — it is NOT a
+  // standalone mention of 对数. Reading the raw `*` made the guard judge a
+  // word-initial page name to be free-standing and wrap it into `[[对数]]学`:
+  // deadcheck-invisible (对数.md exists) but a wrong sentence nonetheless.
+  it('guards read through emphasis markers instead of raw * markup', () => {
+    writeWiki2('concepts/对数.md', FRONTMATTER('对数') + '# 对数\n\n对数是指数的逆运算。\n');
+    writeWiki2(
+      'concepts/p-em.md',
+      FRONTMATTER('p-em') + '# p-em\n\n《原本》体现的理性精神**对数学**的发展产生了深远影响。\n',
+    );
+    const r = run(LINKPASS, ['--vault', vault2, '--batches', batchesDir()]);
+    assert.equal(r.status, 0, r.stderr);
+    const c = readWiki2('concepts/p-em.md');
+    assert.ok(c.includes('**对数学**'), `对数学 must stay intact, got: ${c}`);
+    assert.ok(!c.includes('[[对数]]'), `must not wrap the 对数 inside 对数学, got: ${c}`);
+    fs.rmSync(wikiFile2('concepts/p-em.md'), { force: true });
+    fs.rmSync(wikiFile2('concepts/对数.md'), { force: true });
+  });
+
+  // Wrapping the *left* neighbor must not re-open the question either: the
+  // verdict has to read the same before and after, or the pass would keep
+  // adding links on every run.
+  it('emphasis verdict stays idempotent across runs', () => {
+    writeWiki2('concepts/幂函数.md', FRONTMATTER('幂函数') + '# 幂函数\n\n函数在**幂函数**下的性质。\n');
+    run(LINKPASS, ['--vault', vault2, '--batches', batchesDir()]);
+    const r = run(LINKPASS, ['--vault', vault2, '--batches', batchesDir()]);
+    assert.equal(r.status, 0, r.stderr);
+    assert.equal(r.meta!.addedLinks, 0, `re-run must add nothing, stderr: ${r.stderr}`);
+    fs.rmSync(wikiFile2('concepts/幂函数.md'), { force: true });
+  });
+
+  it('reads linked neighbors through emphasis markers on subsequent passes', () => {
+    writeWiki2('concepts/精神.md', FRONTMATTER('精神') + '# 精神\n');
+    writeWiki2('concepts/对数.md', FRONTMATTER('对数') + '# 对数\n');
+    writeWiki2('concepts/em-linked.md', FRONTMATTER('em-linked') + '# em-linked\n\n精神**对数学**的发展。\n');
+    try {
+      const first = run(LINKPASS, ['--vault', vault2, '--batches', batchesDir()]);
+      assert.equal(first.status, 0, first.stderr);
+      const content = readWiki2('concepts/em-linked.md');
+      assert.ok(content.includes('[[精神]]**对数学**'), content);
+      const second = run(LINKPASS, ['--vault', vault2, '--batches', batchesDir()]);
+      assert.equal(second.status, 0, second.stderr);
+      assert.equal(readWiki2('concepts/em-linked.md'), content);
+    } finally {
+      for (const f of ['concepts/精神.md', 'concepts/对数.md', 'concepts/em-linked.md']) {
+        fs.rmSync(wikiFile2(f), { force: true });
+      }
+    }
+  });
+
+  // The both-sides-Han test only fires with Han on BOTH sides, so a page name
+  // that is the PREFIX of a longer word slips through whenever the left
+  // neighbour is punctuation or a space: 平面向量 became [[平面]]向量,
+  // 对数学 became [[对数]]学 (found live while reconciling a maths vault).
+  // The vault names its own offenders in one small file rather than the script
+  // carrying a subject-specific lexicon.
+  it('honours the vault-side compound list for prefix mis-splits', () => {
+    writeWiki2('concepts/对数.md', FRONTMATTER('对数') + '# 对数\n\n对数是指数的逆运算。\n');
+    writeWiki2('concepts/平面.md', FRONTMATTER('平面') + '# 平面\n\n平面是无限延展的。\n');
+    writeWiki2(
+      'concepts/p-compound.md',
+      FRONTMATTER('p-compound')
+      // 左边的邻居必须是「非汉字」（空格 / 标点），才是真正的漏网形态：
+      // 若写成「体现了对数学」，前邻的 了 本身就是汉字，旧防护已经拦住了，
+      // 这条断言就跑不到新代码。
+      + '# p-compound\n\n第六章 平面向量及其应用。\n\n本节讨论，对数学发展有影响。\n\n见[[平面]]与[[对数]]。\n',
+    );
+    fs.writeFileSync(
+      wikiFile2('.linkpass-compounds.json'),
+      JSON.stringify({ 对数: ['学'], 平面: ['向'] }),
+      'utf8',
+    );
+
+    const r = run(LINKPASS, ['--vault', vault2, '--batches', batchesDir()]);
+    assert.equal(r.status, 0, r.stderr);
+    const c = readWiki2('concepts/p-compound.md');
+    assert.ok(c.includes('平面向量及其应用'), `平面向量 must stay intact, got: ${c}`);
+    assert.ok(c.includes('对数学发展'), `对数学 must stay intact, got: ${c}`);
+    assert.ok(!c.includes('[[平面]]向'), `must not split 平面向量, got: ${c}`);
+    assert.ok(!c.includes('[[对数]]学'), `must not split 对数学, got: ${c}`);
+    // 显式链接不因这条防护而被动过
+    assert.ok(c.includes('见[[平面]]与[[对数]]'), `explicit links must survive, got: ${c}`);
+
+    // 幂等：重跑不加也不删
+    const r2 = run(LINKPASS, ['--vault', vault2, '--batches', batchesDir()]);
+    assert.equal(r2.meta!.addedLinks, 0, `re-run must add nothing, stderr: ${r2.stderr}`);
+    assert.equal(readWiki2('concepts/p-compound.md'), c, 're-run must not rewrite');
+
+    for (const f of ['concepts/p-compound.md', 'concepts/对数.md', 'concepts/平面.md', '.linkpass-compounds.json']) {
+      fs.rmSync(wikiFile2(f), { force: true });
+    }
+  });
+});
+
+// Attachment references written as a vault-relative path must resolve by that
+// path. Resolution falls back to a vault-wide basename lookup, which is only
+// safe while every basename is unique — a vault holding two books (each with
+// its own images/<stem>/001.png) breaks that assumption immediately.
+describe('attachment resolution — path-form references across sources', () => {
+  it('a full vault-relative path is not "ambiguous" when another source shares the basename', () => {
+    const v = fs.mkdtempSync(path.join(os.tmpdir(), 'molio-attach-test-'));
+    try {
+      const w = (rel: string, content: string) => {
+        const abs = path.join(v, 'wiki', rel);
+        fs.mkdirSync(path.dirname(abs), { recursive: true });
+        fs.writeFileSync(abs, content, 'utf8');
+      };
+      w('images/甲册/001.png', 'x');
+      w('images/乙册/001.png', 'x');
+      w('concepts/a.md', FRONTMATTER('a') + '# a\n\n![[wiki/images/甲册/001.png]]\n');
+
+      const r = run(DEADCHECK, ['--vault', v]);
+      assert.equal(r.status, 0, `path-form embed must resolve, stdout: ${r.stdout}`);
+      assert.equal(r.meta!.deadEmbeds, 0, `stderr: ${r.stderr}`);
+
+      // …while a bare filename genuinely is ambiguous and must still be caught,
+      // or the very check that motivated the path form would go silent.
+      w('concepts/b.md', FRONTMATTER('b') + '# b\n\n![[001.png]]\n');
+      const r2 = run(DEADCHECK, ['--vault', v]);
+      assert.equal(r2.status, 1, `bare ambiguous name must still fail, stdout: ${r2.stdout}`);
+      assert.equal(r2.meta!.deadEmbeds, 1, `stderr: ${r2.stderr}`);
+    } finally {
+      fs.rmSync(v, { recursive: true, force: true });
+    }
+  });
 });

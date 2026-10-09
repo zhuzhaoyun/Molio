@@ -184,8 +184,13 @@ function cmdPrepare(opts) {
     process.stderr.write(`[prep] ERROR: cannot read source: ${e.message}\n`);
     process.exit(2);
   }
-  if (source.includes('.molio')) {
-    warnings.push('source 位于 .molio 下——通常应对原始源文件运行 prep.js，而非对 transcode 副本重复运行');
+  // The footgun this guards against is re-running prep on ITS OWN output: the
+  // transcode is already line-normalized, so a second pass is a silent no-op
+  // that looks like it worked. media-<stem>.md is the opposite case — media.mjs
+  // writes it into .molio/wiki-build/ ON PURPOSE as the source prep should
+  // consume, so warning about it would train the agent to ignore the warning.
+  if (source.includes('.molio') && !/^media-/.test(path.basename(source))) {
+    warnings.push('source 位于 .molio 下——通常应对原始源文件运行 prep.mjs，而非对 transcode 副本重复运行');
   }
 
   // Encoding
@@ -514,7 +519,13 @@ function cmdVerify(opts) {
   const quotes = new Set();
   const add = (q) => {
     const norm = q.replace(/\s+/g, '');
-    if (norm.length >= 6 && norm.length <= 120) quotes.add(norm);
+    if (norm.length < 6 || norm.length > 120) return;
+    // 含公式的引文跳过逐字核验。数学语料里页面上的公式是**我们按数学含义
+    // 重写的干净 LaTeX**（源文本里往往是 OCR 的坏公式 `CuA`、`[_U A`，
+    // 甚至整段丢失），字符层面必然对不上——比对失败是排版差异，不是错引，
+    // 报了也没有任何可操作性。实测一个 35 页的教材章节因此报了 98 条。
+    if (norm.includes('$')) return;
+    quotes.add(norm);
   };
   for (const m of page.matchAll(/「([^」\n]{6,120})」/g)) add(m[1]);
   for (const m of page.matchAll(/“([^”\n]{6,120})”/g)) add(m[1]);

@@ -28,6 +28,7 @@ export function MdTypesetEditor({
   initialContent,
   onContentChange,
   vaultId,
+  selectedFile,
   onNavigateToFile,
 }: MdTypesetEditorProps) {
   const [content, setContent] = useState(initialContent);
@@ -131,8 +132,11 @@ export function MdTypesetEditor({
   // preprocessKbMarkdown keeps any leading YAML frontmatter block verbatim —
   // rewriting [[wikilinks]] inside it would corrupt the YAML (see useKnowledge).
   const previewContent = useMemo(
-    () => preprocessKbMarkdown(content, vaultId),
-    [content, vaultId],
+    // selectedFile lets `![](图.png)` resolve against this note's folder
+    // (Obsidian's rule) instead of the SPA origin. Preview and the read view
+    // must agree, or images appear while editing and vanish once saved.
+    () => preprocessKbMarkdown(content, vaultId, selectedFile ?? undefined),
+    [content, vaultId, selectedFile],
   );
 
   return (

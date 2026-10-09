@@ -54,6 +54,7 @@
       "paths": [
         "apps/web/src/components/kb/*",
         "apps/web/src/hooks/useKnowledge*",
+        "apps/web/src/utils/kbImage*",
         "apps/web/src/hooks/useKbTabs*",
         "apps/web/src/stores/kbChatSessionsStore*",
         "apps/daemon/src/core/knowledge.ts",
@@ -67,6 +68,7 @@
         "create-vault-form",
         "knowledge",
         "markdown-render",
+        "kb-images",
         "kb-tree-sort-locate",
         "kb-chat-entry",
         "kb-chat-sessions",
