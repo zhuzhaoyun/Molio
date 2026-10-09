@@ -75,6 +75,10 @@ const zh: Record<string, string> = {
   'home.noRuntimeTitle': '未安装 AI 运行时',
   'home.noRuntimeDesc': '安装 Claude Code / Codex 等运行时后即可开始对话',
   'home.openRuntimes': '去安装运行时',
+  // 「取不到运行时列表」（请求失败）—— 与「没装」严格区分，见 AgentsUnavailableCard
+  'home.agentsUnavailableTitle': '获取运行时列表失败',
+  'home.agentsUnavailableDesc': '连不上后端服务，暂时无法确认已安装的运行时。请确认 Molio 后端已启动。',
+  'home.agentsRetry': '重试',
 
   // ── ChatComposer ──
   'composer.noAgent': '没有可用的代理',

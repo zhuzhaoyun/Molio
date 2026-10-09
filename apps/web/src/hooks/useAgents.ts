@@ -26,7 +26,9 @@ export function useAgents() {
   const fetchAgents = () => {
     setLoading(true);
     api.listAgents()
-      .then(setAgents)
+      // 成功必须清掉 error：否则失败一次后 error 永久残留，重试成功后
+      // 界面仍按「取不到」渲染（错误是粘性的，而状态不是）。
+      .then((list) => { setAgents(list); setError(null); })
       .catch((err) => setError((err as Error).message))
       .finally(() => setLoading(false));
   };

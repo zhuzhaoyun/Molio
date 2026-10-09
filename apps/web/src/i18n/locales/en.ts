@@ -75,6 +75,11 @@ const en: Record<string, string> = {
   'home.noRuntimeTitle': 'No AI runtime installed',
   'home.noRuntimeDesc': 'Install Claude Code, Codex, or another runtime to start chatting',
   'home.openRuntimes': 'Install runtime',
+  // "Could not fetch the runtime list" (request failed) — kept strictly distinct from
+  // "nothing installed"; see AgentsUnavailableCard.
+  'home.agentsUnavailableTitle': 'Couldn\'t load runtimes',
+  'home.agentsUnavailableDesc': 'Cannot reach the backend service, so installed runtimes are unknown. Make sure the Molio backend is running.',
+  'home.agentsRetry': 'Retry',
 
   // ── ChatComposer ──
   'composer.noAgent': 'No agent available',

@@ -94,10 +94,15 @@ function VaultSwitchNotice({ visible }: { visible: boolean }) {
 }
 
 export default function App() {
-  const { agents, loading: agentsLoading } = useAgents();
+  const { agents, loading: agentsLoading, error: agentsError, refresh: refreshAgents } = useAgents();
   // 从 agents 列表判定「无可用运行时」，而非依赖 selection：selection 在首帧
   // 绘制后才生效（会闪空状态卡片），且所选 agent 被移除时 selection 会变 stale。
-  const hasNoUsableAgent = agents.length === 0 || !agents.some((a) => a.available);
+  //
+  // 必须排除「请求失败」：失败时 agents 一定是空数组，若照上面的式子判定，
+  // 就会把「后端连不上」报成「一个运行时都没装」，把用户推去安装他装好的东西。
+  // 失败是独立的一态（见 agentsUnavailable），两者不能共用一张卡片。
+  const hasNoUsableAgent = !agentsError && (agents.length === 0 || !agents.some((a) => a.available));
+  const agentsUnavailable = !agentsLoading && Boolean(agentsError);
   const navigate = useNavigate();
   const location = useLocation();
   const [defaultAgentId, setDefaultAgentId] = useState<string | null>(null);
@@ -351,6 +356,8 @@ export default function App() {
                   selectedAgentName={agents.find((a) => a.id === selectedAgent)?.name ?? null}
                   agentsReady={!agentsLoading}
                   hasNoUsableAgent={hasNoUsableAgent}
+                  agentsUnavailable={agentsUnavailable}
+                  onRetryAgents={refreshAgents}
                   onOpenRuntimes={() => navigate('/settings?tab=runtimes')}
                   messages={chat.messages}
                   isRunning={chat.isRunning}

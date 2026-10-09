@@ -13,6 +13,7 @@ import { ActivityTree } from './ActivityTree';
 import type { ActivityInfo } from '@molio/contracts';
 import { PanelIcon } from './icons';
 import { NoRuntimeCard } from './NoRuntimeCard';
+import { AgentsUnavailableCard } from './AgentsUnavailableCard';
 import { FirstRunOnboarding } from './home/FirstRunOnboarding';
 
 // 会话产出面板只在 dock 展开时渲染，却把整条 doocs-md/marked/highlight.js
@@ -32,8 +33,15 @@ interface Props {
   selectedAgentName: string | null;
   /** agents 列表是否已加载完成（避免加载中闪空状态卡片）。 */
   agentsReady: boolean;
-  /** agents 列表判定无可用代理（空列表或全部不可用）。 */
+  /** agents 列表判定无可用代理（空列表或全部不可用）。请求失败时为 false。 */
   hasNoUsableAgent: boolean;
+  /**
+   * agents 列表**取不到**（请求失败 / 后端没起来）。
+   * 与 hasNoUsableAgent 互斥：前者是「问不到」，后者是「问到了，一个都没有」。
+   */
+  agentsUnavailable: boolean;
+  /** 取不到 agents 列表时的重试回调（必给：否则会渲染出一个点了没反应的「重试」）。 */
+  onRetryAgents: () => void;
   /** 无可用代理时跳转「设置 → 运行时」的回调。 */
   onOpenRuntimes: () => void;
   messages: ChatMessage[];
@@ -61,6 +69,8 @@ export function HomePage({
   selectedAgentName,
   agentsReady,
   hasNoUsableAgent,
+  agentsUnavailable,
+  onRetryAgents,
   onOpenRuntimes,
   messages,
   isRunning,
@@ -138,7 +148,13 @@ export function HomePage({
   // 无可用代理时用空状态卡片替代输入框，引导用户去「设置 → 运行时」安装。
   // 用 agents 列表判定（hasNoUsableAgent）而非 selection：selection 在首帧绘制后
   // 才生效会闪空状态卡片，且所选 agent 被移除时 selection 会 stale。
-  const composerArea = agentsReady && hasNoUsableAgent ? (
+  //
+  // 顺序要紧：先判「取不到」（请求失败），再判「取到了但没有可用的」。
+  // 反过来会把「后端连不上」渲染成「没装运行时」——两者对用户的含义与
+  // 该做的动作完全不同（一个去检查后端/重试，一个去装运行时）。
+  const composerArea = agentsUnavailable ? (
+    <AgentsUnavailableCard onRetry={onRetryAgents} />
+  ) : agentsReady && hasNoUsableAgent ? (
     <NoRuntimeCard onOpenRuntimes={onOpenRuntimes} />
   ) : (
     <ChatComposer
