@@ -111,6 +111,11 @@ export function ChatSessionView({
   // 仅在「勾选态宿主」视图里裁剪：面板把每个会话标签都挂载（非活动者 display:none），
   // messageSelectionStore 又是模块级单例 —— 非活动视图若也 prune，就会拿它自己的消息集
   // 去裁剪别的会话的选中 id，导致后台标签流式输出时静默清空当前标签的勾选态。
+  //
+  // 注意 `pruneSelection` 必须在 deps 里（不能只写 [messages]）：标签切走/切回时它会
+  // 翻转，effect 因此重跑并按**新活动视图**的消息集裁剪 —— 于是切标签会清掉上一个标签
+  // 的勾选态。这是**有意的**（否则确认条会带着别的会话的 id 残留、条数与可见气泡对不上），
+  // 不要为了「保住勾选」把 deps 改回 [messages]。
   useEffect(() => {
     if (!pruneSelection) return;
     const present = new Set(messages.map((m) => m.id));
