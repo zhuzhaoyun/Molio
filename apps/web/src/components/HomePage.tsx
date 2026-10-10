@@ -8,6 +8,7 @@ import { NoRuntimeCard } from './NoRuntimeCard';
 import { AgentsUnavailableCard } from './AgentsUnavailableCard';
 import { FirstRunOnboarding } from './home/FirstRunOnboarding';
 import { messageSelectionStore } from '../stores/messageSelectionStore';
+
 import {
   kbChatSessionsStore, useKbChatActiveSessionId, useKbChatSessions,
   sessionComposerKey, sessionComposerMountKey,
@@ -47,6 +48,8 @@ interface Props {
   onOpenRuntimes: () => void;
   /** 页头「+」：新建一个会话标签。 */
   onNewChat: () => void;
+  /** 页头「最小化」：会话降级回悬浮面板，并返回用户来的地方（L2b）。 */
+  onMinimize: () => void;
   /** 输入框历史下拉：打开某个历史会话（就地切换活动会话）。 */
   onOpenConversation?: (conversationId: string) => void;
   /** 输入框历史下拉删除会话后通知上层做收敛。 */
@@ -70,6 +73,7 @@ export function HomePage({
   onRetryAgents,
   onOpenRuntimes,
   onNewChat,
+  onMinimize,
   onOpenConversation,
   onDeleteConversations,
 }: Props) {
@@ -148,14 +152,15 @@ export function HomePage({
     <AgentsUnavailableCard onRetry={onRetryAgents} />
   ) : noRuntime ? noRuntimeCard : null;
 
-  const hasMessages = (state?.messages.length ?? 0) > 0;
-  // 全屏 shell 判据：有消息 **或** 活动标签已绑定一个持久化 conversation（DB 历史
-  // 仍在加载中）。返回型会话在历史到达前 messages 仍是空的——若按空处理会回落到
-  // landing，闪一下 hero + FirstRunOnboarding。landing 只服务真正的「无会话」。
-  const shellMode = hasMessages || (activeSession?.conversationId ?? null) !== null;
+  // 全屏 shell 判据：**有活动标签即为全屏态**。landing 只服务真正的「无会话」。
+  // 旧判据「有消息或已绑定 conversation」会让全新空会话（用户刚新建、还没发第一条）
+  // 点「全屏」落到 landing——landing 没有 header 和最小化按钮，用户被困在无头页面
+  // （2026-10-10 用户实测踩中）。空会话的全屏态 = header + 空消息区 + composer，
+  // 语义自洽；「无会话」才回到 hero + FirstRunOnboarding。
+  const shellMode = activeSession != null;
 
-  // ── 全屏 shell：活动标签有消息，或其持久化历史仍在加载 ──
-  if (shellMode && activeSession) {
+  // ── 全屏 shell：存在活动标签 ──
+  if (activeSession) {
     const initialFileRefs: FileRef[] =
       activeSession.mode === 'qa' && activeSession.filePath && activeSession.vaultId
         ? [{ vaultId: activeSession.vaultId, filePath: activeSession.filePath }]
@@ -188,6 +193,22 @@ export function HomePage({
               onClick={toggleDock}
             >
               <PanelIcon size={16} />
+            </button>
+            {/* 与面板头部的「全屏」互逆：这里把会话降级回悬浮面板并离开全屏态 */}
+            <button
+              type="button"
+              data-testid="home-minimize-btn"
+              className="icon-only"
+              aria-label={t('home.minimize')}
+              title={t('home.minimize')}
+              onClick={onMinimize}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M9 3v4a2 2 0 0 1-2 2H3" />
+                <path d="M15 3v4a2 2 0 0 0 2 2h4" />
+                <path d="M9 21v-4a2 2 0 0 0-2-2H3" />
+                <path d="M15 21v-4a2 2 0 0 1 2-2h4" />
+              </svg>
             </button>
           </div>
         </div>
@@ -252,9 +273,9 @@ export function HomePage({
         <div className="home-composer-wrap">
           {composerFallback ?? (
             <ChatComposer
-              // 有活动会话（可能刚新建、尚无消息）时沿用其命名空间，与全屏 shell 的
-              // composerKey 一致 → 两态之间切换不丢草稿。
-              composerKey={activeSession ? sessionComposerKey(activeSession.id, activeSession.filePath) : LANDING_COMPOSER_KEY}
+              // landing 只在「无任何活动标签」时可达（有活动标签在上方就 return 进
+              // 全屏 shell 了），composer 固定用落地页命名空间。
+              composerKey={LANDING_COMPOSER_KEY}
               isRunning={state?.isRunning ?? false}
               onSend={handleLandingSend}
               onCancel={state ? state.cancel : () => {}}

@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense } from 'react';
+import { flushSync } from 'react-dom';
 import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { useAgents } from './hooks/useAgents';
 import { HomePage } from './components/HomePage';
@@ -23,7 +24,10 @@ import { messageSelectionStore } from './stores/messageSelectionStore';
 import { kbChatSessionsStore } from './stores/kbChatSessionsStore';
 import { usePendingPrefill, skillPrefillStore } from './stores/skillPrefillStore';
 import { SkillEditor, type SkillFormValues } from './components/settings/SkillEditor';
-import { DEFAULT_ROUTE, CHAT_ROUTE, RESTORABLE_ROUTES } from './routes';
+import {
+  DEFAULT_ROUTE, CHAT_ROUTE, RESTORABLE_ROUTES, isFullscreenRoute, pageNameForPath,
+} from './routes';
+import { withSurfaceTransition, notifySurfaceSettled, surfaceSettled } from './stores/surfaceTransition';
 import './styles/rail.css';
 import './styles/home.css';
 import './styles/knowledge.css';
@@ -154,15 +158,12 @@ export default function App() {
     // 原「首页」路由是 `/`，replace 后得到空串，会被判成 'other' —— 'home' 这个取值因此永远不可达。
     // 显式特判，让 'home' 真正生效（悬浮面板据此跳过主页：见 KbChatSessionsPanel 的 dock effect）。
     const path = location.pathname;
-    const page: CurrentContext['page'] = path === CHAT_ROUTE
-      ? 'home'
-      // 入口地址转瞬即走（EntryRedirect 是声明式重定向），归 'other' 以免被当成主页。
-      : path === '/'
-        ? 'other'
-        : path.replace('/', '') as CurrentContext['page'];
-    const known: CurrentContext['page'][] = ['knowledge', 'home', 'history', 'graph', 'settings'];
+    // 注意：这里虽然也涉及 `/chat`，但与 `isFullscreenRoute` 是**两件事** ——
+    // 这条是给路由取「上下文页名」（`/chat` 在上下文里就叫 'home'，沿用既有命名），
+    // 不是「是否处于全屏态」。别顺手合并成一个判据。
+    // 映射本身与「离开全屏时把面板降级到哪一页」共用 pageNameForPath，避免两处漂移。
     currentContextStore.set({
-      page: known.includes(page) ? page : 'other',
+      page: pageNameForPath(path) as CurrentContext['page'],
     });
   }, [location.pathname]);
 
@@ -174,14 +175,40 @@ export default function App() {
     return () => window.removeEventListener(OPEN_RUNTIME_SETTINGS_EVENT, handler);
   }, [navigate]);
 
-  // 面板在除整页对话外的任意页面常驻可用（方案 D）：跨页保持开启，后台任务继续且可见。
-  // 唯独到达 `/chat` 时收起——它自身就是一个聊天页（占满整屏的 HomePage），
-  // 再叠一个悬浮对话会在同屏出现两个聊天框。
-  // 第 3 步 `/chat` 也不再是聊天页后，本 effect 与下方渲染处的例外一并删除。
+  // 面板在任意页面常驻可用（方案 D）：跨页保持开启，后台任务继续且可见。
+  //
+  // 全屏态（`/chat`）是一条**模式**边界，两个方向都要管：
+  //
+  // - **进入**全屏态 → 收起面板：那里由全屏 shell 承担会话呈现，再叠一个悬浮对话就是
+  //   同一会话的同屏双视图（勾选态 / 草稿 / 滚动位置都会打架）。见 isFullscreenRoute。
+  // - **离开**全屏态 → 把会话降级回悬浮面板。这是**降级**而不是消失：会话本身在 App 层
+  //   常驻、run 也没断，但界面上总得有个地方继续展示它，否则用户看到的就是
+  //   「聊天记录直接没了」。凡是离开 `/chat` 的导航都走这里 —— 导航栏、剪藏协议
+  //   `molio://` 落在知识库、运行时设置深链、浏览器后退 —— 所以这条规则写在**路由层**，
+  //   而不是给每个入口各打一个补丁（那样每加一个入口就会漏一次）。
+  //
+  // 只在**确实有会话**时才弹（否则会凭空冒出一个空面板占地方）；非全屏页面之间互相切换
+  // 一律不动面板开关 —— 方案 D 的「跨页保持用户的选择」不能被这条规则破坏。
+  const prevPathRef = useRef(location.pathname);
   useEffect(() => {
-    if (location.pathname === CHAT_ROUTE) {
+    // 任何路由变化落地 → 放行等待「到达端」的表面形变（见 handleMinimize 的 surfaceSettled）
+    notifySurfaceSettled();
+    const wasFullscreen = isFullscreenRoute(prevPathRef.current);
+    const isFullscreen = isFullscreenRoute(location.pathname);
+    prevPathRef.current = location.pathname;
+
+    if (isFullscreen) {
       kbChatSessionsStore.setPanelOpen(false);
+      return;
     }
+    if (!wasFullscreen || kbChatSessionsStore.getSessions().length === 0) return;
+
+    // 降级到**停靠侧边栏**（不是悬浮）：浮动态是浮在内容上的，实测会遮住 settings 的更新卡
+    // 链接、resources 的搜索框与分类、history 的行操作；停靠配 `.entry-main` 的让位才真不遮挡。
+    // 形态落位由面板在渲染期推导（上一页是 'home' → 停靠，见 KbChatSessionsPanel 的
+    // prevPageRef 推导），首帧即正确；这里只负责把面板重新打开（会话得有地方继续展示）。
+    // 不包 VT：浏览器后退 / 剪藏落点等非手势路径不播动画（动效回答手势）。
+    kbChatSessionsStore.setPanelOpen(true);
   }, [location.pathname]);
 
   // In-page navigation from molio:// protocol (desktop main → renderer IPC).
@@ -298,6 +325,38 @@ export default function App() {
     });
   };
 
+  /**
+   * 全屏态「最小化」：会话降级回悬浮面板，并把用户送回他来的地方。
+   *
+   * 判据是「**站内**还有没有上一页」＝ react-router 在当前 history entry 上记的 `idx` 是否 > 0。
+   *
+   * 不能用 `location.key === 'default'`：key 只在**没有 state.key 时**才回落成 `'default'`，
+   * 而 `replace` 会把当前位置**原地**替换 —— `idx` 保持 0，key 却已被换成生成值。
+   * `EntryRedirect` 正是 `<Navigate ... replace />`，于是「冷启动时恢复上次路由到 `/chat`」
+   * 这条**常规路径**（桌面端每次启动/新窗口都从 `/` 进入）会被误判成「有上一页」：
+   * `navigate(-1)` 在 Electron 里是静默无操作（按钮像坏了），在浏览器里会退出应用 ——
+   * 恰恰是本判据要防的那件事。
+   *
+   * `idx` 由 react-router 维护，0 即「这条历史里我们就是第一条」，此时代码层面没有可回退的站内页，
+   * 回落到默认落点。读 `window.history.state` 而不读 `location`：点击时取值，不存在渲染期陈旧问题。
+   */
+  const handleMinimize = () => {
+    const inAppHistory = (window.history.state as { idx?: number } | null)?.idx ?? 0;
+    // 最小化是**手势**：包一层「同一个表面」形变 —— 全屏 shell 的矩形收进目标页的停靠
+    // 面板。形态落位（停靠）由面板渲染期推导保证（上一页是 'home'），首帧即正确。
+    // navigate(-1) 是异步 pop 导航：flushSync 只换得了面板开关，真正换页要等 popstate ——
+    // 所以 update 以 surfaceSettled() 告知「已到终态」，VT 抓新快照前会等它
+    // （路由 effect 到达时 notifySurfaceSettled() 放行）。
+    withSurfaceTransition(async () => {
+      flushSync(() => {
+        kbChatSessionsStore.setPanelOpen(true);
+      });
+      if (inAppHistory > 0) navigate(-1);
+      else navigate(DEFAULT_ROUTE);
+      await surfaceSettled();
+    });
+  };
+
   // 视图切换（路由变化）→ 退出消息勾选态。`messageSelectionStore` 是模块级全局单例，
   // 面板态与全屏态共用；若不清理，切到另一视图会凭空冒出删除确认条（选中的消息 id 在
   // 新视图里恰好也存在时 pruneStale 拦不住）。
@@ -342,6 +401,7 @@ export default function App() {
                   onRetryAgents={refreshAgents}
                   onOpenRuntimes={() => navigate('/settings?tab=runtimes')}
                   onNewChat={handleNewChat}
+                  onMinimize={handleMinimize}
                   onOpenConversation={(conversationId) => {
                     // 就地切换活动会话并触发加载（复用面板已有的切换语义：运行中 → 新开标签）。
                     kbChatPanelRef.current?.openConversation(conversationId);
@@ -375,10 +435,10 @@ export default function App() {
           </Suspense>
         </div>
         {/* 全局悬浮对话面板（方案 D）：面板常驻挂载 + CSS --closed 隐藏，保 ref 恒有效。
-            悬浮按钮在除整页对话外的任意页面显示——那里自己就是聊天页，按钮等于第二个聊天框；
+            悬浮按钮在全屏态（`/chat`）不渲染——那里 shell 就是对话本身，按钮等于第二个聊天框；
             面板展开时按钮自动让位（FloatingChatButton 在 panelOpen 时返回 null）。
             `/`（入口）也排除：它转瞬即走，挂上会闪一帧。 */}
-        {location.pathname !== CHAT_ROUTE && location.pathname !== '/' && <FloatingChatButton />}
+        {!isFullscreenRoute(location.pathname) && location.pathname !== '/' && <FloatingChatButton />}
         <KbChatSessionsPanel
           ref={kbChatPanelRef}
         />

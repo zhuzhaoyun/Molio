@@ -1,12 +1,13 @@
 // apps/web/src/components/kb/KbChatSessionsPanel.tsx
 import { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, forwardRef } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import {
   kbChatSessionsStore, useKbChatSessions, useKbChatActiveSessionId, useKbChatPanelOpen,
   MAX_CHAT_SESSIONS,
 } from '../../stores/kbChatSessionsStore';
 import { useCurrentContext } from '../../stores/currentContextStore';
-import { CHAT_ROUTE } from '../../routes';
+import { CHAT_ROUTE, isFullscreenRoute } from '../../routes';
+import { withSurfaceTransitionSync, skipSurfaceTransition } from '../../stores/surfaceTransition';
 import { ChatSessionTabBar } from './ChatSessionTabBar';
 import { KbChatSession } from './KbChatSession';
 import { useKbChatSessionApi } from './KbChatSessionsProvider';
@@ -42,6 +43,15 @@ function clampPanelWidth(w: number): number {
   const vwMax = typeof window !== 'undefined' ? Math.round(window.innerWidth * 0.9) : PANEL_WIDTH_MAX;
   const max = Math.min(PANEL_WIDTH_MAX, vwMax);
   return Math.min(max, Math.max(PANEL_WIDTH_MIN, Math.round(w)));
+}
+/** 悬浮位置按当前视口 clamp：持久化的 left/top 可能是在更大的窗口里保存的（换显示器 /
+    缩窗之后），恢复时裸用会把面板整个摆到视口外——宽/高各有 CSS max 兜底，位置是
+    唯一没有保护的恢复值（2026-10-09「停靠切悬浮后面板消失」的根因）。语义与拖拽
+    clampMoveX/clampMoveY 一致：至少留 80px 横向 / 48px 纵向可见条带，摸得到就拖得回。 */
+function clampFloatPos(p: { left: number; top: number }, w: number): { left: number; top: number } {
+  const left = Math.min(Math.max(Math.round(p.left), -(w - 80)), window.innerWidth - 80);
+  const top = Math.min(Math.max(Math.round(p.top), 8), window.innerHeight - 48);
+  return { left, top };
 }
 function readPanelWidth(): number {
   try {
@@ -80,8 +90,12 @@ function readPanelHeight(): number | null {
 const STORAGE_KEY_DOCK_MODE_BY_PAGE = 'molio.kb.chatDockModeByPage';
 const STORAGE_KEY_FLOAT_POS = 'molio.kb.chatFloatPos';
 
-function defaultDockFor(page: string): 'float' | 'dock' {
-  return page === 'knowledge' ? 'dock' : 'float';
+function defaultDockFor(_page: string): 'float' | 'dock' {
+  // **默认停靠**（含此前默认悬浮的其余页面）：浮动态是浮在内容上的，一定会遮住右侧内容
+  // ——实测 /settings 的更新卡链接、/resources 的搜索框与分类、/history 的行操作都被盖住。
+  // 停靠配 `.entry-main` 的让位才是真的不遮挡，所以它是对所有页面的默认。
+  // 用户若把某页拖成悬浮，那一页的记忆会保留（用户偏好规则：显式选择必须被尊重）。
+  return 'dock';
 }
 
 function readDockModeByPage(): Record<string, 'float' | 'dock'> {
@@ -93,6 +107,10 @@ function readDockModeByPage(): Record<string, 'float' | 'dock'> {
     }
   } catch { /* storage unavailable */ }
   return {};
+}
+/** 形态记忆的写入点（`setDockMode` 与「离开全屏降级」两处共用，避免复制一段持久化逻辑）。 */
+function persistDockByPage(next: Record<string, 'float' | 'dock'>): void {
+  try { localStorage.setItem(STORAGE_KEY_DOCK_MODE_BY_PAGE, JSON.stringify(next)); } catch { /* storage unavailable */ }
 }
 function readFloatPos(): { left: number; top: number } | null {
   try {
@@ -114,6 +132,7 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
   _props, ref,
 ) {
   const location = useLocation();
+  const navigate = useNavigate();
   const sessions = useKbChatSessions();
   const activeSessionId = useKbChatActiveSessionId();
   // 上下文改从全局 store 读（方案 D：面板常驻 App 层，任意页面可用，不依赖 KB 页 props）
@@ -140,24 +159,30 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
   const [dockMode, setDockModeState] = useState<'float' | 'dock'>(() =>
     dockByPage[page] ?? defaultDockFor(page),
   );
-  // 按页记忆停靠形态：每页应用自己记住的形态（KB 页默认停靠、其余页默认悬浮）。
-  // 面板现已全局可用，因此非 KB 页的形态记忆也要生效——离开 KB 页不再切换形态，
-  // 面板保持原样跨页（App 层只在到达 `/chat` 时收起它）。
-  // `/chat` 例外（其上下文页名为 'home'）：L2a 后 `/chat` = 悬浮面板的全屏态，该页自身
-  // 渲染活动会话的 ChatSessionView，面板整体返回 null（见下方 CHAT_ROUTE 早返回）、悬浮按钮
-  // 也不渲染——若在此把停靠切成悬浮，会先跳到悬浮几何再消失。回归保护见
-  // e2e/floating-chat.spec.ts 的「主页是例外」用例（该用例里的「主页」即 `/chat`）。
-  useEffect(() => {
-    if (page === 'home') return;
-    setDockModeState(dockByPage[page] ?? defaultDockFor(page));
-    // 仅响应 page 导航，不含 dockByPage（切换停靠时 setDockMode 已同步 state，无需回读）
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page]);
+
+  // 按页记忆停靠形态 + 「离开全屏落停靠」：**渲染期推导**（React「props 变化时调整状态」
+  // 模式），而非 effect 补设 —— effect 在 commit 之后才跑，VT 的新快照会抓到错误形态
+  // （「全屏→停靠」形变的第一帧就不是停靠）。prevPageRef 守卫：只在 page 真正变化时推导
+  // 一次。之所以不依赖预登记的降级意图：全屏态在上下文里就叫 'home'，**上一页是 'home'**
+  // 这个事实本身就覆盖了所有离开方式（最小化按钮、导航栏、浏览器后退、molio:// 深链）。
+  const prevPageRef = useRef(page);
+  if (prevPageRef.current !== page) {
+    const from = prevPageRef.current;
+    prevPageRef.current = page;
+    // 离开全屏 → 落**停靠**（不遮挡：浮动态实测会遮住 settings 的更新卡链接、resources
+    // 的搜索框与分类、history 的行操作），并写进这一页的记忆（用户偏好规则：之后手动
+    // 切回悬浮仍会被记住）。
+    const degrade = from === 'home' && page !== 'home';
+    const next: 'float' | 'dock' = degrade ? 'dock' : (dockByPage[page] ?? defaultDockFor(page));
+    setDockModeState(next);
+    if (degrade) {
+      const nextMap = { ...dockByPage, [page]: 'dock' as const };
+      setDockByPage(nextMap);
+      persistDockByPage(nextMap);
+    }
+  }
   // 悬浮位置（left/top）。null = 未移动过 → CSS 默认右下角。持久化。
   const [floatPos, setFloatPos] = useState<{ left: number; top: number } | null>(readFloatPos);
-  // 形态切换过渡：切换瞬间加 --morphing 启用几何过渡，260ms 后移除
-  const [morphing, setMorphing] = useState(false);
-  const morphTimerRef = useRef<number | null>(null);
   const panelElRef = useRef<HTMLDivElement>(null);
   // handleEl 记录手柄元素：is-dragging 加在手柄上（pointerdown 的 e.currentTarget），
   // 结束/兜底时须从「同一个手柄」移除（此前误从面板移除 → is-dragging 永远残留）。
@@ -178,7 +203,7 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
 
   const docked = dockMode === 'dock';
   // 知识库页停靠 = 还原改动前的「页内分栏」：面板从页顶占满整高、贴右缘，
-  // 文档区经 --kb-dock-w 让出等宽 → 问答与文档分栏而非覆盖。其他页面停靠仍是
+  // 文档区经 --chat-dock-w 让出等宽 → 问答与文档分栏而非覆盖。其他页面停靠仍是
   // 页头之下的悬浮式侧边栏（--dock 基础几何）。
   const dockKb = docked && page === 'knowledge';
   // 停靠形态不应用高度/位置 inline（几何交给 --dock）；悬浮形态应用自定义高度与位置
@@ -186,21 +211,28 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
   if (!docked) {
     panelStyle.height = panelHeight ?? undefined;
     if (floatPos) {
-      panelStyle.left = floatPos.left;
-      panelStyle.top = floatPos.top;
+      // 恢复经 clamp：持久化值可能出自更大的窗口（见 clampFloatPos 注释）。在渲染处而非
+      // readFloatPos 处 clamp——窗口此后再变小、任意一次重渲染也会重新收敛到视口内。
+      const pos = clampFloatPos(floatPos, panelWidth);
+      panelStyle.left = pos.left;
+      panelStyle.top = pos.top;
     }
   }
 
-  // 停靠形态的文档区联动：把面板当前宽度同步到根节点的 --kb-dock-w，
+  // 停靠形态的文档区联动：把面板当前宽度同步到根节点的 --chat-dock-w，
   // .kb-shell 的 padding-right 消费它 → 文档区实时重排（拖宽时逐帧跟随，无需逐帧 setState）。
   // ResizeObserver 监听面板宽度变化（拖拽/提交/重载初始化都覆盖），只在
   // 「停靠 + 打开 + KB 页」时生效，其余情况置 0（文档区恢复全宽）。
   const syncDockVar = useCallback(() => {
     const el = panelElRef.current;
     if (!el) return;
-    const active = dockMode === 'dock' && panelOpen && page === 'knowledge';
-    document.documentElement.style.setProperty('--kb-dock-w', active ? `${el.offsetWidth}px` : '0px');
-  }, [dockMode, panelOpen, page]);
+    const active = dockMode === 'dock' && panelOpen;
+    document.documentElement.style.setProperty('--chat-dock-w', active ? `${el.offsetWidth}px` : '0px');
+  }, [dockMode, panelOpen]);
+  // deps 里必须有 fullscreen：离开全屏那一刻，面板的 DOM 才刚重新出现，而 dockMode/panelOpen
+  // 都可能在全屏期间已被改掉（navigate(-1) 异步换页 → panelOpen 先行）—— 只靠它们俩做依赖，
+  // effect 不会在换页时重跑，新元素的 ResizeObserver 就建立不起来，--chat-dock-w 永远是 0。
+  const fullscreenSurface = isFullscreenRoute(location.pathname);
   useEffect(() => {
     const el = panelElRef.current;
     if (!el) return;
@@ -209,9 +241,9 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
     syncDockVar();
     return () => {
       ro.disconnect();
-      document.documentElement.style.setProperty('--kb-dock-w', '0px');
+      document.documentElement.style.setProperty('--chat-dock-w', '0px');
     };
-  }, [syncDockVar]);
+  }, [syncDockVar, fullscreenSurface]);
 
   const commitWidth = useCallback((w: number) => {
     const clamped = clampPanelWidth(w);
@@ -223,6 +255,7 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
   // （面板被移动后 inline left 固定，若只改 width 会让「被拖的边钉死、对侧外扩」反直觉）。
   const onResizePointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     e.preventDefault();
+    skipSurfaceTransition();
     const el = panelElRef.current;
     if (!el) return;
     const rect = el.getBoundingClientRect();
@@ -256,7 +289,7 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
       dragWidthRef.current = null;
       const left = parseFloat(el.style.left);
       // 保持 inline width 为提交值（而非清空）——避免中间帧闪回 CSS 基础宽 500，
-      // 让 ResizeObserver/--kb-dock-w 误同步到旧宽度。
+      // 让 ResizeObserver/--chat-dock-w 误同步到旧宽度。
       el.style.width = `${w}px`;
       if (docked) {
         // 停靠：几何交给 CSS right:0，清掉 inline left
@@ -291,6 +324,7 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
   // 与宽度同理用几何记录对侧下缘，避免面板移动后 inline top 固定导致「被拖的边钉死」。
   const onResizeHeightPointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     e.preventDefault();
+    skipSurfaceTransition();
     const el = panelElRef.current;
     if (!el) return;
     const rect = el.getBoundingClientRect();
@@ -395,7 +429,7 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
     setDockModeState(mode);
     setDockByPage((prev) => {
       const next = { ...prev, [page]: mode };
-      try { localStorage.setItem(STORAGE_KEY_DOCK_MODE_BY_PAGE, JSON.stringify(next)); } catch { /* storage unavailable */ }
+      persistDockByPage(next);
       return next;
     });
   }, [page]);
@@ -406,18 +440,25 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
     el.style.left = '';
     el.style.top = '';
   }, []);
-  const startMorph = useCallback(() => {
-    setMorphing(true);
-    if (morphTimerRef.current) window.clearTimeout(morphTimerRef.current);
-    morphTimerRef.current = window.setTimeout(() => setMorphing(false), 260);
-  }, []);
-  useEffect(() => () => { if (morphTimerRef.current) window.clearTimeout(morphTimerRef.current); }, []);
-  // 按钮切换：先交还几何（含手动 inline），再切形态并启用过渡动画
+
+  /**
+   * 面板头部「全屏」：面板与 `/chat` shell 是**同一块表面**（kb-chat-surface），状态切换
+   * 包进一次 View Transition —— 浏览器实测「面板矩形 → 全屏矩形」两端，GPU 合成地形变 +
+   * 内容交叉淡化。不再做 width 预拉伸/延时导航（旧路线要预测交接矩形，被实测否定）。
+   */
+  const handleEnterFullscreen = useCallback(() => {
+    withSurfaceTransitionSync(() => {
+      kbChatSessionsStore.setPanelOpen(false);
+      navigate(CHAT_ROUTE);
+    });
+  }, [navigate]);
+  // 按钮切换：先交还几何（含手动 inline），再切形态 —— 形变由 VT 接管（同一块表面）
   const toggleDock = useCallback(() => {
     clearInlinePos();
-    setDockMode(dockMode === 'dock' ? 'float' : 'dock');
-    startMorph();
-  }, [dockMode, clearInlinePos, setDockMode, startMorph]);
+    withSurfaceTransitionSync(() => {
+      setDockMode(dockMode === 'dock' ? 'float' : 'dock');
+    });
+  }, [dockMode, clearInlinePos, setDockMode]);
 
   // 头部拖拽：悬浮移动 / 停靠时拖离（脱离停靠跟随光标）。拖动中直接写 DOM。
   const clampMoveX = useCallback((x: number) => {
@@ -430,6 +471,7 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
   const onHeaderDragStart = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     const el = panelElRef.current;
     if (!el) return false;
+    skipSurfaceTransition();
     const rect = el.getBoundingClientRect();
     const grabX = e.clientX - rect.left;
     const grabY = e.clientY - rect.top;
@@ -566,7 +608,8 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
     } else {
       kbChatSessionsStore.activateSession(tab.id);
       // 已存在的 wiki 标签：重新打开可能已被收起的面板，保证点击构建/检查必有反馈
-      kbChatSessionsStore.setPanelOpen(true);
+      // （手势唤起 → 包一层「同一个表面」形变：按钮长成面板）
+      withSurfaceTransitionSync(() => kbChatSessionsStore.setPanelOpen(true));
     }
     if (!tab) return;
     // 2) 任意 wiki 任务在跑 → 三选一
@@ -621,7 +664,8 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
       setPendingSelectionSessionId(active?.mode === 'qa' ? active.id : null);
     }
     if (active && active.mode === 'qa') {
-      kbChatSessionsStore.setPanelOpen(true);
+      // 手势唤起（💬问答/选中文本）→ 包一层「同一个表面」形变：按钮长成面板
+      withSurfaceTransitionSync(() => kbChatSessionsStore.setPanelOpen(true));
       // #4: 用户对「新选中的文件」再次 💬问答 → 把活跃 qa 会话的 @上下文指向该文件，
       // 否则 composer badge 仍显示旧文档（D7「每个会话记忆自己的文档」依然成立——
       // 显式问答动作把会话重新指向当前文件，恢复旧单会话行为）。
@@ -720,13 +764,16 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
     runWikiOp, openQa, openConversation: handleOpenConversation, resetConversations,
   }), [runWikiOp, openQa, handleOpenConversation, resetConversations]);
 
-  // `/chat` 自身渲染活动会话的 ChatSessionView（全屏态与面板共用同一份状态）。
-  // 此时不渲染面板的任何 DOM：否则同一个会话会同时出现在两个视图 → 输入框/消息列表/
-  // 删除确认条在 DOM 里都是两份（`[data-testid="composer-input"]` 等定位器命中两个元素，
-  // Playwright strict mode violation）。控制器在 App 层 Provider 常驻，面板 DOM 缺席不影响
-  // 后台会话存活（面板渲染已退化为纯呈现层）。用 location（与路由同步）而非 currentContext.page：
-  // 后者在 effect 里更新，会有一帧的滞后窗口。
-  if (location.pathname === CHAT_ROUTE) return null;
+  // **全屏态让位**（L2b 裁决）：`/chat` 由全屏 shell 渲染活动会话，面板整体不渲染任何 DOM。
+  // 否则同一个会话会同时出现在两个视图 → 输入框/消息列表/删除确认条在 DOM 里都是两份
+  // （`[data-testid="composer-input"]` 等定位器命中两个元素，Playwright strict mode violation），
+  // 且勾选态、草稿、滚动位置这三个**跟着会话走**的东西会开始互相打架。
+  //
+  // 这与「真相源是否统一」无关 —— L2a 之后两态确实共用同一份状态，但**同屏双视图**本身
+  // 就是错的。判据与 `App.tsx` 的两处例外共用 `isFullscreenRoute`，避免各说各话。
+  // 控制器在 App 层 Provider 常驻，面板 DOM 缺席不影响后台会话存活（面板渲染已退化为纯呈现层）。
+  // 用 location（与路由同步）而非 currentContext.page：后者在 effect 里更新，会有一帧的滞后窗口。
+  if (isFullscreenRoute(location.pathname)) return null;
 
   // 面板头部活动会话的模式标签
   return (
@@ -736,8 +783,7 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
         `floating-chat-panel` +
         (panelOpen ? '' : ' floating-chat-panel--closed') +
         (docked ? ' floating-chat-panel--dock' : '') +
-        (dockKb ? ' floating-chat-panel--dock-kb' : '') +
-        (morphing ? ' floating-chat-panel--morphing' : '')
+        (dockKb ? ' floating-chat-panel--dock-kb' : '')
       }
       data-testid="kb-chat-panel"
       style={panelStyle}
@@ -778,7 +824,11 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
         onRename={(id, title) => kbChatSessionsStore.updateSession(id, { title })}
         onOpenConversation={handleOpenConversation}
         onDeleteConversations={resetConversations}
-        onClosePanel={() => kbChatSessionsStore.setPanelOpen(false)}
+        // 收起：面板矩形缩进右下角悬浮按钮（同一块表面的形变；按钮持有同名 VT 标注）
+        onClosePanel={() => withSurfaceTransitionSync(() => kbChatSessionsStore.setPanelOpen(false))}
+        // 进入全屏态：会话不变（还是当前活动标签），只是换个承载它的视图。
+        // 形态交接见 handleEnterFullscreen（面板宽度拉满到内容区宽后才换页，交接无缝）。
+        onEnterFullscreen={handleEnterFullscreen}
         docked={docked}
         onToggleDock={toggleDock}
         onHeaderDragStart={onHeaderDragStart}

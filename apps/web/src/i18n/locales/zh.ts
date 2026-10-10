@@ -63,6 +63,7 @@ const zh: Record<string, string> = {
 
   // ── HomePage ──
   'home.newChat': '新对话',
+  'home.minimize': '最小化为悬浮面板',
   'home.noAgent': '未选择代理 — 请在运行时页面设置默认代理',
   'home.tagline': '墨藏于库，流于万象',
   'home.onboarding.title': '先建一个知识库',

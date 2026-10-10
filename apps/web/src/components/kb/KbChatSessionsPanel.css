@@ -50,10 +50,13 @@
    这样形态切换时 top/height 是可插值的长度，能平滑过渡。 */
 .floating-chat-panel--dock {
   right: 0;
-  top: 72px;
+  top: 0;
   bottom: auto;
   left: auto;
-  height: calc(100vh - 72px);
+  /* 满高：让位（.entry-main 的 padding-right）是满高的，面板也满高才与它严格对齐 ——
+     否则顶部会留下一条「留了白却没人占」的空带。同时这让停靠矩形变成一个
+     与页面无关的常量（右侧 w×100vh 条带），变形目标因此可精确计算。 */
+  height: 100vh;
   max-height: none;
   min-height: 0;
   border-radius: 0;
@@ -63,8 +66,9 @@
   box-shadow: none;
 }
 /* 知识库页停靠：从页顶占满整高（对齐 .kb-shell 的文件树，.kb-shell 从 y=0 开始），
-   文档区经 .kb-shell padding-right:var(--kb-dock-w) 让出等宽 → 问答与文档分栏而非覆盖；
-   拖宽时 --kb-dock-w 逐帧同步，文档区随之重排。非 KB 页停靠保持 --dock 基础几何。 */
+   内容区经 .entry-main padding-right:var(--chat-dock-w) 让出等宽 → 与面板分栏而非覆盖；
+   拖宽时 --chat-dock-w 逐帧同步，内容区随之重排。**全站一致**（此前只有 KB 页让位，
+   其余页面停靠是浮在内容上，会遮住右侧的行操作/搜索框）。 */
 .floating-chat-panel--dock.floating-chat-panel--dock-kb {
   top: 0;
   height: 100vh;
@@ -75,21 +79,44 @@
   display: none;
 }
 
-/* 形态切换过渡：按钮停靠/悬浮时临时加此 class 启用几何过渡。
-   拖拽移动/改宽时不启用 —— 避免过渡与逐帧 inline 写入打架。 */
-.floating-chat-panel--morphing {
-  transition:
-    left 220ms cubic-bezier(0.16, 1, 0.3, 1),
-    right 220ms cubic-bezier(0.16, 1, 0.3, 1),
-    top 220ms cubic-bezier(0.16, 1, 0.3, 1),
-    bottom 220ms cubic-bezier(0.16, 1, 0.3, 1),
-    width 220ms cubic-bezier(0.16, 1, 0.3, 1),
-    height 220ms cubic-bezier(0.16, 1, 0.3, 1),
-    border-radius 220ms cubic-bezier(0.16, 1, 0.3, 1),
-    box-shadow 220ms cubic-bezier(0.16, 1, 0.3, 1);
+/* ─── 「同一个表面」形变（L2b）────────────────────────────────────────
+   对话面板（停靠/悬浮）、/chat 全屏 shell、右下角悬浮按钮是同一块对话表面的
+   不同形态。view-transition-name（kb-chat-surface）由 stores/surfaceTransition.ts
+   在**过渡期间**动态挂/摘（常驻名字会让命名元素在 VT 结束后命中测试失效，
+   见该文件头注释），状态切换包进一次 startViewTransition：浏览器实测前后
+   两个真实矩形，GPU 合成地做几何形变 + 内容交叉淡化 —— 这就是「三种状态
+   是同一个东西」的观感来源。一条曲线一个时长统一全部路径。 */
+/* 统一节奏：300ms + 标准强调曲线。old/new 设 height:100% 让宽高各自过渡
+   （VT 默认按快照纵横比缩放，大跨度形变会失真 —— 这是官方文档的标准配方）。 */
+::view-transition-group(kb-chat-surface) {
+  animation-duration: 300ms;
+  animation-timing-function: cubic-bezier(0.2, 0, 0, 1);
+  /* 移动的表面边界：dock 面板与页面同底色，纯几何形变读不出来——
+     描边 + 投影让「一块表面在长大/缩小」两个方向都可感知 */
+  box-shadow: 0 0 0 1px var(--border), 0 12px 48px rgba(0, 0, 0, 0.28);
+}
+::view-transition-old(kb-chat-surface),
+::view-transition-new(kb-chat-surface) {
+  height: 100%;
+}
+/* 形变进行中快照层不拦截指针：VT 覆盖层在 top layer，默认会把 ~300ms 里的
+   点击/拖拽整个吃掉（实测：面板头部拖拽开不了、按钮拖不动）。形变是视觉层，
+   交互必须穿透。 */
+::view-transition {
+  pointer-events: none;
+}
+/* **排除 root 快照**：VT 默认连整页一起抓来交叉淡化，快照层盖满全视口——
+   实测（Chromium 144）形变进行中**整页**的命中测试都被路由到 <html>，
+   页面冻结 ~300ms（pointer-events:none 救不了）。root 不参与形变后，
+   只有表面自身的快照区不可交互，页面其余部分全程可用；
+   副作用是页面内容不再淡切、瞬时就位——对话表面在既有页面上形变，更干净。 */
+html {
+  view-transition-name: none;
 }
 
-/* 全局悬浮对话按钮（面板收起时显示） */
+/* 全局悬浮对话按钮（面板收起时显示）。
+   位置默认右下角；拖拽后的自由/停靠/隐藏几何由 inline left/top 接管
+   （FloatingChatButton 持久化 + 恢复 clamp），CSS 只保留默认位。 */
 .floating-chat-btn {
   position: fixed;
   right: 24px;
@@ -97,12 +124,14 @@
   width: 52px;
   height: 52px;
   border-radius: 50%;
+  overflow: hidden; /* logo 是 144% 的 img，必须裁进圆里（否则可见 75px = 偏大） */
   background: var(--accent);
   color: #fff;
   border: none;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
   z-index: 90;
-  cursor: pointer;
+  cursor: grab;
+  touch-action: none; /* 指针拖拽不被滚动劫持 */
   display: flex;
   align-items: center;
   justify-content: center;
@@ -114,16 +143,142 @@
   from { opacity: 0; transform: scale(0.6); }
   to   { opacity: 1; transform: scale(1); }
 }
-.floating-chat-btn svg {
-  width: 24px;
-  height: 24px;
-  flex-shrink: 0;
+/* 图标 = Molio 品牌标（public/images/main.png）：圆形裁切 + 放大 120%
+   —— 放大过头波浪圆环会贴着按钮边缘（实测反馈），120% 时环外留 ~13% 呼吸边。
+   img 不参与命中/拖拽。注意必须显式 width/height：img 是替换元素，inset 撑不满
+   （width:auto 取固有尺寸 965px → 图片铺满整页），实测踩过。 */
+.floating-chat-btn__logo {
+  position: absolute;
+  left: -10%;
+  top: -10%;
+  width: 120%;
+  height: 120%;
+  pointer-events: none;
+  user-select: none;
+  border-radius: 50%;
+  transition: opacity 120ms ease;
 }
-.floating-chat-btn:hover {
-  background: var(--accent-strong);
+/* 悬停提示：轻微放大 + 阴影加深（logo 盖住了底色，单换 background 看不见） */
+.floating-chat-btn:hover:not(.is-dragging) {
+  transform: scale(1.08);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.28);
 }
 .floating-chat-btn:active {
   transform: scale(0.96);
+}
+/* 拖拽中：跟手 1:1（left/top 无过渡），微放大 + 阴影加深 = 抓起感 */
+.floating-chat-btn.is-dragging {
+  cursor: grabbing;
+  transform: scale(1.06);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.3);
+  transition: transform 120ms ease, box-shadow 120ms ease;
+}
+/* 拖近任意缘的实时吸附预告 = 三件事一起说「松手会藏进这条缘」：
+   1) **半嵌入**——按钮保持正圆滑进缘口 20px（scaleX/Y 压扁会 deform 品牌标，
+   实测被否——「像被挤压了一样」）；2) 周身透出 accent 辉光；3) 可见部分上
+   一枚指向缘的白色箭头（呼吸闪烁）。松手顺势滑到 12px 小签。 */
+.floating-chat-btn.floating-chat-btn--swallow-left,
+.floating-chat-btn.floating-chat-btn--swallow-right,
+.floating-chat-btn.floating-chat-btn--swallow-top,
+.floating-chat-btn.floating-chat-btn--swallow-bottom {
+  box-shadow: 0 0 16px 3px rgba(201, 100, 66, 0.4), 0 10px 28px rgba(0, 0, 0, 0.22);
+}
+/* 吸附预告的指向箭头：深色圆片徽章 + 白色雪佛龙（SVG 背景），指向将藏入的缘。
+   不能用 border 拼的裸箭头——叠在品牌标的奶白圆环上是白上白，实测不可见。
+   方向 = 同一枚右向雪佛龙按缘旋转；圆片旋转不变。 */
+.floating-chat-btn.floating-chat-btn--swallow-left::before,
+.floating-chat-btn.floating-chat-btn--swallow-right::before,
+.floating-chat-btn.floating-chat-btn--swallow-top::before,
+.floating-chat-btn.floating-chat-btn--swallow-bottom::before {
+  content: '';
+  position: absolute;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background:
+    url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>')
+    center / 12px no-repeat,
+    rgba(74, 32, 18, 0.62);
+  filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.4));
+  animation: chat-btn-hint-blink 1s ease-in-out infinite;
+}
+.floating-chat-btn.floating-chat-btn--swallow-right::before {
+  right: 6px; top: 50%;
+  transform: translateY(-50%);
+}
+.floating-chat-btn.floating-chat-btn--swallow-left::before {
+  left: 6px; top: 50%;
+  transform: translateY(-50%) rotate(180deg);
+}
+.floating-chat-btn.floating-chat-btn--swallow-top::before {
+  top: 6px; left: 50%;
+  transform: translateX(-50%) rotate(-90deg);
+}
+.floating-chat-btn.floating-chat-btn--swallow-bottom::before {
+  bottom: 6px; left: 50%;
+  transform: translateX(-50%) rotate(90deg);
+}
+@keyframes chat-btn-hint-blink {
+  0%, 100% { opacity: 0.7; }
+  50%      { opacity: 1; }
+}
+
+/* ── 释放后的滑动（吸附/藏边/唤回）：一次性类启用 transition，超时由 JS 摘除 ── */
+@keyframes chat-btn-hint-blink {
+  0%, 100% { opacity: 0.7; }
+  50%      { opacity: 1; }
+}
+
+/* ── 释放后的滑动（吸附/藏边/唤回）：一次性类启用 transition，超时由 JS 摘除 ── */
+.floating-chat-btn--snap {
+  transition: left 260ms cubic-bezier(0.34, 1.56, 0.64, 1), top 260ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+/* 落缘压扁：延迟到滑动到位（240ms）再播，scaleX 挤一下 = 「磁铁吸上去」 */
+.floating-chat-btn--impact {
+  animation: chat-btn-squash 120ms cubic-bezier(0.34, 1.56, 0.64, 1) 240ms;
+}
+@keyframes chat-btn-squash {
+  0%   { transform: scale(1, 1); }
+  40%  { transform: scale(0.88, 1.06); }
+  100% { transform: scale(1, 1); }
+}
+.floating-chat-btn--hide {
+  transition: left 240ms cubic-bezier(0.55, 0.06, 0.68, 0.19), top 240ms cubic-bezier(0.55, 0.06, 0.68, 0.19);
+}
+.floating-chat-btn--restore {
+  transition: left 200ms cubic-bezier(0.16, 1, 0.3, 1), top 200ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* ── 隐藏态：按钮吸进缘里，只露 12px 圆弧小签 ──
+   品牌标淡出、不放方向箭头（实测反馈：去掉）——露出的弧面保持安静，
+   探出 + 品牌标淡入已足够表达「可以从这里拉出来」。 */
+.floating-chat-btn--hidden .floating-chat-btn__logo {
+  opacity: 0;
+}
+/* 悬停/聚焦：探出 14px 预览 + 品牌标淡入——露出的是按钮本体，不是一条空签 */
+.floating-chat-btn--hidden {
+  transition: transform 160ms ease-out;
+}
+.floating-chat-btn--hidden:hover .floating-chat-btn__logo,
+.floating-chat-btn--hidden:focus-visible .floating-chat-btn__logo {
+  opacity: 1;
+  transition: opacity 200ms ease 60ms;
+}
+.floating-chat-btn--edge-right.floating-chat-btn--hidden:hover,
+.floating-chat-btn--edge-right.floating-chat-btn--hidden:focus-visible {
+  transform: translateX(-14px);
+}
+.floating-chat-btn--edge-left.floating-chat-btn--hidden:hover,
+.floating-chat-btn--edge-left.floating-chat-btn--hidden:focus-visible {
+  transform: translateX(14px);
+}
+.floating-chat-btn--edge-bottom.floating-chat-btn--hidden:hover,
+.floating-chat-btn--edge-bottom.floating-chat-btn--hidden:focus-visible {
+  transform: translateY(-14px);
+}
+.floating-chat-btn--edge-top.floating-chat-btn--hidden:hover,
+.floating-chat-btn--edge-top.floating-chat-btn--hidden:focus-visible {
+  transform: translateY(14px);
 }
 
 /* 发布面板占住 KB 右侧 pane 时，悬浮按钮让位。
@@ -220,16 +375,33 @@ body.kb-moving {
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
 }
 
-/* 减少动态偏好：禁用进出动画、按钮弹性与形态过渡，保持瞬时但立即可见 */
+/* 减少动态偏好：禁用进出动画、按钮弹性与全部形变（VT 由 JS 层短路 + 这里 CSS 兜底），
+   保持瞬时但立即可见 */
 @media (prefers-reduced-motion: reduce) {
   .floating-chat-panel,
-  .floating-chat-panel--closed,
-  .floating-chat-panel--morphing {
+  .floating-chat-panel--closed {
     transition: none;
+  }
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation: none !important;
   }
   .floating-chat-btn {
     animation: none;
     transition: background 120ms ease;
+  }
+  .floating-chat-btn--snap,
+  .floating-chat-btn--hide,
+  .floating-chat-btn--restore,
+  .floating-chat-btn--hidden {
+    transition: none;
+  }
+  .floating-chat-btn--swallow-left::before,
+  .floating-chat-btn--swallow-right::before,
+  .floating-chat-btn--swallow-top::before,
+  .floating-chat-btn--swallow-bottom::before {
+    animation: none;
   }
   .floating-chat-btn:active {
     transform: none;

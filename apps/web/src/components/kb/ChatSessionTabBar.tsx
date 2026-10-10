@@ -19,6 +19,8 @@ interface Props {
   onDeleteConversations?: (ids: string[]) => void;
   /** 收起面板（保留标签，后台任务继续） */
   onClosePanel: () => void;
+  /** 进入全屏态（`/chat`）——面板让位，由全屏 shell 承担同一会话（L2b） */
+  onEnterFullscreen?: () => void;
   /** 是否停靠侧边栏形态（驱动停靠/悬浮切换按钮的图标与 pressed 态） */
   docked?: boolean;
   /** 停靠 ⇄ 悬浮 切换（按钮，带过渡动画） */
@@ -48,13 +50,24 @@ function FloatIcon() {
     </svg>
   );
 }
+/** 进入全屏（四角向外展开）——与 `/chat` 页头「最小化」的四角向内互为逆操作 */
+function ExpandIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M3 9V5a2 2 0 0 1 2-2h4" />
+      <path d="M15 3h4a2 2 0 0 1 2 2v4" />
+      <path d="M21 15v4a2 2 0 0 1-2 2h-4" />
+      <path d="M9 21H5a2 2 0 0 1-2-2v-4" />
+    </svg>
+  );
+}
 
 /**
  * 会话标签栏 — 复用 kb-wtab 的滚动模型：内部 .chat-session-tabs 是隐藏滚动条的
  * 横向滚动容器；溢出时显示 ‹ › 左右翻页箭头（无原生滚动条）；历史 / + 新建 / 收起
  * 三个按钮钉在栏尾始终可见；激活标签变化时自动滚入可见区。运行中的会话标签显示指示点。
  */
-export function ChatSessionTabBar({ sessions, activeSessionId, runningSessionIds, onActivate, onClose, onNewSession, onRename, onOpenConversation, onDeleteConversations, onClosePanel, docked = false, onToggleDock, onHeaderDragStart, onHeaderDragMove, onHeaderDragEnd }: Props) {
+export function ChatSessionTabBar({ sessions, activeSessionId, runningSessionIds, onActivate, onClose, onNewSession, onRename, onOpenConversation, onDeleteConversations, onClosePanel, onEnterFullscreen, docked = false, onToggleDock, onHeaderDragStart, onHeaderDragMove, onHeaderDragEnd }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const activeRef = useRef<HTMLDivElement>(null);
   const [canLeft, setCanLeft] = useState(false);
@@ -224,6 +237,20 @@ export function ChatSessionTabBar({ sessions, activeSessionId, runningSessionIds
           <line x1="5" y1="12" x2="19" y2="12" />
         </svg>
       </button>
+      {/* 「全屏」只在有会话时可用：没有任何标签时全屏 = 落到一个无头 landing，
+          用户会被困在没有最小化按钮的页面里（2026-10-10 用户实测踩中） */}
+      {sessions.length > 0 && (
+        <button
+          type="button"
+          className="chat-session-tab-fullscreen"
+          data-testid="kb-chat-fullscreen"
+          aria-label="全屏"
+          title="全屏"
+          onClick={onEnterFullscreen}
+        >
+          <ExpandIcon />
+        </button>
+      )}
       <button
         type="button"
         className="chat-session-tab-dock"
