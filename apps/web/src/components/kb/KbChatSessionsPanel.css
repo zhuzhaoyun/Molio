@@ -183,43 +183,40 @@ html {
 .floating-chat-btn.floating-chat-btn--swallow-bottom {
   box-shadow: 0 0 16px 3px rgba(201, 100, 66, 0.4), 0 10px 28px rgba(0, 0, 0, 0.22);
 }
-/* 吸附预告的指向箭头：border 折出的雪佛龙，指向按钮将藏入的那条缘。
-   位置取可见半区（嵌入 20px 后剩 32px），箭头居中朝缘。 */
+/* 吸附预告的指向箭头：深色圆片徽章 + 白色雪佛龙（SVG 背景），指向将藏入的缘。
+   不能用 border 拼的裸箭头——叠在品牌标的奶白圆环上是白上白，实测不可见。
+   方向 = 同一枚右向雪佛龙按缘旋转；圆片旋转不变。 */
 .floating-chat-btn.floating-chat-btn--swallow-left::before,
 .floating-chat-btn.floating-chat-btn--swallow-right::before,
 .floating-chat-btn.floating-chat-btn--swallow-top::before,
 .floating-chat-btn.floating-chat-btn--swallow-bottom::before {
   content: '';
   position: absolute;
-  width: 11px;
-  height: 11px;
-  border-radius: 1px;
-  filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.45));
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background:
+    url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>')
+    center / 12px no-repeat,
+    rgba(74, 32, 18, 0.62);
+  filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.4));
   animation: chat-btn-hint-blink 1s ease-in-out infinite;
 }
 .floating-chat-btn.floating-chat-btn--swallow-right::before {
-  left: 12px; top: 50%;
-  border-top: 3px solid rgba(255, 255, 255, 0.95);
-  border-right: 3px solid rgba(255, 255, 255, 0.95);
-  transform: translateY(-50%) rotate(45deg);
+  right: 6px; top: 50%;
+  transform: translateY(-50%);
 }
 .floating-chat-btn.floating-chat-btn--swallow-left::before {
-  right: 12px; top: 50%;
-  border-bottom: 3px solid rgba(255, 255, 255, 0.95);
-  border-left: 3px solid rgba(255, 255, 255, 0.95);
-  transform: translateY(-50%) rotate(45deg);
+  left: 6px; top: 50%;
+  transform: translateY(-50%) rotate(180deg);
 }
 .floating-chat-btn.floating-chat-btn--swallow-top::before {
-  top: 12px; left: 50%;
-  border-top: 3px solid rgba(255, 255, 255, 0.95);
-  border-left: 3px solid rgba(255, 255, 255, 0.95);
-  transform: translateX(-50%) rotate(45deg);
+  top: 6px; left: 50%;
+  transform: translateX(-50%) rotate(-90deg);
 }
 .floating-chat-btn.floating-chat-btn--swallow-bottom::before {
-  bottom: 12px; left: 50%;
-  border-bottom: 3px solid rgba(255, 255, 255, 0.95);
-  border-right: 3px solid rgba(255, 255, 255, 0.95);
-  transform: translateX(-50%) rotate(45deg);
+  bottom: 6px; left: 50%;
+  transform: translateX(-50%) rotate(90deg);
 }
 @keyframes chat-btn-hint-blink {
   0%, 100% { opacity: 0.7; }
