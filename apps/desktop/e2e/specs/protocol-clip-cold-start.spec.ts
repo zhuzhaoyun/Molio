@@ -2,6 +2,7 @@ import { test, expect, type Page } from '@playwright/test';
 import { _electron, type ElectronApplication } from '@playwright/test';
 import { waitForDaemon, waitForDaemonShutdown } from '../helpers/daemon-health';
 import { resolveClipFixture } from '../helpers/kb-fixture';
+import { ensureNoMolioProcesses, createE2EDataDir } from '../helpers/electron-app';
 import { spawn } from 'node:child_process';
 
 /**
@@ -48,7 +49,13 @@ test.beforeAll(async () => {
   electronApp = await _electron.launch({
     executablePath: exePath,
     args: ['--disable-gpu', '--no-sandbox', 'molio://launch'],
-    env: { ...process.env, MOLIO_DISABLE_UPDATER: '1' },
+    env: {
+      ...process.env,
+      MOLIO_DISABLE_UPDATER: '1',
+      // Isolated data dir — daemon writes app.sqlite, config.json, runs/, etc.
+      // to this temp dir instead of the user's real ~/.molio.
+      MOLIO_DATA_DIR: createE2EDataDir(),
+    },
   });
   page = await electronApp.firstWindow();
   await page.waitForLoadState('domcontentloaded');
@@ -66,7 +73,15 @@ test.beforeAll(async () => {
 test.afterAll(async () => {
   if (electronApp) {
     try { await electronApp.close(); } catch { /* ignore */ }
-    await waitForDaemonShutdown(3100, 10_000);
+  }
+
+  // Wait for daemon shutdown
+  await waitForDaemonShutdown(3100, 10_000);
+
+  // Process cleanup only in CI — locally we don't want to kill the user's
+  // running Molio instance (e.g. they might have it open while running tests).
+  if (process.env.CI === 'true') {
+    await ensureNoMolioProcesses();
   }
 });
 

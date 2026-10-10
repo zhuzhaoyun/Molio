@@ -702,7 +702,17 @@ export function knowledgeRoutes(
 
     return stream(c, async (s) => {
       c.req.raw.signal.addEventListener('abort', sseStream.cleanup);
-      await s.pipe(sseStream.stream);
+      try {
+        await s.pipe(sseStream.stream);
+      } catch (err) {
+        // Client disconnected mid-stream — cleanup() already tore down the
+        // watcher listener and ping interval. Swallow ERR_INVALID_STATE
+        // ("ReadableStream is already closed") so the uncaughtException
+        // handler doesn't kill the daemon process.
+        if ((err as NodeJS.ErrnoException)?.code !== 'ERR_INVALID_STATE') {
+          throw err;
+        }
+      }
     });
   });
 
@@ -732,6 +742,17 @@ function createVaultSSEStream(
   let ping: ReturnType<typeof setInterval> | null = null;
   let listener: ((changedId: string) => void) | null = null;
 
+  const doCleanup = () => {
+    if (ping) {
+      clearInterval(ping);
+      ping = null;
+    }
+    if (listener) {
+      vaultWatcher.off(VAULT_TREE_CHANGED_EVENT, listener);
+      listener = null;
+    }
+  };
+
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
       listener = (changedId: string) => {
@@ -755,28 +776,16 @@ function createVaultSSEStream(
       ping.unref?.();
     },
     cancel() {
-      if (ping) {
-        clearInterval(ping);
-        ping = null;
-      }
-      if (listener) {
-        vaultWatcher.off(VAULT_TREE_CHANGED_EVENT, listener);
-        listener = null;
-      }
+      doCleanup();
     },
   });
 
   return {
     stream,
+    // cleanup() is the external API for Hono route handlers — triggers cancel()
+    // which does the actual teardown. cancel() resolves silently on closed streams.
     cleanup: () => {
-      if (ping) {
-        clearInterval(ping);
-        ping = null;
-      }
-      if (listener) {
-        vaultWatcher.off(VAULT_TREE_CHANGED_EVENT, listener);
-        listener = null;
-      }
+      stream.cancel().catch(() => {});
     },
   };
 }

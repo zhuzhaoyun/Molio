@@ -189,16 +189,19 @@ test.describe('Home 会话产出面板', () => {
 
       // 去重：5 个唯一文件（4 md + 1 py），hot.md 的相对形态不产生第二行
       await expect(panel.locator('[data-testid="session-output-write"]')).toHaveCount(5);
-      await expect(panel.locator(`[data-path="${hotAbs}"]`)).toHaveCount(1);
+      // data-path 里是原始路径（Windows 含反斜杠），CSS 选择器需转义
+      const hotAbsEscaped = hotAbs.replace(/\\/g, '\\\\');
+      await expect(panel.locator(`[data-path="${hotAbsEscaped}"]`)).toHaveCount(1);
 
       // md 预览正常渲染（不是「无法读取」错误）
-      await panel.locator(`[data-path="${hotAbs}"]`).click();
+      await panel.locator(`[data-path="${hotAbsEscaped}"]`).click();
       await expect(panel.locator('[data-testid="session-output-preview"]')).toContainText('热点', { timeout: 5_000 });
       await panel.locator('[data-testid="session-output-preview-back"]').click();
 
       // .py 脚本 → 等宽代码视图原文展示，不被 markdown 吞掉
       const pyAbs = `${vault.path}/scripts/build_report.py`;
-      await panel.locator(`[data-path="${pyAbs}"]`).click();
+      const pyAbsEscaped = pyAbs.replace(/\\/g, '\\\\');
+      await panel.locator(`[data-path="${pyAbsEscaped}"]`).click();
       const codeView = panel.locator('.session-output-preview-code');
       await expect(codeView).toBeVisible({ timeout: 5_000 });
       await expect(codeView).toContainText('print("build report")');
