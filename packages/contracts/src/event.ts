@@ -32,8 +32,27 @@ export interface ActivityInfo {
   agents: SubagentActivity[];
 }
 
+/**
+ * Diagnostics from a Claude Code `system/api_retry` event — the CLI retries
+ * failed API calls with exponential backoff (up to 10 attempts / ~3 min for
+ * auth failures) while emitting one of these per attempt. Surfaced as a
+ * `status` event with label='retrying' so consumers (runtimes test button,
+ * chat UI) can show progress instead of a silent spinner.
+ */
+export interface ApiRetryInfo {
+  attempt?: number;
+  maxRetries?: number;
+  delayMs?: number;
+  /** HTTP status of the failed API call (401/403 = auth, 429/5xx = transient). */
+  errorStatus?: number;
+  /** Provider error reason, e.g. "authentication_failed". */
+  error?: string;
+}
+
 export type AgentEvent =
-  | { type: 'status'; label: string; model?: string; ttftMs?: number; sessionId?: string }
+  | { type: 'status'; label: string; model?: string; ttftMs?: number; sessionId?: string;
+      /** Present when label='retrying' (parsed from system/api_retry). */
+      retry?: ApiRetryInfo }
   | { type: 'text_delta'; delta: string }
   | { type: 'thinking_delta'; delta: string }
   | { type: 'thinking_start' }
