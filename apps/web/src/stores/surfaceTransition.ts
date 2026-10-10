@@ -42,6 +42,22 @@ function clearSurfaceNames(): void {
   }
 }
 
+/** 等「到达端」真实挂载：/chat 的 HomePage 是 React.lazy，navigate 提交后 chunk
+ *  还要异步解析——不等它，新快照抓不到命名的表面 → 形变组不存在 → VT 瞬间空转
+ *  （2026-10-10「进全屏没有动画」的根因；出全屏没事是因为面板常驻非懒加载）。
+ *  rAF 轮询 + 250ms 兜底：万一到达端永远不来，也不能把页面冻在旧快照上。 */
+function nextSurfaceReady(timeoutMs = 250): Promise<void> {
+  return new Promise((resolve) => {
+    const t0 = Date.now();
+    const tick = () => {
+      if (surfaceElement() || Date.now() - t0 > timeoutMs) return resolve();
+      // 不能用 rAF：VT 更新阶段渲染被挂起，rAF 停跳会死锁到超时；定时器不受影响
+      setTimeout(tick, 16);
+    };
+    tick();
+  });
+}
+
 function surfaceTransitionAvailable(): boolean {
   if (typeof document === 'undefined') return false;
   const doc = document as DocumentWithVT;
@@ -110,6 +126,7 @@ export function withSurfaceTransition(update: () => void | Promise<void>): void 
   nameSurface(); // 旧表面：抓旧快照前必须已在场
   const vt = doc.startViewTransition(async () => {
     await update();
+    await nextSurfaceReady();
     nameSurface(); // 新表面：update 换完 DOM、抓新快照前
   }) as { finished: Promise<void>; skipTransition: () => void } | undefined;
   running = vt ?? null;

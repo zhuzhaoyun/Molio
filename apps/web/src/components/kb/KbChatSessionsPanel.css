@@ -91,6 +91,9 @@
 ::view-transition-group(kb-chat-surface) {
   animation-duration: 300ms;
   animation-timing-function: cubic-bezier(0.2, 0, 0, 1);
+  /* 移动的表面边界：dock 面板与页面同底色，纯几何形变读不出来——
+     描边 + 投影让「一块表面在长大/缩小」两个方向都可感知 */
+  box-shadow: 0 0 0 1px var(--border), 0 12px 48px rgba(0, 0, 0, 0.28);
 }
 ::view-transition-old(kb-chat-surface),
 ::view-transition-new(kb-chat-surface) {
@@ -210,13 +213,13 @@ html {
   top: 12px; left: 50%;
   border-top: 3px solid rgba(255, 255, 255, 0.95);
   border-left: 3px solid rgba(255, 255, 255, 0.95);
-  transform: translateX(-50%) rotate(-45deg);
+  transform: translateX(-50%) rotate(45deg);
 }
 .floating-chat-btn.floating-chat-btn--swallow-bottom::before {
   bottom: 12px; left: 50%;
   border-bottom: 3px solid rgba(255, 255, 255, 0.95);
   border-right: 3px solid rgba(255, 255, 255, 0.95);
-  transform: translateX(-50%) rotate(-45deg);
+  transform: translateX(-50%) rotate(45deg);
 }
 @keyframes chat-btn-hint-blink {
   0%, 100% { opacity: 0.7; }
@@ -286,11 +289,16 @@ html {
   bottom: 2.5px; left: 50%;
   border-bottom: 2.5px solid rgba(255, 255, 255, 0.9);
   border-right: 2.5px solid rgba(255, 255, 255, 0.9);
-  transform: translateX(-50%) rotate(-45deg);
+  transform: translateX(-50%) rotate(45deg);
 }
-/* 悬停/聚焦：探出 14px 预览（不承诺；点击才唤回） */
+/* 悬停/聚焦：探出 14px 预览 + 品牌标淡入——露出的是按钮本体，不是一条空签 */
 .floating-chat-btn--hidden {
   transition: transform 160ms ease-out;
+}
+.floating-chat-btn--hidden:hover .floating-chat-btn__logo,
+.floating-chat-btn--hidden:focus-visible .floating-chat-btn__logo {
+  opacity: 1;
+  transition: opacity 200ms ease 60ms;
 }
 .floating-chat-btn--edge-right.floating-chat-btn--hidden:hover,
 .floating-chat-btn--edge-right.floating-chat-btn--hidden:focus-visible {
@@ -424,6 +432,12 @@ body.kb-moving {
   .floating-chat-btn--restore,
   .floating-chat-btn--hidden {
     transition: none;
+  }
+  .floating-chat-btn--swallow-left::before,
+  .floating-chat-btn--swallow-right::before,
+  .floating-chat-btn--swallow-top::before,
+  .floating-chat-btn--swallow-bottom::before {
+    animation: none;
   }
   .floating-chat-btn:active {
     transform: none;
