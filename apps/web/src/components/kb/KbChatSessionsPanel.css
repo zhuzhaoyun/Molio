@@ -249,44 +249,11 @@ html {
   transition: left 200ms cubic-bezier(0.16, 1, 0.3, 1), top 200ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-/* ── 隐藏态：按钮吸进缘里，只露 12px 圆弧小签 + 一枚**指向外**的箭头 ──
-   （右缘隐藏 → 箭头朝左：从这里拉出来）。几何由 inline left/top 表达；
-   品牌标淡出——露出的弧面上只读出「箭头 + 可以拉」。 */
+/* ── 隐藏态：按钮吸进缘里，只露 12px 圆弧小签 ──
+   品牌标淡出、不放方向箭头（实测反馈：去掉）——露出的弧面保持安静，
+   探出 + 品牌标淡入已足够表达「可以从这里拉出来」。 */
 .floating-chat-btn--hidden .floating-chat-btn__logo {
   opacity: 0;
-}
-.floating-chat-btn--hidden::after {
-  content: '';
-  position: absolute;
-  width: 7px;
-  height: 7px;
-  border-radius: 1px;
-  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.3));
-}
-/* 右缘隐藏：签在元素左侧 12px，箭头朝左（拉出方向） */
-.floating-chat-btn--edge-right.floating-chat-btn--hidden::after {
-  left: 2.5px; top: 50%;
-  border-bottom: 2.5px solid rgba(255, 255, 255, 0.9);
-  border-left: 2.5px solid rgba(255, 255, 255, 0.9);
-  transform: translateY(-50%) rotate(45deg);
-}
-.floating-chat-btn--edge-left.floating-chat-btn--hidden::after {
-  right: 2.5px; top: 50%;
-  border-top: 2.5px solid rgba(255, 255, 255, 0.9);
-  border-right: 2.5px solid rgba(255, 255, 255, 0.9);
-  transform: translateY(-50%) rotate(45deg);
-}
-.floating-chat-btn--edge-bottom.floating-chat-btn--hidden::after {
-  top: 2.5px; left: 50%;
-  border-top: 2.5px solid rgba(255, 255, 255, 0.9);
-  border-left: 2.5px solid rgba(255, 255, 255, 0.9);
-  transform: translateX(-50%) rotate(-45deg);
-}
-.floating-chat-btn--edge-top.floating-chat-btn--hidden::after {
-  bottom: 2.5px; left: 50%;
-  border-bottom: 2.5px solid rgba(255, 255, 255, 0.9);
-  border-right: 2.5px solid rgba(255, 255, 255, 0.9);
-  transform: translateX(-50%) rotate(45deg);
 }
 /* 悬停/聚焦：探出 14px 预览 + 品牌标淡入——露出的是按钮本体，不是一条空签 */
 .floating-chat-btn--hidden {
