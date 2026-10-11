@@ -97,4 +97,14 @@ describe('removeVaultFile / removeVaultDir', () => {
     assert.equal(ftsHit('raw/feishu/sub/2.md', '文件二'), false);
     assert.equal(ftsHit('raw/keep.md', '保留内容'), true);
   });
+
+  test('removeVaultDir 不误删同 LIKE 模式的兄弟目录（_ 是通配符）', () => {
+    write('a_b/x.md', '下划线目录内容');
+    write('axb/y.md', '兄弟目录内容');
+    indexVaultFile(db, V, vaultDir, 'a_b/x.md');
+    indexVaultFile(db, V, vaultDir, 'axb/y.md');
+    removeVaultDir(db, V, 'a_b');
+    assert.equal(ftsHit('a_b/x.md', '下划线目录内容'), false);
+    assert.equal(ftsHit('axb/y.md', '兄弟目录内容'), true); // 不得被当作 LIKE 通配误删
+  });
 });

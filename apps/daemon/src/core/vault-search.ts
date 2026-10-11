@@ -71,11 +71,14 @@ export function removeVaultFile(db: SqliteDb, vaultId: string, relPath: string):
 }
 
 export function removeVaultDir(db: SqliteDb, vaultId: string, dirRelPath: string): void {
-  const prefix = dirRelPath.replace(/\\/g, '/').replace(/\/+$/, '') + '/';
-  db.prepare("DELETE FROM vault_files_fts WHERE vault_id = ? AND (file_path = ? OR file_path LIKE ?)")
-    .run(vaultId, prefix.slice(0, -1), prefix + '%');
-  db.prepare("DELETE FROM vault_files_state WHERE vault_id = ? AND (file_path = ? OR file_path LIKE ?)")
-    .run(vaultId, prefix.slice(0, -1), prefix + '%');
+  const norm = dirRelPath.replace(/\\/g, '/').replace(/\/+$/, '');
+  // LIKE 里的 % 和 _ 是通配符——目录名可能含 `_`（如 a_b），不转义会误删
+  // 同模式的兄弟目录（a_b 会匹配 axb）。转义 + ESCAPE 让前缀按字面匹配。
+  const escaped = norm.replace(/[\\%_]/g, '\\$&');
+  db.prepare("DELETE FROM vault_files_fts WHERE vault_id = ? AND (file_path = ? OR file_path LIKE ? ESCAPE '\\')")
+    .run(vaultId, norm, escaped + '/%');
+  db.prepare("DELETE FROM vault_files_state WHERE vault_id = ? AND (file_path = ? OR file_path LIKE ? ESCAPE '\\')")
+    .run(vaultId, norm, escaped + '/%');
 }
 
 export interface ReindexOpts { maxTotal?: number }
