@@ -6,6 +6,7 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
+import type { SearchResult } from '@molio/contracts';
 import type { SqliteDb } from './db.js';
 import { TEXT_EXTS } from './knowledge.js';
 import { isPrunedDirName, MAX_DIR_ENTRIES, MAX_TOTAL } from './vault-prune.js';
@@ -154,4 +155,75 @@ export function rebuildVaultFtsAll(db: SqliteDb): { vaults: number } {
     }
   }
   return { vaults: n };
+}
+
+function sanitizeFtsQuery(query: string): { phrase: string; trimmed: string } {
+  const trimmed = query.replace(/[\r\n]+/g, ' ').trim().slice(0, 200);
+  return { phrase: `"${trimmed.replace(/"/g, '""')}"`, trimmed };
+}
+
+/**
+ * vault 全文搜索（替代 knowledge.ts 的 walk+includes searchFiles）。
+ * - 首搜建库：影子表为空 = 该 vault 从未索引，同步 reindexVault（成本 ≈ 旧实现
+ *   每次搜索的 walk，一次性支付）。
+ * - ≥3 字符：FTS5 短语查询（净化同 searchConversationIds）+ bm25 升序 + snippet。
+ * - <3 字符：trigram 无法成串，对 fts 表 content LIKE 回退（无 bm25，路径稳定序）。
+ * - 惰性校验：逐命中 stat——ENOENT 出索引并剔除；mtime/size 变了重索引该文件且
+ *   整榜重查一轮（只重试一次，防循环）。
+ */
+export function searchVaultFiles(
+  db: SqliteDb, vaultId: string, vaultPath: string, query: string, limit = 20,
+): { results: SearchResult[]; truncated: boolean } {
+  const { phrase, trimmed } = sanitizeFtsQuery(query);
+  if (!trimmed) return { results: [], truncated: false };
+
+  const seeded = db.prepare('SELECT 1 FROM vault_files_state WHERE vault_id = ? LIMIT 1').get(vaultId);
+  if (!seeded) reindexVault(db, vaultId, vaultPath);
+
+  const runQuery = (): Array<{ file_path: string; snip: string }> => {
+    if (trimmed.length < 3) {
+      return db.prepare(
+        `SELECT file_path, substr(content, 1, 400) AS snip FROM vault_files_fts
+         WHERE vault_id = ? AND content LIKE ? ESCAPE '\\' ORDER BY file_path LIMIT ?`,
+      ).all(vaultId, `%${trimmed.replace(/[\\%_]/g, '\\$&')}%`, limit + 1) as Array<{ file_path: string; snip: string }>;
+    }
+    return db.prepare(
+      `SELECT file_path, snippet(vault_files_fts, 0, '', '', '…', 24) AS snip
+       FROM vault_files_fts WHERE vault_files_fts MATCH ? AND vault_id = ?
+       ORDER BY bm25(vault_files_fts) LIMIT ?`,
+    ).all(phrase, vaultId, limit + 1) as Array<{ file_path: string; snip: string }>;
+  };
+
+  let rows = runQuery();
+  let retried = false;
+  const vaultRoot = path.resolve(vaultPath);
+  for (let i = rows.length - 1; i >= 0; i--) {
+    const rel = rows[i]!.file_path;
+    const resolved = path.resolve(path.join(vaultPath, rel));
+    if (resolved !== vaultRoot && !resolved.startsWith(vaultRoot + path.sep)) {
+      rows.splice(i, 1); // 索引被污染的防御：路径出库的直接剔掉
+      continue;
+    }
+    let stat: fs.Stats;
+    try {
+      stat = fs.statSync(resolved);
+    } catch {
+      removeVaultFile(db, vaultId, rel); // 外部删除：出结果 + 出索引
+      rows.splice(i, 1);
+      continue;
+    }
+    const shadow = db.prepare('SELECT mtime, size FROM vault_files_state WHERE vault_id = ? AND file_path = ?')
+      .get(vaultId, rel) as { mtime: number; size: number } | undefined;
+    if (shadow && (shadow.mtime !== Math.floor(stat.mtimeMs) || shadow.size !== stat.size)) {
+      indexVaultFile(db, vaultId, vaultPath, rel); // 外部修改：重索引这一份
+      if (!retried) { rows = runQuery(); retried = true; } // 内容可能变了，整榜重查一次
+    }
+  }
+
+  const results = rows.slice(0, limit).map((r) => ({
+    filePath: r.file_path,
+    fileName: r.file_path.split('/').pop() ?? r.file_path,
+    snippet: r.snip.replace(/\s+/g, ' ').trim(),
+  }));
+  return { results, truncated: rows.length > limit };
 }
