@@ -32,12 +32,12 @@ import {
   validateVaultPath,
   renamePath,
   ensureVaultDir,
-  searchFiles,
   importFiles,
   isInsideProtected,
   listPublishableTopDirs,
   type ImportResult,
 } from '../core/knowledge.js';
+import { searchVaultFiles } from '../core/vault-search.js';
 import { annotateTreeStatus } from '../core/wiki-status.js';
 import { VAULT_TREE_CHANGED_EVENT, type VaultWatcher } from '../core/vault-watcher.js';
 import type { RunManager } from '../core/RunManager.js';
@@ -673,7 +673,7 @@ export function knowledgeRoutes(
       : Math.min(rawLimit, 100);
 
     try {
-      const { results, truncated } = searchFiles(vault.path, q, limit);
+      const { results, truncated } = searchVaultFiles(db, vault.id, vault.path, q, limit);
       return c.json({ results, truncated });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to search vault';

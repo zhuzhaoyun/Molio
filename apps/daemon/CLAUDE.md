@@ -133,6 +133,7 @@ pnpm typecheck    # tsc --noEmit
 | POST | `/api/conversations/:id/rewind-resend` | 重新生成/编辑重发（回退到末条 user 消息重放建新 run） |
 | POST | `/api/conversations/:id/delete-messages` | 按 id 集合删除消息（勾选删除） |
 | POST | `/api/maintenance/rebuild-fts` | 重建 messages_fts 索引（灾难恢复） |
+| POST | `/api/maintenance/rebuild-vault-fts` | 重建 vault 文件 FTS 索引（灾难恢复，检索 P0 层1） |
 | GET/POST/PUT/DELETE | `/api/knowledge` | 知识库管理 |
 | POST | `/api/publish` | 发布到内容平台 |
 | GET | `/api/graph/:vaultId` | 知识图谱数据（全量） |
