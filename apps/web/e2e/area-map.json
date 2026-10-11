@@ -67,6 +67,9 @@
         "apps/daemon/src/core/knowledge.ts",
         "apps/daemon/src/core/db.ts",
         "apps/daemon/src/routes/knowledge.ts",
+        "apps/daemon/src/core/vault-search.ts",
+        "apps/daemon/src/core/citations.ts",
+        "apps/daemon/src/routes/maintenance.ts",
         "apps/web/src/stores/splitViewStore*",
         "apps/web/src/hooks/useCompanionFile*",
         "apps/web/src/components/kb/CompanionHeader*"
@@ -95,6 +98,7 @@
         "chat-work-visibility",
         "split-view",
         "kb-terminology",
+        "kb-search",
         "market-community"
       ]
     },
@@ -362,6 +366,10 @@
     "kb-terminology": {
       "priority": "P1",
       "file": "kb-terminology.spec.ts"
+    },
+    "kb-search": {
+      "priority": "P1",
+      "file": "kb-search.spec.ts"
     },
     "kb-chat-entry": {
       "priority": "P1",
