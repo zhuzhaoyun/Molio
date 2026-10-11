@@ -3,6 +3,7 @@ import type { AgentEvent, ChatMessage } from '@molio/contracts';
 import type { RunManager } from '../RunManager.js';
 import type { ConversationService } from '../conversations/service.js';
 import { extractOutboundMedia } from './outbound-media.js';
+import { citationPathFromToolUse, formatCitationBlock } from '../citations.js';
 import type { ChannelSink } from './types.js';
 
 const RUN_REPLY_TIMEOUT_MS = 5 * 60 * 1000;
@@ -283,8 +284,10 @@ export class ChannelDispatcher {
     let reply = '';
     let settled = false;
     let unsubscribe: (() => void) | null = null;
+    /** 本轮读过的文件（依据清单来源）；只拼进 IM 出站文本，不进落库正文。 */
+    const cited: string[] = [];
 
-    const finish = async (text: string, opts?: { cancelRun?: boolean }) => {
+    const finish = async (text: string, opts?: { cancelRun?: boolean; withCitations?: boolean }) => {
       if (settled) return;
       settled = true;
       unsubscribe?.();
@@ -301,9 +304,12 @@ export class ChannelDispatcher {
       // writes via Write/Edit are NOT auto-delivered (that would spam the
       // user with every .md produced during ingestion).
       const { items, text: cleanText } = extractOutboundMedia(text, cwd);
+      // 依据清单只拼进 IM 文本，不进落库正文（桌面端已渲染依据条，且 SaveToKb
+      // 存库不该带这段）。
+      const citationBlock = opts?.withCitations ? formatCitationBlock(cited) : null;
       this.deps.conversations.appendAssistantMessage(conversationId, cleanText || text, { agentId, runId });
       if (cleanText) {
-        await this.deps.sink.sendText(userId, cleanText);
+        await this.deps.sink.sendText(userId, citationBlock ? cleanText + citationBlock : cleanText);
       }
       for (const item of items) {
         await this.deps.sink.sendMediaFile(userId, item);
@@ -332,9 +338,13 @@ export class ChannelDispatcher {
         return;
       }
 
-      // tool_use events are intentionally not handled here — file delivery is
-      // explicit-only via <attach/> markers parsed from the reply text, so we
-      // don't need to track which files the AI wrote.
+      // 文件投递仍走 <attach/> 显式协议（AI 写出的文件不自动投递，避免刷屏）；
+      // 这里只记账「读过的文件」，收尾时拼成 IM 依据清单。
+      if (event.type === 'tool_use') {
+        const p = citationPathFromToolUse(event.name, event.input);
+        if (p) cited.push(p);
+        return;
+      }
 
       if (event.type === 'error') {
         void finish(`Molio 处理失败：${event.message}`);
@@ -343,7 +353,7 @@ export class ChannelDispatcher {
 
       if (event.type === 'turn_end') {
         const text = reply.trim();
-        void finish(text || 'Molio 已完成处理，但没有返回文本内容。');
+        void finish(text || 'Molio 已完成处理，但没有返回文本内容。', { withCitations: true });
         return;
       }
 
@@ -354,7 +364,7 @@ export class ChannelDispatcher {
 
       if (event.type === 'status' && event.label === 'completed') {
         const text = reply.trim();
-        void finish(text || 'Molio 已完成处理，但没有返回文本内容。');
+        void finish(text || 'Molio 已完成处理，但没有返回文本内容。', { withCitations: true });
       }
     };
 
