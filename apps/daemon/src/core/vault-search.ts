@@ -8,6 +8,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { SqliteDb } from './db.js';
 import { TEXT_EXTS } from './knowledge.js';
+import { isPrunedDirName, MAX_DIR_ENTRIES, MAX_TOTAL } from './vault-prune.js';
 
 export const MAX_INDEX_FILE_BYTES = 2 * 1024 * 1024;
 
@@ -74,4 +75,83 @@ export function removeVaultDir(db: SqliteDb, vaultId: string, dirRelPath: string
     .run(vaultId, prefix.slice(0, -1), prefix + '%');
   db.prepare("DELETE FROM vault_files_state WHERE vault_id = ? AND (file_path = ? OR file_path LIKE ?)")
     .run(vaultId, prefix.slice(0, -1), prefix + '%');
+}
+
+export interface ReindexOpts { maxTotal?: number }
+
+/**
+ * 全量/增量重建一个 vault 的索引。与 scanTree 同款剪枝语义（isPrunedDirName +
+ * 每目录 MAX_DIR_ENTRIES + MAX_TOTAL 截断）。未变文件经 indexVaultFile 内部的
+ * 影子表判变只 stat 不重读；影子表里已消失的路径（外部/agent 删除）在此收尾清除。
+ */
+export function reindexVault(
+  db: SqliteDb, vaultId: string, vaultPath: string, opts: ReindexOpts = {},
+): { indexed: number; removed: number } {
+  const maxTotal = opts.maxTotal ?? MAX_TOTAL;
+  const seen = new Set<string>();
+  let indexed = 0;
+
+  const walk = (absDir: string, relBase: string): void => {
+    let entries: fs.Dirent[];
+    try {
+      entries = fs.readdirSync(absDir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    if (entries.length > MAX_DIR_ENTRIES) return; // 与 scanTree 同款：超大目录不进
+    for (const entry of entries) {
+      if (seen.size >= maxTotal) return;
+      if (isPrunedDirName(entry.name)) continue;
+      const rel = relBase ? `${relBase}/${entry.name}` : entry.name;
+      const abs = path.join(absDir, entry.name);
+      if (entry.isDirectory()) {
+        walk(abs, rel);
+      } else if (entry.isFile()) {
+        seen.add(rel);
+        const before = db.prepare(
+          'SELECT mtime, size FROM vault_files_state WHERE vault_id = ? AND file_path = ?',
+        ).get(vaultId, rel) as { mtime: number; size: number } | undefined;
+        indexVaultFile(db, vaultId, vaultPath, rel);
+        const after = db.prepare(
+          'SELECT mtime, size FROM vault_files_state WHERE vault_id = ? AND file_path = ?',
+        ).get(vaultId, rel) as { mtime: number; size: number } | undefined;
+        if (after && (!before || before.mtime !== after.mtime || before.size !== after.size)) indexed++;
+      }
+    }
+  };
+  walk(vaultPath, '');
+
+  let removed = 0;
+  const known = db.prepare('SELECT file_path FROM vault_files_state WHERE vault_id = ?')
+    .all(vaultId) as Array<{ file_path: string }>;
+  for (const { file_path } of known) {
+    if (!seen.has(file_path)) {
+      removeVaultFile(db, vaultId, file_path);
+      removed++;
+    }
+  }
+  return { indexed, removed };
+}
+
+/**
+ * 灾难恢复：清空全部 vault 的文件索引后按 vaults 表逐个重建。
+ * 单个 vault 目录不可达（卸载的盘等）跳过，不拖垮整体。
+ */
+export function rebuildVaultFtsAll(db: SqliteDb): { vaults: number } {
+  const vaults = db.prepare('SELECT id, path FROM vaults').all() as Array<{ id: string; path: string }>;
+  let n = 0;
+  for (const v of vaults) {
+    const clear = db.transaction(() => {
+      db.prepare('DELETE FROM vault_files_fts WHERE vault_id = ?').run(v.id);
+      db.prepare('DELETE FROM vault_files_state WHERE vault_id = ?').run(v.id);
+    });
+    clear();
+    try {
+      reindexVault(db, v.id, v.path);
+      n++;
+    } catch {
+      // 目录不可达——跳过
+    }
+  }
+  return { vaults: n };
 }
