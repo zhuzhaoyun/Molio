@@ -824,8 +824,10 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
         onRename={(id, title) => kbChatSessionsStore.updateSession(id, { title })}
         onOpenConversation={handleOpenConversation}
         onDeleteConversations={resetConversations}
-        // 收起：面板矩形缩进右下角悬浮按钮（同一块表面的形变；按钮持有同名 VT 标注）
-        onClosePanel={() => withSurfaceTransitionSync(() => kbChatSessionsStore.setPanelOpen(false))}
+        // 收起：不包 VT —— 出口是**启动器按钮**而非表面（见 surfaceTransition.ts 文件头），
+        // 形变没有对端；硬包会空等 nextSurfaceReady 的兜底超时、再把旧快照慢慢淡出，
+        // 反而顶掉面板自己的 CSS 回落动画（.floating-chat-panel--closed 160ms）。
+        onClosePanel={() => kbChatSessionsStore.setPanelOpen(false)}
         // 进入全屏态：会话不变（还是当前活动标签），只是换个承载它的视图。
         // 形态交接见 handleEnterFullscreen（面板宽度拉满到内容区宽后才换页，交接无缝）。
         onEnterFullscreen={handleEnterFullscreen}
