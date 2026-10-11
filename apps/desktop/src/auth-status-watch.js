@@ -103,7 +103,7 @@ export function startAuthStatusPolling({ daemonPort = 3100, onUser, log, interva
   const timer = setInterval(() => {
     void poll();
   }, effectiveInterval);
-  // 不阻止进程退出（与 daemon-metrics 对称）。
+  // 不阻止进程退出。
   timer.unref();
   // 启动即查一次：用户带登录态启动应用时不必等第一个间隔。
   void poll();

@@ -1,5 +1,5 @@
 /**
- * 轮询间隔 env 覆盖的统一解析（auth-status-watch.js 与 daemon-metrics.js 共用）。
+ * 轮询间隔 env 覆盖的统一解析（当前仅 auth-status-watch.js 使用；daemon-metrics 已移除）。
  *
  * 背景：setInterval 会把 <=0 的值夹到 1ms，误配的超短间隔会变成对 daemon 的
  * 请求风暴。且 JS 里 Number('-1') 是 truthy，naive 的 `Number(x) || fallback`

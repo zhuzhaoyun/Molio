@@ -8,7 +8,6 @@ import { setupAutoUpdater } from './updater.js';
 import { log, getLogPath } from './logger.js';
 import { startFetchServer } from './wiki-fetcher.js';
 import { openFeishuLogin, getFeishuLoginStatus } from './wiki-fetcher-login.js';
-import { startDaemonMetricsPolling } from './daemon-metrics.js';
 import { startCryptoServer, stopCryptoServer } from './crypto-server.js';
 import { startAuthStatusPolling } from './auth-status-watch.js';
 import { CappedBuffer } from './capped-buffer.js';
@@ -88,7 +87,6 @@ let lastFocusedAppWindow = null;
  */
 const rendererStates = createRendererReadiness();
 let daemonProcess = null;
-let stopDaemonMetrics = null;
 let stopAuthStatusPolling = null;
 
 // 当前登录的 Molio userId（ULID，未登录为 null）。由 auth-status-watch 轮询
@@ -983,12 +981,13 @@ app.whenReady().then(async () => {
   if (!isDevMode()) {
     daemonReady = (await daemonStartPromise) === true;
 
-    // ⑥ Bridge daemon memory metrics to ARMS (daemon has no ARMS SDK).
-    //    Also poll login state so ARMS events carry the Molio userId.
-    //    Both are gated on daemonReady && armsRum: no daemon → nothing to
-    //    poll; no ARMS (dev mode) → nothing to inject into.
+    // ⑥ Poll login state so ARMS events carry the Molio userId.
+    //    Gated on daemonReady && armsRum: no daemon → nothing to poll;
+    //    no ARMS (dev mode) → nothing to inject into.
+    //    （原第⑥步的 daemon 内存 sendCustom 上报已移除：ARMS memory 采集器已按
+    //    30min 窗口覆盖主进程 + 子进程（含 daemon）的 working_set，那个每 60s 一次的
+    //    自定义上报重复且是持续的额度消耗源。见 monitoring.js 降本注释。）
     if (daemonReady && armsRum) {
-      stopDaemonMetrics = startDaemonMetricsPolling({ armsRum, log });
       stopAuthStatusPolling = startAuthStatusPolling({
         daemonPort: DAEMON_PORT,
         log,
@@ -1119,7 +1118,6 @@ app.on('before-quit', (event) => {
   // Signal the window close handler to actually close the window instead
   // of hiding it (macOS hide-on-close behavior).
   forceQuit = true;
-  if (stopDaemonMetrics) { stopDaemonMetrics(); stopDaemonMetrics = null; }
   if (stopAuthStatusPolling) { stopAuthStatusPolling(); stopAuthStatusPolling = null; }
   if (daemonProcess) {
     // Prevent the default quit until daemon is fully terminated.
