@@ -26,7 +26,8 @@ import { AuthClient } from './core/auth/auth-client.js';
 import { WeixinService } from './core/weixin/service.js';
 import { FeishuService } from './core/feishu/service.js';
 import { ConversationService } from './core/conversations/service.js';
-import { VaultWatcher } from './core/vault-watcher.js';
+import { VaultWatcher, VAULT_TREE_CHANGED_EVENT } from './core/vault-watcher.js';
+import { VaultIndexSweeper } from './core/vault-search.js';
 import { createPreloadManager } from './core/preload-manager.js';
 import { preloadRoutes } from './routes/preload.js';
 
@@ -36,6 +37,11 @@ export const conversationService = new ConversationService(db);
 export const weixinService = new WeixinService(runManager, conversationService, db);
 export const feishuService = new FeishuService(runManager, conversationService, db);
 export const vaultWatcher = new VaultWatcher(db);
+// 检索 P0 层1：vault 文件索引新鲜度巡检。tree-changed（agent/外部落盘）防抖增量
+// 重建；启动时对已挂载 vault 各排一次，补齐停机期间的外部改动。
+export const vaultIndexSweeper = new VaultIndexSweeper(db);
+vaultWatcher.on(VAULT_TREE_CHANGED_EVENT, (vaultId: string) => vaultIndexSweeper.scheduleVault(vaultId));
+vaultIndexSweeper.scheduleAll();
 export const preloadManager = createPreloadManager();
 // 云端认证 client（懒读 MOLIO_AUTH_URL，未设置时回落内置官方地址
 // DEFAULT_AUTH_URL；显式空白才算未配置 → 登录端点回 503）。
@@ -85,6 +91,7 @@ app.post('/api/shutdown', async (c) => {
   weixinService.stop();
   await feishuService.stop();
   void vaultWatcher.stop();
+  vaultIndexSweeper.stop();
   runManager.cancelAll('shutdown:desktop-request');
   closeDatabase();
   // Give the HTTP response a chance to be sent before exiting
@@ -195,6 +202,7 @@ function gracefulShutdown(): void {
   cleanupAllBridges();
   weixinService.stop();
   void vaultWatcher.stop();
+  vaultIndexSweeper.stop();
   runManager.cancelAll('shutdown:graceful');
   // Kill any in-progress preload subprocess trees so we don't orphan detached
   // pip/npm children (they'd keep downloading after the daemon is gone).

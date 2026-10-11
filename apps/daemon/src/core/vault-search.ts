@@ -7,7 +7,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { SearchResult } from '@molio/contracts';
-import type { SqliteDb } from './db.js';
+import { getVault, type SqliteDb } from './db.js';
 import { TEXT_EXTS } from './knowledge.js';
 import { isPrunedDirName, MAX_DIR_ENTRIES, MAX_TOTAL } from './vault-prune.js';
 
@@ -226,4 +226,61 @@ export function searchVaultFiles(
     snippet: r.snip.replace(/\s+/g, ' ').trim(),
   }));
   return { results, truncated: rows.length > limit };
+}
+
+/**
+ * 后台索引新鲜度巡检（检索 P0 层 1 的「活库」地基）。
+ *
+ * 为什么需要它：写路径挂钩（routes/knowledge.ts）只覆盖经 Molio API 的写入；
+ * agent（Claude Code 的 Write/Edit）与外部编辑器直写磁盘不经过那些函数，搜索时
+ * 惰性校验又只复核「已命中」的文件——新文件在 sweep 前根本不会被发现。本类订阅
+ * VaultWatcher 的 tree-changed（外部/agent 落盘会触发 chokidar），按 vault 防抖
+ * 合并后跑一次 reindexVault（stat-only walk，未变文件不重读）。启动时 scheduleAll
+ * 给已挂载的 vault 各排一次，补齐 daemon 停机期间的外部改动。
+ */
+export class VaultIndexSweeper {
+  private timers = new Map<string, ReturnType<typeof setTimeout>>();
+  private stopped = false;
+  private readonly debounceMs: number;
+
+  constructor(private readonly db: SqliteDb, opts: { debounceMs?: number } = {}) {
+    this.debounceMs = opts.debounceMs ?? 4000;
+  }
+
+  /** 排一次防抖 sweep；同 vault 连续触发合并为一次（重置定时器）。 */
+  scheduleVault(vaultId: string): void {
+    if (this.stopped) return;
+    const existing = this.timers.get(vaultId);
+    if (existing) clearTimeout(existing);
+    const t = setTimeout(() => {
+      this.timers.delete(vaultId);
+      this.sweepVaultNow(vaultId);
+    }, this.debounceMs);
+    t.unref?.();
+    this.timers.set(vaultId, t);
+  }
+
+  /** 启动预索引：对 vaults 表里全部 vault 各排一次（错峰防抖，不阻塞 listen）。 */
+  scheduleAll(): void {
+    const rows = this.db.prepare('SELECT id FROM vaults').all() as Array<{ id: string }>;
+    for (const { id } of rows) this.scheduleVault(id);
+  }
+
+  /** 同步扫一个 vault（测试/立即刷新入口）。vault 不存在或目录不可达则静默跳过。 */
+  sweepVaultNow(vaultId: string): void {
+    const vault = getVault(this.db, vaultId);
+    if (!vault) return;
+    try {
+      reindexVault(this.db, vaultId, vault.path);
+    } catch {
+      // 目录不可达等——下次 tree-changed 再试，不打断服务
+    }
+  }
+
+  /** 清定时器（server 优雅关停调用）。stop 后 scheduleVault 不再排新任务。 */
+  stop(): void {
+    this.stopped = true;
+    for (const t of this.timers.values()) clearTimeout(t);
+    this.timers.clear();
+  }
 }
