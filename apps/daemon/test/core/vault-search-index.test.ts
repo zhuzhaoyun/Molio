@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { openDatabase } from '../../src/core/db.js';
+import { openDatabase, deleteVault } from '../../src/core/db.js';
 import { indexVaultFile, removeVaultFile, removeVaultDir } from '../../src/core/vault-search.js';
 
 let vaultDir: string;
@@ -106,5 +106,19 @@ describe('removeVaultFile / removeVaultDir', () => {
     removeVaultDir(db, V, 'a_b');
     assert.equal(ftsHit('a_b/x.md', '下划线目录内容'), false);
     assert.equal(ftsHit('axb/y.md', '兄弟目录内容'), true); // 不得被当作 LIKE 通配误删
+  });
+
+  test('deleteVault 清空该库的索引（不残留原文）', () => {
+    db.prepare('INSERT INTO vaults (id, name, path, created_at) VALUES (?,?,?,?)')
+      .run(V, '库', vaultDir, Date.now());
+    write('a.md', '盗刷残留内容甲乙丙');
+    indexVaultFile(db, V, vaultDir, 'a.md');
+    assert.equal(ftsHit('a.md', '残留内容甲'), true);
+
+    deleteVault(db, V);
+    const fts = (db.prepare('SELECT COUNT(*) n FROM vault_files_fts WHERE vault_id=?').get(V) as { n: number }).n;
+    const state = (db.prepare('SELECT COUNT(*) n FROM vault_files_state WHERE vault_id=?').get(V) as { n: number }).n;
+    assert.equal(fts, 0);   // 删库后原文不得滞留索引
+    assert.equal(state, 0);
   });
 });

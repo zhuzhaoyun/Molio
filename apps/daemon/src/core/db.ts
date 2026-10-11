@@ -872,6 +872,10 @@ export function createVault(db: SqliteDb, name: string, vaultPath: string, descr
 }
 
 export function deleteVault(db: SqliteDb, id: string): void {
+  // 检索 P0 层1：删库必须一并清索引，否则该库全部文件的原文会永久滞留在
+  // vault_files_fts 里（rebuildVaultFtsAll 只遍历现存 vault，回收不了）。
+  db.prepare('DELETE FROM vault_files_fts WHERE vault_id = ?').run(id);
+  db.prepare('DELETE FROM vault_files_state WHERE vault_id = ?').run(id);
   db.prepare('DELETE FROM vaults WHERE id = ?').run(id);
   // Clear active-vault if it pointed at the deleted vault.
   if (getActiveVaultId(db) === id) {

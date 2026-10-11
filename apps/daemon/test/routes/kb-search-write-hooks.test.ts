@@ -70,6 +70,15 @@ describe('写路径索引挂钩', () => {
     assert.deepEqual(await hits('保留内容EFGH'), ['notes/renamed.md']);
   });
 
+  test('改目录名 → 新路径下文件可搜（目录也要走索引更新）', async () => {
+    await writeViaApi('olddir/x.md', '目录改名内容AB12');
+    const res = await app.request(`/api/knowledge/vaults/${V}/files/${encodeURIComponent('olddir')}`, {
+      method: 'PUT', headers: JSON_HDR, body: JSON.stringify({ newPath: 'newdir' }),
+    });
+    assert.equal(res.status, 200);
+    assert.deepEqual(await hits('目录改名内容AB12'), ['newdir/x.md']);
+  });
+
   test('导入 → 立即可搜', async () => {
     const fd = new FormData();
     fd.set('targetDir', 'raw');

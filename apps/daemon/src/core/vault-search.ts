@@ -185,10 +185,16 @@ export function searchVaultFiles(
 
   const runQuery = (): Array<{ file_path: string; snip: string }> => {
     if (trimmed.length < 3) {
+      // snippet 取匹配处 ±30（与旧 searchFiles 一致）——SearchPanel 靠 snippet 内
+      // indexOf 高亮关键词，若取文件开头则 2 字中文查询（旗舰场景）的高亮全失效。
+      const like = `%${trimmed.replace(/[\\%_]/g, '\\$&')}%`;
       return db.prepare(
-        `SELECT file_path, substr(content, 1, 400) AS snip FROM vault_files_fts
-         WHERE vault_id = ? AND content LIKE ? ESCAPE '\\' ORDER BY file_path LIMIT ?`,
-      ).all(vaultId, `%${trimmed.replace(/[\\%_]/g, '\\$&')}%`, limit + 1) as Array<{ file_path: string; snip: string }>;
+        `SELECT file_path,
+                substr(content, max(1, instr(content, ?) - 30), length(?) + 60) AS snip
+         FROM vault_files_fts
+         WHERE vault_id = ? AND content LIKE ? ESCAPE '\\'
+         ORDER BY file_path LIMIT ?`,
+      ).all(trimmed, trimmed, vaultId, like, limit + 1) as Array<{ file_path: string; snip: string }>;
     }
     return db.prepare(
       `SELECT file_path, snippet(vault_files_fts, 0, '', '', '…', 24) AS snip
@@ -241,6 +247,9 @@ export function searchVaultFiles(
  * 合并后跑一次 reindexVault（stat-only walk，未变文件不重读）。启动时 scheduleAll
  * 给已挂载的 vault 各排一次，补齐 daemon 停机期间的外部改动。
  */
+/** scheduleAll 里相邻 vault 预索引之间的错峰间隔（毫秒）。 */
+const STAGGER_MS = 250;
+
 export class VaultIndexSweeper {
   private timers = new Map<string, ReturnType<typeof setTimeout>>();
   private stopped = false;
@@ -251,22 +260,27 @@ export class VaultIndexSweeper {
   }
 
   /** 排一次防抖 sweep；同 vault 连续触发合并为一次（重置定时器）。 */
-  scheduleVault(vaultId: string): void {
+  scheduleVault(vaultId: string, extraDelayMs = 0): void {
     if (this.stopped) return;
     const existing = this.timers.get(vaultId);
     if (existing) clearTimeout(existing);
     const t = setTimeout(() => {
       this.timers.delete(vaultId);
       this.sweepVaultNow(vaultId);
-    }, this.debounceMs);
+    }, this.debounceMs + extraDelayMs);
     t.unref?.();
     this.timers.set(vaultId, t);
   }
 
-  /** 启动预索引：对 vaults 表里全部 vault 各排一次（错峰防抖，不阻塞 listen）。 */
+  /**
+   * 启动预索引：对 vaults 表里全部 vault 各排一次，逐个顺延 STAGGER_MS 错峰
+   * （不阻塞 listen）。reindexVault 是同步全量 walk——若所有 vault 在同一 tick
+   * 触发，多库场景会在启动后同时涌入一串完整 walk，长阻塞事件循环（NAS/网络
+   * 挂载的 /vaults 上 stat 不免费）。错峰把并发收敛为串行。
+   */
   scheduleAll(): void {
     const rows = this.db.prepare('SELECT id FROM vaults').all() as Array<{ id: string }>;
-    for (const { id } of rows) this.scheduleVault(id);
+    rows.forEach(({ id }, i) => this.scheduleVault(id, i * STAGGER_MS));
   }
 
   /** 同步扫一个 vault（测试/立即刷新入口）。vault 不存在或目录不可达则静默跳过。 */

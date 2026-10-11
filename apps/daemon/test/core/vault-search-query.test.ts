@@ -60,6 +60,15 @@ describe('searchVaultFiles', () => {
     assert.equal(results.length, 1);
   });
 
+  test('两字短查询 snippet 含关键词（取自匹配处，非文件开头）', () => {
+    // 关键词落在 400 字之后——若 snippet 取 substr(content,1,400) 会不含关键词，
+    // SearchPanel 的 indexOf 高亮随之失效（旗舰场景：2 字中文查询）
+    write('mid.md', '甲乙丙丁戊己庚辛壬癸'.repeat(50) + '盗刷' + '结尾内容'.repeat(20));
+    const { results } = searchVaultFiles(db, V, vaultDir, '盗刷');
+    assert.equal(results.length, 1);
+    assert.ok(results[0]!.snippet.includes('盗刷'), `snippet 应含关键词，实际: ${results[0]!.snippet}`);
+  });
+
   test('命中文件被外部删除 → 剔除并出索引', () => {
     write('a.md', '盗刷内容甲乙丙');
     searchVaultFiles(db, V, vaultDir, '盗刷内容');

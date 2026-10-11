@@ -37,7 +37,7 @@ import {
   listPublishableTopDirs,
   type ImportResult,
 } from '../core/knowledge.js';
-import { searchVaultFiles, indexVaultFile, removeVaultFile, removeVaultDir } from '../core/vault-search.js';
+import { searchVaultFiles, indexVaultFile, removeVaultFile, removeVaultDir, reindexVault } from '../core/vault-search.js';
 import { annotateTreeStatus } from '../core/wiki-status.js';
 import { VAULT_TREE_CHANGED_EVENT, type VaultWatcher } from '../core/vault-watcher.js';
 import type { RunManager } from '../core/RunManager.js';
@@ -316,10 +316,19 @@ export function knowledgeRoutes(
       if (isInsideProtected(body.newPath)) {
         return c.json({ error: { code: 'BAD_REQUEST', message: `Cannot move files into protected directory: ${body.newPath}` } }, 400);
       }
+      // renamePath 同时服务文件与目录——先判源类型再改名（改名后源路径即消失）。
+      const oldAbs = path.resolve(path.join(vault.path, relPath));
+      const wasDir = existsSync(oldAbs) && statSync(oldAbs).isDirectory();
       renamePath(vault.path, relPath, body.newPath);
-      // 先清旧路径再索引新路径——否则旧路径残留幽灵命中
-      removeVaultFile(db, vault.id, relPath);
-      indexVaultFile(db, vault.id, vault.path, body.newPath);
+      if (wasDir) {
+        // 目录改名/移动：清旧子树索引 + 重建（新子树路径全变，需重新索引）
+        removeVaultDir(db, vault.id, relPath);
+        reindexVault(db, vault.id, vault.path);
+      } else {
+        // 先清旧路径再索引新路径——否则旧路径残留幽灵命中
+        removeVaultFile(db, vault.id, relPath);
+        indexVaultFile(db, vault.id, vault.path, body.newPath);
+      }
       addKbHistory(db, vault.id, 'edit', `Renamed "${relPath}" → "${body.newPath}"`);
       return c.json({ ok: true });
     } catch (err) {
