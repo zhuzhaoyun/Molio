@@ -274,12 +274,15 @@ test.describe('Home 会话产出面板', () => {
         }, vaultB.id);
         await expect(page.locator('.kb-vault-bar__name')).toHaveText(vaultB.name, { timeout: 1_500 });
       }).toPass({ timeout: 15_000 });
-      // 回主页 → 旧会话已清空：home 回到无对话的 landing 视图，产出面板随之消失。
+      // 回主页 → 旧会话已清空：标签保留、落在空的全屏 shell（不再是 landing），
+      // 产出面板仍在（它是当前会话产出的视图，开关状态不随会话重置），但必须回空态。
       // （跨 vault 重置由 KbChatSessionController 按标签处理。）
       await gotoChatSpa(page);
       await expect(page.locator('[data-testid="assistant-message"]')).toHaveCount(0);
-      await expect(page.locator('.home-landing')).toBeVisible({ timeout: 5_000 });
-      await expect(page.locator('[data-testid="session-output-panel"]')).toHaveCount(0);
+      await expect(page.locator('.home-page.chat-active')).toBeVisible({ timeout: 5_000 });
+      await expect(page.locator('[data-testid="session-output-empty"]')).toBeVisible({ timeout: 5_000 });
+      // 关键回归判据：旧 vault 的写入项不得残留（空态断言本身不足以证明这一点）
+      await expect(page.locator('[data-testid="session-output-write"]')).toHaveCount(0);
     } finally {
       await cleanupTempVault(vaultA);
       await cleanupTempVault(vaultB);
