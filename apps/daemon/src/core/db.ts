@@ -12,7 +12,7 @@ import os from 'node:os';
 import { randomUUID } from 'node:crypto';
 import type { ChatMessage, Project, Conversation, ConversationHistoryItem, ConversationHistoryPage, ListHistoryQuery, Vault, KbHistoryEntry } from '@molio/contracts';
 
-type SqliteDb = Database.Database;
+export type SqliteDb = Database.Database;
 
 export const CHANNELS_PROJECT_ID = '__molio_channels__';
 export const DESKTOP_PROJECT_ID = '__molio_desktop__';
@@ -272,6 +272,25 @@ function migrate(db: SqliteDb): void {
       INSERT INTO messages_fts(content, conversation_id, message_id)
         VALUES (new.content, new.conversation_id, new.id);
     END;
+  `);
+
+  // Vault 文件全文索引（检索 P0 层 1）。与 messages_fts 同款 trigram 分词：
+  // CJK 子串友好、免 jieba。mtime/size 记在影子表 vault_files_state（不在 fts
+  // 行里）——判「变没变」是索引器的事，查询只管 MATCH + bm25。无触发器：文件
+  // 在磁盘不在行内，更新入口在 core/vault-search.ts（写咽喉挂钩 + tree-changed
+  // 巡检 + 搜索时惰性校验）。灾难恢复：POST /api/maintenance/rebuild-vault-fts。
+  db.exec(`
+    CREATE VIRTUAL TABLE IF NOT EXISTS vault_files_fts USING fts5(
+      content, vault_id UNINDEXED, file_path UNINDEXED,
+      tokenize = 'trigram'
+    );
+    CREATE TABLE IF NOT EXISTS vault_files_state (
+      vault_id TEXT NOT NULL,
+      file_path TEXT NOT NULL,
+      mtime INTEGER NOT NULL,
+      size INTEGER NOT NULL,
+      PRIMARY KEY (vault_id, file_path)
+    );
   `);
 
   // One-time backfill of pre-existing messages. Guarded by kv flag so repeated
