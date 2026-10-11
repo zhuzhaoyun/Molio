@@ -37,7 +37,7 @@ import {
   listPublishableTopDirs,
   type ImportResult,
 } from '../core/knowledge.js';
-import { searchVaultFiles } from '../core/vault-search.js';
+import { searchVaultFiles, indexVaultFile, removeVaultFile, removeVaultDir } from '../core/vault-search.js';
 import { annotateTreeStatus } from '../core/wiki-status.js';
 import { VAULT_TREE_CHANGED_EVENT, type VaultWatcher } from '../core/vault-watcher.js';
 import type { RunManager } from '../core/RunManager.js';
@@ -253,6 +253,8 @@ export function knowledgeRoutes(
     try {
       const body = await c.req.json<{ content: string }>();
       writeFile(vault.path, relPath, body.content);
+      // 检索 P0 层1：经 Molio API 的写入即时更新索引（不等 watcher/sweep）
+      indexVaultFile(db, vault.id, vault.path, relPath);
       addKbHistory(db, vault.id, 'edit', `File "${relPath}" saved`);
       return c.json({ ok: true });
     } catch (err) {
@@ -278,6 +280,7 @@ export function knowledgeRoutes(
 
     try {
       await deleteFile(vault.path, relPath);
+      removeVaultFile(db, vault.id, relPath);
       addKbHistory(db, vault.id, 'edit', `File "${relPath}" deleted`);
       return c.body(null, 204);
     } catch (err) {
@@ -314,6 +317,9 @@ export function knowledgeRoutes(
         return c.json({ error: { code: 'BAD_REQUEST', message: `Cannot move files into protected directory: ${body.newPath}` } }, 400);
       }
       renamePath(vault.path, relPath, body.newPath);
+      // 先清旧路径再索引新路径——否则旧路径残留幽灵命中
+      removeVaultFile(db, vault.id, relPath);
+      indexVaultFile(db, vault.id, vault.path, body.newPath);
       addKbHistory(db, vault.id, 'edit', `Renamed "${relPath}" → "${body.newPath}"`);
       return c.json({ ok: true });
     } catch (err) {
@@ -562,6 +568,10 @@ export function knowledgeRoutes(
 
       const result = importFiles(vault.path, fileEntries, targetDir, conflict);
       result.errors = [...perFileErrors, ...result.errors];
+      // 导入的每个落盘文件（含改名后的）即时入索引
+      for (const p of [...result.imported, ...result.renamed.map((r) => r.to)]) {
+        indexVaultFile(db, vault.id, vault.path, p);
+      }
 
       // If conflict: "ask" and conflicts were found, return 409
       if (result.conflicts && result.conflicts.length > 0) {
@@ -615,6 +625,7 @@ export function knowledgeRoutes(
 
     try {
       await deleteDirectory(vault.path, relPath);
+      removeVaultDir(db, vault.id, relPath);
       addKbHistory(db, vault.id, 'edit', `Directory "${relPath}" deleted`);
       return c.body(null, 204);
     } catch (err) {
