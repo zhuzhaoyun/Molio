@@ -158,12 +158,27 @@ describe('RunManager ACP integration (Hermes)', () => {
     assert.equal(entryBefore.alive, true, 'process must SURVIVE cancelRun');
     assert.equal(pool.__getEntry('hermes'), entryBefore, 'entry must stay pooled');
 
+    // Regression (2026-10-10 red-conversation incident): cancel must go out
+    // as a NOTIFICATION. The fake mirrors real hermes: the request form makes
+    // its router raise Method not found and dump "[ERROR] root: Background
+    // task failed" + a traceback on stderr — which the pool then replayed
+    // into the NEXT run's opening events, turning it red on arrival.
+    await new Promise((r) => setTimeout(r, 200)); // give any wrongful stderr time to land
+    assert.ok(
+      !(entryBefore.lastStderrLine ?? '').includes('Background task failed'),
+      `session/cancel must be a notification; fake hermes saw the request form: ${entryBefore.lastStderrLine}`,
+    );
+
     // A second run reuses the same process: same entry, same pid — and since
     // the pool runs `initialize` only at spawn, reuse means no second handshake.
     const runId2 = await runManager.createRun({ agentId: 'hermes', message: 'hi again' });
     const events2 = await collectEvents(runId2, (ev) => ev.type === 'turn_end');
     assert.ok(events2.some((e) => e.type === 'models'), 'reused session still reports models');
     assert.ok(events2.some((e) => e.type === 'text_delta'), 'reused process must stream a reply');
+    assert.equal(
+      events2.filter((e) => e.type === 'error').length, 0,
+      'the next run must open clean — no replayed cancel-time events',
+    );
 
     const entryAfter = pool.__getEntry('hermes');
     assert.equal(entryAfter, entryBefore, 'second run must reuse the same pool entry');
@@ -279,7 +294,11 @@ describe('RunManager ACP integration (Hermes)', () => {
     // conversion) where hermes itself is silent while a subprocess runs.
     assert.equal(def.acp?.promptIdleTimeoutMs, 300000);
     assert.equal(def.acp?.absoluteTimeoutMs, 1800000);
-    assert.equal(def.acp?.cancelTimeoutMs, 5000);
+    // No cancelTimeoutMs anymore: session/cancel is a NOTIFICATION per the ACP
+    // spec — fire-and-forget, nothing to time out. (Sending it as a request
+    // made hermes raise Method not found — 2026-10-10 red-conversation
+    // incident; the wire form is pinned by the cancelRun integration test.)
+    assert.equal('cancelTimeoutMs' in (def.acp ?? {}), false);
   });
 
   it('session/new silent tail exceeding the idle budget times out naming session/new', async () => {

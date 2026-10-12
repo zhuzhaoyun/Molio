@@ -93,9 +93,13 @@ export interface PoolEntry {
    * Events emitted before the first session attaches (stderr during
    * initialize, transport diagnostics). Buffered (capped) and replayed to the
    * first attaching session so run #1's events.jsonl keeps the cold-start
-   * diagnostics it had in the 1-run-1-process world.
+   * diagnostics it had in the 1-run-1-process world. Buffering stops
+   * permanently after the first attach (`everAttached`) — inter-run stderr
+   * must never leak into a LATER run's replay (2026-10-10 incident).
    */
   earlyEvents: AgentEvent[];
+  /** Set on the first attachSession; gates earlyEvents buffering. */
+  everAttached: boolean;
 }
 
 export interface AcpPoolHooks {
@@ -121,9 +125,27 @@ const DEFAULT_IDLE_TTL_MS = 10 * 60 * 1000; // 10 min with zero sessions
  *    plugin-activation detail lines, ExperimentalWarnings stay log-only `raw`
  *    (an `error` event flips the frontend to streaming:false and swallows the
  *    reply stream — ACP-level failures arrive via JSON-RPC error responses).
- *  - hermes (python): `YYYY-MM-DD HH:MM:SS [INFO|WARNING|DEBUG] …` log lines
- *    stay `raw` (persisted to events.jsonl for diagnosis); ERROR lines and
- *    Python tracebacks surface as `error`.
+ *  - hermes (python): EVERYTHING stays `raw` — no stderr line ever becomes an
+ *    `error` event (still persisted to events.jsonl for diagnosis).
+ *
+ *    History (two real red-conversation incidents, 2026-10-09 + 10-10):
+ *    1. Denylist ("no timestamp prefix → error") fired on benign untimestamped
+ *       stderr — hermes echoes multi-line user prompts (`Prompt on session …`),
+ *       so every continuation line of a KB Q&A prompt turned the run red.
+ *    2. Allowlist ("[ERROR]/[CRITICAL]/Traceback header → error") STILL turned
+ *       runs red: hermes logs benign BACKGROUND-task failures (`[ERROR] root:
+ *       Background task failed` + traceback — CancelledError from cancels, MCP
+ *       discovery retries, a Method-not-found raised by our own malformed
+ *       session/cancel request) while the session itself keeps serving
+ *       perfectly. One such line replayed from the pool's early-events buffer
+ *       flipped a healthy 5-minute run red on arrival.
+ *
+ *    Lesson: hermes stderr line shapes are not a fatality signal. Real
+ *    failures surface through dedicated channels — JSON-RPC error responses
+ *    (initialize / session/new / session/prompt), process exit (onProcessExit
+ *    → run failed with lastStderrLine appended), and idle timeouts (also carry
+ *    lastStderrLine). An `error` event here would only flip the frontend to
+ *    streaming:false and swallow a healthy reply stream.
  */
 export function classifyAcpStderrLine(agentId: string, line: string): AgentEvent {
   if (agentId === 'dsh') {
@@ -132,10 +154,7 @@ export function classifyAcpStderrLine(agentId: string, line: string): AgentEvent
       ? { type: 'error', message: line }
       : { type: 'raw', line };
   }
-  const isInfoLevel = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} \[(INFO|WARNING|DEBUG)\]/;
-  return isInfoLevel.test(line)
-    ? { type: 'raw', line }
-    : { type: 'error', message: line };
+  return { type: 'raw', line };
 }
 
 export class AcpPool {
@@ -212,6 +231,7 @@ export class AcpPool {
    */
   attachSession(entry: PoolEntry, sessionId: string, att: AcpSessionAttachment): void {
     entry.sessions.set(sessionId, att);
+    entry.everAttached = true;
     this.disarmIdleTimer(entry);
     entry.transport.registerSession(sessionId, att.sink);
     // Replay cold-start diagnostics (stderr during initialize etc.) into the
@@ -329,6 +349,7 @@ export class AcpPool {
       binary: spec.binary,
       sessions: new Map(),
       earlyEvents: [],
+      everAttached: false,
     };
 
     const transport = new AcpTransport(
@@ -443,7 +464,18 @@ export class AcpPool {
   /** Route a transport-level diagnostic to all sessions, or buffer pre-attach. */
   private routeTransportEvent(entry: PoolEntry, ev: AgentEvent): void {
     if (entry.sessions.size === 0) {
-      if (entry.earlyEvents.length < EARLY_EVENTS_CAP) entry.earlyEvents.push(ev);
+      // Buffer ONLY during the true cold-start window (before the FIRST
+      // attach). Zero-session gaps AFTER a run has ridden this process are
+      // inter-run noise — most dangerously the stderr hermes emits while
+      // processing our session/cancel right after detachSession. Buffering
+      // that replayed the previous run's cancel-time errors as the NEXT run's
+      // opening events, turning every conversation after a cancel red
+      // (2026-10-10 incident: a 08:27 cancel traceback surfaced as run
+      // 08:32's first two `error` events). Drop instead; lastStderrLine
+      // still records the latest line for failure diagnostics.
+      if (!entry.everAttached && entry.earlyEvents.length < EARLY_EVENTS_CAP) {
+        entry.earlyEvents.push(ev);
+      }
       return;
     }
     this.broadcast(entry, ev);

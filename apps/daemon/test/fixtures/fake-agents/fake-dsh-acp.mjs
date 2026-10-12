@@ -215,7 +215,10 @@ function handleRequest(msg) {
   }
 
   if (msg.method === 'session/cancel') {
-    send({ jsonrpc: '2.0', id: msg.id, result: {} });
+    // ACP spec: session/cancel is a NOTIFICATION — the daemon sends it
+    // without an id and never waits for an ack. Tolerate the legacy request
+    // form too (respond only when an id is present).
+    if (msg.id !== undefined) send({ jsonrpc: '2.0', id: msg.id, result: {} });
     return;
   }
 

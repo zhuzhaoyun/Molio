@@ -67,7 +67,6 @@ export const hermesAgentDef: RuntimeAgentDef = {
     // while still guaranteeing an eventual exit. The idle timer catches hangs
     // much faster in normal operation.
     absoluteTimeoutMs: 1800000,
-    cancelTimeoutMs: 5000,
     // Opt in to the pre-spawn `hermes-acp --check` integrity probe with the
     // just-in-time [acp] extra auto-repair (see ensureAcpExtra below). This
     // is hermes-specific: other ACP agents don't implement `--check`.

@@ -311,9 +311,8 @@ export interface RuntimeAgentDef {
     promptIdleTimeoutMs?: number;
     /** Hard cap regardless of activity, as a safety net (default 300s = 5min). */
     absoluteTimeoutMs?: number;
-    /** Timeout for `session/cancel` — strict absolute deadline (default 5s).
-     *  On expiry, fall back to SIGTERM. Cancel is a short ack, no idle timer. */
-    cancelTimeoutMs?: number;
+    // No cancel-timeout knob: per the ACP spec `session/cancel` is a
+    // NOTIFICATION (fire-and-forget, no ack to wait for).
     /**
      * Opt in to the pre-spawn integrity probe (`bin --check` + auto-repair of a
      * broken install). Only the hermes venv `[acp]`-extra repair flow uses

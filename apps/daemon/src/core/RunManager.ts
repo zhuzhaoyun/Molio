@@ -768,12 +768,14 @@ export class RunManager {
 
     // The user may have hit stop (or shutdown fired cancelAll) while
     // session/new was in flight — the run is already terminal. Don't attach:
-    // cancel the orphaned session best-effort (session-scoped, so even a
-    // timeout can't kill the shared process) and bail before registering a
+    // cancel the orphaned session best-effort and bail before registering a
     // sink that would keep the entry's session map non-empty forever.
     if (TERMINAL_STATUSES.has(run.status)) {
-      transport.request('session/cancel', { sessionId }, { absoluteTimeoutMs: 5000, sessionId })
-        .catch(() => { /* orphan cleanup is best-effort */ });
+      // NOTIFICATION, not request (ACP spec): hermes registers session/cancel
+      // only as a notification route — the request form makes its router raise
+      // Method not found and dump a "Background task failed" traceback on
+      // stderr (2026-10-10 red-conversation incident).
+      transport.notify('session/cancel', { sessionId });
       this.acpPool.armIdleIfSessionless(entry.id);
       return;
     }
@@ -1151,14 +1153,14 @@ export class RunManager {
     if (def?.transport === 'acp-jsonrpc' && run.acp) {
       const { transport, sessionId, poolEntryId } = run.acp;
       transport.markCancelled(sessionId);
-      const cancelTimeout = def.acp?.cancelTimeoutMs ?? 5000;
-      // Cancel is a short ack — strict absolute deadline, no idle timer.
-      // Session-scoped (sessionId in options): even a cancel timeout must not
-      // kill the shared process other conversations are riding. Fire-and-forget
-      // — the detach below is what actually frees this run.
+      // NOTIFICATION, not request (ACP spec): hermes registers session/cancel
+      // only as a notification route — the request form made its router raise
+      // Method not found and dump a "Background task failed" traceback on
+      // stderr, which the pool then replayed into the NEXT run's event stream
+      // (2026-10-10 red-conversation incident). No ack to wait for; the
+      // detach below is what actually frees this run.
       if (sessionId) {
-        transport.request('session/cancel', { sessionId }, { absoluteTimeoutMs: cancelTimeout, sessionId })
-          .catch(() => { /* cancel ack failed — session is detached anyway */ });
+        transport.notify('session/cancel', { sessionId });
       }
       // Detach NOW (before any late session/update races in): stops routing
       // events to this run and — when it was the entry's last session — arms

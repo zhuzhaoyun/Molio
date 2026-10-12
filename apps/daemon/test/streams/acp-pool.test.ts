@@ -239,6 +239,49 @@ describe('AcpPool', () => {
       assert.ok(s1.events.length > 0, 'first attaching session must receive the buffered cold-start diagnostics');
       assert.equal(entry.earlyEvents.length, 0, 'buffer is drained by replay');
     });
+
+    it('inter-run stderr (zero-session window AFTER first attach) is dropped, not replayed to the next session', async () => {
+      // Regression, 2026-10-10 red-conversation incident: cancelRun detaches
+      // the session and (back then) sent session/cancel as a REQUEST; real
+      // hermes only routes it as a notification, raised Method not found and
+      // dumped `[ERROR] Background task failed` + a traceback on stderr. With
+      // zero sessions attached, routeTransportEvent buffered those lines into
+      // earlyEvents and REPLAYED them as the next run's opening events — the
+      // new conversation went red on arrival (its own stream was healthy).
+      // The fake mirrors real hermes: request-form cancel → -32601 + stderr.
+      const pool = makePool();
+      const entry = await pool.acquire(makeSpec({ fingerprint: 'fp-stale-replay' }));
+      const s1 = await createAndAttach(pool, entry);
+      pool.detachSession(entry.id, s1.sessionId);
+
+      await assert.rejects(
+        entry.transport.request(
+          'session/cancel',
+          { sessionId: s1.sessionId },
+          { absoluteTimeoutMs: 3000 },
+        ),
+        /method not found/i,
+      );
+      await sleep(300); // let the fake's stderr traceback lines land
+
+      assert.equal(
+        entry.earlyEvents.length, 0,
+        'events in a post-first-attach zero-session window must be DROPPED, not buffered',
+      );
+
+      const s2 = await createAndAttach(pool, entry);
+      assert.equal(
+        s2.events.filter((e) => e.type === 'error').length, 0,
+        'next session must not open with replayed stale errors',
+      );
+      assert.ok(
+        !s2.events.some((e) => {
+          const text = (e as any).line ?? (e as any).message ?? '';
+          return String(text).includes('Background task failed');
+        }),
+        'stale cancel-time stderr must not replay into the next session at all',
+      );
+    });
   });
 
   describe('crash handling', () => {
@@ -490,18 +533,67 @@ describe('classifyAcpStderrLine', () => {
     });
   });
 
-  it('hermes: timestamped INFO/WARNING/DEBUG stay raw, ERROR and tracebacks surface', () => {
+  it('hermes: EVERY stderr line stays raw — no level or shape ever surfaces as error', () => {
+    // 2026-10-10 incident: even the allowlisted `[ERROR]` header + `Traceback`
+    // line turned a healthy 5-minute run red (benign background-task failure
+    // replayed from the pool buffer → frontend streaming:false). Real hermes
+    // failures arrive via JSON-RPC error responses / process exit (with
+    // lastStderrLine) / idle timeouts — never via stderr line shapes.
     assert.deepEqual(classifyAcpStderrLine('hermes', '2026-10-09 12:00:00 [INFO] hermes.plugins: loaded'), {
       type: 'raw', line: '2026-10-09 12:00:00 [INFO] hermes.plugins: loaded',
     });
     assert.deepEqual(classifyAcpStderrLine('hermes', '2026-10-09 12:00:00 [WARNING] x: y'), {
       type: 'raw', line: '2026-10-09 12:00:00 [WARNING] x: y',
     });
-    assert.deepEqual(classifyAcpStderrLine('hermes', '2026-10-09 12:00:00 [ERROR] x: boom'), {
-      type: 'error', message: '2026-10-09 12:00:00 [ERROR] x: boom',
+    assert.deepEqual(classifyAcpStderrLine('hermes', '2026-10-10 08:27:38 [ERROR] root: Background task failed'), {
+      type: 'raw', line: '2026-10-10 08:27:38 [ERROR] root: Background task failed',
+    });
+    assert.deepEqual(classifyAcpStderrLine('hermes', '2026-10-09 12:00:00 [CRITICAL] x: boom'), {
+      type: 'raw', line: '2026-10-09 12:00:00 [CRITICAL] x: boom',
     });
     assert.deepEqual(classifyAcpStderrLine('hermes', 'Traceback (most recent call last):'), {
-      type: 'error', message: 'Traceback (most recent call last):',
+      type: 'raw', line: 'Traceback (most recent call last):',
     });
+  });
+
+  it('hermes: multi-line prompt echo continuation lines stay raw (2026-10-09 red-conversation regression)', () => {
+    // Real user scenario: hermes logs `Prompt on session …: <user message>`;
+    // KB Q&A messages are multi-line, so continuation lines arrive WITHOUT the
+    // timestamp prefix. The old "untimestamped → error" rule turned nearly
+    // every conversation red (e.g. the 2nd line "https://…" became an error
+    // event that flipped the frontend to streaming:false).
+    assert.deepEqual(
+      classifyAcpStderrLine('hermes', '2026-10-09 21:42:00 [INFO] acp_adapter.server: Prompt on session abc: （知识库问答：请用 wiki-query skill'),
+      { type: 'raw', line: '2026-10-09 21:42:00 [INFO] acp_adapter.server: Prompt on session abc: （知识库问答：请用 wiki-query skill' },
+    );
+    assert.deepEqual(classifyAcpStderrLine('hermes', 'https://mp.weixin.qq.com/s/RxRzTsRv'), {
+      type: 'raw', line: 'https://mp.weixin.qq.com/s/RxRzTsRv',
+    });
+    assert.deepEqual(classifyAcpStderrLine('hermes', '对于下一个文章选题，你有什么建议？'), {
+      type: 'raw', line: '对于下一个文章选题，你有什么建议？',
+    });
+  });
+
+  it('hermes: traceback body lines and benign warnings stay raw', () => {
+    // One background-task exception used to produce a dozen red lines; now
+    // the whole traceback (header AND body) stays in events.jsonl as raw for
+    // diagnosis without touching the run's UI state.
+    assert.deepEqual(
+      classifyAcpStderrLine('hermes', 'File "C:\\\\hermes\\\\venv\\\\Lib\\\\site-packages\\\\acp\\\\task\\\\supervisor.py", line 51, in _on_done'),
+      { type: 'raw', line: 'File "C:\\\\hermes\\\\venv\\\\Lib\\\\site-packages\\\\acp\\\\task\\\\supervisor.py", line 51, in _on_done' },
+    );
+    assert.deepEqual(classifyAcpStderrLine('hermes', '    result = await self._request_runner(message)'), {
+      type: 'raw', line: '    result = await self._request_runner(message)',
+    });
+    assert.deepEqual(classifyAcpStderrLine('hermes', '~~~~~~~~~~~^^'), {
+      type: 'raw', line: '~~~~~~~~~~~^^',
+    });
+    assert.deepEqual(classifyAcpStderrLine('hermes', 'asyncio.exceptions.CancelledError'), {
+      type: 'raw', line: 'asyncio.exceptions.CancelledError',
+    });
+    assert.deepEqual(
+      classifyAcpStderrLine('hermes', 'C:\\\\hermes\\\\pm\\\\shell.py:13: SyntaxWarning: "\\\\W" is an invalid escape sequence.'),
+      { type: 'raw', line: 'C:\\\\hermes\\\\pm\\\\shell.py:13: SyntaxWarning: "\\\\W" is an invalid escape sequence.' },
+    );
   });
 });

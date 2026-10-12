@@ -77,7 +77,6 @@ export const dshAgentDef: RuntimeAgentDef = {
     idleTimeoutMs: 60000,
     promptIdleTimeoutMs: 300000,
     absoluteTimeoutMs: 1800000,
-    cancelTimeoutMs: 5000,
     // preflightRepair deliberately NOT set — `dsh --check` is not a valid
     // invocation (exits 1 with "--profile <name> is required"), so the
     // hermes-style venv repair probe must never run against this binary.

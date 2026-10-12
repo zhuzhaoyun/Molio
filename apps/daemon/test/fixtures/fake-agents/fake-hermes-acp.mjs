@@ -217,7 +217,17 @@ function handleRequest(msg) {
   }
 
   if (msg.method === 'session/cancel') {
-    send({ jsonrpc: '2.0', id: msg.id, result: {} });
+    // Mirror REAL hermes (2026-10-10 incident): session/cancel is registered
+    // as a NOTIFICATION route only. The notification form is accepted
+    // silently; the request form (has an id) hits the router's
+    // method_not_found path, which answers with a JSON-RPC error AND dumps a
+    // "Background task failed" traceback on stderr — the exact lines that used
+    // to poison the pool's early-events buffer and turn the NEXT run red.
+    if (msg.id === undefined) return;
+    send({ jsonrpc: '2.0', id: msg.id, error: { code: -32601, message: `method not found: ${msg.method}` } });
+    process.stderr.write(`${ts()} [ERROR] root: Background task failed\n`);
+    process.stderr.write('Traceback (most recent call last):\n');
+    process.stderr.write('acp.exceptions.RequestError: Method not found\n');
     return;
   }
 
