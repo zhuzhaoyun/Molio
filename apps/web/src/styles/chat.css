@@ -225,13 +225,19 @@
   margin: 8px 0;
   color: var(--text-muted);
 }
-.assistant-prose h1, .assistant-prose h2, .assistant-prose h3 {
+.assistant-prose h1, .assistant-prose h2, .assistant-prose h3,
+.assistant-prose h4, .assistant-prose h5, .assistant-prose h6 {
   margin: 12px 0 6px;
   color: var(--text-strong);
 }
+/* 正文 14px。h1–h4 字号 18/17/16/15 逐级递减；h5/h6 与正文同 14px，
+   靠加粗 + 颜色递减区分层级。 */
 .assistant-prose h1 { font-size: 18px; }
-.assistant-prose h2 { font-size: 16px; }
-.assistant-prose h3 { font-size: 14px; }
+.assistant-prose h2 { font-size: 17px; }
+.assistant-prose h3 { font-size: 16px; }
+.assistant-prose h4 { font-size: 15px; }
+.assistant-prose h5 { font-size: 14px; color: var(--text); }
+.assistant-prose h6 { font-size: 14px; color: var(--text-muted); }
 .assistant-prose a {
   color: var(--selected);
   text-decoration: none;
