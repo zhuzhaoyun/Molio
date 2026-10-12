@@ -202,3 +202,17 @@ export function useKbChatActiveSessionId(): string | null {
 export function useKbChatPanelOpen(): boolean {
   return useSyncExternalStore(kbChatSessionsStore.subscribe, kbChatSessionsStore.isPanelOpen, kbChatSessionsStore.isPanelOpen);
 }
+
+/**
+ * 会话输入框的草稿命名空间 —— 面板态（`KbChatSession`）与全屏态（`/chat` 的 `HomePage`）
+ * 必须**逐字一致**：两个视图共享同一份草稿、同一套 @ 上下文播种。这里是唯一真值源，
+ * 两处都调它，杜绝格式漂移。放在 store 里是为了让两个组件都能 import 且不产生循环依赖。
+ */
+export function sessionComposerKey(id: string, filePath?: string | null): string {
+  return `kb:${id}:${filePath ?? ''}`;
+}
+
+/** composer 的 React key（按「会话:文件」重挂载，重新播种 @ 上下文）。 */
+export function sessionComposerMountKey(id: string, filePath?: string | null): string {
+  return `${id}:${filePath ?? ''}`;
+}

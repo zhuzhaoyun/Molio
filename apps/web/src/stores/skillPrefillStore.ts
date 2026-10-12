@@ -3,7 +3,7 @@
  *
  * The "存为技能" button lives on each assistant message (deep in the chat tree),
  * but the confirmation modal must render at the app root (above the chat). Rather
- * than prop-drill a callback through ChatPane → AssistantMessage → App, the button
+ * than prop-drill a callback through ChatSessionView → AssistantMessage → App, the button
  * pushes a PrefillResult here and App.tsx subscribes and renders the modal.
  *
  * Uses React 18's useSyncExternalStore for tear-free external store access,

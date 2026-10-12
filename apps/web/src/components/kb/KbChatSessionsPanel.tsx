@@ -1,12 +1,15 @@
 // apps/web/src/components/kb/KbChatSessionsPanel.tsx
 import { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, forwardRef } from 'react';
+import { useLocation } from 'react-router-dom';
 import {
   kbChatSessionsStore, useKbChatSessions, useKbChatActiveSessionId, useKbChatPanelOpen,
   MAX_CHAT_SESSIONS,
 } from '../../stores/kbChatSessionsStore';
 import { useCurrentContext } from '../../stores/currentContextStore';
+import { CHAT_ROUTE } from '../../routes';
 import { ChatSessionTabBar } from './ChatSessionTabBar';
-import { KbChatSession, type KbChatSessionApi } from './KbChatSession';
+import { KbChatSession } from './KbChatSession';
+import { useKbChatSessionApi } from './KbChatSessionsProvider';
 import { WIKI_PROMPTS, WIKI_INGEST_PROMPT, WIKI_TITLES } from './kbChatPrompts';
 import { ConfirmDialog } from './KbModals';
 import './KbChatSessionsPanel.css';
@@ -16,6 +19,12 @@ export interface KbChatSessionsPanelHandle {
   openQa: (opts: { filePath: string | null; vaultId: string | null; selectedText?: string | null }) => void;
   /** 打开历史会话（方案 D：任意页面就地打开，不跳转知识库页）。 */
   openConversation: (conversationId: string) => void;
+  /**
+   * 会话（conversation）被删除后的收敛：清空任何正加载该 conversation 的标签
+   * （不关闭标签，只是把它的消息与 conversationId 清掉 → 主页/面板回到空态）。
+   * 历史页勾选删除 / 主页输入框历史下拉 / 面板历史下拉 共用。
+   */
+  resetConversations: (ids: string[]) => void;
 }
 
 interface WikiOpOpts { mode: 'build' | 'lint' | 'ingest'; filePath?: string; isDirectory?: boolean }
@@ -98,21 +107,18 @@ function readFloatPos(): { left: number; top: number } | null {
   return null;
 }
 
-interface Props {
-  agentId: string | null;
-  /** 历史下拉删除成功后通知 App（清空主页已加载会话） */
-  onDeleteConversations?: (ids: string[]) => void;
-}
+// 面板不再从 App 接收 props：历史下拉删除后的收敛由面板自己处理（handle.resetConversations）。
+interface Props {}
 
 export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(function KbChatSessionsPanel(
-  { agentId, onDeleteConversations }, ref,
+  _props, ref,
 ) {
+  const location = useLocation();
   const sessions = useKbChatSessions();
   const activeSessionId = useKbChatActiveSessionId();
   // 上下文改从全局 store 读（方案 D：面板常驻 App 层，任意页面可用，不依赖 KB 页 props）
   const { vault, filePath, page } = useCurrentContext();
   const panelOpen = useKbChatPanelOpen();
-  const vaultPath = vault?.path ?? null;
   const currentVaultId = vault?.id ?? null;
   const currentFilePath = filePath;
 
@@ -120,7 +126,6 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
   // #5: pendingSelection 归属的会话 id（null = 无）。只投给目标会话，避免广播给所有空会话、
   // 被任意会话的首条消息消费。
   const [pendingSelectionSessionId, setPendingSelectionSessionId] = useState<string | null>(null);
-  const [runningMap, setRunningMap] = useState<Record<string, boolean>>({});
   const [confirmDialog, setConfirmDialog] = useState<{ show: boolean; title: string; message: string }>({ show: false, title: '', message: '' });
   const [toast, setToast] = useState<string | null>(null);
   // 关闭「运行中会话」的确认态（ref 作真值源，state 触发渲染）
@@ -137,9 +142,11 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
   );
   // 按页记忆停靠形态：每页应用自己记住的形态（KB 页默认停靠、其余页默认悬浮）。
   // 面板现已全局可用，因此非 KB 页的形态记忆也要生效——离开 KB 页不再切换形态，
-  // 面板保持原样跨页（App 层只在到达主页时收起它）。
-  // 主页例外：面板在主页不可见（App 层收起且不渲染悬浮按钮），若在此把停靠切成悬浮，
-  // 会先跳到悬浮几何再消失——回归保护见 e2e/floating-chat.spec.ts 的「主页是例外」用例。
+  // 面板保持原样跨页（App 层只在到达 `/chat` 时收起它）。
+  // `/chat` 例外（其上下文页名为 'home'）：L2a 后 `/chat` = 悬浮面板的全屏态，该页自身
+  // 渲染活动会话的 ChatSessionView，面板整体返回 null（见下方 CHAT_ROUTE 早返回）、悬浮按钮
+  // 也不渲染——若在此把停靠切成悬浮，会先跳到悬浮几何再消失。回归保护见
+  // e2e/floating-chat.spec.ts 的「主页是例外」用例（该用例里的「主页」即 `/chat`）。
   useEffect(() => {
     if (page === 'home') return;
     setDockModeState(dockByPage[page] ?? defaultDockFor(page));
@@ -472,41 +479,31 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
     }
   }, [clearInlinePos, setDockMode]);
 
-  const sessionApisRef = useRef(new Map<string, KbChatSessionApi>());
+  // 会话的 imperative API 与 running 状态由 App 层 Provider 持有（面板是否渲染与状态解耦）。
+  const { getApi, runningMap, loadError } = useKbChatSessionApi();
   const pendingWikiRef = useRef<WikiOpOpts | null>(null);
-  // 新开的 wiki 会话尚未 mount（API 未注册）时缓存待自动发送的提示词，registerApi 时补发
+  // 新开的 wiki 会话尚未 mount（API 未注册）时缓存待自动发送的提示词。
+  // Provider 在 App 里渲染于面板**之前**，同一 commit 内 Provider 的 controller 先注册 API、
+  // 面板的 effect 后执行 —— 所以下面这个 effect 跑到时 API 已就绪（今天的 registerApi 内联 flush 等价物）。
   const pendingAutoSendRef = useRef(new Map<string, string>());
   const closePendingRef = useRef<string | null>(null);
   // #1: 待关闭会话是否为 wiki 模式。wiki 关闭确认只允许「中断并关闭/取消」——
   // 杜绝「后台继续并关闭」让已移除标签的 run 逃过 anyWikiRunning 单例守卫（D3 并发写同一 vault）。
   const closePendingIsWikiRef = useRef(false);
 
-  const registerApi = useCallback((id: string, a: KbChatSessionApi) => {
-    sessionApisRef.current.set(id, a);
-    const prompt = pendingAutoSendRef.current.get(id);
-    if (prompt !== undefined) {
+  // 补发缓存的自动发送提示词；顺带清掉已关闭会话的悬空条目（原 unregisterApi 的 #7 守卫）。
+  useEffect(() => {
+    if (pendingAutoSendRef.current.size === 0) return;
+    const ids = new Set(sessions.map((s) => s.id));
+    for (const [id, prompt] of [...pendingAutoSendRef.current]) {
+      if (!ids.has(id)) { pendingAutoSendRef.current.delete(id); continue; }
+      const a = getApi(id);
+      if (!a) continue;
       pendingAutoSendRef.current.delete(id);
       a.clear();
       a.send(prompt);
     }
-  }, []);
-  const unregisterApi = useCallback((id: string) => {
-    sessionApisRef.current.delete(id);
-    // #7: 会话在 mount 前就被关闭 → 清掉缓存的待自动发送提示词，避免泄漏
-    pendingAutoSendRef.current.delete(id);
-  }, []);
-  const handleRunningChange = useCallback((id: string, running: boolean) => {
-    setRunningMap((prev) => (prev[id] === running ? prev : { ...prev, [id]: running }));
-  }, []);
-  // #7: 会话关闭时同步清理 runningMap，防止残留条目误判互斥/关闭态
-  const pruneRunning = useCallback((id: string) => {
-    setRunningMap((prev) => {
-      if (!(id in prev)) return prev;
-      const n = { ...prev };
-      delete n[id];
-      return n;
-    });
-  }, []);
+  }, [sessions, getApi]);
 
   // 传给标签栏：哪些会话在运行（驱动标签上的运行指示点）
   const runningSessionIds = useMemo(
@@ -523,6 +520,11 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
     window.setTimeout(() => setToast(null), 2000);
   }, []);
 
+  // Provider 关了历史加载失败的标签 → 在这里给用户可见反馈（非取巧：面板提供 toast DOM）。
+  useEffect(() => {
+    if (loadError) showToast('该会话已不存在或无法加载，已关闭标签');
+  }, [loadError, showToast]);
+
   // ─── 命令下发 ───
   const wikiPrompt = useCallback((opts: WikiOpOpts) => {
     if (opts.mode === 'build' || opts.mode === 'lint') return WIKI_PROMPTS[opts.mode];
@@ -530,7 +532,7 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
   }, []);
 
   const clearAndSend = useCallback(async (sessionId: string, opts: WikiOpOpts) => {
-    const a = sessionApisRef.current.get(sessionId);
+    const a = getApi(sessionId);
     if (!a) {
       // 会话刚 open、尚未 mount（API 未注册）→ 缓存提示词，registerApi 时补发
       pendingAutoSendRef.current.set(sessionId, wikiPrompt(opts));
@@ -547,7 +549,7 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
     } catch { /* cancel 失败仍继续 clear + send */ }
     a.clear();
     a.send(wikiPrompt(opts));
-  }, [wikiPrompt]);
+  }, [wikiPrompt, getApi]);
 
   const runWikiOp = useCallback((opts: WikiOpOpts) => {
     // 1) 找/建该类型 wiki 会话标签
@@ -595,7 +597,7 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
       const running = kbChatSessionsStore.getSessions()
         .filter((s) => s.mode !== 'qa' && runningMap[s.id]);
       await Promise.all(running.map((s) => {
-        const api = sessionApisRef.current.get(s.id);
+        const api = getApi(s.id);
         if (!api) return undefined;
         // cancel 类型是 void | Promise<void> —— 归一化成 Promise 以便 Promise.all 与 .catch
         return Promise.resolve(api.cancel()).catch(() => { /* cancel 失败仍继续新任务 */ });
@@ -606,9 +608,9 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
       // 排队 → 发到正在运行的 wiki 会话
       const running = kbChatSessionsStore.getSessions()
         .find((s) => s.mode !== 'qa' && runningMap[s.id]);
-      if (running) sessionApisRef.current.get(running.id)?.send(wikiPrompt(opts));
+      if (running) getApi(running.id)?.send(wikiPrompt(opts));
     }
-  }, [clearAndSend, runningMap, wikiPrompt]);
+  }, [clearAndSend, runningMap, wikiPrompt, getApi]);
 
   const openQa = useCallback((opts: { filePath: string | null; vaultId: string | null; selectedText?: string | null }) => {
     const active = kbChatSessionsStore.getActiveSession();
@@ -666,8 +668,7 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
       return;
     }
     kbChatSessionsStore.closeSession(id);
-    pruneRunning(id);
-  }, [runningMap, pruneRunning]);
+  }, [runningMap]);
 
   const handleCloseConfirm = useCallback((interrupt: boolean) => {
     const id = closePendingRef.current;
@@ -675,10 +676,9 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
     closePendingIsWikiRef.current = false;
     setClosePendingOpen(false);
     if (!id) return;
-    if (interrupt) sessionApisRef.current.get(id)?.cancel();
+    if (interrupt) getApi(id)?.cancel();
     kbChatSessionsStore.closeSession(id);
-    pruneRunning(id);
-  }, [pruneRunning]);
+  }, [getApi]);
 
   const handleOpenConversation = useCallback((conversationId: string) => {
     const active = kbChatSessionsStore.getActiveSession();
@@ -702,21 +702,31 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
     }
     // 就地切换（不新建标签）：store 已更新活动会话的 conversationId，这里触发它真正加载
     if (res.switched && res.tab) {
-      sessionApisRef.current.get(res.tab.id)?.loadConversation?.(conversationId);
+      getApi(res.tab.id)?.loadConversation?.(conversationId);
     }
-  }, [runningMap, showToast]);
+  }, [runningMap, showToast, getApi]);
 
-  const handleLoadError = useCallback((sessionId: string) => {
-    showToast('该会话已不存在或无法加载，已关闭标签');
-    // #2: 只关「报错的那个」会话标签（可能是隐藏标签），不误关当前活跃标签。
-    // closeSession 内部已守卫不存在；这里仍做一次存在性校验以免误 toast 后无标签可关。
-    if (kbChatSessionsStore.getSessions().some((s) => s.id === sessionId)) {
-      kbChatSessionsStore.closeSession(sessionId);
-      pruneRunning(sessionId);
+  // conversation 被删除后的按标签收敛：清空任何正加载它的标签（不关闭标签）。
+  const resetConversations = useCallback((ids: string[]) => {
+    const idSet = new Set(ids);
+    for (const s of kbChatSessionsStore.getSessions()) {
+      if (s.conversationId && idSet.has(s.conversationId)) {
+        getApi(s.id)?.clear();
+      }
     }
-  }, [showToast, pruneRunning]);
+  }, [getApi]);
 
-  useImperativeHandle(ref, () => ({ runWikiOp, openQa, openConversation: handleOpenConversation }), [runWikiOp, openQa, handleOpenConversation]);
+  useImperativeHandle(ref, () => ({
+    runWikiOp, openQa, openConversation: handleOpenConversation, resetConversations,
+  }), [runWikiOp, openQa, handleOpenConversation, resetConversations]);
+
+  // `/chat` 自身渲染活动会话的 ChatSessionView（全屏态与面板共用同一份状态）。
+  // 此时不渲染面板的任何 DOM：否则同一个会话会同时出现在两个视图 → 输入框/消息列表/
+  // 删除确认条在 DOM 里都是两份（`[data-testid="composer-input"]` 等定位器命中两个元素，
+  // Playwright strict mode violation）。控制器在 App 层 Provider 常驻，面板 DOM 缺席不影响
+  // 后台会话存活（面板渲染已退化为纯呈现层）。用 location（与路由同步）而非 currentContext.page：
+  // 后者在 effect 里更新，会有一帧的滞后窗口。
+  if (location.pathname === CHAT_ROUTE) return null;
 
   // 面板头部活动会话的模式标签
   return (
@@ -767,7 +777,7 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
         onNewSession={handleNewSession}
         onRename={(id, title) => kbChatSessionsStore.updateSession(id, { title })}
         onOpenConversation={handleOpenConversation}
-        onDeleteConversations={onDeleteConversations}
+        onDeleteConversations={resetConversations}
         onClosePanel={() => kbChatSessionsStore.setPanelOpen(false)}
         docked={docked}
         onToggleDock={toggleDock}
@@ -790,16 +800,8 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
               key={s.id}
               session={s}
               active={s.id === activeSessionId}
-              agentId={agentId}
-              vaultPath={vaultPath}
-              vaultId={currentVaultId}
               selectedText={pendingSelectionSessionId === s.id ? pendingSelection : null}
               onSelectedTextConsumed={() => { setPendingSelection(null); setPendingSelectionSessionId(null); }}
-              onRunningChange={handleRunningChange}
-              onComplete={() => kbChatSessionsStore.notifyWikiComplete()}
-              onLoadError={handleLoadError}
-              registerApi={registerApi}
-              unregisterApi={unregisterApi}
             />
           ))
         )}

@@ -4,7 +4,7 @@
 // （外部引用只在消息内联的 SourceChips 展示，不在此重复）。
 // 纯前端聚合（aggregateSessionOutput），零 daemon/contracts。
 import { useMemo, useState, useRef, useCallback, useEffect } from 'react';
-import type { ChatMessage } from '../hooks/useChat';
+import type { ChatMessage } from '../hooks/useChatCore';
 import { aggregateSessionOutput, extractChanges, disambiguateLabels, type ChangeEntry } from '../utils/workSteps';
 import type { DiffLine } from '../utils/diff';
 import { useActiveVault, useActiveVaultId } from '../stores/vaultStore';

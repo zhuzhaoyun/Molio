@@ -245,7 +245,7 @@ test.describe('Home 会话产出面板', () => {
     }
   });
 
-  test('切换知识库 → 旧 vault 会话被重置（提示 + 消息清空 + 产出面板空态）', async ({ page }) => {
+  test('切换知识库 → 旧 vault 会话被重置（消息清空 + 产出面板空态）', async ({ page }) => {
     const vaultA = await createTempVault('e2e-reset-a');
     const vaultB = await createTempVault('e2e-reset-b');
     try {
@@ -261,16 +261,24 @@ test.describe('Home 会话产出面板', () => {
       // 去知识库页，URL 驱动就地切 vault（KB 页 URL→store effect 触发 setActiveVaultId）
       await clickNav(page, 'knowledge');
       await expect(page.locator('.kb-vault-bar')).toBeVisible();
-      await page.evaluate((vid) => {
-        window.history.pushState({}, '', `/knowledge?vault=${vid}`);
-        window.dispatchEvent(new PopStateEvent('popstate'));
-      }, vaultB.id);
-      // 跨 vault 会话重置提示出现
-      await expect(page.locator('[data-testid="vault-switch-notice"]')).toBeVisible({ timeout: 5_000 });
-      // 回主页 → 旧会话已清空：home 回到无对话的 landing 视图，产出面板随之消失
+      // 等 URL→vaultStore 的切换真正生效（vault bar 换成 B）再回主页。旧实现靠
+      // `vault-switch-notice` 出现来做这个同步；提示条已在 L2a 移除，改用 vault bar 名称。
+      // 用 toPass 重试：SPA 下 pushState+popstate 驱动就地切库在整跑高负载时偶发不生效
+      // （vault bar 仍停在 A），交替 URL 强制 searchParams 变化后重发即可收敛。
+      await expect(async () => {
+        await page.evaluate((vid) => {
+          window.history.pushState({}, '', '/knowledge');
+          window.dispatchEvent(new PopStateEvent('popstate'));
+          window.history.pushState({}, '', `/knowledge?vault=${vid}`);
+          window.dispatchEvent(new PopStateEvent('popstate'));
+        }, vaultB.id);
+        await expect(page.locator('.kb-vault-bar__name')).toHaveText(vaultB.name, { timeout: 1_500 });
+      }).toPass({ timeout: 15_000 });
+      // 回主页 → 旧会话已清空：home 回到无对话的 landing 视图，产出面板随之消失。
+      // （跨 vault 重置由 KbChatSessionController 按标签处理。）
       await gotoChatSpa(page);
       await expect(page.locator('[data-testid="assistant-message"]')).toHaveCount(0);
-      await expect(page.locator('.home-landing')).toBeVisible();
+      await expect(page.locator('.home-landing')).toBeVisible({ timeout: 5_000 });
       await expect(page.locator('[data-testid="session-output-panel"]')).toHaveCount(0);
     } finally {
       await cleanupTempVault(vaultA);

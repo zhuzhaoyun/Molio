@@ -1,19 +1,18 @@
-import { useRef, useEffect, useCallback, useMemo, useState, lazy, Suspense } from 'react';
+import { useCallback, useEffect, useMemo, useState, lazy, Suspense } from 'react';
 import { ChatComposer, buildAttachmentPrefix } from './ChatComposer';
-import type { PastedImage } from './ChatComposer';
-import { UserMessage } from './UserMessage';
-import { AssistantMessage } from './AssistantMessage';
-import { findLastAssistant } from '../utils/workSteps';
+import type { PastedImage, FileRef } from './ChatComposer';
 import { useI18n } from '../i18n';
-import { useSelectMode, messageSelectionStore } from '../stores/messageSelectionStore';
-import { SelectionConfirmBar } from './SelectionConfirmBar';
-import type { ChatMessage } from '../hooks/useChat';
-import { RunStatusBar } from './RunStatusBar';
-import { ActivityTree } from './ActivityTree';
-import type { ActivityInfo } from '@molio/contracts';
+import { ChatSessionView } from './ChatSessionView';
 import { PanelIcon } from './icons';
 import { NoRuntimeCard } from './NoRuntimeCard';
+import { AgentsUnavailableCard } from './AgentsUnavailableCard';
 import { FirstRunOnboarding } from './home/FirstRunOnboarding';
+import { messageSelectionStore } from '../stores/messageSelectionStore';
+import {
+  kbChatSessionsStore, useKbChatActiveSessionId, useKbChatSessions,
+  sessionComposerKey, sessionComposerMountKey,
+} from '../stores/kbChatSessionsStore';
+import { useKbChatSessionState, useKbChatSessionApi } from './kb/KbChatSessionsProvider';
 
 // 会话产出面板只在 dock 展开时渲染，却把整条 doocs-md/marked/highlight.js
 // 依赖链拖进首屏 chunk —— 懒加载（启动性能优化）。
@@ -28,60 +27,63 @@ function readDockOpen(): boolean {
 // 品牌 logo（public/images/main.png）——与官网 landing-page/images/new/main.png 同源副本
 const LOGO_MAIN_URL = `${import.meta.env.BASE_URL}images/main.png`;
 
+/** 无活动会话时（首次发送前）落地页输入框的草稿命名空间。 */
+const LANDING_COMPOSER_KEY = 'chat:landing';
+
 interface Props {
   selectedAgentName: string | null;
   /** agents 列表是否已加载完成（避免加载中闪空状态卡片）。 */
   agentsReady: boolean;
-  /** agents 列表判定无可用代理（空列表或全部不可用）。 */
+  /** agents 列表判定无可用代理（空列表或全部不可用）。请求失败时为 false。 */
   hasNoUsableAgent: boolean;
+  /**
+   * agents 列表**取不到**（请求失败 / 后端没起来）。
+   * 与 hasNoUsableAgent 互斥：前者是「问不到」，后者是「问到了，一个都没有」。
+   */
+  agentsUnavailable: boolean;
+  /** 取不到 agents 列表时的重试回调（必给：否则会渲染出一个点了没反应的「重试」）。 */
+  onRetryAgents: () => void;
   /** 无可用代理时跳转「设置 → 运行时」的回调。 */
   onOpenRuntimes: () => void;
-  messages: ChatMessage[];
-  isRunning: boolean;
-  /** Live background subagent/workflow activity (null = nothing to show). */
-  activity?: ActivityInfo | null;
-  onSend: (message: string) => void;
-  /** Form fallback for AskUserQuestion answers — must reach the agent
-   *  IMMEDIATELY (never queued): the agent is paused waiting for the answer,
-   *  so queueing it would deadlock. Mirrors KbChatSession's unflagged send. */
-  onSubmitForm?: (text: string) => void;
-  onCancel: () => void;
+  /** 页头「+」：新建一个会话标签。 */
   onNewChat: () => void;
-  onSubmitToolResult?: (toolUseId: string, content: string) => Promise<void>;
+  /** 输入框历史下拉：打开某个历史会话（就地切换活动会话）。 */
   onOpenConversation?: (conversationId: string) => void;
+  /** 输入框历史下拉删除会话后通知上层做收敛。 */
   onDeleteConversations?: (ids: string[]) => void;
-  onRegenerate?: () => void;
-  onEdit?: (messageId: string, newContent: string) => void;
-  onContinue?: () => void;
-  onRequestDelete?: (id: string) => void;
-  onDeleteMessages?: (ids: string[]) => void;
 }
 
+/**
+ * `/chat` —— 悬浮对话面板的「全屏态」。
+ *
+ * 数据源是 `kbChatSessionsStore` 的**活动标签**（与悬浮面板同一份会话状态，见
+ * `KbChatSessionsProvider`）；不再是 App 级独立会话。两种形态：
+ *  - 活动标签有消息，**或**已绑定持久化 conversation（历史仍在加载）→ 全屏 shell
+ *    （页头 + `ChatSessionView(活动标签)` + 产出面板 dock）；
+ *  - 真正的无会话 / 空会话 → landing（hero + 首次引导 + 输入框），首次发送建标签。
+ */
 export function HomePage({
   selectedAgentName,
   agentsReady,
   hasNoUsableAgent,
+  agentsUnavailable,
+  onRetryAgents,
   onOpenRuntimes,
-  messages,
-  isRunning,
-  activity,
-  onSend,
-  onSubmitForm,
-  onCancel,
   onNewChat,
-  onSubmitToolResult,
   onOpenConversation,
   onDeleteConversations,
-  onRegenerate,
-  onEdit,
-  onContinue,
-  onRequestDelete,
-  onDeleteMessages,
 }: Props) {
   const { t } = useI18n();
-  const logRef = useRef<HTMLDivElement>(null);
-  const bottomRef = useRef<HTMLDivElement>(null);
-  const selectMode = useSelectMode();
+
+  // 活动会话（与面板共用上下文里的同一份状态，两个视图渲染同一会话）。
+  const activeSessionId = useKbChatActiveSessionId();
+  const sessions = useKbChatSessions();
+  const activeSession = useMemo(
+    () => sessions.find((s) => s.id === activeSessionId) ?? null,
+    [sessions, activeSessionId],
+  );
+  const state = useKbChatSessionState(activeSessionId);
+  const { getApi } = useKbChatSessionApi();
 
   const [dockOpen, setDockOpen] = useState<boolean>(readDockOpen);
   const toggleDock = useCallback(() => {
@@ -92,69 +94,72 @@ export function HomePage({
     });
   }, []);
 
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages.length, messages[messages.length - 1]?.content]);
-
-  // Prune stale selected ids whenever the message set changes (streaming,
-  // regenerate, etc. may have removed a selected bubble).
-  useEffect(() => {
-    const present = new Set(messages.map((m) => m.id));
-    messageSelectionStore.pruneStale(present);
-  }, [messages]);
-
-  // Find the last assistant message ID so only that card stays interactive
-  const lastAssistant = useMemo(() => findLastAssistant(messages), [messages]);
-  const lastAssistantId = lastAssistant?.id ?? null;
-
-  // Wire onAnswerToolUse: route tool_result back to the open stream-json child
-  const onAnswerToolUse = useCallback(
-    async (toolUseId: string, content: string) => {
-      if (!onSubmitToolResult) return false;
-      try {
-        await onSubmitToolResult(toolUseId, content);
-        return true;
-      } catch {
-        return false;
-      }
-    },
-    [onSubmitToolResult],
-  );
-
-  // Wrap onSend to handle pastedImages → message prefix. Inline @/skill refs
-  // in `message` were already expanded by ChatComposer before send.
-  const handleSend = useCallback(
+  // 落地页首次发送：没有活动会话就建一个 qa 标签，然后把消息投给它的 controller。
+  // controller 尚未注册（新标签 mount 中）时挂起，待其就绪（state 发布 + getApi 可解析）后投递。
+  const [pendingSend, setPendingSend] = useState<{ id: string; text: string } | null>(null);
+  const handleLandingSend = useCallback(
     (message: string, pastedImages?: PastedImage[]) => {
       const prefix = buildAttachmentPrefix(pastedImages ?? []);
-      if (prefix) {
-        onSend(`${prefix}\n\n${message || t('home.fileContextFallback')}`);
-      } else {
-        onSend(message);
+      const text = prefix ? `${prefix}\n\n${message || t('home.fileContextFallback')}` : message;
+      let targetId = activeSessionId;
+      if (!targetId) {
+        const res = kbChatSessionsStore.openSession({
+          mode: 'qa', title: '新会话', conversationId: null, filePath: null,
+        });
+        if (!res.tab) return; // 达标签上限：放弃（输入框已由 ChatComposer 清空）
+        targetId = res.tab.id;
       }
+      const api = getApi(targetId);
+      if (api) { api.send(text); return; }
+      setPendingSend({ id: targetId, text });
     },
-    [onSend],
+    [activeSessionId, getApi, t],
   );
 
-  // 无可用代理时用空状态卡片替代输入框，引导用户去「设置 → 运行时」安装。
-  // 用 agents 列表判定（hasNoUsableAgent）而非 selection：selection 在首帧绘制后
-  // 才生效会闪空状态卡片，且所选 agent 被移除时 selection 会 stale。
-  const composerArea = agentsReady && hasNoUsableAgent ? (
-    <NoRuntimeCard onOpenRuntimes={onOpenRuntimes} />
-  ) : (
-    <ChatComposer
-      composerKey="home"
-      isRunning={isRunning}
-      onSend={handleSend}
-      onCancel={onCancel}
-      disabled={!selectedAgentName}
-      disabledPlaceholder={t('home.noAgent')}
-      onOpenConversation={onOpenConversation}
-      onDeleteConversations={onDeleteConversations}
-    />
-  );
+  // controller 就绪（其 imperative API 已注册）→ 投递挂起的首条消息。
+  // 不要求目标会话仍是「活动」会话：API 一旦注册即可投递，否则 activeSessionId 在
+  // controller 发布前被改动时，输入框已清空的文本会永远卡住（静默丢失）。
+  useEffect(() => {
+    if (!pendingSend) return;
+    const api = getApi(pendingSend.id);
+    if (api) {
+      setPendingSend(null);
+      api.send(pendingSend.text);
+      return;
+    }
+    // 有界兜底：目标标签已被关闭 / 建标签后被移除 → 放弃这条挂起发送，避免永久卡死
+    // （正常路径下 controller 一挂载即注册 API，effect 会因 runningMap/getApi 变化重跑并投递）。
+    if (!sessions.some((s) => s.id === pendingSend.id)) setPendingSend(null);
+  }, [pendingSend, getApi, sessions]);
 
-  // If there are messages, show chat layout
-  if (messages.length > 0) {
+  // 无可用代理时用空状态卡片替代输入框（判定照搬原 landing 分支）。
+  const noRuntime = agentsReady && hasNoUsableAgent;
+  const noRuntimeCard = <NoRuntimeCard onOpenRuntimes={onOpenRuntimes} />;
+
+  /**
+   * 输入框位置的兜底节点 —— 两态（全屏 shell / landing）共用同一个值。
+   *
+   * 顺序要紧：先判「取不到」（请求失败），再判「取到了但没有可用的」。
+   * 反过来会把「后端连不上」渲染成「没装运行时」—— 两者对用户的含义与该做的
+   * 动作完全不同（一个去检查后端/重试，一个去装运行时）。
+   * null = 两态都不是，正常渲染输入框。
+   */
+  const composerFallback = agentsUnavailable ? (
+    <AgentsUnavailableCard onRetry={onRetryAgents} />
+  ) : noRuntime ? noRuntimeCard : null;
+
+  const hasMessages = (state?.messages.length ?? 0) > 0;
+  // 全屏 shell 判据：有消息 **或** 活动标签已绑定一个持久化 conversation（DB 历史
+  // 仍在加载中）。返回型会话在历史到达前 messages 仍是空的——若按空处理会回落到
+  // landing，闪一下 hero + FirstRunOnboarding。landing 只服务真正的「无会话」。
+  const shellMode = hasMessages || (activeSession?.conversationId ?? null) !== null;
+
+  // ── 全屏 shell：活动标签有消息，或其持久化历史仍在加载 ──
+  if (shellMode && activeSession) {
+    const initialFileRefs: FileRef[] =
+      activeSession.mode === 'qa' && activeSession.filePath && activeSession.vaultId
+        ? [{ vaultId: activeSession.vaultId, filePath: activeSession.filePath }]
+        : [];
     return (
       <div className="home-page chat-active">
         <div className="home-chat-col">
@@ -165,7 +170,7 @@ export function HomePage({
             <span className="home-header-title">Molio</span>
           </div>
           <div className="home-header-right">
-            {!isRunning && (
+            {state && !state.isRunning && (
               <button type="button" data-testid="new-chat-btn" className="icon-only" onClick={onNewChat} title={t('home.newChat')}>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <line x1="12" y1="5" x2="12" y2="19" />
@@ -187,90 +192,47 @@ export function HomePage({
           </div>
         </div>
 
-        {/* Chat log */}
-        <div className="home-chat-log" ref={logRef}>
-          {messages.map((msg) => {
-            if (msg.role === 'user') {
-              const isLastUser = (() => {
-                for (let i = messages.length - 1; i >= 0; i--) {
-                  if (messages[i]!.role === 'user') return messages[i]!.id === msg.id;
-                }
-                return false;
-              })();
-              return (
-                <UserMessage
-                  key={msg.id}
-                  message={msg}
-                  isLast={isLastUser}
-                  onEdit={onEdit}
-                  disabled={isRunning}
-                  onRequestDelete={onRequestDelete}
-                />
-              );
-            }
-            if (msg.role === 'assistant') {
-              return (
-                <AssistantMessage
-                  key={msg.id}
-                  message={msg}
-                  isLast={msg.id === lastAssistantId}
-                  onAnswerToolUse={onSubmitToolResult ? onAnswerToolUse : undefined}
-                  onSubmitForm={onSubmitForm ?? ((text: string) => handleSend(text, []))}
-                  onRegenerate={msg.id === lastAssistantId ? onRegenerate : undefined}
-                  onContinue={msg.id === lastAssistantId ? onContinue : undefined}
-                  onRequestDelete={onRequestDelete}
-                />
-              );
-            }
-            if (msg.role === 'error') {
-              return (
-                <div key={msg.id} className="msg error">
-                  {msg.content}
-                </div>
-              );
-            }
-            return null;
-          })}
-          <div ref={bottomRef} />
+        {/* state 尚未发布（controller 挂载中 / 历史加载中）时不渲染消息区，
+            但也绝不回落到 landing（见 shellMode）。 */}
+        {state && (
+          <ChatSessionView
+            messages={state.messages}
+            isRunning={state.isRunning}
+            activity={state.activity}
+            conversationId={state.conversationId}
+            onSend={state.buildSend()}
+            onSubmitForm={(text) => state.send(text)}
+            onCancel={state.cancel}
+            onSubmitToolResult={state.submitToolResult}
+            onRegenerate={state.regenerateLast}
+            onEdit={state.editAndResend}
+            onContinue={() => state.send('继续')}
+            onRequestDelete={(id) => messageSelectionStore.enterSelection(id, state.messages)}
+            onDeleteMessages={state.deleteMessages}
+            // composerKey/composerMountKey 与面板 `KbChatSession` 同源（R5：逐字一致）：
+            // 面板态与全屏态共享同一份草稿、同一套 @ 上下文播种。
+            composerKey={sessionComposerKey(activeSession.id, activeSession.filePath)}
+            composerMountKey={sessionComposerMountKey(activeSession.id, activeSession.filePath)}
+            composerInitialFileRefs={initialFileRefs}
+            composerDisabled={!selectedAgentName}
+            composerDisabledPlaceholder={t('home.noAgent')}
+            composerArea={composerFallback ?? undefined}
+            onOpenConversation={onOpenConversation}
+            onDeleteConversations={onDeleteConversations}
+          />
+        )}
         </div>
 
-        {/* 后台 subagent/workflow 活动树（activity SSE 事件驱动） */}
-        <ActivityTree activity={activity ?? null} />
-
-        {/* 进度状态条: 只在 run 运行时显示 */}
-        <RunStatusBar messages={messages} isRunning={isRunning} />
-
-        {/* Composer at the bottom — hidden in selection mode, replaced by the
-            confirm bar (input and delete are mutually exclusive). */}
-        <div className="home-composer-bar">
-          {selectMode ? (
-            <SelectionConfirmBar
-              onDelete={async () => {
-                const ids = [...messageSelectionStore.getSelectedIds()];
-                try {
-                  await onDeleteMessages?.(ids);
-                } finally {
-                  messageSelectionStore.exit();
-                }
-              }}
-              onCancel={() => messageSelectionStore.exit()}
-            />
-          ) : (
-            composerArea
-          )}
-        </div>
-        </div>
-
-      {dockOpen && (
+      {dockOpen && state && (
         <Suspense fallback={null}>
-          <SessionOutputPanel messages={messages} />
+          <SessionOutputPanel messages={state.messages} />
         </Suspense>
       )}
       </div>
     );
   }
 
-  // Landing page — no messages yet
+  // ── landing：无活动标签 / 活动标签为空（且未绑定持久化会话）──
   return (
     <div className="home-page home-landing">
       <div className="home-hero-view">
@@ -288,7 +250,20 @@ export function HomePage({
 
         {/* Composer */}
         <div className="home-composer-wrap">
-          {composerArea}
+          {composerFallback ?? (
+            <ChatComposer
+              // 有活动会话（可能刚新建、尚无消息）时沿用其命名空间，与全屏 shell 的
+              // composerKey 一致 → 两态之间切换不丢草稿。
+              composerKey={activeSession ? sessionComposerKey(activeSession.id, activeSession.filePath) : LANDING_COMPOSER_KEY}
+              isRunning={state?.isRunning ?? false}
+              onSend={handleLandingSend}
+              onCancel={state ? state.cancel : () => {}}
+              disabled={!selectedAgentName}
+              disabledPlaceholder={t('home.noAgent')}
+              onOpenConversation={onOpenConversation}
+              onDeleteConversations={onDeleteConversations}
+            />
+          )}
         </div>
       </div>
     </div>

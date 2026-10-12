@@ -75,6 +75,11 @@ const en: Record<string, string> = {
   'home.noRuntimeTitle': 'No AI runtime installed',
   'home.noRuntimeDesc': 'Install Claude Code, Codex, or another runtime to start chatting',
   'home.openRuntimes': 'Install runtime',
+  // "Could not fetch the runtime list" (request failed) — kept strictly distinct from
+  // "nothing installed"; see AgentsUnavailableCard.
+  'home.agentsUnavailableTitle': 'Couldn\'t load runtimes',
+  'home.agentsUnavailableDesc': 'Cannot reach the backend service, so installed runtimes are unknown. Make sure the Molio backend is running.',
+  'home.agentsRetry': 'Retry',
 
   // ── ChatComposer ──
   'composer.noAgent': 'No agent available',
@@ -186,9 +191,6 @@ const en: Record<string, string> = {
   'output.diffTruncated': 'Large file — showing first 500 lines of changes',
   'output.appendFile': 'Content appended to end of file',
   'output.editNoSource': 'Change lacks a comparable original',
-
-  // ── App ──
-  'app.vaultSwitchReset': 'Vault switched, conversation reset',
 
   // ── RuntimePage ──
   'runtimes.title': 'Runtimes',
@@ -837,7 +839,7 @@ const en: Record<string, string> = {
   'publish.error.previewRequired': 'Please add at least one preview image',
   'publish.error.previewInvalid': 'Preview images must be PNG/JPEG/WebP and ≤5MB',
   'publish.error.agreement': 'Please accept the public-sharing statement first',
-  'publish.error.zip_too_large': 'The packed vault exceeds 50MB - trim it and try again',
+  'publish.error.zip_too_large': 'The packed vault exceeds 200MB - trim it and try again',
   'publish.error.too_many_active': 'Active listing limit reached (10)',
   'publish.error.rate_limited': 'Daily publish limit reached (5)',
   'publish.error.cloud_unreachable': 'Network error - please try again later',

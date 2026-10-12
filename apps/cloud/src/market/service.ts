@@ -245,6 +245,9 @@ export class MarketService {
       ...(pend.categoryId !== undefined ? {categoryId: pend.categoryId} : {}),
       ...(pend.resourceTypeId !== undefined ? {resourceTypeId: pend.resourceTypeId} : {}),
       version: bumpVersion(rec.version), previews, pendingUpdate: null,
+      // 新版 zip 的大小必须一起写回：落地页/目录页的「大小」读的就是 file_size，
+      // 漏写会让升版后的体积永远停在首版（版本变了、大小不变）。
+      fileSize: zip.size,
       publishedAt: this.now,
       ...(pend.name !== undefined ? { name: pend.name } : {}),
       ...(pend.summary !== undefined ? { summary: pend.summary } : {}),

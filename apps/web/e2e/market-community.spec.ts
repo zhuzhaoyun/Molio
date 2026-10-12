@@ -173,6 +173,24 @@ test.describe('社区发布 → 展示 → 下载闭环（P1，mock OSS）', () 
     await expect(page.locator('[data-testid="kb-publish-pane"]')).toBeVisible({ timeout: 5_000 });
     await expect(page.locator('[data-testid="kb-wtab-publish"]')).toHaveClass(/is-active/);
 
+    // 悬浮对话按钮必须让位：它固定在 right/bottom 24px，与发布页脚右对齐的「发布」完全
+    // 重叠，z-index 90 会把点击整个吃掉（真实用户点不到发布，不只是 Playwright）。
+    // 让位规则见 KbChatSessionsPanel.css 的 `body:has(.kb-pane:not(.kb-pane--closed) .kb-publish-pane)`。
+    // 断言用「不可见」而非 toHaveCount(0)：让位是 CSS display:none，元素仍在 DOM 里
+    // （toHaveCount 数的是节点，不认 display）。
+    await expect(page.locator('[data-testid="floating-chat-btn"]')).toBeHidden();
+
+    // 反向：让位只在发布 pane **激活**时生效。切到文档 tab 后发布 pane 只是
+    // `.kb-pane--closed`（visibility:hidden），**仍会被 `:has()` 命中**——没有
+    // CSS 里那句 `:not(.kb-pane--closed)` 的话，发布 tab 仅仅「存在」就会白白藏掉
+    // 按钮。这一对断言就是那个守卫的正反面。（此刻表单是空的，来回切不丢用户输入）
+    await page.locator('.kb-tree-item').filter({ hasText: 'community-doc.md' }).click();
+    await expect(page.locator('[data-testid="kb-wtab-publish"]')).not.toHaveClass(/is-active/);
+    await expect(page.locator('[data-testid="floating-chat-btn"]')).toBeVisible();
+    await page.locator('[data-testid="kb-wtab-publish"]').click();
+    await expect(page.locator('[data-testid="kb-wtab-publish"]')).toHaveClass(/is-active/);
+    await expect(page.locator('[data-testid="floating-chat-btn"]')).toBeHidden();
+
     // 名称是 input、简介是 textarea（旧版用 input 序号 [1] 填简介会误中自定义标签输入框）
     await page.locator('.publish-form .publish-field input').first().fill(resourceName);
     await page

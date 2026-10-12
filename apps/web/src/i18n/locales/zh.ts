@@ -75,6 +75,10 @@ const zh: Record<string, string> = {
   'home.noRuntimeTitle': '未安装 AI 运行时',
   'home.noRuntimeDesc': '安装 Claude Code / Codex 等运行时后即可开始对话',
   'home.openRuntimes': '去安装运行时',
+  // 「取不到运行时列表」（请求失败）—— 与「没装」严格区分，见 AgentsUnavailableCard
+  'home.agentsUnavailableTitle': '获取运行时列表失败',
+  'home.agentsUnavailableDesc': '连不上后端服务，暂时无法确认已安装的运行时。请确认 Molio 后端已启动。',
+  'home.agentsRetry': '重试',
 
   // ── ChatComposer ──
   'composer.noAgent': '没有可用的代理',
@@ -186,9 +190,6 @@ const zh: Record<string, string> = {
   'output.diffTruncated': '该文件较长，变更仅展示前 500 行',
   'output.appendFile': '文件尾部追加了内容',
   'output.editNoSource': '此处改动缺少可对比的原文',
-
-  // ── App ──
-  'app.vaultSwitchReset': '已切换知识库，会话已重置',
 
   // ── RuntimePage ──
   'runtimes.title': '运行时',
@@ -840,7 +841,7 @@ const zh: Record<string, string> = {
   'publish.error.previewRequired': '请至少提供一张效果图',
   'publish.error.previewInvalid': '效果图仅支持 PNG/JPEG/WebP 且 ≤5MB',
   'publish.error.agreement': '请先勾选公开分享声明',
-  'publish.error.zip_too_large': '知识库打包后超过 50MB，请精简后再发布',
+  'publish.error.zip_too_large': '知识库打包后超过 200MB，请精简后再发布',
   'publish.error.too_many_active': '上架数量已达上限（10 条）',
   'publish.error.rate_limited': '今日上架次数已用完（5 次）',
   'publish.error.cloud_unreachable': '网络异常，请稍后再试',

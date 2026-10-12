@@ -16,7 +16,7 @@
         "apps/web/src/components/ThinkingBlock.*",
         "apps/web/src/components/ToolCard.*",
         "apps/web/src/components/ToolGroup.*",
-        "apps/web/src/components/ChatPane.*",
+        "apps/web/src/components/ChatSessionView.*",
         "apps/web/src/components/CodeBlock.*",
         "apps/web/src/components/SaveToKbButton.*",
         "apps/web/src/components/SaveAsSkillButton.*",
@@ -51,6 +51,7 @@
         "chat-repairing",
         "chat-timeout-fallback",
         "chat-work-visibility",
+        "chat-fullscreen",
         "file-ref-navigation",
         "model-switcher",
         "composer-hints"
@@ -93,7 +94,8 @@
         "pdf-preview",
         "chat-work-visibility",
         "split-view",
-        "kb-terminology"
+        "kb-terminology",
+        "market-community"
       ]
     },
     "publish": {
@@ -144,7 +146,8 @@
         "navigation",
         "home-onboarding",
         "default-landing",
-        "auth"
+        "auth",
+        "market-community"
       ]
     },
     "settings": {
@@ -491,6 +494,38 @@
     "chat-work-visibility": {
       "priority": "P1",
       "file": "chat-work-visibility.spec.ts"
+    },
+    "chat-fullscreen": {
+      "priority": "P1",
+      "file": "chat-fullscreen.spec.ts"
+    },
+    "chat-continue": {
+      "priority": "P1",
+      "file": "chat-continue.spec.ts"
+    },
+    "chat-save-kb": {
+      "priority": "P1",
+      "file": "chat-save-kb.spec.ts"
+    },
+    "chat-timeout-fallback": {
+      "priority": "P1",
+      "file": "chat-timeout-fallback.spec.ts"
+    },
+    "composer-hints": {
+      "priority": "P1",
+      "file": "composer-hints.spec.ts"
+    },
+    "model-switcher": {
+      "priority": "P1",
+      "file": "model-switcher.spec.ts"
+    },
+    "kb-open-vault-error": {
+      "priority": "P1",
+      "file": "kb-open-vault-error.spec.ts"
+    },
+    "kb-vault-list-menu": {
+      "priority": "P1",
+      "file": "kb-vault-list-menu.spec.ts"
     }
   }
 }

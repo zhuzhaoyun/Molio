@@ -652,6 +652,26 @@ export function isInsideProtected(relPath: string): boolean {
   );
 }
 
+/** Molio 工作区目录——点目录里唯一参与发布的例外（内含 assets 等被正文引用的资源）。 */
+export const MOLIO_WORKSPACE_DIR = '.molio';
+
+/**
+ * Vault 一级「可发布目录」：非隐藏目录 + `.molio`，按名排序。
+ *
+ * 发布页的目录选择（GET /vaults/:id/top-dirs）与升版打包的 include 兜底共用这条规则。
+ * 两处必须一致：打包器对点目录的默认排除只认 `include` 里的显式项，一旦某条路径拿不到
+ * 这份清单，`.molio` 就会被静默丢掉（2026-10 明史升版丢 .molio 的根因）。
+ */
+export function listPublishableTopDirs(vaultPath: string): string[] {
+  const dirs: string[] = [];
+  for (const entry of fs.readdirSync(vaultPath, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    if (entry.name.startsWith('.') && entry.name !== MOLIO_WORKSPACE_DIR) continue;
+    dirs.push(entry.name);
+  }
+  return dirs.sort();
+}
+
 // ─── Vault root path validation ───
 
 /** Why validateVaultPath rejected a candidate vault root. */
