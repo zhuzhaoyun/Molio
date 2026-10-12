@@ -282,6 +282,16 @@
         "kb-folder-root-drop"
       ]
     },
+    "landing-resource": {
+      "paths": [
+        "apps/cloud/src/ssr/*",
+        "apps/landing-page/styles.css",
+        "apps/landing-page/resource-hydrate.js",
+        "apps/landing-page/shared.js",
+        "apps/web/e2e/resource-mobile.spec.ts"
+      ],
+      "specs": ["resource-mobile"]
+    },
     "market": {
       "paths": [
         "apps/web/src/components/resources/PublishForm.*",
@@ -307,6 +317,10 @@
     }
   },
   "specs": {
+    "resource-mobile": {
+      "priority": "P1",
+      "file": "resource-mobile.spec.ts"
+    },
     "auth": {
       "priority": "P1",
       "file": "auth.spec.ts"

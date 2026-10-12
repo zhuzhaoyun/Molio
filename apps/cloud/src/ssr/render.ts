@@ -266,7 +266,7 @@ const FREE_SAMPLE_IDS = ['01M12YMV1144F4RZMX1HBK8GQ0', '01M114523M19P4J7GZMZ7E61
 
 function renderSampleHint(m: MarketListing): string {
   if (m.priceCents === 0 || FREE_SAMPLE_IDS.indexOf(m.id) >= 0) return '';
-  return `${'`'}<p class="res-side-note" style="margin-top:12px;padding-top:10px;border-top:1px solid rgba(0,0,0,.08)">想先看清到手是什么形式？可以先下载免费的两套：<a href="/resource/01M12YMV1144F4RZMX1HBK8GQ0.html">《周易》六十四卦全解</a> · <a href="/resource/01M114523M19P4J7GZMZ7E6188.html">老庄思想图谱</a>。结构与这件商品一致。${'`'}`;
+  return `${'`'}<p class="res-side-note res-sample-hint" style="margin-top:12px;padding-top:10px;border-top:1px solid rgba(0,0,0,.08)">想先看清到手是什么形式？可以先下载免费的两套：<a href="/resource/01M12YMV1144F4RZMX1HBK8GQ0.html">《周易》六十四卦全解</a> · <a href="/resource/01M114523M19P4J7GZMZ7E6188.html">老庄思想图谱</a>。结构与这件商品一致。${'`'}`;
 }
 
 function renderRelated(related: MarketListing[]): string {
@@ -323,7 +323,7 @@ export function renderProductPage(m: MarketListing, related: MarketListing[]): s
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="icon" type="image/png" href="/images/favicon-32.png">
 <link rel="apple-touch-icon" href="/images/favicon-180.png">
-<link rel="stylesheet" href="/styles.css?v=20261003a">
+<link rel="stylesheet" href="/styles.css?v=20261012mobile">
 
 <!-- Open Graph -->
 <meta property="og:title" content="${escapeHtml(title)}">
@@ -343,37 +343,47 @@ export function renderProductPage(m: MarketListing, related: MarketListing[]): s
 ${productJsonLd(m)}
 ${breadcrumbJsonLd(m)}
 </head>
-<body>
+<body class="resource-product">
 ${NAV}
 
 <main class="page-content page-wide">
   <div id="res-detail">
-    <div class="breadcrumb"><a href="/index.html">首页</a><span class="sep">/</span><a href="/resources.html">资源</a><span class="sep">/</span> ${escapeHtml(m.name)}</div>
+    <div class="breadcrumb"><a href="/index.html">首页</a><span class="sep">/</span><a href="/resources.html">资源</a><span class="res-breadcrumb-current"><span class="sep">/</span> ${escapeHtml(m.name)}</span></div>
     <div class="res-detail-head reveal">
       <div class="res-icon" style="background:${escapeHtml(m.tint)}">${escapeHtml(m.icon)}</div>
       <div>
         <div class="res-detail-title"><h1>${escapeHtml(m.name)}</h1>
         <span class="res-price ${paid ? 'paid' : 'free'}">${paid ? '¥' + escapeHtml(price) : '免费'}</span></div>
-        <div class="res-meta-line">Markdown 格式 · 兼容 Obsidian · 用 Molio“打开本地仓库”加载</div>
+        <div class="res-meta-line">下载后在电脑上使用 · 兼容 Molio / Obsidian</div>
         ${tags}
       </div>
     </div>
     <div class="res-detail-grid">
       <div class="res-main">
+        <section class="res-overview-section">
         <h2 class="res-section-title">概述</h2>
         <div class="article-body">${summaryParas}${overviewParas}${highlights}</div>
-        ${previews ? `<h2 class="res-section-title">效果预览</h2>
-        <div class="res-preview-grid">${previews}</div>` : ''}
-        <h2 class="res-section-title">资源包导入说明</h2>
+        </section>
+        ${previews ? `<section class="res-preview-section"><h2 class="res-section-title">效果预览</h2>
+        <p class="res-preview-hint">点击图片查看大图<span> · 左右滑动查看更多</span></p>
+        <div class="res-preview-grid">${previews}</div></section>` : ''}
+        <section class="res-import-section">
+        <h2 class="res-section-title">下载后怎么用</h2>
         ${DELIVERY_BOUNDARY}
         <div class="step-card"><ol>
-          <li>下载资源包 <code>.zip</code> 并解压到本地任意目录</li>
+          <li>在电脑上下载资源包 <code>.zip</code>，解压到本地任意目录</li>
           <li>打开 Molio，在知识库管理界面选择“打开本地仓库”</li>
           <li>选择（或输入）解压后的文件夹路径，资源包立即加载</li>
         </ol></div>
+        <details class="res-community">
+          <summary>使用有疑问？加入用户群</summary>
+          <p>保存二维码，在微信中识别加入用户交流群。</p>
+          <img src="/images/qrcode.png" alt="Molio 用户交流群二维码" width="160" height="160" loading="lazy">
+        </details>
+        </section>
       </div>
       <aside class="res-side">
-        <div class="res-side-card reveal">${cta}<p class="res-side-note">${escapeHtml(note)}</p>${renderSampleHint(m)}</div>
+        <div class="res-side-card res-purchase-card" data-testid="resource-purchase">${cta}<p class="res-side-note">${escapeHtml(note)}</p>${renderSampleHint(m)}</div>
         <div class="res-side-card reveal">
           <div class="res-info-row"><span class="k">作者</span><span class="v">${escapeHtml(m.author)}</span></div>
           <div class="res-info-row"><span class="k">版本</span><span class="v">${escapeHtml(m.version)}</span></div>
