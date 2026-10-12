@@ -1641,6 +1641,9 @@ p { margin-bottom: 0; }
 
 .pay-dl { width: 100%; }
 
+/* 重新支付（手机端 H5 支付：h5_url 仅 5 分钟有效，续接未支付时用） */
+.pay-retry { width: 100%; margin-top: 10px; }
+
 @media (max-width: 900px) {
   .res-detail-grid { grid-template-columns: 1fr; gap: 32px; }
   .res-side { position: static; }
