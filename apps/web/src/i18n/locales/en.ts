@@ -834,7 +834,7 @@ const en: Record<string, string> = {
   'publish.error.previewRequired': 'Please add at least one preview image',
   'publish.error.previewInvalid': 'Preview images must be PNG/JPEG/WebP and ≤5MB',
   'publish.error.agreement': 'Please accept the public-sharing statement first',
-  'publish.error.zip_too_large': 'The packed vault exceeds 50MB - trim it and try again',
+  'publish.error.zip_too_large': 'The packed vault exceeds 200MB - trim it and try again',
   'publish.error.too_many_active': 'Active listing limit reached (10)',
   'publish.error.rate_limited': 'Daily publish limit reached (5)',
   'publish.error.cloud_unreachable': 'Network error - please try again later',

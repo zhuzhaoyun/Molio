@@ -836,7 +836,7 @@ const zh: Record<string, string> = {
   'publish.error.previewRequired': '请至少提供一张效果图',
   'publish.error.previewInvalid': '效果图仅支持 PNG/JPEG/WebP 且 ≤5MB',
   'publish.error.agreement': '请先勾选公开分享声明',
-  'publish.error.zip_too_large': '知识库打包后超过 50MB，请精简后再发布',
+  'publish.error.zip_too_large': '知识库打包后超过 200MB，请精简后再发布',
   'publish.error.too_many_active': '上架数量已达上限（10 条）',
   'publish.error.rate_limited': '今日上架次数已用完（5 次）',
   'publish.error.cloud_unreachable': '网络异常，请稍后再试',
