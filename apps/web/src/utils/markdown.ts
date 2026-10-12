@@ -43,7 +43,10 @@ export function renderMarkdown(text: string): string {
   // Strikethrough (after code blocks, before bold/italic to avoid ** conflict)
   html = html.replace(/~~(.+?)~~/g, '<del>$1</del>');
 
-  // Headers
+  // Headers (longest marker first — `### ` must not see `####` etc.)
+  html = html.replace(/^###### (.+)$/gm, '<h6>$1</h6>');
+  html = html.replace(/^##### (.+)$/gm, '<h5>$1</h5>');
+  html = html.replace(/^#### (.+)$/gm, '<h4>$1</h4>');
   html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>');
   html = html.replace(/^## (.+)$/gm, '<h2>$1</h2>');
   html = html.replace(/^# (.+)$/gm, '<h1>$1</h1>');

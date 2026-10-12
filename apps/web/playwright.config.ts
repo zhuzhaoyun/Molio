@@ -14,7 +14,11 @@ const CLOUD_BASE_URL = 'http://localhost:3200';
  */
 const DAEMON_PORT = Number(process.env.MOLIO_E2E_DAEMON_PORT ?? 3100);
 /**
- * E2E daemon 数据目录（MOLIO_DATA_DIR，db.ts 环境钩子）：一次一清的洁净目录，
+ * E2E daemon 数据目录（MOLIO_DATA_DIR，db.ts 环境钩子）：每次运行 mkdtemp
+ * 新建随机目录，天然干净，不需要先删旧目录——消除 Windows 下「测试 worker
+ * 二次加载本文件时，rmSync 撞上已启动 daemon 占用目录」的 EPERM。
+ * `??=` 赋值到环境变量：worker 二次加载时继承主进程的 MOLIO_E2E_DATA_DIR，
+ * 与主进程共用同一目录（不会各建各的）。
  * 使 E2E 不读写用户真实 ~/.molio（测试 vault 不污染真实数据），也避开真实重型
  * vault 同步扫描阻塞事件循环导致的散点 fetch failed。
  * 注意：仅对"本次 playwright 新拉起的 daemon"生效；reuseExistingServer 复用
