@@ -686,13 +686,12 @@ const en: Record<string, string> = {
   'kb.frontmatter.collapse': 'Hide properties',
   'kb.frontmatter.properties': 'Properties',
   'kb.floatingChat': 'Open AI chat',
-  // Floating button context menu (sessions / new / hide-restore / reset position)
-  'kb.chatMenu.newSession': 'New chat session',
+  // Floating button context menu (fixed actions, same sources as KB fixed buttons)
+  'kb.chatMenu.build': 'Build Wiki',
+  'kb.chatMenu.openSession': 'Open chat session',
   'kb.chatMenu.hide': 'Hide button',
   'kb.chatMenu.show': 'Show button',
   'kb.chatMenu.resetPos': 'Reset position',
-  'kb.chatMenu.running': 'Running',
-  'kb.chatMenu.limit': 'Session tab limit reached',
 
   // ── FilePicker ──
   'filePicker.justNow': 'Just now',

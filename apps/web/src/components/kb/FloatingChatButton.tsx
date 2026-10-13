@@ -1,13 +1,6 @@
 // apps/web/src/components/kb/FloatingChatButton.tsx
 import { useCallback, useEffect, useRef, useState } from 'react';
-import {
-  MAX_CHAT_SESSIONS,
-  kbChatSessionsStore,
-  useKbChatActiveSessionId,
-  useKbChatPanelOpen,
-  useKbChatSessions,
-} from '../../stores/kbChatSessionsStore';
-import { useKbChatSessionApi } from './KbChatSessionsProvider';
+import { kbChatSessionsStore, useKbChatPanelOpen } from '../../stores/kbChatSessionsStore';
 import { useCurrentContext } from '../../stores/currentContextStore';
 import { ContextMenu, type MenuItem } from './ContextMenu';
 import { useI18n } from '../../i18n';
@@ -24,8 +17,10 @@ import { useI18n } from '../../i18n';
  *  窗口 resize 时跟随收进新视口（藏边小签贴住新缘），不回写持久化——
  *  还原窗口后原位恢复。
  *
- *  拖拽与点击的判据沿用面板头部模式：位移 >6px 才算拖，纯点击永远开面板；
- *  隐藏态点小签 = 唤回贴缘可见位（不开面板）——唤回与打开各管各的事。 */
+ *  右键菜单（2026-10-13 二轮定稿）：**固定动作**，与 KB 页固定按钮同源——
+ *  「构建Wiki」走面板 runWikiOp（App 下发，与 KB 页「构建Wiki」按钮同一条
+ *  代码路径，复用/三选一互斥全部一致）；「打开会话」只展开面板不创建。
+ *  不做动态会话列表（会话标题/内容态是异步易变的，静态动作永不「消失」）。 */
 
 const BTN_SIZE = 52;
 const TAB_VISIBLE = 12;   // 隐藏态露出的签宽
@@ -105,12 +100,18 @@ function derivedTop(pos: BtnPos): number {
   return clampY(pos.y ?? 0);
 }
 
-export function FloatingChatButton() {
+interface Props {
+  /** KB 页构建按钮同一守卫：无可用运行时 → 菜单「构建Wiki」置灰（tooltip 说明）。 */
+  agentId: string | null;
+  /** 与 KB 页「构建Wiki」按钮同源：App 下发（同一 kbChatPanelRef.runWikiOp）。 */
+  onBuildWiki: () => void;
+  /** 只展开面板（当前活跃会话），不创建任何东西。 */
+  onOpenSession: () => void;
+}
+
+export function FloatingChatButton({ agentId, onBuildWiki, onOpenSession }: Props) {
   const panelOpen = useKbChatPanelOpen();
   const { t } = useI18n();
-  const sessions = useKbChatSessions();
-  const activeSessionId = useKbChatActiveSessionId();
-  const { runningMap } = useKbChatSessionApi();
   const { vault } = useCurrentContext();
   const [pos, setPos] = useState<BtnPos | null>(readBtnPos);
   // 右键菜单的锚点（光标处）；null = 菜单关着。菜单纯前端，状态随按钮组件走。
@@ -269,9 +270,7 @@ export function FloatingChatButton() {
     kbChatSessionsStore.setPanelOpen(true);
   }, []);
 
-  // ── 右键菜单（2026-10-13 定稿「精简版」）：会话切换 / 新建空会话 / 隐藏唤回 / 恢复默认位 ──
-  // 明确不做：wiki 任务入口（KB 页文档上下文的工作流，带三选一确认，域不对）、
-  // 删除会话（危险操作不进菜单）、最近对话列表（面板历史下拉已覆盖）。
+  // ── 右键菜单（2026-10-13 二轮定稿）：固定动作，与 KB 页固定按钮同源 ──
   const showButton = useCallback(() => {
     const p = posRef.current;
     if (!p?.hidden) return;
@@ -314,44 +313,27 @@ export function FloatingChatButton() {
     setMenuPos({ x: e.clientX, y: e.clientY });
   }, []);
 
-  const menuItems: MenuItem[] = [];
-  for (const s of sessions) {
-    const running = Boolean(runningMap[s.id]);
-    // 空会话不进菜单（2026-10-13 拍板）：空会话列出来像「新建」动作（误导——
-    // 点它其实打开已存在的空标签），菜单里唯一的「新开始」是下面的新建项。
-    // 「空」的判定必须用 conversationId（localStorage 同步真值，发过消息必有）——
-    // 不能用已加载的消息数：那是异步加载的，刚刷新时全是 0，菜单会整体空掉
-    // （2026-10-13 用户实测）。
-    if (!running && s.conversationId == null) continue;
-    menuItems.push({
-      label: s.title || t('kb.chatMenu.newSession'),
-      icon: running
-        ? <span className="kb-chat-menu-dot" aria-hidden />
-        : s.id === activeSessionId ? <span aria-hidden>✓</span> : undefined,
-      title: running ? t('kb.chatMenu.running') : undefined,
-      testid: 'kb-chat-menu-session',
-      onClick: () => {
-        kbChatSessionsStore.activateSession(s.id);
-        kbChatSessionsStore.setPanelOpen(true);
-      },
-    });
-  }
-  if (sessions.length > 0) menuItems.push({ divider: true });
-  menuItems.push({
-    label: t('kb.chatMenu.newSession'),
-    disabled: sessions.length >= MAX_CHAT_SESSIONS,
-    title: sessions.length >= MAX_CHAT_SESSIONS ? t('kb.chatMenu.limit') : undefined,
-    testid: 'kb-chat-menu-new',
-    onClick: () => {
-      kbChatSessionsStore.openSession({
-        mode: 'qa', title: '新会话', conversationId: null,
-        vaultId: vault?.id ?? undefined, filePath: null,
-      });
+  const buildDisabledReason = !vault
+    ? t('kb.cmdNeedsVault')
+    : !agentId ? t('home.noAgent') : undefined;
+  const menuItems: MenuItem[] = [
+    {
+      label: t('kb.chatMenu.build'),
+      disabled: Boolean(buildDisabledReason),
+      title: buildDisabledReason,
+      testid: 'kb-chat-menu-build',
+      onClick: onBuildWiki,
     },
-  });
-  menuItems.push(pos?.hidden
-    ? { label: t('kb.chatMenu.show'), testid: 'kb-chat-menu-hide-toggle', onClick: showButton }
-    : { label: t('kb.chatMenu.hide'), testid: 'kb-chat-menu-hide-toggle', onClick: hideToNearestEdge });
+    {
+      label: t('kb.chatMenu.openSession'),
+      testid: 'kb-chat-menu-open',
+      onClick: onOpenSession,
+    },
+    { divider: true },
+    pos?.hidden
+      ? { label: t('kb.chatMenu.show'), testid: 'kb-chat-menu-hide-toggle', onClick: showButton }
+      : { label: t('kb.chatMenu.hide'), testid: 'kb-chat-menu-hide-toggle', onClick: hideToNearestEdge },
+  ];
   if (pos) {
     menuItems.push({ divider: true });
     menuItems.push({ label: t('kb.chatMenu.resetPos'), testid: 'kb-chat-menu-reset', onClick: resetPosition });

@@ -371,6 +371,16 @@ export default function App() {
     kbChatPanelRef.current?.resetConversations(ids);
   }, []);
 
+  // 悬浮按钮右键菜单的两个动作（2026-10-13 拍板：与 KB 页固定按钮**同源**）——
+  // 构建Wiki 走面板的 runWikiOp（复用/新建 build 标签、任务在跑时三选一，全部与
+  // KB 页「构建Wiki」按钮同一条代码路径）；打开会话只展开面板，不创建任何东西。
+  const handleMenuBuildWiki = useCallback(() => {
+    kbChatPanelRef.current?.runWikiOp({ mode: 'build' });
+  }, []);
+  const handleMenuOpenChat = useCallback(() => {
+    kbChatSessionsStore.setPanelOpen(true);
+  }, []);
+
   return (
     <LanguageProvider initialLocale={locale}>
       <AppErrorBoundary>
@@ -438,7 +448,13 @@ export default function App() {
             悬浮按钮在全屏态（`/chat`）不渲染——那里 shell 就是对话本身，按钮等于第二个聊天框；
             面板展开时按钮自动让位（FloatingChatButton 在 panelOpen 时返回 null）。
             `/`（入口）也排除：它转瞬即走，挂上会闪一帧。 */}
-        {!isFullscreenRoute(location.pathname) && location.pathname !== '/' && <FloatingChatButton />}
+        {!isFullscreenRoute(location.pathname) && location.pathname !== '/' && (
+          <FloatingChatButton
+            agentId={selectedAgent}
+            onBuildWiki={handleMenuBuildWiki}
+            onOpenSession={handleMenuOpenChat}
+          />
+        )}
         <KbChatSessionsPanel
           ref={kbChatPanelRef}
         />

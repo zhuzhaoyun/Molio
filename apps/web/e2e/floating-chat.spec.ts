@@ -1022,75 +1022,76 @@ test.describe('Floating chat (方案 D)', () => {
 
   // ── 悬浮按钮：右键菜单（会话切换 / 新建 / 隐藏唤回 / 恢复默认位）────────
 
-  test('悬浮按钮：右键弹菜单——无会话时只有位置项；新建空会话直达', async ({ page }) => {
+  test('悬浮按钮：右键菜单固定动作——构建Wiki / 打开会话 / 位置管理', async ({ page }) => {
     await mockChatRun(page);
     await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
     const btn = page.locator('[data-testid="floating-chat-btn"]');
     await expect(btn).toBeVisible();
 
+    // 冷启动（无持久化位置）：构建Wiki + 打开会话 + 隐藏按钮；无「恢复默认位置」可恢复
     await btn.click({ button: 'right' });
-    const menuNew = page.locator('[data-testid="kb-chat-menu-new"]');
-    await expect(menuNew).toBeVisible();
-    // 冷启动无会话：不出会话区；也没有持久化位置 → 无「恢复默认位置」可恢复
-    await expect(page.locator('[data-testid="kb-chat-menu-session"]')).toHaveCount(0);
+    await expect(page.locator('[data-testid="kb-chat-menu-build"]')).toBeVisible();
+    await expect(page.locator('[data-testid="kb-chat-menu-open"]')).toBeVisible();
+    await expect(page.locator('[data-testid="kb-chat-menu-hide-toggle"]')).toBeVisible();
     await expect(page.locator('[data-testid="kb-chat-menu-reset"]')).toHaveCount(0);
 
-    // 新建空会话：面板直接展开 + 恰好一个「新会话」标签（vault 级，不绑文件）
-    await menuNew.click();
+    // 「打开会话」只展开面板，不创建任何会话标签
+    await page.locator('[data-testid="kb-chat-menu-open"]').click();
     const panel = page.locator('[data-testid="kb-chat-panel"]');
     await expect(panel).toBeVisible();
-    await expect(page.locator('[data-testid="kb-chat-session-tab"]')).toHaveCount(1);
-    await expect(page.locator('[data-testid="kb-chat-session-tab"]').first()).toContainText('新会话');
-    // 面板开了 → 按钮让位 → 菜单随之消失
-    await expect(btn).toHaveCount(0);
+    await expect(page.locator('[data-testid="kb-chat-session-tab"]')).toHaveCount(0);
+    await page.locator('[data-testid="kb-chat-close"]').click();
+    await expect(btn).toBeVisible();
   });
 
-  test('悬浮按钮：右键会话列表切换会话——不展开面板就能切', async ({ page }) => {
+  test('悬浮按钮：菜单「构建Wiki」与 KB 固定按钮同源——复用同一标签', async ({ page }) => {
     await mockChatRun(page);
-    await seedChatSession(page, '甲：构建产出');
-    // 第二个会话也要**有内容**（空会话不进菜单，2026-10-13 拍板）：面板「+」新建后发一条。
-    // 多标签 composer 逐签常驻（草稿保活），必须限定 :visible 的活跃签。
-    await page.locator('[data-testid="kb-chat-session-new"]').click();
-    const activeComposer = page.locator('[data-testid="kb-chat-panel"] [data-testid="kb-chat-session"]:visible [data-testid="composer-input"]');
-    await activeComposer.fill('乙：问答记录');
-    await activeComposer.press('Enter');
-    await expect(
-      page.locator('[data-testid="kb-chat-panel"] [data-testid="assistant-message"]').last(),
-    ).toBeVisible({ timeout: 10_000 });
-    await page.locator('[data-testid="kb-chat-close"]').click();
+    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
     const btn = page.locator('[data-testid="floating-chat-btn"]');
-    await expect(btn).toBeVisible();
+    const tabs = page.locator('[data-testid="kb-chat-session-tab"]');
 
-    // 右键 → 有内容的两个会话都列出，活跃的（乙）带 ✓
+    // 菜单「构建Wiki」→ 建 build 标签（规范标题）+ 展开面板 + 自动发送
     await btn.click({ button: 'right' });
-    const items = page.locator('[data-testid="kb-chat-menu-session"]');
-    await expect(items).toHaveCount(2);
-    await expect(items.filter({ hasText: '乙：问答记录' })).toContainText('✓');
-
-    // 点非活跃的「甲」→ 面板展开且该会话成为活跃标签（is-active）
-    await items.filter({ hasText: '甲：构建产出' }).click();
-    const activeTab = page.locator('[data-testid="kb-chat-session-tab"].is-active');
-    await expect(activeTab).toContainText('甲：构建产出');
+    await page.locator('[data-testid="kb-chat-menu-build"]').click();
     await expect(page.locator('[data-testid="kb-chat-panel"]')).toBeVisible();
+    await expect(tabs).toHaveCount(1);
+    await expect(tabs.first()).toContainText('构建Wiki');
+
+    // KB 页固定按钮再点 → 同一条 runWikiOp 路径：复用同一标签，不重复建
+    await page.locator('[data-testid="kb-btn-build-wiki"]').click();
+    await expect(tabs).toHaveCount(1);
+    await expect(tabs.first()).toContainText('构建Wiki');
   });
 
-  test('悬浮按钮：右键菜单不列空会话（空签像「新建」动作，误导）', async ({ page }) => {
-    await mockChatRun(page);
-    await seedChatSession(page, '甲：构建产出');
-    // 「+」新建一个空标签（成为活跃）→ 收起面板
-    await page.locator('[data-testid="kb-chat-session-new"]').click();
-    await expect(page.locator('[data-testid="kb-chat-session-tab"]')).toHaveCount(2);
-    await page.locator('[data-testid="kb-chat-close"]').click();
+  test('悬浮按钮：构建在跑时菜单「构建Wiki」→ 三选一（与 KB 按钮同一互斥）', async ({ page }) => {
+    // frameDelay 400ms × 5 帧：第一个构建保持 running，第二次触发才能命中三选一
+    await mockChatRun(page, { frameDelay: 400 });
+    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
     const btn = page.locator('[data-testid="floating-chat-btn"]');
+    const panel = page.locator('[data-testid="kb-chat-panel"]');
+    const tabs = page.locator('[data-testid="kb-chat-session-tab"]');
+
+    // 菜单发起构建 → 面板展开、构建在跑 → 收起面板（后台继续），按钮复现
+    await btn.click({ button: 'right' });
+    await page.locator('[data-testid="kb-chat-menu-build"]').click();
+    await expect(panel).toBeVisible();
+    await expect(tabs).toHaveCount(1);
+    await page.locator('[data-testid="kb-chat-close"]').click();
     await expect(btn).toBeVisible();
 
-    // 右键：只列有内容的「甲」，空会话（新会话）不出现
+    // 构建在跑再走菜单「构建Wiki」→ runWikiOp 命中互斥 → 三选一弹窗（面板已随之展开）
     await btn.click({ button: 'right' });
-    const items = page.locator('[data-testid="kb-chat-menu-session"]');
-    await expect(items).toHaveCount(1);
-    await expect(items).toContainText('甲：构建产出');
-    await expect(items.filter({ hasText: '新会话' })).toHaveCount(0);
+    await page.locator('[data-testid="kb-chat-menu-build"]').click();
+    const dialog = page.locator('[data-testid="confirm-dialog"]');
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole('button', { name: '取消' }).click();
+
+    // KB 固定按钮走同一互斥：同样弹三选一（一条代码路径，两处入口行为一致）
+    await page.locator('[data-testid="kb-btn-build-wiki"]').click();
+    await expect(page.locator('[data-testid="confirm-dialog"]')).toBeVisible();
   });
 
   test('旧版提示词片段标题迁移为规范 wiki 标签标题', async ({ page }) => {
