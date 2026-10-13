@@ -38,6 +38,9 @@ jobs:
       - name: Run daemon tests
         run: pnpm --filter @molio/daemon test
 
+      - name: Run CLI tests
+        run: pnpm --filter @molio/cli test
+
       - name: Run desktop tests (updater regression)
         run: pnpm --filter @molio/desktop test
 

@@ -17,6 +17,7 @@ apps/
   web/          @molio/web       — Vite + React web UI, consuming daemon SSE (→ apps/web/CLAUDE.md)
   desktop/      @molio/desktop   — Electron shell (→ apps/desktop/CLAUDE.md)
   cloud/        @molio/cloud     — 云端认证服务（用户模块；邮箱验证码登录，独立部署，不进应用镜像）(→ apps/cloud/CLAUDE.md)
+  cli/          @molio/cli       — 知识库能力 CLI + MCP server（供 WorkBuddy/千问等外部桌面 agent 只读调用）(→ apps/cli/CLAUDE.md)
 ```
 
 ## Build & Dev Commands
