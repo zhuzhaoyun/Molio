@@ -11,7 +11,9 @@ import { useI18n } from '../../i18n';
  *  拖近**任意一边**（上下左右，中心距缘 <48px）→ 实时磁吸贴缘 + 朝缘压扁
  *  （「正在被吸进去」的预告）；**吸附状态下松手 → 吸进缘里隐藏**（只露 12px
  *  小签）。不在吸附区松手 = 自由位。位置持久化（molio.kb.chatBtnPos），
- *  重载原样恢复（含隐藏态——用户显式选择被尊重），恢复按当前视口 clamp。
+ *  重载原样恢复（含隐藏态——用户显式选择被尊重），恢复按当前视口 clamp；
+ *  窗口 resize 时跟随收进新视口（藏边小签贴住新缘），不回写持久化——
+ *  还原窗口后原位恢复。
  *
  *  拖拽与点击的判据沿用面板头部模式：位移 >6px 才算拖，纯点击永远开面板；
  *  隐藏态点小签 = 唤回贴缘可见位（不开面板）——唤回与打开各管各的事。 */
@@ -100,6 +102,20 @@ export function FloatingChatButton() {
   const [pos, setPos] = useState<BtnPos | null>(readBtnPos);
   const posRef = useRef(pos);
   useEffect(() => { posRef.current = pos; }, [pos]);
+  // 视口缩放跟随：left/top 都是**渲染期**从 window 尺寸推导的（自由位 clamp、
+  // 藏边小签贴缘），但没有重渲染就不会重算——缩窗后按钮/小签悬在旧坐标，
+  // 藏边签甚至整个消失在视口外点不回（2026-10-11 用户实测）。这里监听 resize
+  // 触发一帧重渲染即可：几何自然落到新视口。持久化**不回写**——存的坐标是
+  // 用户的所选位置，还原窗口后原位恢复；恢复路径本来就会按当时视口 clamp。
+  const dragActiveRef = useRef(false);
+  useEffect(() => {
+    const onResize = () => {
+      if (dragActiveRef.current) return; // 拖拽中几何由手势直写 DOM，别插手
+      setPos((prev) => (prev ? { ...prev } : prev)); // 新对象强制重渲染；clamp 由渲染期推导完成
+    };
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
   const btnRef = useRef<HTMLButtonElement>(null);
   // 拖拽真值源：拖动中直接写 DOM（不逐帧 setState），松手一次性提交。
   // edge 非空 = 正被某条缘磁吸（垂直轴已钉在缘上）。
@@ -163,6 +179,7 @@ export function FloatingChatButton() {
       grabX: e.clientX - rect.left, grabY: e.clientY - rect.top,
       x: rect.left, y: rect.top, edge: null, moved: false,
     };
+    dragActiveRef.current = true;
     el.setPointerCapture(e.pointerId);
   }, []);
 
@@ -199,12 +216,16 @@ export function FloatingChatButton() {
     el.style.top = `${d.y}px`;
   }, []);
 
-  const onPointerUp = useCallback(() => { settleRef.current(); }, []);
+  const onPointerUp = useCallback(() => {
+    dragActiveRef.current = false;
+    settleRef.current();
+  }, []);
 
   const onPointerCancel = useCallback(() => {
     const d = dragRef.current;
     const el = btnRef.current;
     dragRef.current = null;
+    dragActiveRef.current = false;
     if (!d?.moved) return;
     el?.classList.remove('is-dragging');
     el?.classList.remove(

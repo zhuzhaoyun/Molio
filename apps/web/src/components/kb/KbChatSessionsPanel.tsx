@@ -200,6 +200,19 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
   // 释放时是否保留拖拽左缘（避免悬浮已移动的面板被清 left 后落到默认右侧位）。
   const floatPosRef = useRef(floatPos);
   useEffect(() => { floatPosRef.current = floatPos; }, [floatPos]);
+  // 视口缩放跟随：悬浮 left/top 是渲染期 clampFloatPos 算的，但 resize 不触发渲染——
+  // 缩窗后面板悬在旧坐标（横向尤甚：ResizeObserver 只被高度变化触发）。监听 resize
+  // 触发一帧重渲染即可收敛；持久化**不回写**——存的坐标是用户的所选位置，还原窗口
+  // 后原位恢复（恢复/渲染路径本来就会按当时视口 clamp）。拖拽中（头部移动 / 宽高手柄）
+  // 几何由手势直写 DOM，重渲染会打架，跳过。
+  useEffect(() => {
+    const onResize = () => {
+      if (moveRef.current || dragRef.current || heightDragRef.current) return;
+      setFloatPos((prev) => (prev ? { ...prev } : prev));
+    };
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
 
   const docked = dockMode === 'dock';
   // 知识库页停靠 = 还原改动前的「页内分栏」：面板从页顶占满整高、贴右缘，

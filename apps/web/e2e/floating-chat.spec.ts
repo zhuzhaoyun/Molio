@@ -907,4 +907,116 @@ test.describe('Floating chat (方案 D)', () => {
     expect(box.x).toBeLessThan(100);
     expect(Math.abs(box.y - 158)).toBeLessThan(3);
   });
+
+  test('悬浮面板：窗口缩小时收进视口（留可抓条带）；还原窗口原位恢复', async ({ page }) => {
+    // 用户显式把 history 页记成悬浮（偏好被尊重）+ 右侧自由位。缩窗后面板必须
+    // 收进视口——面板 clamp 语义是「至少留 80px 横向 / 48px 纵向可抓条带」
+    // （摸得到就拖得回），不是按钮那种整圆进视口。旧实现只在任意重渲染时
+    // clamp，resize 不触发渲染 → 面板整个悬在视口外。
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await page.addInitScript(() => {
+      localStorage.setItem('molio.kb.chatDockModeByPage', JSON.stringify({ history: 'float' }));
+      localStorage.setItem('molio.kb.chatFloatPos', JSON.stringify({ left: 820, top: 60 }));
+    });
+    await mockChatRun(page);
+    await page.goto('http://localhost:5173/history');
+    const panel = page.locator('[data-testid="kb-chat-panel"]');
+    await page.locator('[data-testid="floating-chat-btn"]').click();
+    await expect(panel).toBeVisible();
+    await expect(panel).not.toHaveClass(/--dock/);
+    // 开合动画（200ms，从 translateY(16px) 升起）落定后再量几何——否则量到行程中点
+    await expect.poll(async () => (await panel.boundingBox())!.y, { timeout: 5_000 })
+      .toBeLessThan(63);
+    let box = (await panel.boundingBox())!;
+    expect(Math.abs(box.x - 820)).toBeLessThan(3);
+    expect(Math.abs(box.y - 60)).toBeLessThan(3);
+
+    await page.setViewportSize({ width: 800, height: 600 });
+    // left clamp 到 vw-80=720（留 80px 条带）；top 60 < vh-48 仍在界内不动
+    await expect.poll(async () => (await panel.boundingBox())!.x, { timeout: 5_000 })
+      .toBeLessThan(730);
+    box = (await panel.boundingBox())!;
+    expect(Math.abs(box.x - (800 - 80))).toBeLessThan(3);
+    expect(Math.abs(box.y - 60)).toBeLessThan(3);
+    expect(box.x).toBeGreaterThanOrEqual(0);
+
+    // 持久化不被 resize 改写：还原窗口 → 原位恢复
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await expect.poll(async () => (await panel.boundingBox())!.x, { timeout: 5_000 })
+      .toBeGreaterThan(810);
+    const stored = await page.evaluate(() => JSON.parse(localStorage.getItem('molio.kb.chatFloatPos')!));
+    expect(stored.left).toBe(820);
+    expect(stored.top).toBe(60);
+  });
+
+  test('悬浮按钮：窗口缩小时自由位收进视口；还原窗口原位恢复', async ({ page }) => {
+    // 1400×900 下种右下角自由位 → 缩到 800×600：按钮必须整体收进视口
+    // （旧实现没有 resize 处理，按钮悬在旧坐标 → 一部分/全部在可视区外）。
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await page.addInitScript(() => {
+      localStorage.setItem('molio.kb.chatBtnPos', JSON.stringify({ edge: null, x: 1330, y: 836, hidden: false }));
+    });
+    await mockChatRun(page);
+    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+    const btn = page.locator('[data-testid="floating-chat-btn"]');
+    await expect(btn).toBeVisible();
+    let box = (await btn.boundingBox())!;
+    expect(Math.abs(box.x - 1330)).toBeLessThan(3);
+    expect(Math.abs(box.y - 836)).toBeLessThan(3);
+
+    await page.setViewportSize({ width: 800, height: 600 });
+    // clamp 到「缘内 8px」：x=740、y=540，且整圆在视口内
+    await expect.poll(async () => (await btn.boundingBox())!.x, { timeout: 5_000 })
+      .toBeLessThan(760);
+    box = (await btn.boundingBox())!;
+    expect(Math.abs(box.x - (800 - 52 - 8))).toBeLessThan(3);
+    expect(Math.abs(box.y - (600 - 52 - 8))).toBeLessThan(3);
+    expect(box.x + box.width).toBeLessThanOrEqual(800);
+    expect(box.y + box.height).toBeLessThanOrEqual(600);
+
+    // 持久化不被 resize 改写：还原窗口 → 原位恢复（所选坐标是用户的，resize 只临时收拢）
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await expect.poll(async () => (await btn.boundingBox())!.x, { timeout: 5_000 })
+      .toBeGreaterThan(1300);
+    const stored = await page.evaluate(() => JSON.parse(localStorage.getItem('molio.kb.chatBtnPos')!));
+    expect(stored.x).toBe(1330);
+    expect(stored.y).toBe(836);
+  });
+
+  test('悬浮按钮：藏边小签随窗口缩放贴住新缘（不消失在旧坐标）', async ({ page }) => {
+    // 右缘小签的 x 由渲染期推导：缩窗后必须贴住**新**右缘——旧实现停在旧坐标，
+    // 小签整个消失在视口外、点不回来（比自由位更糟）。
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await page.addInitScript(() => {
+      localStorage.setItem('molio.kb.chatBtnPos', JSON.stringify({ edge: 'right', x: null, y: 836, hidden: true }));
+    });
+    await mockChatRun(page);
+    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+    const btn = page.locator('[data-testid="floating-chat-btn"]');
+    await expect(btn).toHaveClass(/floating-chat-btn--hidden/);
+    await page.mouse.move(10, 10); // 移开指针：小签 :hover 是交互态，量静息几何
+    await page.waitForTimeout(250);
+    let box = (await btn.boundingBox())!;
+    expect(Math.abs(box.x - (1400 - 12))).toBeLessThan(2);
+    expect(Math.abs(box.y - 836)).toBeLessThan(3);
+
+    await page.setViewportSize({ width: 800, height: 600 });
+    // 小签贴住新右缘（x=788），平行轴 y clamp 到 540——整签仍可见可点
+    await expect.poll(async () => (await btn.boundingBox())!.x, { timeout: 5_000 })
+      .toBeLessThan(795);
+    await page.mouse.move(10, 10);
+    await page.waitForTimeout(250);
+    box = (await btn.boundingBox())!;
+    expect(Math.abs(box.x - (800 - 12))).toBeLessThan(2);
+    expect(Math.abs(box.y - (600 - 52 - 8))).toBeLessThan(3);
+
+    // 缩窗后小签仍可点回（不可达是这条 bug 最糟的后果）
+    await btn.click({ position: { x: 4, y: 26 } });
+    await page.waitForTimeout(400);
+    await expect(btn).not.toHaveClass(/floating-chat-btn--hidden/);
+    box = (await btn.boundingBox())!;
+    expect(Math.abs(box.x + box.width - 800)).toBeLessThan(3);
+  });
 });
