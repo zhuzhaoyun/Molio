@@ -43,7 +43,7 @@ function readPersistedSessions(): ChatSessionTab[] {
         // 之后这份脏数据不再存在）。用户重命名过的不受影响（见 legacyWikiTitleFix）。
         let dirty = false;
         for (const s of sessions) {
-          if (typeof s?.title !== 'string' || typeof s?.mode !== 'string') continue;
+          if (typeof s?.title !== 'string') continue;
           const fixed = legacyWikiTitleFix(s.mode, s.title);
           if (fixed) { s.title = fixed; dirty = true; }
         }

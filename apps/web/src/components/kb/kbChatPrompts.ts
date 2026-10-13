@@ -40,13 +40,17 @@ export const WIKI_TITLES: Record<ChatSessionMode, string> = {
  * 「用 wiki-build skill 开始构建」），并经 localStorage 跨版本残留——标签栏和
  * 悬浮按钮右键菜单都会把它当名字展示（2026-10-13 用户实测）。现版 wiki 会话
  * 固定用 WIKI_TITLES 且不再派生（controller 只对 qa 派生），这里识别遗留片段：
- * 非 qa 会话的标题仍是「用 wiki-」开头的提示词开头即视为遗留，返回规范标题；
- * 用户重命名过的不动（返回 null）。
+ * 标题以「用 wiki-build/lint/ingest」开头即按前缀归位规范标题（按前缀而非 mode
+ * 字段判——旧数据里 mode 可能缺失）；qa 会话不动（真往 qa 里贴过这段话的，
+ * 用户可自行重命名）。用户重命名过的不匹配前缀，天然不动。
  */
-export function legacyWikiTitleFix(mode: ChatSessionMode, title: string): string | null {
+export function legacyWikiTitleFix(mode: ChatSessionMode | undefined, title: string): string | null {
   if (mode === 'qa') return null;
   if (!title.startsWith('用 wiki-')) return null;
-  return WIKI_TITLES[mode];
+  if (title.startsWith('用 wiki-build')) return WIKI_TITLES.build;
+  if (title.startsWith('用 wiki-lint')) return WIKI_TITLES.lint;
+  if (title.startsWith('用 wiki-ingest')) return WIKI_TITLES.ingest;
+  return null;
 }
 
 /**

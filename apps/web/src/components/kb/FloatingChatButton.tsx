@@ -110,7 +110,7 @@ export function FloatingChatButton() {
   const { t } = useI18n();
   const sessions = useKbChatSessions();
   const activeSessionId = useKbChatActiveSessionId();
-  const { runningMap, getState } = useKbChatSessionApi();
+  const { runningMap } = useKbChatSessionApi();
   const { vault } = useCurrentContext();
   const [pos, setPos] = useState<BtnPos | null>(readBtnPos);
   // 右键菜单的锚点（光标处）；null = 菜单关着。菜单纯前端，状态随按钮组件走。
@@ -319,9 +319,10 @@ export function FloatingChatButton() {
     const running = Boolean(runningMap[s.id]);
     // 空会话不进菜单（2026-10-13 拍板）：空会话列出来像「新建」动作（误导——
     // 点它其实打开已存在的空标签），菜单里唯一的「新开始」是下面的新建项。
-    // 运行中 / 有内容的会话才是有效切换目标。
-    const hasContent = (getState(s.id)?.messages.length ?? 0) > 0;
-    if (!running && !hasContent) continue;
+    // 「空」的判定必须用 conversationId（localStorage 同步真值，发过消息必有）——
+    // 不能用已加载的消息数：那是异步加载的，刚刷新时全是 0，菜单会整体空掉
+    // （2026-10-13 用户实测）。
+    if (!running && s.conversationId == null) continue;
     menuItems.push({
       label: s.title || t('kb.chatMenu.newSession'),
       icon: running
