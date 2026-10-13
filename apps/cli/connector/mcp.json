@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "molio-kb": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@molio/cli", "mcp"],
+      "runtime": {
+        "type": "node",
+        "version": "20"
+      },
+      "npmRegistry": "https://registry.npmmirror.com",
+      "timeout": 30000
+    }
+  }
+}
