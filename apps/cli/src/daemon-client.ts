@@ -239,9 +239,13 @@ export function isTerminalStatus(status: RunInfo['status']): boolean {
  * stopReason 写进 RunInfo.lastStopReason（RunManager:637），并以此刻为「回合完成、
  * assistant 消息已 flush 落库」的权威信号（与 RunManager:1237 的 flush 条件一致）。
  * 'tool_use' 是回合内的中间步（模型还要调工具），不算完成。
+ *
+ * 用真值判断而非 `!= null`：lastStopReason 来自 HTTP JSON，字段缺失时运行时为
+ * undefined（契约类型 `string | null` 不含它，但 `!== null` 会把 undefined 误判成
+ * 已完成）。`!!x` 对 null/undefined/'' 一律 false，只有真实非空 stopReason 才算数。
  */
 export function turnCompleted(run: RunInfo): boolean {
-  return run.lastStopReason != null && run.lastStopReason !== 'tool_use';
+  return !!run.lastStopReason && run.lastStopReason !== 'tool_use';
 }
 
 /** 取会话最后一条 assistant 消息内容（异步 ask 的稳健取答路径）。 */
