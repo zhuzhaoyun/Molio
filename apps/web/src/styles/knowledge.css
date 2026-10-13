@@ -2949,6 +2949,15 @@
   min-width: 0;
 }
 
+/* 悬浮按钮右键菜单里的「运行中」标记：小绿点（✓ 活跃标记用纯字符，无需样式）。 */
+.kb-chat-menu-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--green, #16a34a);
+  display: inline-block;
+}
+
 .ctx-menu-item:hover {
   background: var(--bg-subtle);
 }

@@ -1019,4 +1019,115 @@ test.describe('Floating chat (方案 D)', () => {
     box = (await btn.boundingBox())!;
     expect(Math.abs(box.x + box.width - 800)).toBeLessThan(3);
   });
+
+  // ── 悬浮按钮：右键菜单（会话切换 / 新建 / 隐藏唤回 / 恢复默认位）────────
+
+  test('悬浮按钮：右键弹菜单——无会话时只有位置项；新建空会话直达', async ({ page }) => {
+    await mockChatRun(page);
+    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+    const btn = page.locator('[data-testid="floating-chat-btn"]');
+    await expect(btn).toBeVisible();
+
+    await btn.click({ button: 'right' });
+    const menuNew = page.locator('[data-testid="kb-chat-menu-new"]');
+    await expect(menuNew).toBeVisible();
+    // 冷启动无会话：不出会话区；也没有持久化位置 → 无「恢复默认位置」可恢复
+    await expect(page.locator('[data-testid="kb-chat-menu-session"]')).toHaveCount(0);
+    await expect(page.locator('[data-testid="kb-chat-menu-reset"]')).toHaveCount(0);
+
+    // 新建空会话：面板直接展开 + 恰好一个「新会话」标签（vault 级，不绑文件）
+    await menuNew.click();
+    const panel = page.locator('[data-testid="kb-chat-panel"]');
+    await expect(panel).toBeVisible();
+    await expect(page.locator('[data-testid="kb-chat-session-tab"]')).toHaveCount(1);
+    await expect(page.locator('[data-testid="kb-chat-session-tab"]').first()).toContainText('新会话');
+    // 面板开了 → 按钮让位 → 菜单随之消失
+    await expect(btn).toHaveCount(0);
+  });
+
+  test('悬浮按钮：右键会话列表切换会话——不展开面板就能切', async ({ page }) => {
+    await mockChatRun(page);
+    await seedChatSession(page, '甲：构建产出');
+    // 第二个空标签：面板「+」新建（成为活跃），随后收起面板
+    await page.locator('[data-testid="kb-chat-session-new"]').click();
+    await expect(page.locator('[data-testid="kb-chat-session-tab"]')).toHaveCount(2);
+    await page.locator('[data-testid="kb-chat-close"]').click();
+    const btn = page.locator('[data-testid="floating-chat-btn"]');
+    await expect(btn).toBeVisible();
+
+    // 右键 → 会话区两条，活跃的（新会话）带 ✓
+    await btn.click({ button: 'right' });
+    const items = page.locator('[data-testid="kb-chat-menu-session"]');
+    await expect(items).toHaveCount(2);
+    await expect(items.filter({ hasText: '新会话' })).toContainText('✓');
+
+    // 点非活跃的「甲」→ 面板展开且该会话成为活跃标签（is-active）
+    await items.filter({ hasText: '甲：构建产出' }).click();
+    const activeTab = page.locator('[data-testid="kb-chat-session-tab"].is-active');
+    await expect(activeTab).toContainText('甲：构建产出');
+    await expect(page.locator('[data-testid="kb-chat-panel"]')).toBeVisible();
+  });
+
+  test('悬浮按钮：右键「隐藏按钮」吸进最近缘；小签右键「唤回按钮」', async ({ page }) => {
+    await mockChatRun(page);
+    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+    const btn = page.locator('[data-testid="floating-chat-btn"]');
+    await expect(btn).toBeVisible();
+
+    // 默认右下角 → 最近的缘是右缘：隐藏后是 --edge-right --hidden
+    await btn.click({ button: 'right' });
+    await page.locator('[data-testid="kb-chat-menu-hide-toggle"]').click();
+    await expect(btn).toHaveClass(/floating-chat-btn--hidden/);
+    await expect(btn).toHaveClass(/floating-chat-btn--edge-right/);
+
+    // 隐藏态右键小签：同一路菜单，条目变「唤回」→ 点后取消隐藏
+    await btn.click({ button: 'right' });
+    const toggle = page.locator('[data-testid="kb-chat-menu-hide-toggle"]');
+    await expect(toggle).toBeVisible();
+    await toggle.click();
+    await expect(btn).not.toHaveClass(/floating-chat-btn--hidden/);
+    await expect(btn).toHaveClass(/floating-chat-btn--edge-right/); // 唤回 = 贴缘可见位
+  });
+
+  test('悬浮按钮：右键「恢复默认位置」清持久化并回默认右下角', async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.setItem('molio.kb.chatBtnPos', JSON.stringify({ edge: null, x: 100, y: 100, hidden: false }));
+    });
+    await mockChatRun(page);
+    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+    const btn = page.locator('[data-testid="floating-chat-btn"]');
+    await expect(btn).toBeVisible();
+    let box = (await btn.boundingBox())!;
+    expect(Math.abs(box.x - 100)).toBeLessThan(3);
+
+    await btn.click({ button: 'right' });
+    await page.locator('[data-testid="kb-chat-menu-reset"]').click();
+
+    // 持久化被清除（下次冷启动也是默认位）；按钮回 CSS 默认右下角（right/bottom 24px）
+    const stored = await page.evaluate(() => localStorage.getItem('molio.kb.chatBtnPos'));
+    expect(stored).toBeNull();
+    const vw = page.viewportSize()!.width;
+    const vh = page.viewportSize()!.height;
+    // 默认角 left = vw-76（right:24 + 52px 宽）
+    await expect.poll(async () => (await btn.boundingBox())!.x, { timeout: 5_000 })
+      .toBeGreaterThan(vw - 80);
+    box = (await btn.boundingBox())!;
+    expect(Math.abs(box.x + box.width - (vw - 24))).toBeLessThan(3);
+    expect(Math.abs(box.y + box.height - (vh - 24))).toBeLessThan(3);
+  });
 });
+
+/** 经真实问答流建一个会话标签（与 chat-fullscreen.spec 的 seedSession 同法）。 */
+async function seedChatSession(page: import('@playwright/test').Page, text: string) {
+  await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+  await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+  await page.locator('[data-testid="kb-btn-ask"]').click();
+  await page.locator('[data-testid="kb-chat-panel"] [data-testid="composer-input"]').fill(text);
+  await page.locator('[data-testid="composer-send"]').click();
+  await expect(
+    page.locator('[data-testid="kb-chat-panel"] [data-testid="assistant-message"]').last(),
+  ).toBeVisible({ timeout: 10_000 });
+}

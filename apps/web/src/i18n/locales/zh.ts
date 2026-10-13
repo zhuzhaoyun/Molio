@@ -688,6 +688,13 @@ const zh: Record<string, string> = {
   'kb.frontmatter.collapse': '收起属性',
   'kb.frontmatter.properties': '文档属性',
   'kb.floatingChat': '打开 AI 对话',
+  // 悬浮按钮右键菜单（精简版：会话切换/新建/隐藏唤回/恢复默认位）
+  'kb.chatMenu.newSession': '新建空会话',
+  'kb.chatMenu.hide': '隐藏按钮',
+  'kb.chatMenu.show': '唤回按钮',
+  'kb.chatMenu.resetPos': '恢复默认位置',
+  'kb.chatMenu.running': '运行中',
+  'kb.chatMenu.limit': '已达会话标签上限',
 
   // ── FilePicker ──
   'filePicker.justNow': '刚刚',

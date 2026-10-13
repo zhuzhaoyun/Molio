@@ -1,6 +1,15 @@
 // apps/web/src/components/kb/FloatingChatButton.tsx
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useKbChatPanelOpen, kbChatSessionsStore } from '../../stores/kbChatSessionsStore';
+import {
+  MAX_CHAT_SESSIONS,
+  kbChatSessionsStore,
+  useKbChatActiveSessionId,
+  useKbChatPanelOpen,
+  useKbChatSessions,
+} from '../../stores/kbChatSessionsStore';
+import { useKbChatSessionApi } from './KbChatSessionsProvider';
+import { useCurrentContext } from '../../stores/currentContextStore';
+import { ContextMenu, type MenuItem } from './ContextMenu';
 import { useI18n } from '../../i18n';
 
 /** 全局悬浮对话按钮：面板收起时显示，点击展开多会话面板。
@@ -99,7 +108,13 @@ function derivedTop(pos: BtnPos): number {
 export function FloatingChatButton() {
   const panelOpen = useKbChatPanelOpen();
   const { t } = useI18n();
+  const sessions = useKbChatSessions();
+  const activeSessionId = useKbChatActiveSessionId();
+  const { runningMap } = useKbChatSessionApi();
+  const { vault } = useCurrentContext();
   const [pos, setPos] = useState<BtnPos | null>(readBtnPos);
+  // 右键菜单的锚点（光标处）；null = 菜单关着。菜单纯前端，状态随按钮组件走。
+  const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(null);
   const posRef = useRef(pos);
   useEffect(() => { posRef.current = pos; }, [pos]);
   // 视口缩放跟随：left/top 都是**渲染期**从 window 尺寸推导的（自由位 clamp、
@@ -254,28 +269,117 @@ export function FloatingChatButton() {
     kbChatSessionsStore.setPanelOpen(true);
   }, []);
 
-  if (panelOpen) return null; // 面板展开时不显示按钮
+  // ── 右键菜单（2026-10-13 定稿「精简版」）：会话切换 / 新建空会话 / 隐藏唤回 / 恢复默认位 ──
+  // 明确不做：wiki 任务入口（KB 页文档上下文的工作流，带三选一确认，域不对）、
+  // 删除会话（危险操作不进菜单）、最近对话列表（面板历史下拉已覆盖）。
+  const showButton = useCallback(() => {
+    const p = posRef.current;
+    if (!p?.hidden) return;
+    const next: BtnPos = { ...p, hidden: false };
+    setPos(next);
+    persistBtnPos(next);
+    glide('floating-chat-btn--restore', 280);
+  }, [glide]);
+
+  const hideToNearestEdge = useCallback(() => {
+    // 与拖拽松手同一落点语义：吸进**当前位最近**的缘（隐藏），平行轴留在当前位置。
+    // pos 为 null（CSS 默认右下角）时读真实矩形（hover 缩放的 ~2px 误差只影响平局判定，可忽略）。
+    const el = btnRef.current;
+    const left = posRef.current ? derivedLeft(posRef.current) : (el?.getBoundingClientRect().left ?? window.innerWidth - BTN_SIZE - 24);
+    const top = posRef.current ? derivedTop(posRef.current) : (el?.getBoundingClientRect().top ?? window.innerHeight - BTN_SIZE - 24);
+    const cx = left + BTN_SIZE / 2;
+    const cy = top + BTN_SIZE / 2;
+    const dl = cx, dr = window.innerWidth - cx, dt = cy, db = window.innerHeight - cy;
+    const min = Math.min(dl, dr, dt, db);
+    const edge: BtnEdge = min === dl ? 'left' : min === dr ? 'right' : min === dt ? 'top' : 'bottom';
+    const next: BtnPos = {
+      edge,
+      x: edge === 'top' || edge === 'bottom' ? Math.round(clampFreeX(left)) : null,
+      y: edge === 'left' || edge === 'right' ? Math.round(clampY(top)) : null,
+      hidden: true,
+    };
+    setPos(next);
+    persistBtnPos(next);
+    glide('floating-chat-btn--hide', 300);
+  }, [glide]);
+
+  const resetPosition = useCallback(() => {
+    // 逃生门：清持久化 + 回 CSS 默认右下角（可见）。pos=null 本来就是受支持的形态。
+    try { localStorage.removeItem(STORAGE_KEY); } catch { /* storage unavailable */ }
+    setPos(null);
+  }, []);
+
+  const onContextMenu = useCallback((e: React.MouseEvent<HTMLButtonElement>) => {
+    e.preventDefault(); // 别弹浏览器原生菜单：这是自定义交互控件
+    setMenuPos({ x: e.clientX, y: e.clientY });
+  }, []);
+
+  const menuItems: MenuItem[] = [];
+  for (const s of sessions) {
+    const running = Boolean(runningMap[s.id]);
+    menuItems.push({
+      label: s.title || t('kb.chatMenu.newSession'),
+      icon: running
+        ? <span className="kb-chat-menu-dot" aria-hidden />
+        : s.id === activeSessionId ? <span aria-hidden>✓</span> : undefined,
+      title: running ? t('kb.chatMenu.running') : undefined,
+      testid: 'kb-chat-menu-session',
+      onClick: () => {
+        kbChatSessionsStore.activateSession(s.id);
+        kbChatSessionsStore.setPanelOpen(true);
+      },
+    });
+  }
+  if (sessions.length > 0) menuItems.push({ divider: true });
+  menuItems.push({
+    label: t('kb.chatMenu.newSession'),
+    disabled: sessions.length >= MAX_CHAT_SESSIONS,
+    title: sessions.length >= MAX_CHAT_SESSIONS ? t('kb.chatMenu.limit') : undefined,
+    testid: 'kb-chat-menu-new',
+    onClick: () => {
+      kbChatSessionsStore.openSession({
+        mode: 'qa', title: '新会话', conversationId: null,
+        vaultId: vault?.id ?? undefined, filePath: null,
+      });
+    },
+  });
+  menuItems.push(pos?.hidden
+    ? { label: t('kb.chatMenu.show'), testid: 'kb-chat-menu-hide-toggle', onClick: showButton }
+    : { label: t('kb.chatMenu.hide'), testid: 'kb-chat-menu-hide-toggle', onClick: hideToNearestEdge });
+  if (pos) {
+    menuItems.push({ divider: true });
+    menuItems.push({ label: t('kb.chatMenu.resetPos'), testid: 'kb-chat-menu-reset', onClick: resetPosition });
+  }
+
+  if (panelOpen) return null; // 面板展开时不显示按钮（右键菜单随按钮一起退场）
   const cls =
     'floating-chat-btn' +
     (pos?.hidden ? ' floating-chat-btn--hidden' : '') +
     (pos?.edge ? ` floating-chat-btn--edge-${pos.edge}` : '');
   return (
-    <button
-      ref={btnRef}
-      type="button"
-      data-testid="floating-chat-btn"
-      className={cls}
-      style={style}
-      onClick={onClick}
-      onPointerDown={onPointerDown}
-      onPointerMove={onPointerMove}
-      onPointerUp={onPointerUp}
-      onPointerCancel={onPointerCancel}
-      title={t('kb.floatingChat')}
-      aria-label={t('kb.floatingChat')}
-    >
-      {/* 白色描边聊天气泡已换为品牌标：圆形裁切后波浪圆环居中留呼吸边（CSS __logo） */}
-      <img className="floating-chat-btn__logo" src={LOGO_URL} alt="" draggable={false} />
-    </button>
+    <>
+      <button
+        ref={btnRef}
+        type="button"
+        data-testid="floating-chat-btn"
+        className={cls}
+        style={style}
+        onClick={onClick}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerCancel}
+        onContextMenu={onContextMenu}
+        title={t('kb.floatingChat')}
+        aria-label={t('kb.floatingChat')}
+      >
+        {/* 白色描边聊天气泡已换为品牌标：圆形裁切后波浪圆环居中留呼吸边（CSS __logo） */}
+        <img className="floating-chat-btn__logo" src={LOGO_URL} alt="" draggable={false} />
+      </button>
+      {/* 菜单必须是 button 的兄弟（div 不能嵌进 button）；面板展开 → 按钮卸载 → 菜单随之消失 */}
+      {menuPos && (
+        <ContextMenu items={menuItems} position={menuPos} onClose={() => setMenuPos(null)} />
+      )}
+    </>
   );
 }
