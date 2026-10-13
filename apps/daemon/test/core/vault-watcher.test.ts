@@ -6,7 +6,15 @@ import { join } from 'node:path';
 import type Database from 'better-sqlite3';
 import { openDatabase, closeDatabase, createVault } from '../../src/core/db.js';
 import { VaultWatcher, VAULT_TREE_CHANGED_EVENT } from '../../src/core/vault-watcher.js';
-import { MAX_DIR_ENTRIES } from '../../src/core/knowledge.js';
+
+// Injected per-dir cap so the oversize-backstop test exercises the IDENTICAL
+// overflow branch (`next > maxDirEntries`) with ~350 files instead of
+// MAX_DIR_ENTRIES (5000) + 300. Writing 5300 files synchronously took ~46s
+// under full-suite parallel load and blew the global 30s --test-timeout; the
+// backstop logic is the same regardless of the cap's value, so a small cap
+// tests the same code path in a fraction of the time. Must exceed the max files
+// any OTHER test writes to one dir (≤3) so those never trip the overflow.
+const TEST_MAX_DIR_ENTRIES = 50;
 
 /**
  * VaultWatcher integration tests (CLAUDE.md: state-machine/lifecycle services
@@ -71,7 +79,7 @@ describe('VaultWatcher', () => {
     vaultDir = mkdtempSync(join(tmpdir(), 'molio-vw-vault-'));
     const vault = createVault(db, 'test-vault', vaultDir, undefined);
     vaultId = vault.id;
-    watcher = new VaultWatcher(db);
+    watcher = new VaultWatcher(db, TEST_MAX_DIR_ENTRIES);
     await watcher.watch(vaultId, vaultDir);
     // Let the native backend settle before the test writes. On macOS the
     // FSEvents subscription can lag chokidar's `ready` event, so a write in
@@ -140,14 +148,16 @@ describe('VaultWatcher', () => {
   });
 
   it('per-dir backstop: a non-blacklisted oversized dir does not hang the watcher', async () => {
-    // Drop a directory with far more entries than MAX_DIR_ENTRIES that is NOT in
-    // the prune list. The watcher's per-dir child counter must ignore the
-    // overflow rather than trying to track thousands of paths.
+    // Drop a directory with far more entries than the injected cap that is NOT
+    // in the prune list. The watcher's per-dir child counter must ignore the
+    // overflow rather than trying to track every path.
     mkdirSync(join(vaultDir, 'dump'), { recursive: true });
-    // A few hundred past the cap — enough to exercise the overflow path on every
-    // platform without making the test itself slow.
+    // A few hundred past the (injected) cap — enough to exercise the overflow
+    // path on every platform without making the test itself slow. See
+    // TEST_MAX_DIR_ENTRIES: the production cap (5000) made this write 5300 files
+    // and time out under load; 50 keeps the identical branch at ~350 files.
     const overBy = 300;
-    for (let i = 0; i < MAX_DIR_ENTRIES + overBy; i++) {
+    for (let i = 0; i < TEST_MAX_DIR_ENTRIES + overBy; i++) {
       writeFileSync(join(vaultDir, 'dump', `f${i}.md`), 'x');
     }
 

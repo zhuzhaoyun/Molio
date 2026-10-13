@@ -16,8 +16,8 @@ import { suggestPublishMeta } from '../core/market/suggest.js';
 const MAX_MULTIPART_BYTES = 32 * 1024 * 1024;
 /** 单张效果图上限 */
 const MAX_PREVIEW_BYTES = 5 * 1024 * 1024;
-/** 打包后 zip 上限（与云端 confirm 实测口径一致的声明值约束） */
-const MAX_ZIP_BYTES = 50 * 1024 * 1024;
+/** 打包后 zip 上限（与云端 MOLIO_MARKET_MAX_ZIP_MB 保持一致的声明值约束；2026-10 50→200） */
+const MAX_ZIP_BYTES = 200 * 1024 * 1024;
 /** Plan 2 预留：管理员直传 zip 的 body 闸门（当前未启用） */
 export const MAX_ADMIN_DIRECT_ZIP_BYTES = 70 * 1024 * 1024;
 /** publish-suggest 的 JSON body 闸门（仅 vaultId 字段，64KB 已宽裕） */

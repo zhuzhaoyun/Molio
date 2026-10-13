@@ -37,7 +37,17 @@ export class VaultWatcher extends EventEmitter {
   // can fire it continuously (see throttled-warn.ts for the stderr-noise rationale).
   private readonly warn = new ThrottledWarn();
 
-  constructor(private readonly db: Database.Database) {
+  constructor(
+    private readonly db: Database.Database,
+    /**
+     * Per-directory child cap for the oversize backstop (see watch()). Defaults
+     * to the production MAX_DIR_ENTRIES; injectable so tests can exercise the
+     * identical overflow branch with a handful of files instead of 5000+ —
+     * writing MAX_DIR_ENTRIES real files synchronously is far too slow under
+     * full-suite parallel load (the test blew its 30s budget at ~46s wall).
+     */
+    private readonly maxDirEntries: number = MAX_DIR_ENTRIES,
+  ) {
     super();
   }
 
@@ -87,7 +97,7 @@ export class VaultWatcher extends EventEmitter {
       // oversized directory (a folder the user dumped into the vault) can't
       // exhaust file descriptors. chokidar calls `ignored` once per path it
       // considers; once a single parent has been asked about more than
-      // MAX_DIR_ENTRIES children, ignore the rest. The vault root is never
+      // this.maxDirEntries children, ignore the rest. The vault root is never
       // pruned (handled by the `resolved === root` check below), so this only
       // bounds nested directories. Walk order is not guaranteed, so this is a
       // hard cap on per-directory work, not a precise threshold.
@@ -109,7 +119,7 @@ export class VaultWatcher extends EventEmitter {
           const parent = path.dirname(resolved);
           const next = (dirChildCounts.get(parent) ?? 0) + 1;
           dirChildCounts.set(parent, next);
-          return next > MAX_DIR_ENTRIES;
+          return next > this.maxDirEntries;
         },
         ignoreInitial: true,
         persistent: true,
