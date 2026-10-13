@@ -110,7 +110,7 @@ export function FloatingChatButton() {
   const { t } = useI18n();
   const sessions = useKbChatSessions();
   const activeSessionId = useKbChatActiveSessionId();
-  const { runningMap } = useKbChatSessionApi();
+  const { runningMap, getState } = useKbChatSessionApi();
   const { vault } = useCurrentContext();
   const [pos, setPos] = useState<BtnPos | null>(readBtnPos);
   // 右键菜单的锚点（光标处）；null = 菜单关着。菜单纯前端，状态随按钮组件走。
@@ -172,7 +172,7 @@ export function FloatingChatButton() {
         y: d.edge === 'left' || d.edge === 'right' ? Math.round(d.y) : null,
         hidden: true,
       };
-      glide('floating-chat-btn--hide', 300);
+      glide('floating-chat-btn--hide', 400);
     } else {
       // 自由位：原地落定，无滑动
       next = { edge: null, x: clampFreeX(d.x), y: clampY(d.y), hidden: false };
@@ -263,7 +263,7 @@ export function FloatingChatButton() {
       const next: BtnPos = { ...p, hidden: false };
       setPos(next);
       persistBtnPos(next);
-      glide('floating-chat-btn--restore', 280);
+      glide('floating-chat-btn--restore', 320);
       return;
     }
     kbChatSessionsStore.setPanelOpen(true);
@@ -278,7 +278,7 @@ export function FloatingChatButton() {
     const next: BtnPos = { ...p, hidden: false };
     setPos(next);
     persistBtnPos(next);
-    glide('floating-chat-btn--restore', 280);
+    glide('floating-chat-btn--restore', 320);
   }, [glide]);
 
   const hideToNearestEdge = useCallback(() => {
@@ -300,7 +300,7 @@ export function FloatingChatButton() {
     };
     setPos(next);
     persistBtnPos(next);
-    glide('floating-chat-btn--hide', 300);
+    glide('floating-chat-btn--hide', 400);
   }, [glide]);
 
   const resetPosition = useCallback(() => {
@@ -317,6 +317,11 @@ export function FloatingChatButton() {
   const menuItems: MenuItem[] = [];
   for (const s of sessions) {
     const running = Boolean(runningMap[s.id]);
+    // 空会话不进菜单（2026-10-13 拍板）：空会话列出来像「新建」动作（误导——
+    // 点它其实打开已存在的空标签），菜单里唯一的「新开始」是下面的新建项。
+    // 运行中 / 有内容的会话才是有效切换目标。
+    const hasContent = (getState(s.id)?.messages.length ?? 0) > 0;
+    if (!running && !hasContent) continue;
     menuItems.push({
       label: s.title || t('kb.chatMenu.newSession'),
       icon: running

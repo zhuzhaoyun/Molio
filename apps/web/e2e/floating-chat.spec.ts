@@ -1049,24 +1049,78 @@ test.describe('Floating chat (方案 D)', () => {
   test('悬浮按钮：右键会话列表切换会话——不展开面板就能切', async ({ page }) => {
     await mockChatRun(page);
     await seedChatSession(page, '甲：构建产出');
-    // 第二个空标签：面板「+」新建（成为活跃），随后收起面板
+    // 第二个会话也要**有内容**（空会话不进菜单，2026-10-13 拍板）：面板「+」新建后发一条。
+    // 多标签 composer 逐签常驻（草稿保活），必须限定 :visible 的活跃签。
     await page.locator('[data-testid="kb-chat-session-new"]').click();
-    await expect(page.locator('[data-testid="kb-chat-session-tab"]')).toHaveCount(2);
+    const activeComposer = page.locator('[data-testid="kb-chat-panel"] [data-testid="kb-chat-session"]:visible [data-testid="composer-input"]');
+    await activeComposer.fill('乙：问答记录');
+    await activeComposer.press('Enter');
+    await expect(
+      page.locator('[data-testid="kb-chat-panel"] [data-testid="assistant-message"]').last(),
+    ).toBeVisible({ timeout: 10_000 });
     await page.locator('[data-testid="kb-chat-close"]').click();
     const btn = page.locator('[data-testid="floating-chat-btn"]');
     await expect(btn).toBeVisible();
 
-    // 右键 → 会话区两条，活跃的（新会话）带 ✓
+    // 右键 → 有内容的两个会话都列出，活跃的（乙）带 ✓
     await btn.click({ button: 'right' });
     const items = page.locator('[data-testid="kb-chat-menu-session"]');
     await expect(items).toHaveCount(2);
-    await expect(items.filter({ hasText: '新会话' })).toContainText('✓');
+    await expect(items.filter({ hasText: '乙：问答记录' })).toContainText('✓');
 
     // 点非活跃的「甲」→ 面板展开且该会话成为活跃标签（is-active）
     await items.filter({ hasText: '甲：构建产出' }).click();
     const activeTab = page.locator('[data-testid="kb-chat-session-tab"].is-active');
     await expect(activeTab).toContainText('甲：构建产出');
     await expect(page.locator('[data-testid="kb-chat-panel"]')).toBeVisible();
+  });
+
+  test('悬浮按钮：右键菜单不列空会话（空签像「新建」动作，误导）', async ({ page }) => {
+    await mockChatRun(page);
+    await seedChatSession(page, '甲：构建产出');
+    // 「+」新建一个空标签（成为活跃）→ 收起面板
+    await page.locator('[data-testid="kb-chat-session-new"]').click();
+    await expect(page.locator('[data-testid="kb-chat-session-tab"]')).toHaveCount(2);
+    await page.locator('[data-testid="kb-chat-close"]').click();
+    const btn = page.locator('[data-testid="floating-chat-btn"]');
+    await expect(btn).toBeVisible();
+
+    // 右键：只列有内容的「甲」，空会话（新会话）不出现
+    await btn.click({ button: 'right' });
+    const items = page.locator('[data-testid="kb-chat-menu-session"]');
+    await expect(items).toHaveCount(1);
+    await expect(items).toContainText('甲：构建产出');
+    await expect(items.filter({ hasText: '新会话' })).toHaveCount(0);
+  });
+
+  test('旧版提示词片段标题迁移为规范 wiki 标签标题', async ({ page }) => {
+    // 旧版「标题取首条消息」曾把 wiki 自动提示词截成标题并经 localStorage 残留
+    // （2026-10-13 用户右键菜单实测）。迁移只动「用 wiki-」开头的非 qa 标题，
+    // 用户重命名过的（如「我的构建」）保持原样。
+    await page.addInitScript(() => {
+      localStorage.setItem('molio.kb.chatSessions', JSON.stringify([
+        { id: 'chat:mig1', title: '用 wiki-build skill 开始构建', conversationId: null, mode: 'build', vaultId: null, filePath: null },
+        { id: 'chat:mig2', title: '我的构建', conversationId: null, mode: 'build', vaultId: null, filePath: null },
+      ]));
+      localStorage.setItem('molio.kb.chatActiveSessionId', 'chat:mig1');
+    });
+    await mockChatRun(page);
+    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+    const btn = page.locator('[data-testid="floating-chat-btn"]');
+    await expect(btn).toBeVisible();
+
+    // 标签栏里迁移生效（标签与右键菜单同源）
+    await expect(page.locator('[data-testid="kb-chat-session-tab"]')).toHaveCount(2);
+    const tabs = page.locator('[data-testid="kb-chat-session-tab"]');
+    await expect(tabs.filter({ hasText: '构建Wiki' })).toHaveCount(1);
+    await expect(tabs.filter({ hasText: '我的构建' })).toHaveCount(1);
+    await expect(tabs.filter({ hasText: '用 wiki-build' })).toHaveCount(0);
+    // 迁移回写 storage：重载后仍是规范标题（脏数据已清）
+    await page.reload();
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('[data-testid="kb-chat-session-tab"]')).toHaveCount(2);
+    await expect(page.locator('[data-testid="kb-chat-session-tab"]').filter({ hasText: '构建Wiki' })).toHaveCount(1);
   });
 
   test('悬浮按钮：右键「隐藏按钮」吸进最近缘；小签右键「唤回按钮」', async ({ page }) => {

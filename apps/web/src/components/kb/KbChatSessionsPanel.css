@@ -242,11 +242,19 @@ html {
   40%  { transform: scale(0.88, 1.06); }
   100% { transform: scale(1, 1); }
 }
+/* 藏边滑动：340ms、缓入缓出族曲线——旧版 240ms 强 ease-in 是「起步拖、末帧撞停」
+   （2026-10-13 实测反馈「不够流畅连贯」）：半程才起飞、最高速撞进缘口瞬间定格。
+   现版全程平滑加速减速，末段自然滑入 12px 签位。 */
 .floating-chat-btn--hide {
-  transition: left 240ms cubic-bezier(0.55, 0.06, 0.68, 0.19), top 240ms cubic-bezier(0.55, 0.06, 0.68, 0.19);
+  transition: left 340ms cubic-bezier(0.45, 0.05, 0.3, 0.95), top 340ms cubic-bezier(0.45, 0.05, 0.3, 0.95);
+}
+/* 品牌标**延迟**淡出：飞行途中保持可见，临近缘口（最后 ~130ms）才隐去——
+   「带着商标滑进缘里」，而不是半路就变成一枚灰点然后撞停（旧版 120ms 即淡光）。 */
+.floating-chat-btn--hide .floating-chat-btn__logo {
+  transition: opacity 150ms ease 210ms;
 }
 .floating-chat-btn--restore {
-  transition: left 200ms cubic-bezier(0.16, 1, 0.3, 1), top 200ms cubic-bezier(0.16, 1, 0.3, 1);
+  transition: left 280ms cubic-bezier(0.16, 1, 0.3, 1), top 280ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 /* ── 隐藏态：按钮吸进缘里，只露 12px 圆弧小签 ──

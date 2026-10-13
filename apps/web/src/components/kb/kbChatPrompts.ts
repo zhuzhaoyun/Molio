@@ -36,6 +36,20 @@ export const WIKI_TITLES: Record<ChatSessionMode, string> = {
 };
 
 /**
+ * 旧版「标题取首条消息」派生曾把 wiki 任务的自动提示词截成会话标题（如
+ * 「用 wiki-build skill 开始构建」），并经 localStorage 跨版本残留——标签栏和
+ * 悬浮按钮右键菜单都会把它当名字展示（2026-10-13 用户实测）。现版 wiki 会话
+ * 固定用 WIKI_TITLES 且不再派生（controller 只对 qa 派生），这里识别遗留片段：
+ * 非 qa 会话的标题仍是「用 wiki-」开头的提示词开头即视为遗留，返回规范标题；
+ * 用户重命名过的不动（返回 null）。
+ */
+export function legacyWikiTitleFix(mode: ChatSessionMode, title: string): string | null {
+  if (mode === 'qa') return null;
+  if (!title.startsWith('用 wiki-')) return null;
+  return WIKI_TITLES[mode];
+}
+
+/**
  * 从首条消息派生会话标签标题：取末行非空内容（wiki-query 触发语 / 附件前缀 / 选中上下文
  * 都以换行结尾，实际问题在末行），collapse 内部空白，截断 24。空则回退「新会话」。
  */
