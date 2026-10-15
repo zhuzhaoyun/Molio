@@ -177,7 +177,16 @@ export function buildGraph(vaultPath: string): GraphData {
     const absPath = resolveFilePath(vaultPath, f.path);
     if (!existsSync(absPath)) continue;
 
-    const content = readFileSync(absPath, 'utf-8');
+    // 单个文件读不了不该让整张图 500。existsSync 与 readFileSync 之间文件可能被删（TOCTOU），
+    // Windows 上还可能被别的进程占着（EBUSY/EPERM：同步盘、编辑器、杀软实时扫描），
+    // 移动盘休眠/掉线同理——读失败就跳过它的链接，节点本身仍留在图里。
+    // 与上面 node-type 那遍的 try/catch 同口径（那遍读了整份内容却只用 frontmatter）。
+    let content: string;
+    try {
+      content = readFileSync(absPath, 'utf-8');
+    } catch { /* unreadable / vanished / locked — node stays, links dropped */
+      continue;
+    }
     const sourceKey = pathToKey.get(f.path)!;
 
     // 代码块/行内代码里的 [[...]] 是字面文本，不渲染成链接 —— 不进图、不算死链。
