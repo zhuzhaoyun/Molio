@@ -194,6 +194,50 @@ test.describe('KB chat — work visibility', () => {
     await expect(banner.locator('[data-testid="work-complete-file"]')).toHaveCount(1);
   });
 
+  test('产物 banner 只报库内文档：脚本/登记元文件/隐藏目录/库外写入不进「产出已写入知识库」', async ({ page }) => {
+    await mockChatRun(page, {
+      script: [
+        { type: 'status', label: 'running' },
+        { type: 'tool_use', id: 'b1', name: 'Write', input: { file_path: `${vault.path}/产出/归档.md` } },
+        { type: 'tool_result', toolUseId: 'b1', content: '已写入', isError: false },
+        { type: 'tool_use', id: 'b2', name: 'Write', input: { file_path: `${vault.path}/scripts/build.py` } },
+        { type: 'tool_result', toolUseId: 'b2', content: '已写入', isError: false },
+        // 登记元文件（wiki 每次操作都重写的骨架页）—— 用户不点开，不算产出
+        { type: 'tool_use', id: 'b3', name: 'Write', input: { file_path: `${vault.path}/wiki/log.md` } },
+        { type: 'tool_result', toolUseId: 'b3', content: '已写入', isError: false },
+        { type: 'tool_use', id: 'b6', name: 'Write', input: { file_path: `${vault.path}/wiki/INDEX.md` } },
+        { type: 'tool_result', toolUseId: 'b6', content: '已写入', isError: false },
+        { type: 'tool_use', id: 'b7', name: 'Write', input: { file_path: `${vault.path}/wiki/hot.md` } },
+        { type: 'tool_result', toolUseId: 'b7', content: '已写入', isError: false },
+        { type: 'tool_use', id: 'b4', name: 'Write', input: { file_path: `${vault.path}/.molio/wiki-build/plan.md` } },
+        { type: 'tool_result', toolUseId: 'b4', content: '已写入', isError: false },
+        { type: 'tool_use', id: 'b5', name: 'Write', input: { file_path: '/tmp/molio-e2e-outside/memory/MEMORY.md' } },
+        { type: 'tool_result', toolUseId: 'b5', content: '已写入', isError: false },
+        { type: 'text_delta', delta: '完成。' },
+        { type: 'turn_end', stopReason: 'end_turn' },
+        { type: 'usage', usage: { input_tokens: 400, output_tokens: 60 }, costUsd: 0.02 },
+      ],
+      frameDelay: 150,
+    });
+    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+
+    await openQaAndSend(page, '归档产出');
+
+    const banner = page.locator('[data-testid="work-complete-banner"]');
+    await expect(banner).toBeVisible({ timeout: 10_000 });
+    await expect(banner).toContainText('归档.md');
+    await expect(banner.locator('[data-testid="work-complete-file"]')).toHaveCount(1);
+    // 首次写入 → 新建（判据来自会话级上下文，逐消息横幅自己判不出来）
+    await expect(banner.locator('[data-testid="work-complete-file"]')).toHaveAttribute('data-kind', 'create');
+    await expect(banner).not.toContainText('build.py');
+    await expect(banner).not.toContainText('log.md');
+    await expect(banner).not.toContainText('INDEX.md');
+    await expect(banner).not.toContainText('hot.md');
+    await expect(banner).not.toContainText('plan.md');
+    await expect(banner).not.toContainText('MEMORY.md');
+  });
+
   test('主页问答：时间线锚定最后一条回复（不再悬浮消息流顶部）+ 产物 banner', async ({ page }) => {
     await mockChatRun(page, { script: SCRIPTS.workflowRun, frameDelay: 800 });
     // 整页对话在 /chat（入口 `/` 只做重定向，见 apps/web/src/routes.ts）
