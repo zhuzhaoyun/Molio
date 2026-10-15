@@ -688,6 +688,11 @@ const zh: Record<string, string> = {
   'kb.frontmatter.collapse': '收起属性',
   'kb.frontmatter.properties': '文档属性',
   'kb.floatingChat': '打开 AI 对话',
+  // 隐藏态（吸进边缘只剩 12px 小签）：此时点击**不打开面板**，只把按钮唤回可见位，
+  // 文案必须说这件事，否则是明确的预期错位。
+  'kb.floatingChatRecall': '点击唤回对话按钮',
+  // 首次藏边的一次性教学（只弹一次；见 FloatingChatButton 的 HINT_SEEN_KEY）
+  'kb.chatBtnHideHint': '对话按钮已收起，点边缘小签或右键即可唤回',
   // 悬浮按钮右键菜单（固定动作：与 KB 页固定按钮同源）
   'kb.chatMenu.build': '构建Wiki',
   'kb.chatMenu.openSession': '打开会话',

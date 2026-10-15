@@ -819,6 +819,8 @@ test.describe('Floating chat (方案 D)', () => {
     const panel = page.locator('[data-testid="kb-chat-panel"]');
     await expect(btn).toBeVisible();
     const vw = page.viewportSize()!.width;
+    // 可见态与隐藏态的文案不同（断言「变了」而非具体字面值，保持语系无关）
+    const openLabel = await btn.getAttribute('aria-label');
 
     // 抓住中心拖向右缘：进入吸附区（中心距缘 <48px）→ 磁吸到距缘 10px + 压扁预告
     const bb = (await btn.boundingBox())!;
@@ -840,11 +842,15 @@ test.describe('Floating chat (方案 D)', () => {
     await page.waitForTimeout(250);
     box = (await btn.boundingBox())!;
     expect(Math.abs(box.x - (vw - 12))).toBeLessThan(2);
+    // 隐藏态点下去**不打开面板**、只把按钮唤回来 —— 文案必须跟着状态走，
+    // 否则静息写着「打开 AI 对话」而点击只是滑出按钮，是明确的预期错位。
+    await expect(btn).not.toHaveAttribute('aria-label', openLabel!);
 
     // 点可见的小签 → 唤回贴缘可见位（不开面板）
     await btn.click({ position: { x: 4, y: 26 } });
     await page.waitForTimeout(400);
     await expect(btn).not.toHaveClass(/floating-chat-btn--hidden/);
+    await expect(btn).toHaveAttribute('aria-label', openLabel!);
     box = (await btn.boundingBox())!;
     expect(Math.abs(box.x + box.width - vw)).toBeLessThan(3);
     await expect(panel).toHaveClass(/--closed/);
@@ -867,6 +873,141 @@ test.describe('Floating chat (方案 D)', () => {
     await page.reload();
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
     await expect(page.locator('[data-testid="floating-chat-btn"]')).toHaveClass(/floating-chat-btn--hidden/);
+  });
+
+  test('悬浮按钮：首次藏边弹一次性教学提示，唤回/再藏/重载都不再弹', async ({ page }) => {
+    await mockChatRun(page);
+    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+    const btn = page.locator('[data-testid="floating-chat-btn"]');
+    const hintEl = page.locator('[data-testid="floating-chat-hint"]');
+    const vw = page.viewportSize()!.width;
+
+    /** 抓中心向右缘拖再松手 = 藏边。位移取 120px 的**斜向**手势：按钮唤回后本就贴着
+     *  右缘，纯水平的「拖到右缘」只剩几像素，会掉进 DRAG_THRESHOLD 被当成点击。 */
+    const tuckRight = async () => {
+      // 起点必须是可见按钮：隐藏态按钮一半在视口外，抓中心会落到视口外 → 手势整个落空，
+      // 而结尾的 --hidden 断言照样通过（本来就已经隐藏）＝静默假绿。
+      await expect(btn).not.toHaveClass(/floating-chat-btn--hidden/);
+      const bb = (await btn.boundingBox())!;
+      await page.mouse.move(bb.x + 26, bb.y + 26);
+      await page.mouse.down();
+      await page.mouse.move(vw - 30, Math.max(40, bb.y + 26 - 120), { steps: 8 });
+      await page.mouse.up();
+      await expect(btn).toHaveClass(/floating-chat-btn--hidden/);
+    };
+
+    // 藏之前没有提示
+    await expect(hintEl).toHaveCount(0);
+    await tuckRight();
+    // 首次藏边 → 一次性教学。断言「不是原始 i18n key」= 键存在且已翻译，不绑语系字面值。
+    await expect(hintEl).toBeVisible();
+    await expect(hintEl).not.toHaveText(/kb\.chatBtnHideHint/);
+
+    // 点小签唤回 → 提示让位（人已经在操作按钮了，说明不该继续占着）
+    await btn.click({ position: { x: 4, y: 26 } });
+    await expect(btn).not.toHaveClass(/floating-chat-btn--hidden/);
+    await expect(hintEl).toHaveCount(0);
+
+    // 第二次藏边 → 不再弹（每次藏都弹会把安静的收边变成打扰）
+    await tuckRight();
+    await expect(hintEl).toHaveCount(0);
+
+    // 重载（隐藏态按用户选择恢复）→ 仍不弹
+    await page.reload();
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('[data-testid="floating-chat-btn"]')).toHaveClass(/floating-chat-btn--hidden/);
+    await expect(hintEl).toHaveCount(0);
+  });
+
+  test('悬浮按钮：一次性提示在深色下仍有可见边界（曾写成固定近黑底 → 胶囊整枚消失）', async ({ page }) => {
+    await mockChatRun(page);
+    const btn = page.locator('[data-testid="floating-chat-btn"]');
+    const hintEl = page.locator('[data-testid="floating-chat-hint"]');
+    const vw = page.viewportSize()!.width;
+
+    const tuckRight = async () => {
+      // 起点必须是**可见**按钮：隐藏态下按钮有一半在视口外，抓中心会落在视口外 →
+      // 手势整个落空，而结尾的 --hidden 断言照样通过（本来就已经隐藏）＝静默假绿。
+      await expect(btn).not.toHaveClass(/floating-chat-btn--hidden/);
+      const bb = (await btn.boundingBox())!;
+      await page.mouse.move(bb.x + 26, bb.y + 26);
+      await page.mouse.down();
+      await page.mouse.move(vw - 30, Math.max(40, bb.y + 26 - 120), { steps: 8 });
+      await page.mouse.up();
+      await expect(btn).toHaveClass(/floating-chat-btn--hidden/);
+    };
+
+    /** 度量「提示是否还有可见边界」：底色对页面底色的 WCAG 对比度 + 描边宽度。
+     *  半透明底色按页面底色合成——不然 rgba 的对比度会被算成纯色。 */
+    const measure = async () => {
+      const m = await page.evaluate(() => {
+        const el = document.querySelector('[data-testid="floating-chat-hint"]') as HTMLElement;
+        const cs = getComputedStyle(el);
+        const parse = (s: string, under: number[]) => {
+          const n = (s.match(/[\d.]+/g) ?? []).map(Number);
+          if (n.length < 3) return under;
+          const a = n.length > 3 ? n[3] : 1;
+          return [0, 1, 2].map((i) => n[i] * a + under[i] * (1 - a));
+        };
+        const pageBg = parse(getComputedStyle(document.body).backgroundColor, [255, 255, 255]);
+        return {
+          theme: document.documentElement.getAttribute('data-theme'),
+          bg: parse(cs.backgroundColor, pageBg),
+          pageBg,
+          borderWidth: parseFloat(cs.borderTopWidth) || 0,
+        };
+      });
+      const lum = (c: number[]) => {
+        const [r, g, b] = c.map((v) => {
+          const s = v / 255;
+          return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+        });
+        return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+      };
+      const l1 = lum(m.bg), l2 = lum(m.pageBg);
+      const ratio = (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05);
+      return { ...m, ratio };
+    };
+
+    /** 每段都要重置三样持久化在同源 localStorage 里的东西，否则第二段会空断言或手势落空：
+     *  主题偏好、「教学已弹过」标记、按钮位置（第一段把它藏到了边缘）。 */
+    const applyTheme = async (pref: 'dark' | 'system') => {
+      await page.evaluate((p) => {
+        localStorage.setItem('molio.theme', p);
+        localStorage.removeItem('molio.kb.chatBtnHideHintSeen');
+        localStorage.removeItem('molio.kb.chatBtnPos');
+      }, pref);
+      await page.reload();
+      await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+    };
+
+    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+
+    // ① 显式深色：data-theme="dark"
+    await applyTheme('dark');
+    await tuckRight();
+    await expect(hintEl).toBeVisible();
+    let m = await measure();
+    expect(m.theme).toBe('dark');
+    expect(
+      m.ratio > 1.15 || m.borderWidth >= 1,
+      `显式深色下提示没有可见边界（底色对比度 ${m.ratio.toFixed(3)}、描边 ${m.borderWidth}px）`,
+    ).toBe(true);
+
+    // ② 跟随系统深色：无 data-theme，走 @media (prefers-color-scheme: dark)
+    //    tokens.css 有两份必须逐条同步的暗色调色板，只验一条等于没验。
+    await page.emulateMedia({ colorScheme: 'dark' });
+    await applyTheme('system');
+    await tuckRight();
+    await expect(hintEl).toBeVisible();
+    m = await measure();
+    expect(m.theme).toBeNull();
+    expect(
+      m.ratio > 1.15 || m.borderWidth >= 1,
+      `跟随系统深色下提示没有可见边界（底色对比度 ${m.ratio.toFixed(3)}、描边 ${m.borderWidth}px）`,
+    ).toBe(true);
   });
 
   test('悬浮按钮：四缘之顶缘同样吸附隐藏（不只左右）', async ({ page }) => {

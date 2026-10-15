@@ -686,6 +686,11 @@ const en: Record<string, string> = {
   'kb.frontmatter.collapse': 'Hide properties',
   'kb.frontmatter.properties': 'Properties',
   'kb.floatingChat': 'Open AI chat',
+  // Hidden state (tucked into an edge, only a 12px tab shows): clicking now recalls the
+  // button instead of opening the panel, so the label has to say that.
+  'kb.floatingChatRecall': 'Click to bring the chat button back',
+  // One-off teaching tip on the first hide (see HINT_SEEN_KEY in FloatingChatButton)
+  'kb.chatBtnHideHint': 'Chat button tucked away — click the edge tab or right-click to bring it back',
   // Floating button context menu (fixed actions, same sources as KB fixed buttons)
   'kb.chatMenu.build': 'Build Wiki',
   'kb.chatMenu.openSession': 'Open chat session',
