@@ -174,6 +174,54 @@
   color: #888;
 }
 
+/* ── Scope-switch in-flight chip ──
+   换 scope 时旧图仍在屏上（不清屏），故不能盖全屏 loading，只在底部居中给一枚小芯片。
+   避开顶栏（顶部浮层）与小地图（右下 12px）；pointer-events:none 不挡画布拖拽。 */
+
+.graph-scope-loading {
+  position: absolute;
+  left: 50%;
+  bottom: 16px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.12);
+  font-size: 12px;
+  color: #666;
+  pointer-events: none;
+  z-index: 25;
+}
+
+/* Explicit dark theme (manual 深色 selection, regardless of OS) */
+[data-theme="dark"] .graph-scope-loading {
+  background: rgba(40, 40, 44, 0.92);
+  color: #bbb;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.5);
+}
+
+/* System-follow path: no data-theme attribute set → honour the OS preference,
+   否则「跟随系统 + 深色 OS」下这枚芯片会留在浅色，与周围深色画布割裂。 */
+@media (prefers-color-scheme: dark) {
+  html:not([data-theme]) .graph-scope-loading {
+    background: rgba(40, 40, 44, 0.92);
+    color: #bbb;
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.5);
+  }
+}
+
+.graph-scope-loading__spinner {
+  width: 12px;
+  height: 12px;
+  border: 2px solid currentColor;
+  border-top-color: #8B5CF6;
+  border-radius: 50%;
+  animation: graph-spin 0.8s linear infinite;
+}
+
 /* ── Error State ── */
 
 .graph-error {
