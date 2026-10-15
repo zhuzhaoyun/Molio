@@ -15,7 +15,7 @@
 
 - **运行时**: Node.js `>=20`（WorkBuddy 托管运行时是 Node 20 系）。`tsconfig` 把 `target`/`lib` 覆盖为 **ES2022**——不要用 Node 22+ 独有 API；**无全局 `EventSource`**，SSE 用手写 `sse-parser.ts` 解析 `fetch` body 的 `ReadableStream`。
 - **MCP**: `@modelcontextprotocol/sdk` `^1.32.1`（`McpServer` + `StdioServerTransport`）。tool `inputSchema` 用 zod，peer 允许 `^3.25 || ^4.0`。
-- **共享类型**: `@molio/contracts`（`workspace:*`）——`AgentEvent`、`RunInfo`、`RunStatus`、`ChatMessage` 等。**不重复定义**。
+- **共享类型**: `@molio/contracts`（`workspace:*`，**devDependency**）——`AgentEvent`、`RunInfo`、`RunStatus`、`ChatMessage` 等。**不重复定义**。**只允许 `import type`**（编译后擦除）：contracts 运行时依赖 `better-sqlite3` 原生模块，若进 dependencies 会让 `npx -y @molio/cli` 的用户装原生依赖。新增 contracts 引用必须是 `import type`，否则发布包体积/安装失败风险回归。
 - **HTTP**: 全局 `fetch`（Node 20 内置），零 HTTP 库。
 - **参数解析**: `node:util` 的 `parseArgs`（仓库无 commander 先例，零新依赖）。
 - **测试**: `node:test`，编译后跑 `dist/test/**/*.test.js`；`FakeDaemon`（`node:http` 假 daemon）驱动集成测试。
@@ -98,7 +98,21 @@ icon.svg              64x64 透明背景（打开的书 + AI 气泡点）
 skills/molio-kb/SKILL.md   frontmatter 必填 description/description_zh/description_en/version/author(+category)；正文覆盖 7 tools 用法 + 两条工作流 + 错误恢复表
 ```
 
-⚠️ **提交硬前置**：`mcp.json` 用 `npx -y @molio/cli mcp` 在用户机现装 → **@molio/cli 必须先发布到 npm**（npm @molio scope + CI tag 发布，是紧随本包的独立任务）。未发布前本地验证用 `node <abs>/dist/src/index.js mcp`。**WorkBuddy 接入无需注册 OAuth 应用**——连接器走「开放平台入驻（资质认证）+ 打包目录提交审核」，OAuth 那套是反方向（Molio 调 WorkBuddy API）才用。
+⚠️ **提交硬前置**：`mcp.json` 用 `npx -y @molio/cli mcp` 在用户机现装 → **@molio/cli 必须先发布到 npm**（发布管线见下节，已建好；实际发布需 npm @molio scope + 仓库 `NPM_TOKEN` secret 两个一次性人工步骤）。未发布前本地验证用 `node <abs>/dist/src/index.js mcp`。**WorkBuddy 接入无需注册 OAuth 应用**——连接器走「开放平台入驻（资质认证）+ 打包目录提交审核」，OAuth 那套是反方向（Molio 调 WorkBuddy API）才用。
+
+## npm 发布（.github/workflows/cli-publish.yml）
+
+- **触发**：push tag `cli-v*`（如 `cli-v0.1.0`）或手动 workflow_dispatch。与桌面端 `v*`（release.yml）互不干扰。
+- **版本校验**：tag 版本 == `apps/cli/package.json` version == `src/version.ts` CLI_VERSION，三者不一致直接 fail。**发版先改两处版本号、commit，再打 tag**。
+- **预发布**：version 含 `-`（如 `0.2.0-beta.1`）自动发到 `beta` dist-tag，latest 只留正式版（`npx -y @molio/cli` 装 latest）。
+- **流水线步骤**：install → 版本校验 → build contracts → `pnpm --filter @molio/cli test`（自带 rebuild dist）→ NPM_TOKEN guard → 拷根 LICENSE 进包 → `npm pack --dry-run` 公示内容 → `pnpm publish` → registry 回查。
+- **一次性人工前置**：① npm 注册 `@molio` scope（组织）；② 仓库 Settings → Secrets 加 `NPM_TOKEN`（automation token，需 @molio 发布权限）。
+- **发布内容**：`dist/src`（含 .d.ts）+ `connector/` + README + LICENSE，约 45 kB / 91 文件；运行时依赖仅 `@modelcontextprotocol/sdk` + `zod`。
+
+```bash
+# 发版流程
+git tag cli-v0.1.0 && git push origin cli-v0.1.0
+```
 
 ## 命令
 
@@ -126,4 +140,4 @@ pnpm typecheck    # tsc --noEmit
 
 ## 后续（不在本包首版）
 
-write/import 写入 tools、CLI+Skill 备选方案（cli.json + device flow，需 apps/cloud 配合）、npm 发布管线、千问桌面端实测。
+write/import 写入 tools、CLI+Skill 备选方案（cli.json + device flow，需 apps/cloud 配合）、千问桌面端实测、WorkBuddy 开放平台提交（硬前置：npm 首发完成）。
