@@ -14,6 +14,21 @@
   "engines": {
     "node": ">=20.0.0"
   },
+  "license": "SEE LICENSE IN LICENSE",
+  "keywords": [
+    "molio",
+    "knowledge-base",
+    "mcp",
+    "cli"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zhuzhaoyun/Molio.git",
+    "directory": "apps/cli"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "dev": "tsx src/index.ts",
     "build": "tsc",
@@ -23,10 +38,10 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.1",
-    "@molio/contracts": "workspace:*",
     "zod": "^3.25.76"
   },
   "devDependencies": {
+    "@molio/contracts": "workspace:*",
     "tsx": "^4.19.0"
   }
 }
