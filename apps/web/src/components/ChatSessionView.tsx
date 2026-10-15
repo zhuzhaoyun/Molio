@@ -3,6 +3,7 @@ import { ChatComposer, buildAttachmentPrefix } from './ChatComposer';
 import type { PastedImage, FileRef } from './ChatComposer';
 import { UserMessage } from './UserMessage';
 import { AssistantMessage } from './AssistantMessage';
+import { SessionWriteKindsProvider } from './SessionWriteKinds';
 import { findLastAssistant } from '../utils/workSteps';
 import { useSelectMode, messageSelectionStore } from '../stores/messageSelectionStore';
 import { SelectionConfirmBar } from './SelectionConfirmBar';
@@ -183,6 +184,9 @@ export function ChatSessionView({
     : composerBarClassName ?? 'home-composer-bar';
 
   return (
+    // 写入的「新建 / 更新」判据要会话级上下文（写之前该路径出现过没有），
+    // 逐消息的产物横幅自己判不出来 —— 这里算一次，供其与产出面板共用。
+    <SessionWriteKindsProvider messages={messages}>
     <>
       {/* Chat log */}
       <div className={logClassName ?? 'home-chat-log'} ref={logRef}>
@@ -257,5 +261,6 @@ export function ChatSessionView({
         )}
       </div>
     </>
+    </SessionWriteKindsProvider>
   );
 }

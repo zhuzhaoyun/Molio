@@ -5,8 +5,9 @@
 // 纯前端聚合（aggregateSessionOutput），零 daemon/contracts。
 import { useMemo, useState, useRef, useCallback, useEffect } from 'react';
 import type { ChatMessage } from '../hooks/useChatCore';
-import { aggregateSessionOutput, extractChanges, disambiguateLabels, type ChangeEntry } from '../utils/workSteps';
+import { aggregateSessionOutput, extractChanges, disambiguateLabels, type ChangeEntry, type SessionWrite } from '../utils/workSteps';
 import type { DiffLine } from '../utils/diff';
+import type { WriteKind } from '../utils/toolRefs';
 import { useActiveVault, useActiveVaultId } from '../stores/vaultStore';
 import { useI18n } from '../i18n';
 import { api } from '../api/client';
@@ -65,6 +66,80 @@ function readDockWidth(): number {
   return DOCK_W_DEFAULT;
 }
 
+/** 折叠区条目的 testid —— 与主列表区分，E2E 计数才不会被展开态影响。 */
+const OTHER_ITEM_TESTID = 'session-output-other-item';
+
+/**
+ * 写入清单行 —— 概览的「写入」与折叠区的「其他写入」共用同一套交互
+ * （点击预览 / ⌖ 定位回对话 / 资源管理器中显示），只有 testid 与样式档位不同。
+ */
+function WriteItem({
+  write,
+  testId,
+  onOpen,
+}: {
+  write: SessionWrite;
+  testId: string;
+  onOpen: (kind: WriteKind, path: string, label: string) => void;
+}) {
+  const { t } = useI18n();
+  const activeVault = useActiveVault();
+  // 「在资源管理器中显示」：仅桌面壳（window.__electron__）且选中 vault 时渲染
+  const revealReady = isRevealAvailable() && !!activeVault?.path;
+  const open = () => onOpen(write.kind, write.path, write.label);
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      className={`session-output-item${testId === OTHER_ITEM_TESTID ? ' is-other' : ''}`}
+      data-testid={testId}
+      data-kind={write.kind}
+      data-path={write.path}
+      title={write.path}
+      onClick={open}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          open();
+        }
+      }}
+    >
+      <span className="session-output-item-icon" aria-hidden>{write.kind === 'create' ? '＋' : '✎'}</span>
+      <span className="session-output-item-label">{write.label}</span>
+      <button
+        type="button"
+        className="session-output-item-locate"
+        data-testid="session-output-locate"
+        title={t('output.locate')}
+        aria-label={t('output.locate')}
+        onClick={(e) => {
+          e.stopPropagation();
+          window.dispatchEvent(new CustomEvent('molio:evidence-target', {
+            detail: { toolId: write.toolId, messageId: write.messageId },
+          }));
+        }}
+      >
+        <span aria-hidden>⌖</span>
+      </button>
+      {revealReady && (
+        <button
+          type="button"
+          className="session-output-item-reveal"
+          data-testid="session-output-reveal"
+          title={t('output.reveal')}
+          aria-label={`${t('output.reveal')} · ${write.path}`}
+          onClick={(e) => {
+            e.stopPropagation();
+            if (activeVault?.path) revealInFolder(activeVault.path, write.path);
+          }}
+        >
+          <FolderIcon size={12} />
+        </button>
+      )}
+    </div>
+  );
+}
+
 interface Props {
   messages: ChatMessage[];
 }
@@ -87,10 +162,11 @@ export function SessionOutputPanel({ messages }: Props) {
   const [tab, setTab] = useState<PanelTab>('overview');
   // 变更 tab 的手风琴：单开（点开一个收起其它），null = 全部折叠
   const [expandedPath, setExpandedPath] = useState<string | null>(null);
-  // 概览统计条：新建/更新来自去重后的写入清单，追加来自变更序列
+  // 概览的「其他写入」折叠区（脚本 / 登记元文件等）默认收起 —— 用户要的是文档产出
+  const [othersOpen, setOthersOpen] = useState(false);
+  // 概览分段计数：新建 / 更新来自去重后的写入清单（kind 由会话级判据给出）
   const creates = output.writes.filter((w) => w.kind === 'create').length;
   const updates = output.writes.filter((w) => w.kind === 'update').length;
-  const appends = changes.reduce((n, g) => n + g.items.filter((c) => c.kind === 'append').length, 0);
   // 早期会话判定：有 assistant 消息但整段对话没有任何过程数据（tools/thinking
   // 均未持久化的旧数据）→ 空态下附提示，避免误读为「丢了产出」的 bug。
   const legacyConversation = useMemo(
@@ -100,8 +176,6 @@ export function SessionOutputPanel({ messages }: Props) {
     [messages],
   );
   const vaultId = useActiveVaultId();
-  // 「在资源管理器中显示」：仅桌面壳（window.__electron__）且选中 vault 时渲染
-  const revealReady = isRevealAvailable() && !!activeVault?.path;
 
   const [width, setWidth] = useState<number>(readDockWidth);
   const panelElRef = useRef<HTMLDivElement>(null);
@@ -148,7 +222,9 @@ export function SessionOutputPanel({ messages }: Props) {
     if (e.key === 'ArrowRight') { e.preventDefault(); commitWidth(width + 20); }
   }, [width, commitWidth]);
 
-  const empty = output.writes.length === 0;
+  // 空态 = 这份会话什么都没写：只看 docs 清单会与折叠区自相矛盾
+  // （「没有写入产出的记录」+「其他写入 1 项」同时出现）。
+  const empty = output.writes.length === 0 && output.others.length === 0;
 
   // 内嵌预览：点击写入项 → 面板切到预览视图（不跳转知识库，保持对话注意力）。
   const [preview, setPreview] = useState<{
@@ -332,89 +408,75 @@ export function SessionOutputPanel({ messages }: Props) {
                 })
               )}
             </div>
-          ) : empty ? (
-            <>
-              <p className="session-output-empty" data-testid="session-output-empty">{t('output.empty')}</p>
-              {legacyConversation && (
-                <p className="session-output-legacy-hint" data-testid="session-output-legacy-hint">
-                  {t('output.legacyHint')}
-                </p>
-              )}
-            </>
           ) : (
             <div className="session-output-body">
-              {output.writes.length > 0 && (
-                <section className="session-output-section">
-                  {/* 概览统计条：新建 / 更新 / 追加（纯前端聚合，WorkBuddy 概览式读数） */}
-                  <div className="session-output-statbar" data-testid="session-output-statbar">
-                    {creates > 0 && (
-                      <span className="session-output-stat" data-testid="session-output-stat-creates">
-                        {t('output.statCreates')} <b>{creates}</b>
-                      </span>
-                    )}
-                    {updates > 0 && (
-                      <span className="session-output-stat" data-testid="session-output-stat-updates">
-                        {t('output.statUpdates')} <b>{updates}</b>
-                      </span>
-                    )}
-                    {appends > 0 && (
-                      <span className="session-output-stat" data-testid="session-output-stat-appends">
-                        {t('output.statAppends')} <b>{appends}</b>
-                      </span>
-                    )}
-                  </div>
-                  <h3 className="session-output-section-label">{t('output.writesLabel')}</h3>
-                  {output.writes.map((w) => (
-                    <div
+              {empty && (
+                <>
+                  <p className="session-output-empty" data-testid="session-output-empty">{t('output.empty')}</p>
+                  {legacyConversation && (
+                    <p className="session-output-legacy-hint" data-testid="session-output-legacy-hint">
+                      {t('output.legacyHint')}
+                    </p>
+                  )}
+                </>
+              )}
+              {/* 写入清单分两段（新建在前、更新在后）：产出面板的主角是「新写出来的文档」，
+                  「改过的文档」是维护动作，混在一列里前者就不再突出；也不能合成一句
+                  「新建 N」压在清单上方 —— 那会被读成整个清单都是新建。 */}
+              {creates > 0 && (
+                <section className="session-output-section" data-testid="session-output-section-creates">
+                  <h3 className="session-output-section-label">
+                    {t('output.sectionCreates', { count: creates })}
+                  </h3>
+                  {output.writes.filter((w) => w.kind === 'create').map((w) => (
+                    <WriteItem
                       key={w.path}
-                      role="button"
-                      tabIndex={0}
-                      className="session-output-item"
-                      data-testid="session-output-write"
-                      data-kind={w.kind}
-                      data-path={w.path}
-                      title={w.path}
-                      onClick={() => { if (vaultId) openPreview(w.kind, w.path, w.label); }}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                          e.preventDefault();
-                          if (vaultId) openPreview(w.kind, w.path, w.label);
-                        }
-                      }}
-                    >
-                      <span className="session-output-item-icon" aria-hidden>{w.kind === 'create' ? '＋' : '✎'}</span>
-                      <span className="session-output-item-label">{w.label}</span>
-                      <button
-                        type="button"
-                        className="session-output-item-locate"
-                        data-testid="session-output-locate"
-                        title={t('output.locate')}
-                        aria-label={t('output.locate')}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          window.dispatchEvent(new CustomEvent('molio:evidence-target', {
-                            detail: { toolId: w.toolId, messageId: w.messageId },
-                          }));
-                        }}
-                      >
-                        <span aria-hidden>⌖</span>
-                      </button>
-                      {revealReady && (
-                        <button
-                          type="button"
-                          className="session-output-item-reveal"
-                          data-testid="session-output-reveal"
-                          title={t('output.reveal')}
-                          aria-label={`${t('output.reveal')} · ${w.path}`}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            if (activeVault?.path) revealInFolder(activeVault.path, w.path);
-                          }}
-                        >
-                          <FolderIcon size={12} />
-                        </button>
-                      )}
-                    </div>
+                      write={w}
+                      testId="session-output-write"
+                      onOpen={(kind, path, label) => { if (vaultId) openPreview(kind, path, label); }}
+                    />
+                  ))}
+                </section>
+              )}
+              {updates > 0 && (
+                <section className="session-output-section" data-testid="session-output-section-updates">
+                  <h3 className="session-output-section-label">
+                    {t('output.sectionUpdates', { count: updates })}
+                  </h3>
+                  {output.writes.filter((w) => w.kind === 'update').map((w) => (
+                    <WriteItem
+                      key={w.path}
+                      write={w}
+                      testId="session-output-write"
+                      onOpen={(kind, path, label) => { if (vaultId) openPreview(kind, path, label); }}
+                    />
+                  ))}
+                </section>
+              )}
+              {/* 「其他写入」折叠区：库内脚本 / 数据 / 登记元文件（INDEX.md·log.md·hot.md）。
+                  默认收起——产出面板的主角是文档，但完全藏起来会让「agent 到底写了什么」
+                  失去可追溯性。 */}
+              {output.others.length > 0 && (
+                <section className="session-output-others" data-testid="session-output-others">
+                  <button
+                    type="button"
+                    className="session-output-others-toggle"
+                    data-testid="session-output-others-toggle"
+                    aria-expanded={othersOpen}
+                    onClick={() => setOthersOpen((o) => !o)}
+                  >
+                    <span className="session-output-others-chevron" aria-hidden>{othersOpen ? '▾' : '▸'}</span>
+                    <span className="session-output-others-label">
+                      {t('output.othersLabel', { count: output.others.length })}
+                    </span>
+                  </button>
+                  {othersOpen && output.others.map((w) => (
+                    <WriteItem
+                      key={w.path}
+                      write={w}
+                      testId={OTHER_ITEM_TESTID}
+                      onOpen={(kind, path, label) => { if (vaultId) openPreview(kind, path, label); }}
+                    />
                   ))}
                 </section>
               )}
