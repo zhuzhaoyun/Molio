@@ -46,7 +46,7 @@ test.describe('Chat — multi-turn', () => {
     await expect(userMessages.nth(1).locator('.user-text')).toContainText('Second message');
   });
 
-  test('new chat button clears messages and returns to landing', async ({ page }) => {
+  test('new chat button clears messages and stays in the fullscreen shell', async ({ page }) => {
     await gotoHome(page);
     await sendMessage(page, 'Test message');
 
@@ -56,8 +56,10 @@ test.describe('Chat — multi-turn', () => {
     // Click new chat button
     await page.locator('[data-testid="new-chat-btn"]').click();
 
-    // Should return to landing view
-    await expect(page.locator('.home-landing')).toBeVisible({ timeout: 5_000 });
+    // 清空后仍留在全屏 shell：landing 只服务「真的一条会话都没有」的情况，
+    // 而这里活动标签还在（只是没有消息），所以 shell 继续承载。
+    await expect(page.locator('.home-page.chat-active')).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('.home-landing')).toHaveCount(0);
 
     // No messages should be present
     await expect(page.locator('[data-testid="user-message"]')).toHaveCount(0);
@@ -71,7 +73,7 @@ test.describe('Chat — multi-turn', () => {
 
     // Click new chat
     await page.locator('[data-testid="new-chat-btn"]').click();
-    await expect(page.locator('.home-landing')).toBeVisible();
+    await expect(page.locator('.home-page.chat-active')).toBeVisible();
 
     // Composer should be focused and ready
     const textarea = page.locator('[data-testid="composer-input"]');

@@ -9,6 +9,18 @@ export const DEFAULT_ROUTE = '/knowledge';
 export const CHAT_ROUTE = '/chat';
 
 /**
+ * 是否处于「全屏态」—— `/chat` 是悬浮对话面板的**显式全屏形态**（L2b）。
+ *
+ * 三处消费者必须共用同一个判据，否则「全屏态下谁让位」会各说各话：
+ * 面板整体的早返回、`/chat` 上收起面板的 effect、以及不渲染悬浮按钮的例外。
+ * 语义是「全屏 shell 承担了会话呈现，别的入口全部让位」—— 而不是
+ * 「主页是个特例」。同一会话不能被渲染两份（勾选态 / 草稿 / 滚动位置都会打架）。
+ */
+export function isFullscreenRoute(pathname: string): boolean {
+  return pathname === CHAT_ROUTE;
+}
+
+/**
  * 入口可恢复的路由白名单。写进 `localStorage` 的历史值只有落在其中才认，
  * 否则回落 `DEFAULT_ROUTE`。
  *
@@ -23,3 +35,20 @@ export const RESTORABLE_ROUTES = [
   '/me',
   '/resources',
 ];
+
+/**
+ * 上下文页名白名单。**严格照搬 App 里原本内联的那一份**（`/me`、`/resources` 不在其中，
+ * 它们归 `'other'`）—— 这次只是把映射收敛到单一位置，不顺手改页名语义：
+ * 面板的停靠记忆按页名分桶，动它会牵动既有行为。
+ */
+const KNOWN_PAGE_NAMES = ['knowledge', 'home', 'history', 'graph', 'settings'] as const;
+
+/**
+ * 路径 → 上下文页名。**单一真值源**：App 写 `currentContextStore`、
+ * 以及「离开全屏时把面板降级到哪一页的停靠」都用它 —— 两处各自内联一份迟早会漂移。
+ * `/chat` 在上下文里叫 `'home'`（沿用既有命名，牵动面小）；`/` 是入口、转瞬即走。
+ */
+export function pageNameForPath(pathname: string): string {
+  const name = pathname === '/' ? 'other' : pathname.replace('/', '');
+  return (KNOWN_PAGE_NAMES as readonly string[]).includes(name) ? name : 'other';
+}

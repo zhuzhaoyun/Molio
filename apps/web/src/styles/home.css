@@ -230,6 +230,17 @@
   justify-content: center;
 }
 
+/* 输入框位置放的是空状态卡片（无运行时 / 取不到运行时）而非输入框时，容器让位。
+   .home-composer-bar 的装饰（全宽分隔缝 + 白底 + 10px 内边距）是给**输入栏**的：
+   卡片自带边框阴影，白底会让它看起来贴在一块不同的表面上，那道缝横切过去像页脚接缝，
+   而 10px 留白让 216px 高的卡片上下只剩 10px。这里对齐 landing 侧 .home-composer-wrap
+   的中性表现（无边框、无底色、给足留白）。 */
+.home-composer-bar--card {
+  border-top: none;
+  background-color: transparent;
+  padding: 24px 16px;
+}
+
 .home-composer-bar .composer {
   width: 100%;
   border: none;

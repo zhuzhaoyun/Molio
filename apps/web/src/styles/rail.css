@@ -118,6 +118,10 @@
   overflow-y: auto;
   overflow-x: hidden;
   background: var(--bg);
+  /* 悬浮对话面板停靠时为其让出等宽（--chat-dock-w 由面板实时同步，拖宽逐帧跟随）。
+     挂在 App 外壳而不是各页各自的 shell 上：一条规则覆盖全部页面，
+     新增页面不会漏掉让位 —— 漏掉的代价是该页右侧内容被面板遮住。 */
+  padding-right: var(--chat-dock-w, 0px);
 }
 
 /* The chat pane fills the entry main area */

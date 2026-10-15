@@ -63,6 +63,7 @@ const en: Record<string, string> = {
 
   // ── HomePage ──
   'home.newChat': 'New chat',
+  'home.minimize': 'Minimize to panel',
   'home.noAgent': 'No agent selected — set a default in Runtimes',
   'home.tagline': 'Ink stored in the library, flowing through all things',
   'home.onboarding.title': 'Start with a knowledge base',
@@ -685,6 +686,12 @@ const en: Record<string, string> = {
   'kb.frontmatter.collapse': 'Hide properties',
   'kb.frontmatter.properties': 'Properties',
   'kb.floatingChat': 'Open AI chat',
+  // Floating button context menu (fixed actions, same sources as KB fixed buttons)
+  'kb.chatMenu.build': 'Build Wiki',
+  'kb.chatMenu.openSession': 'Open chat session',
+  'kb.chatMenu.hide': 'Hide button',
+  'kb.chatMenu.show': 'Show button',
+  'kb.chatMenu.resetPos': 'Reset position',
 
   // ── FilePicker ──
   'filePicker.justNow': 'Just now',

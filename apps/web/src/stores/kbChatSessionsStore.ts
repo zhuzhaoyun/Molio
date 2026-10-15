@@ -1,5 +1,7 @@
 // apps/web/src/stores/kbChatSessionsStore.ts
 import { useSyncExternalStore } from 'react';
+// kbChatPrompts 对本模块只有 type import（运行时无环）：标题/提示词常量的家在那边
+import { legacyWikiTitleFix } from '../components/kb/kbChatPrompts';
 
 export const MAX_CHAT_SESSIONS = 10;
 const STORAGE_KEY_SESSIONS = 'molio.kb.chatSessions';
@@ -35,7 +37,21 @@ function readPersistedSessions(): ChatSessionTab[] {
     const raw = localStorage.getItem(STORAGE_KEY_SESSIONS);
     if (raw) {
       const arr = JSON.parse(raw);
-      if (Array.isArray(arr)) return arr;
+      if (Array.isArray(arr)) {
+        const sessions = arr as ChatSessionTab[];
+        // 一次性迁移：旧版提示词片段标题 → 规范 wiki 标题（就地改写并回写 storage，
+        // 之后这份脏数据不再存在）。用户重命名过的不受影响（见 legacyWikiTitleFix）。
+        let dirty = false;
+        for (const s of sessions) {
+          if (typeof s?.title !== 'string') continue;
+          const fixed = legacyWikiTitleFix(s.mode, s.title);
+          if (fixed) { s.title = fixed; dirty = true; }
+        }
+        if (dirty) {
+          try { localStorage.setItem(STORAGE_KEY_SESSIONS, JSON.stringify(sessions)); } catch { /* ignore */ }
+        }
+        return sessions;
+      }
     }
   } catch { /* ignore */ }
   return [];
