@@ -97,10 +97,46 @@ test.describe('Home 会话产出面板', () => {
     // 写入 1 项（label=basename 总结.md）
     await expect(panel.locator('[data-testid="session-output-write"]')).toHaveCount(1);
     await expect(panel.locator('[data-testid="session-output-write"]')).toContainText('总结.md');
-    // 外部引用不进面板（来源分区已移除，只在消息内联 SourceChips）
+    // 来源不混入概览：引用在独立 tab（session-output-tab-sources），概览内不得出现引用条目
     await expect(panel.locator('[data-testid="session-output-source"]')).toHaveCount(0);
     // stats 行
     await expect(panel.locator('[data-testid="session-output-stats"]')).toContainText('写入 1 · 1 轮');
+  });
+
+  test('引用 tab：URL 来源单独成组（不与产出同屏）', async ({ page }) => {
+    await mockChatRun(page, { script: outputRun });
+    await gotoHome(page);
+    await sendMessage(page, '整理产出');
+    await expect(page.locator('[data-testid="work-timeline-summary"]')).toBeVisible({ timeout: 15_000 });
+    await page.locator('[data-testid="home-output-toggle"]').click();
+    const panel = page.locator('[data-testid="session-output-panel"]');
+
+    await panel.locator('[data-testid="session-output-tab-sources"]').click();
+    // outputRun 只有 WebSearch 的 2 条 URL → 文件组为空，URL 折叠组出现
+    await expect(panel.locator('[data-testid="session-output-source"]')).toHaveCount(0);
+    const urlGroup = panel.locator('[data-testid="session-output-sources-urls"]');
+    await expect(urlGroup).toBeVisible();
+    await expect(urlGroup).toContainText('网页链接 2');
+  });
+
+  test('引用 tab：显示本会话读入的文件 + 计数', async ({ page }) => {
+    const vault = await createTempVault('e2e-dock-sources');
+    try {
+      await page.addInitScript((id) => { localStorage.setItem('molio.activeVaultId', id); }, vault.id);
+      await mockChatRun(page, { script: buildAbsRun(vault.path) });
+      await gotoHome(page);
+      await sendMessage(page, '归档');
+      await expect(page.locator('[data-testid="work-timeline-summary"]')).toBeVisible({ timeout: 15_000 });
+      await page.locator('[data-testid="home-output-toggle"]').click();
+      const panel = page.locator('[data-testid="session-output-panel"]');
+
+      await panel.locator('[data-testid="session-output-tab-sources"]').click();
+      const sources = panel.locator('[data-testid="session-output-source"]');
+      await expect(sources).toHaveCount(2); // r1 Read 要闻综述 + r2 Read 深度报道
+      await expect(sources.filter({ hasText: '要闻综述' })).toHaveCount(1);
+    } finally {
+      await cleanupTempVault(vault);
+    }
   });
 
   test('跨消息聚合去重：两轮 Write 同路径 → 只显示一次', async ({ page }) => {
