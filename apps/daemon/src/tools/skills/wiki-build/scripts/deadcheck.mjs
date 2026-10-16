@@ -32,8 +32,9 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { residueRe, codeIntervals, frontmatterEnd, overlaps, protectedIntervals, embedRe, ATTACHMENT_EXT } from './lib/linktext.mjs';
-import { collectAttachments, buildImageIndex, resolveAttachment } from './lib/vault.mjs';
+import { residueRe, codeIntervals, frontmatterEnd, overlaps, protectedIntervals, ATTACHMENT_EXT, lineStartsOf, lineOfOffset } from './lib/linktext.mjs';
+import { collectPageEntries, collectAttachments, buildImageIndex } from './lib/vault.mjs';
+import { scanEmbeds } from './lib/embed-scan.mjs';
 
 function usage() {
   process.stderr.write(
@@ -68,24 +69,6 @@ function normalizeName(name) {
   return name.replace(/[\s_\-]+/g, '').toLowerCase();
 }
 
-/** Collect all md pages under wiki/; returns [{rel, base}] (base = basename without .md). */
-function collectPages(vault) {
-  const wikiDir = path.join(vault, 'wiki');
-  const pages = [];
-  if (!fs.existsSync(wikiDir)) return pages;
-  const walk = (dir, rel) => {
-    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
-      const abs = path.join(dir, e.name);
-      const rp = rel ? `${rel}/${e.name}` : e.name;
-      if (e.isDirectory()) walk(abs, rp);
-      else if (e.isFile() && e.name.endsWith('.md')) {
-        pages.push({ rel: rp, base: e.name.replace(/\.md$/i, '') });
-      }
-    }
-  };
-  walk(wikiDir, '');
-  return pages;
-}
 
 /** Wikilink pattern (same shape as graph.ts): target = part before | or #. */
 const LINK_RE = /\[\[([^\]|#]+?)(?:\|[^\]]+)?\]\]/g;
@@ -98,7 +81,7 @@ function main() {
     process.exit(2);
   }
 
-  const pages = collectPages(vault);
+  const pages = collectPageEntries(vault);
   if (pages.length === 0) {
     process.stderr.write(JSON.stringify({ ok: true, pages: 0, deadTargets: 0, occurrences: 0 }) + '\n');
     if (!opts.quiet) process.stdout.write('deadcheck: no wiki pages found, nothing to check.\n');
@@ -125,14 +108,18 @@ function main() {
   }
 
   // Attachment embeds resolve against files on disk, not against pages.
+  // The scan loop is shared with media.mjs (lib/embed-scan.mjs) so the two
+  // gates cannot drift on what an embed even is; only the report policy
+  // below is deadcheck's own.
   const images = collectAttachments(vault);
   const imageIndex = buildImageIndex(images);
+  const embedScan = scanEmbeds({ vault, rels: pages.map((p) => p.rel), index: imageIndex });
+  const deadEmbeds = new Map([...embedScan.missing, ...embedScan.ambiguous]);
+  const embedOccurrences = embedScan.embedOccurrences;
 
   // dead target → occurrences [{file, line}]
   const dead = new Map();
-  const deadEmbeds = new Map(); // attachment embed → occurrences
   let occurrences = 0;
-  let embedOccurrences = 0;
   const residue = [];           // prose residue — linkpass auto-cleans these
   const residueProtected = [];  // inside code/quotes/frontmatter — reported, never auto-cleaned
   for (const p of pages) {
@@ -141,8 +128,9 @@ function main() {
     try { content = fs.readFileSync(abs, 'utf-8'); } catch { continue; }
     const code = codeIntervals(content);
     const lines = content.split('\n');
-    let lineStart = 0;
+    const starts = lineStartsOf(content);
     lines.forEach((ln, i) => {
+      const lineStart = starts[i];
       for (const lm of ln.matchAll(LINK_RE)) {
         const raw = (lm[1] ?? '').trim();
         if (!raw) continue;
@@ -156,21 +144,6 @@ function main() {
         if (!dead.has(key)) dead.set(key, { target: raw, files: [] });
         dead.get(key).files.push({ file: `wiki/${p.rel}`, line: i + 1 });
       }
-      // `![[图.png]]` embeds: a wrong path here renders as a broken image and
-      // nothing else notices — the wikilink pass above skips attachments, and
-      // media.mjs only runs when the agent remembers to call it.
-      for (const em of ln.matchAll(embedRe())) {
-        const target = em[1].trim();
-        if (!ATTACHMENT_EXT.test(target)) continue;
-        if (overlaps([lineStart + em.index, lineStart + em.index + em[0].length], code)) continue;
-        embedOccurrences++;
-        const r = resolveAttachment(target, imageIndex);
-        if (r.status === 'ok') continue;
-        const key = target.toLowerCase();
-        if (!deadEmbeds.has(key)) deadEmbeds.set(key, { target, reason: r.status, hits: r.hits ?? 0, files: [] });
-        deadEmbeds.get(key).files.push({ file: `wiki/${p.rel}`, line: i + 1 });
-      }
-      lineStart += ln.length + 1;
     });
     // Residue scan: same never-touched regions as linkpass cleanup. Matches
     // inside those regions are still reported (as an informational bucket) so
@@ -178,7 +151,7 @@ function main() {
     const prot = protectedIntervals(content, frontmatterEnd(content), { links: false });
     for (const rm of content.matchAll(residueRe())) {
       const span = [rm.index, rm.index + rm[0].length];
-      const line = content.slice(0, rm.index).split('\n').length;
+      const line = lineOfOffset(starts, rm.index) + 1;
       const entry = { file: `wiki/${p.rel}`, line, text: rm[0] };
       (overlaps(span, prot) ? residueProtected : residue).push(entry);
     }

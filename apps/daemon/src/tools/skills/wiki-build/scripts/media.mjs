@@ -41,8 +41,9 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { resolveVault, buildDir } from './lib/cli.mjs';
-import { IMAGE_EXT, ATTACHMENT_EXT, embedRe, codeIntervals, overlaps } from './lib/linktext.mjs';
-import { collectMdPages, collectImages, collectAttachments, buildImageIndex, resolveAttachment } from './lib/vault.mjs';
+import { codeIntervals, overlaps, lineStartsOf, lineOfOffset } from './lib/linktext.mjs';
+import { collectMdPages, collectImages, collectAttachments, buildImageIndex } from './lib/vault.mjs';
+import { scanEmbeds, mdImgRe, decodeImagePath } from './lib/embed-scan.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -61,15 +62,6 @@ const DEFAULT_MIN_PX = 64;
 // "(第3题)" as often as bare. Anchored at ^, so a caption mentioned mid-sentence
 // ("可用 Venn图（图1.3-4）表示") is not mistaken for one.
 const CAPTION_RE = /^\s*[（(]?\s*(?:图\s*[\d０-９一二三四五六七八九十]+(?:[.\-–—][\d０-９]+)*|表\s*[\d０-９一二三四五六七八九十]+|第\s*\d+\s*题|(?:fig(?:ure)?|table)\s*\d+)/i;
-
-const MD_IMG_RE = /!\[([^\]]*)\]\(\s*(<[^>\n]+>|(?:\\.|[^()\n\\]|\((?:\\.|[^()\\])*\))+?)(?:\s+(?:"[^"\n]*"|'[^'\n]*'|\([^\)\n]*\)))?\s*\)/g;
-
-function decodeImagePath(src) {
-  let value = src.trim();
-  if (value.startsWith('<') && value.endsWith('>')) value = value.slice(1, -1);
-  try { value = decodeURIComponent(value); } catch { /* literal percent */ }
-  return value.replace(/\\([!"#$%&'()*+,\-./:;<=>?@[\]^_`{|}~])/g, '$1');
-}
 
 function usage() {
   process.stderr.write(
@@ -249,7 +241,7 @@ function cmdCollect(opts) {
   const imgDir = path.join(vault, 'wiki', 'images', stem);
 
   const code = codeIntervals(src);
-  const refs = [...src.matchAll(MD_IMG_RE)]
+  const refs = [...src.matchAll(mdImgRe())]
     .filter(m => !overlaps([m.index, m.index + m[0].length], code))
     .map((m) => ({ raw: m[0], alt: m[1], src: m[2].trim(), index: m.index }));
   if (refs.length === 0) {
@@ -260,13 +252,8 @@ function cmdCollect(opts) {
   }
 
   const lines = src.split('\n');
-  const lineStarts = [];
-  { let acc = 0; for (const ln of lines) { lineStarts.push(acc); acc += ln.length + 1; } }
-  const lineOf = (idx) => {
-    let lo = 0, hi = lineStarts.length - 1;
-    while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (lineStarts[mid] <= idx) lo = mid; else hi = mid - 1; }
-    return lo;
-  };
+  const lineStarts = lineStartsOf(src);
+  const lineOf = (idx) => lineOfOffset(lineStarts, idx);
 
   const stemOut = path.join(buildDir(vault), `media-${stem}.md`);
   const figOut = path.join(buildDir(vault), `figures-${stem}.json`);
@@ -420,7 +407,7 @@ function cmdCollect(opts) {
   // Map by id, not by array index: ids are offset by baseId in append mode,
   // so `figures[id - 1]` would look up the wrong entry (or go out of bounds).
   const byId = new Map(figures.map((f) => [f.id, f]));
-  const out = src.replace(MD_IMG_RE, (whole, _alt, s, offset) => {
+  const out = src.replace(mdImgRe(), (whole, _alt, s, offset) => {
     if (overlaps([offset, offset + whole.length], code)) return whole;
     const abs = resolveSrc(s.trim(), mdDir, vault, searchRoots);
     if (!abs) return whole;
@@ -559,55 +546,18 @@ function cmdCheck(opts) {
   const images = collectImages(vault);
   const index = buildImageIndex(collectAttachments(vault));
 
-  const missing = new Map();   // target -> {files:[{file,line}]}
-  const ambiguous = new Map(); // target -> {hits, files:[...]}
-  const referenced = new Set();
-  const mdImageSites = [];     // standard-markdown images, see below
-  let occurrences = 0;
-
-  for (const rel of pages) {
-    let content;
-    try { content = fs.readFileSync(path.join(vault, 'wiki', rel), 'utf8'); } catch { continue; }
-    // Inside a code fence or inline code, `![[图.png]]` is literal TEXT, not a
-    // reference — e.g. this skill's own pages documenting the syntax, or a page
-    // quoting a broken example. Same rule deadcheck and the graph apply to
-    // [[wikilinks]]; a checker that forgot it would fail the build over its own
-    // documentation.
-    const code = codeIntervals(content);
-    let lineStart = 0;
-    content.split('\n').forEach((ln, i) => {
-      for (const m of ln.matchAll(embedRe())) {
-        const target = m[1].trim();
-        // Only attachments are this script's business; [[页面]] is deadcheck's.
-        if (!ATTACHMENT_EXT.test(target)) continue;
-        if (overlaps([lineStart + m.index, lineStart + m.index + m[0].length], code)) continue;
-        occurrences++;
-        const r = resolveAttachment(target, index);
-        if (r.status === 'ok') { referenced.add(r.resolved); continue; }
-        const bucket = r.status === 'ambiguous' ? ambiguous : missing;
-        if (!bucket.has(target)) bucket.set(target, { hits: r.hits, files: [] });
-        bucket.get(target).files.push({ file: `wiki/${rel}`, line: i + 1 });
-      }
-      // Standard Markdown images resolve relative to this note, as in the UI.
-      for (const mm of ln.matchAll(MD_IMG_RE)) {
-        const src = decodeImagePath(mm[2]);
-        if (/^(?:[a-z][a-z0-9+.-]*:|\/\/|#|\/api\/)/i.test(src)) continue;
-        if (!IMAGE_EXT.test(src)) continue;
-        if (overlaps([lineStart + mm.index, lineStart + mm.index + mm[0].length], code)) continue;
-        const cleaned = src.replace(/\\/g, '/');
-        const target = cleaned.startsWith('/') ? cleaned.replace(/^\/+/, '')
-          : path.posix.join('wiki', path.posix.dirname(rel), cleaned);
-        const r = resolveAttachment(target, index);
-        if (r.status === 'ok') referenced.add(r.resolved);
-        mdImageSites.push({ target: src, status: r.status, file: `wiki/${rel}`, line: i + 1 });
-      }
-      lineStart += ln.length + 1;
-    });
-  }
+  // One scan loop, shared with deadcheck (lib/embed-scan.mjs) so the two gates
+  // cannot drift on what an embed even is. Everything after this line is
+  // media's own reporting policy: orphans, markdown-image notes, exit 3.
+  const {
+    missing, ambiguous, referenced,
+    markdownImageSites: mdImageSites,
+    embedOccurrences: occurrences,
+  } = scanEmbeds({ vault, rels: pages, index });
 
   const orphans = images.filter((rel) => !referenced.has(rel));
-  const missingList = [...missing.entries()].map(([target, v]) => ({ target, ...v }));
-  const ambiguousList = [...ambiguous.entries()].map(([target, v]) => ({ target, ...v }));
+  const missingList = [...missing.values()].map((v) => ({ ...v }));
+  const ambiguousList = [...ambiguous.values()].map((v) => ({ ...v }));
 
   const report = {
     ok: missingList.length === 0 && ambiguousList.length === 0 && mdImageSites.every(s => s.status === 'ok'),

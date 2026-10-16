@@ -65,6 +65,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { cleanAliasToken } from './lib/cli.mjs';
+import { collectPageEntries } from './lib/vault.mjs';
 import { residueRe, frontmatterEnd, overlaps, protectedIntervals } from './lib/linktext.mjs';
 
 // Navigational pages are link targets of last resort, not prose vocabulary —
@@ -112,24 +113,6 @@ function parseArgs(argv) {
   return opts;
 }
 
-function collectPages(vault) {
-  const wikiDir = path.join(vault, 'wiki');
-  const pages = [];
-  if (!fs.existsSync(wikiDir)) return pages;
-  const walk = (dir, rel) => {
-    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
-      const abs = path.join(dir, e.name);
-      const rp = rel ? `${rel}/${e.name}` : e.name;
-      if (e.isDirectory()) walk(abs, rp);
-      else if (e.isFile() && e.name.endsWith('.md')) {
-        pages.push({ rel: rp, base: e.name.replace(/\.md$/i, '') });
-      }
-    }
-  };
-  walk(wikiDir, '');
-  return pages;
-}
-
 function main() {
   const opts = parseArgs(process.argv.slice(2));
   const vault = path.resolve(opts.vault);
@@ -138,7 +121,7 @@ function main() {
     process.exit(2);
   }
 
-  const pages = collectPages(vault);
+  const pages = collectPageEntries(vault);
   if (pages.length === 0) {
     process.stderr.write(JSON.stringify({ ok: true, editedFiles: 0, addedLinks: 0 }) + '\n');
     process.stdout.write('linkpass: no wiki pages found.\n');

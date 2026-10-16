@@ -41,6 +41,33 @@ export function overlaps(a, list) {
 }
 
 /**
+ * Line start offsets of content.split('\n'): starts[i] = byte offset of line i.
+ * Shared home for the "byte offset -> line number" math every scanner needs.
+ * deadcheck's residue scan used to recompute it per match via
+ * content.slice(0, idx).split('\n').length — O(matches x filesize); media.mjs
+ * carried its own copy of this exact loop. One definition, binary search.
+ */
+export function lineStartsOf(content) {
+  const starts = [];
+  let acc = 0;
+  for (const ln of content.split('\n')) {
+    starts.push(acc);
+    acc += ln.length + 1;
+  }
+  return starts;
+}
+
+/** 0-based index of the line containing `offset` (binary search over lineStarts). */
+export function lineOfOffset(starts, offset) {
+  let lo = 0, hi = starts.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi + 1) >> 1;
+    if (starts[mid] <= offset) lo = mid; else hi = mid - 1;
+  }
+  return lo;
+}
+
+/**
  * Code-only intervals: fenced blocks + inline code. Inside these, [[...]] is
  * literal text — it does not render as a link, so it is neither wrap-able
  * (linkpass) nor dead-checkable (deadcheck).

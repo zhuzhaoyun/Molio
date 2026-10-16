@@ -15,13 +15,24 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { IMAGE_EXT, ATTACHMENT_EXT } from './linktext.mjs';
 
-/** All .md pages under wiki/, as forward-slash paths relative to wiki/. */
-export function collectMdPages(vault) {
+/**
+ * All .md pages under wiki/, as [{rel, base}] (base = filename without .md).
+ * Single shape for the page walk: linkpass and deadcheck each carried a
+ * byte-identical private copy of this loop — exactly the drift this lib
+ * exists to stop. rel/base is what BOTH need (rel for file paths, base for
+ * name-index resolution).
+ */
+export function collectPageEntries(vault) {
   const pages = [];
   walk(path.join(vault, 'wiki'), '', (rp, name) => {
-    if (name.endsWith('.md')) pages.push(rp);
+    if (name.endsWith('.md')) pages.push({ rel: rp, base: name.replace(/\.md$/i, '') });
   });
   return pages;
+}
+
+/** All .md pages under wiki/, as forward-slash paths relative to wiki/. */
+export function collectMdPages(vault) {
+  return collectPageEntries(vault).map((p) => p.rel);
 }
 
 /** All image files under wiki/, as forward-slash paths relative to wiki/. */
