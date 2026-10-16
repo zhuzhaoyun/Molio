@@ -537,6 +537,22 @@ const zh: Record<string, string> = {
   'graph.searchPlaceholder': '搜索节点…',
   'graph.searchNoResult': '无匹配节点',
   'graph.scopeBack': '回到全量图',
+  // 一键出图（对外分享/获客）
+  'graph.export': '导出图片',
+  'graph.exportDownload': '下载 PNG',
+  'graph.exportCopy': '复制到剪贴板',
+  'graph.exporting': '正在出图…',
+  'graph.exportDownloaded': '已下载图片',
+  'graph.exportCopied': '图片已复制到剪贴板',
+  'graph.exportCopyUnsupported': '当前环境不支持复制图片，请改用「下载 PNG」',
+  'graph.exportFailed': '出图失败，请重试',
+  'graph.exportAspect': '版式',
+  'graph.exportIncludeInfo': '附带标题 / 统计 / 图例',
+  'graph.exportAspectNatural': '原始',
+  'graph.exportAspectSquare': '1:1',
+  'graph.exportAspectPortrait': '4:5',
+  'graph.exportAspectWide': '16:9',
+  'graph.exportCoreTopics': '核心：',
 
   // ── FileChatPanel ──
   'fileChat.running': '运行中…',

@@ -921,6 +921,106 @@
   color: #dfe4ec;
 }
 [data-theme="dark"] .graph-stats-pop .graph-stat--deadlink { color: #8a92a0; }
+/* 一键出图：与统计同款磨砂浮层，气泡里两个出口（下载 / 复制） */
+.graph-export-ctrl {
+  position: relative;
+  pointer-events: auto;
+}
+.graph-export-pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 5px;
+  background: rgba(255, 255, 255, 0.94);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 8px;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.14);
+  font-size: 11px;
+  color: var(--text);
+  white-space: nowrap;
+  z-index: 40;
+  animation: graphPopIn 0.15s ease both;
+}
+[data-theme="dark"] .graph-export-pop {
+  background: rgba(24, 28, 36, 0.94);
+  border-color: rgba(255, 255, 255, 0.10);
+  color: #dfe4ec;
+}
+.graph-export-item {
+  display: block;
+  width: 100%;
+  padding: 5px 10px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.graph-export-item:hover {
+  background: var(--bg-hover);
+}
+/* 版式行：分段控件而非四个下拉项 —— 四个比例是「同一件事」，并排一眼可比 */
+.graph-export-aspects {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  margin-bottom: 3px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.05);
+}
+.graph-export-aspect {
+  flex: 1;
+  padding: 3px 6px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  opacity: 0.68;
+  cursor: pointer;
+}
+.graph-export-aspect:hover {
+  opacity: 1;
+}
+.graph-export-aspect.is-active {
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+  opacity: 1;
+  font-weight: 600;
+}
+[data-theme="dark"] .graph-export-aspects {
+  background: rgba(255, 255, 255, 0.06);
+}
+[data-theme="dark"] .graph-export-aspect.is-active {
+  background: rgba(255, 255, 255, 0.16);
+  box-shadow: none;
+}
+/* 附带信息开关：一行勾选，和出口按钮同样克制 */
+.graph-export-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px 5px;
+  cursor: pointer;
+  opacity: 0.86;
+}
+.graph-export-toggle:hover {
+  opacity: 1;
+}
+.graph-export-toggle input {
+  margin: 0;
+  cursor: pointer;
+  accent-color: var(--accent);
+}
+.graph-export-note {
+  padding: 5px 10px;
+  color: var(--text-muted);
+}
 @keyframes graphPopIn {
   from { opacity: 0; transform: translateY(-4px); }
   to   { opacity: 1; transform: translateY(0); }
@@ -941,6 +1041,20 @@
     color: var(--text-muted);
   }
   html:not([data-theme]) .graph-stats-pop .graph-stat--deadlink { color: #8a92a0; }
+  /* 出图气泡同理：漏掉这条就是白卡片配浅色字（浅压浅）——
+     显式深色的那份 [data-theme="dark"] 管不到「跟随系统」。 */
+  html:not([data-theme]) .graph-export-aspects {
+    background: rgba(255, 255, 255, 0.06);
+  }
+  html:not([data-theme]) .graph-export-aspect.is-active {
+    background: rgba(255, 255, 255, 0.16);
+    box-shadow: none;
+  }
+  html:not([data-theme]) .graph-export-pop {
+    background: rgba(24, 28, 36, 0.94);
+    border-color: rgba(255, 255, 255, 0.10);
+    color: var(--text-muted);
+  }
 }
 
 /* 图标按钮里的 SVG 必须固定尺寸 + 不可被 flex 压扁（本 .graph-icon-btn/.graph-settings-btn

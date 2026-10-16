@@ -11,23 +11,44 @@ import { useNavigate } from 'react-router-dom';
 import type { GraphData, GraphNode, GraphScope } from '@molio/contracts';
 import { api } from '../../api/client';
 import { useI18n } from '../../i18n';
-import { useActiveVaultId, vaultStore } from '../../stores/vaultStore';
+import { useActiveVault, useActiveVaultId, vaultStore } from '../../stores/vaultStore';
 import { navigationHistoryStore, useNavigationHistory } from '../../stores/navigationHistoryStore';
 import { useGraphSettings } from './useGraphSettings';
 import { graphFingerprint, refreshDebounceMs } from './refreshPolicy';
 import { GraphSettingsPanel } from './GraphSettingsPanel';
 import { GraphSearchBox } from './GraphSearchBox';
 import { Minimap } from './Minimap';
-import { getThemeColors, resolveTheme } from './types';
+import { getThemeColors, resolveTheme, NODE_TYPE_COLORS, NODE_TYPE_LABELS } from './types';
 import {
   PixiGraphEngine,
   type EngineNode,
   type EngineEdge,
 } from './engine/pixiGraphEngine';
+import { exportFileName } from './engine/exportImage';
+import {
+  cardInkFor,
+  collectLegend,
+  computeCardLayout,
+  drawCard,
+  pickCoreTopics,
+  type CardAspect,
+} from './engine/exportCard';
+
+/** 出图署名：免费、无开关。去水印是「负面购买」——向最愿意分享的人收费，
+ *  正好掐掉获客本身；付费点应该是「换成你自己的署名」，不是把名字抹掉。 */
+const EXPORT_WATERMARK = 'Molio';
 
 /** 图谱剔除的 .md 基名（小写）——镜像 daemon `routes/graph.ts` 的 GRAPH_EXCLUDED_BASENAMES，
  *  仅用于挑空态文案，不参与数据过滤（过滤在 daemon）。 */
 const GRAPH_EXCLUDED_BASENAMES = new Set(['index', 'log']);
+
+/** 出图版式选项。`natural` 跟图的原始比例；其余是发布平台的常用比例。 */
+const EXPORT_ASPECTS: Array<{ key: CardAspect; label: string }> = [
+  { key: 'natural', label: 'graph.exportAspectNatural' },
+  { key: 'square', label: 'graph.exportAspectSquare' },
+  { key: 'portrait', label: 'graph.exportAspectPortrait' },
+  { key: 'wide', label: 'graph.exportAspectWide' },
+];
 
 export function GraphPage({
   active = true,
@@ -60,6 +81,8 @@ export function GraphPage({
 
   // 跟随知识库的活跃 vault，知识库切换时图谱自动切换
   const activeVaultId = useActiveVaultId();
+  // 出图卡片的标题 —— 库名；拿不到就不出标题行（不拿 vaultId 凑数）
+  const activeVault = useActiveVault();
   const [graphData, setGraphData] = useState<GraphData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -68,6 +91,16 @@ export function GraphPage({
   const [searchOpen, setSearchOpen] = useState(false);
   const [showStats, setShowStats] = useState(false);
   const searchRef = useRef<HTMLDivElement>(null);
+  // 一键出图：气泡里二选一（下载 / 复制），气泡关掉后在原位飘一句结果
+  const [showExport, setShowExport] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [exportNote, setExportNote] = useState<string | null>(null);
+  /** 出图版式：默认跟图的原始比例，固定比例是给发布平台用的（不裁切、只留白）。 */
+  const [exportAspect, setExportAspect] = useState<CardAspect>('natural');
+  /** 是否附带标题/统计/核心主题/图例。默认带（这是卡片的价值所在），
+   *  但有人只想要一张干净的图 —— 给开关，不替他决定。署名始终保留。 */
+  const [exportIncludeInfo, setExportIncludeInfo] = useState(true);
+  const exportRef = useRef<HTMLDivElement>(null);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const engineRef = useRef<PixiGraphEngine | null>(null);
@@ -196,6 +229,18 @@ export function GraphPage({
 
   const hasData = !!engineData && engineData.nodes.length > 0;
 
+  // ── 出图卡片内容 ──
+  // 一律取**筛选后的** engineData：卡片上的统计和核心主题必须跟图面严格对得上，
+  // 否则会出现「图里 300 个点、标题写 1284 篇」——比不写更糟。
+  const coreTopics = useMemo(
+    () => pickCoreTopics(engineData?.nodes ?? [], engineData?.edges ?? []),
+    [engineData],
+  );
+  const exportLegend = useMemo(
+    () => collectLegend(engineData?.nodes ?? [], NODE_TYPE_COLORS, NODE_TYPE_LABELS),
+    [engineData],
+  );
+
   // 空态文案按 scope 细分——全量图空态只说「库里没有 md」，对局部图是误导
   // （库里有 md，只是这个文件/目录没有可显示的关系）。
   const emptyCopy = useMemo(() => {
@@ -228,16 +273,20 @@ export function GraphPage({
 
   // 搜索开合：外部点击 / Esc 收起（点在搜索框内则保留）。
   useEffect(() => {
-    if (!searchOpen && !showStats) return;
+    if (!searchOpen && !showStats && !showExport) return;
     const onDown = (e: MouseEvent) => {
       const t = e.target as Node;
       if (searchRef.current?.contains(t)) return;
       if ((t as HTMLElement)?.closest?.('.graph-stats-ctrl')) return;
+      // 出图气泡同理：吃掉 caret 内的 mousedown，否则点「下载 PNG」时元素先被卸载，
+      // 后续 click 根本不会派发（mousedown → 卸载 → 无 click），点了没反应。
+      if (exportRef.current?.contains(t)) return;
       setSearchOpen(false);
       setShowStats(false);
+      setShowExport(false);
     };
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') { setSearchOpen(false); setShowStats(false); }
+      if (e.key === 'Escape') { setSearchOpen(false); setShowStats(false); setShowExport(false); }
     };
     document.addEventListener('mousedown', onDown);
     document.addEventListener('keydown', onKey);
@@ -245,7 +294,14 @@ export function GraphPage({
       document.removeEventListener('mousedown', onDown);
       document.removeEventListener('keydown', onKey);
     };
-  }, [searchOpen, showStats]);
+  }, [searchOpen, showStats, showExport]);
+
+  // 出图结果提示 2.4s 自动消失（成功/失败同一条：看见就行，不必手动点掉）
+  useEffect(() => {
+    if (!exportNote) return;
+    const timer = setTimeout(() => setExportNote(null), 2400);
+    return () => clearTimeout(timer);
+  }, [exportNote]);
 
   // ── 引擎生命周期：首次有数据时异步创建 ──
   useEffect(() => {
@@ -404,6 +460,104 @@ export function GraphPage({
     engine?.setForces(settings.forces);
   }, [engine, settings.forces]);
 
+  /**
+   * 出图并按出口投递。
+   *
+   * 图分两步来：引擎产出位图（captureImage），这里把它排进卡片（标题 / 统计 /
+   * 核心主题 / 图例 / 署名）再编码成 PNG。卡片内容全部取筛选后的数据，与图面一致。
+   *
+   * 复制那条路把 **promise 直接塞进 ClipboardItem** —— `write()` 仍在用户手势的同步段
+   * 内被调用（Safari 只在手势内放行 clipboard.write，先 await 再 write 会被拒）。
+   */
+  const runExport = async (outlet: 'download' | 'copy') => {
+    const eng = engineRef.current;
+    if (!eng || exporting) return;
+    setShowExport(false);
+    // 非安全上下文（如 NAS 上 http 访问）没有 navigator.clipboard：如实说不可用，
+    // 别静默吞掉变成「复制成功」。能力检查放在出图之前 —— 先 capture 再早退会
+    // 留下一个没人接的 promise。
+    if (outlet === 'copy' && (typeof ClipboardItem === 'undefined' || !navigator.clipboard?.write)) {
+      setExportNote(t('graph.exportCopyUnsupported'));
+      return;
+    }
+    setExportNote(null);
+    setExporting(true);
+
+    const metaLine = `${t('graph.nodes', { count: engineData?.nodes.length ?? 0 })} · ${t(
+      'graph.edges',
+      { count: engineData?.edges.length ?? 0 },
+    )}`;
+    const topicsLine = coreTopics.length
+      ? `${t('graph.exportCoreTopics')}${coreTopics.join(' · ')}`
+      : '';
+    const title = activeVault?.name ?? '';
+    const aspect = exportAspect;
+    const includeInfo = exportIncludeInfo;
+
+    /** 位图 → 卡片 → PNG。数据在点击那一刻快照，之后用户再改筛选也不影响这次导出。 */
+    const compose = (raw: HTMLCanvasElement): Promise<Blob | null> => {
+      const layout = computeCardLayout({
+        graphW: raw.width,
+        graphH: raw.height,
+        aspect,
+        hasTopics: topicsLine.length > 0,
+        includeInfo,
+      });
+      if (!layout) return Promise.resolve(null);
+      const out = document.createElement('canvas');
+      out.width = layout.width;
+      out.height = layout.height;
+      const ctx = out.getContext('2d');
+      if (!ctx) return Promise.resolve(null);
+      drawCard(ctx, raw, layout, {
+        title,
+        meta: metaLine,
+        topics: topicsLine,
+        legend: exportLegend,
+        watermark: EXPORT_WATERMARK,
+        ink: cardInkFor(themeColors.bg),
+        bg: themeColors.bg,
+        includeInfo,
+      });
+      return new Promise<Blob | null>((resolve) => out.toBlob(resolve, 'image/png'));
+    };
+
+    const capture = (async () => {
+      const raw = eng.captureImage();
+      return raw ? compose(raw) : null;
+    })();
+
+    try {
+      if (outlet === 'copy') {
+        await navigator.clipboard.write([
+          new ClipboardItem({
+            'image/png': capture.then((blob) => {
+              if (!blob) throw new Error('nothing to export');
+              return blob;
+            }),
+          }),
+        ]);
+        setExportNote(t('graph.exportCopied'));
+      } else {
+        const blob = await capture;
+        if (!blob) throw new Error('nothing to export');
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = exportFileName(new Date(), title);
+        a.click();
+        // 立刻 revoke 有些浏览器会来不及取用；留足时间再释放这个临时 URL
+        setTimeout(() => URL.revokeObjectURL(url), 10_000);
+        setExportNote(t('graph.exportDownloaded'));
+      }
+    } catch (err) {
+      console.error('[graph] 导出图片失败:', err);
+      setExportNote(t('graph.exportFailed'));
+    } finally {
+      setExporting(false);
+    }
+  };
+
   const nodeCount = graphData?.nodes.length ?? 0;
   const edgeCount = graphData?.edges.length ?? 0;
 
@@ -518,6 +672,84 @@ export function GraphPage({
                   <rect x="4" y="13" width="3.8" height="7" rx="1.9" />
                   <rect x="10.1" y="9" width="3.8" height="11" rx="1.9" />
                   <rect x="16.2" y="5" width="3.8" height="15" rx="1.9" />
+                </svg>
+              </button>
+            </div>
+          )}
+          {/* 一键出图（对外分享/获客）：下载 PNG / 复制到剪贴板。
+              副视图（分屏对照的小参照面板）不渲染——那里是「看」，出图只属于主格。 */}
+          {hasData && !companion && (
+            <div className="graph-export-ctrl" ref={exportRef}>
+              {(showExport || exportNote) && (
+                <div className="graph-export-pop">
+                  {exportNote ? (
+                    <span className="graph-export-note">{exportNote}</span>
+                  ) : (
+                    <>
+                      {/* 版式：默认跟图走；固定比例是给发布平台用的（contain 留白，不裁图） */}
+                      <div
+                        className="graph-export-aspects"
+                        role="group"
+                        aria-label={t('graph.exportAspect')}
+                      >
+                        {EXPORT_ASPECTS.map(({ key, label }) => (
+                          <button
+                            key={key}
+                            type="button"
+                            className={`graph-export-aspect${exportAspect === key ? ' is-active' : ''}`}
+                            data-testid={`graph-export-aspect-${key}`}
+                            aria-pressed={exportAspect === key}
+                            onClick={() => setExportAspect(key)}
+                          >
+                            {t(label)}
+                          </button>
+                        ))}
+                      </div>
+                      {/* 附带信息：默认开（标题/统计/核心主题/图例是卡片的价值），
+                          但只想要一张干净图的人应当能关掉——署名不跟着关。 */}
+                      <label className="graph-export-toggle">
+                        <input
+                          type="checkbox"
+                          data-testid="graph-export-info"
+                          checked={exportIncludeInfo}
+                          onChange={(e) => setExportIncludeInfo(e.target.checked)}
+                        />
+                        <span>{t('graph.exportIncludeInfo')}</span>
+                      </label>
+                      <button
+                        type="button"
+                        className="graph-export-item"
+                        data-testid="graph-export-download"
+                        onClick={() => runExport('download')}
+                      >
+                        {t('graph.exportDownload')}
+                      </button>
+                      <button
+                        type="button"
+                        className="graph-export-item"
+                        data-testid="graph-export-copy"
+                        onClick={() => runExport('copy')}
+                      >
+                        {t('graph.exportCopy')}
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
+              <button
+                type="button"
+                className={`graph-icon-btn${showExport ? ' is-active' : ''}`}
+                onClick={() => setShowExport((v) => !v)}
+                disabled={exporting}
+                data-tooltip={exporting ? t('graph.exporting') : t('graph.export')}
+                aria-label={t('graph.export')}
+                data-testid="graph-export"
+              >
+                {/* 画框 + 山形/日头：一眼即「这一屏能出成图片」 */}
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" width="18" height="18">
+                  <rect x="3" y="4.5" width="18" height="15" rx="2.5" />
+                  <circle cx="8.6" cy="10" r="1.5" />
+                  <path d="M4 17.4l4.7-4.7a1.5 1.5 0 0 1 2.1 0l3.4 3.4 1.6-1.6a1.5 1.5 0 0 1 2.1 0L21 17.6" />
                 </svg>
               </button>
             </div>

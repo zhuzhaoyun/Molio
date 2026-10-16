@@ -17,6 +17,12 @@ import * as path from 'path';
 
 let vault: TempVault;
 
+/** PNG 的 IHDR：8 字节签名 + 4 长度 + 4 "IHDR"，宽高各占 4 字节（大端）。 */
+function pngSize(filePath: string | null): { width: number; height: number } {
+  const buf = fs.readFileSync(filePath as string);
+  return { width: buf.readUInt32BE(16), height: buf.readUInt32BE(20) };
+}
+
 test.describe('Graph as tab', () => {
   test.beforeAll(async () => {
     vault = await createTempVault('e2e-graph-tab');
@@ -77,6 +83,141 @@ test.describe('Graph as tab', () => {
     // 于是隐藏的图谱标签也会让文档区整片发白。文档 pane 各层透明，底色就是 .entry-main。
     const bg = await page.locator('.entry-main').evaluate((el) => getComputedStyle(el).backgroundColor);
     expect(bg).toBe('rgb(24, 24, 22)'); // --bg（深色）= #181816
+  });
+
+  // ── 一键出图（对外分享/获客）──
+  // 断言到「真的产出了一个 PNG 下载」为止：只断言按钮可见会假绿
+  // （引擎没接上、canvas 是空白图，按钮照样可见）。
+
+  test('导出图片：顶栏导出按钮真的产出一张 PNG', async ({ page }) => {
+    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 10_000 });
+
+    await clickNav(page, 'graph');
+    await expect(page.locator('.graph-page')).toBeVisible({ timeout: 10_000 });
+
+    const exportBtn = page.locator('[data-testid="graph-export"]');
+    await expect(exportBtn).toBeVisible({ timeout: 10_000 });
+    await exportBtn.click();
+
+    // 三个出口（版式 / 下载 / 复制）都在菜单里
+    await expect(page.locator('[data-testid="graph-export-aspect-natural"]')).toBeVisible();
+    await expect(page.locator('[data-testid="graph-export-download"]')).toBeVisible();
+    await expect(page.locator('[data-testid="graph-export-copy"]')).toBeVisible();
+
+    const downloadPromise = page.waitForEvent('download', { timeout: 15_000 });
+    await page.locator('[data-testid="graph-export-download"]').click();
+    const download = await downloadPromise;
+
+    // 文件名带库名 —— 下载文件夹里一堆 molio-graph-2026... 是找不出来的
+    expect(download.suggestedFilename()).toMatch(/\.png$/);
+    expect(download.suggestedFilename()).toContain(vault.name);
+    const filePath = await download.path();
+    expect(filePath).toBeTruthy();
+    // 空白 PNG 压缩后极小；拦住「导出了但整张是空的」
+    expect(fs.statSync(filePath as string).size).toBeGreaterThan(1000);
+  });
+
+  test('导出图片：1:1 版式真的产出正方形（卡片版式生效）', async ({ page }) => {
+    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 10_000 });
+
+    await clickNav(page, 'graph');
+    await expect(page.locator('.graph-page')).toBeVisible({ timeout: 10_000 });
+
+    await page.locator('[data-testid="graph-export"]').click();
+    await page.locator('[data-testid="graph-export-aspect-square"]').click();
+    // 选中态必须跟着走，否则用户不知道这次导的是哪个版式
+    await expect(page.locator('[data-testid="graph-export-aspect-square"]')).toHaveClass(/is-active/);
+
+    const downloadPromise = page.waitForEvent('download', { timeout: 15_000 });
+    await page.locator('[data-testid="graph-export-download"]').click();
+    const filePath = await (await downloadPromise).path();
+    expect(filePath).toBeTruthy();
+
+    // 直接读 PNG 的 IHDR：没有像素级断言，「版式」可能只是个状态位、画布根本没变
+    const { width, height } = pngSize(filePath);
+    expect(width).toBe(height);
+    expect(width).toBeGreaterThan(500);
+  });
+
+  test('导出图片：关掉「附带信息」后卡片只剩图与署名', async ({ page }) => {
+    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 10_000 });
+
+    await clickNav(page, 'graph');
+    await expect(page.locator('.graph-page')).toBeVisible({ timeout: 10_000 });
+
+    const exportBtn = page.locator('[data-testid="graph-export"]');
+    const infoToggle = page.locator('[data-testid="graph-export-info"]');
+    await exportBtn.click();
+    // 默认带信息 —— 这是卡片的价值，不能悄悄关掉
+    await expect(infoToggle).toBeChecked();
+
+    let downloadPromise = page.waitForEvent('download', { timeout: 15_000 });
+    await page.locator('[data-testid="graph-export-download"]').click();
+    const withInfo = pngSize(await (await downloadPromise).path());
+
+    // 导出后气泡先显示结果提示，等它消失再开菜单
+    await expect(page.locator('.graph-export-note')).toHaveCount(0, { timeout: 10_000 });
+    await exportBtn.click();
+    await infoToggle.uncheck();
+
+    downloadPromise = page.waitForEvent('download', { timeout: 15_000 });
+    await page.locator('[data-testid="graph-export-download"]').click();
+    const bare = pngSize(await (await downloadPromise).path());
+
+    // 宽度只由图决定，不随信息块变；高度必须明显变矮（整块头部让给图）。
+    // 只断言复选框选中态的话，开关可能根本没接进排版。
+    expect(Math.abs(bare.width - withInfo.width)).toBeLessThanOrEqual(2);
+    expect(bare.height).toBeLessThan(withInfo.height - 20);
+  });
+
+  test('导出图片：复制出口真的把 PNG 写进了剪贴板', async ({ page, context }) => {
+    // 剪贴板读写都要授权（headless 下默认拒绝）
+    await context.grantPermissions(['clipboard-read', 'clipboard-write'], {
+      origin: 'http://localhost:5173',
+    });
+    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 10_000 });
+
+    await clickNav(page, 'graph');
+    await expect(page.locator('.graph-page')).toBeVisible({ timeout: 10_000 });
+
+    await page.locator('[data-testid="graph-export"]').click();
+    await page.locator('[data-testid="graph-export-copy"]').click();
+
+    // 提示语只在 write() 真的 resolve 后才出现（失败走另一条文案）
+    await expect(page.locator('.graph-export-note')).toHaveText(/已复制/);
+
+    // 读回剪贴板，确认落进去的确实是一张像样的 PNG ——
+    // 只断言提示语等于相信 write() 的 resolve，读回来才算数。
+    const bytes = await page.evaluate(async () => {
+      const items = await navigator.clipboard.read();
+      for (const item of items) {
+        if (item.types.includes('image/png')) return (await item.getType('image/png')).size;
+      }
+      return 0;
+    });
+    expect(bytes).toBeGreaterThan(1000);
+  });
+
+  test('导出图片：跟随系统 + 深色系统时气泡不能是亮色卡片', async ({ page }) => {
+    // 显式 data-theme="dark" 走另一条路（见上面的深色用例）。这里专测「跟随系统」
+    // ——此时 html 上没有 data-theme，--text 变浅，气泡底色若仍是白的就成浅压浅。
+    await page.emulateMedia({ colorScheme: 'dark' });
+    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 10_000 });
+
+    await clickNav(page, 'graph');
+    await expect(page.locator('.graph-page')).toBeVisible({ timeout: 10_000 });
+    await page.locator('[data-testid="graph-export"]').click();
+
+    const bg = await page
+      .locator('.graph-export-pop')
+      .evaluate((el) => getComputedStyle(el).backgroundColor);
+    const [r, g, b] = (bg.match(/[\d.]+/g) ?? []).map(Number);
+    expect((r + g + b) / 3).toBeLessThan(80);
   });
 
   // ── 引擎销毁故障隔离（v0.3.56 线上全局白屏回归）──

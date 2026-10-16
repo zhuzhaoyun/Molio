@@ -538,6 +538,22 @@ const en: Record<string, string> = {
   'graph.searchPlaceholder': 'Search nodes…',
   'graph.searchNoResult': 'No matching nodes',
   'graph.scopeBack': 'Back to full graph',
+  // One-click image export (sharing / acquisition)
+  'graph.export': 'Export image',
+  'graph.exportDownload': 'Download PNG',
+  'graph.exportCopy': 'Copy to clipboard',
+  'graph.exporting': 'Rendering…',
+  'graph.exportDownloaded': 'Image downloaded',
+  'graph.exportCopied': 'Image copied to clipboard',
+  'graph.exportCopyUnsupported': 'Copying images is unavailable here — use “Download PNG”',
+  'graph.exportFailed': 'Export failed, please try again',
+  'graph.exportAspect': 'Layout',
+  'graph.exportIncludeInfo': 'Include title / stats / legend',
+  'graph.exportAspectNatural': 'Original',
+  'graph.exportAspectSquare': '1:1',
+  'graph.exportAspectPortrait': '4:5',
+  'graph.exportAspectWide': '16:9',
+  'graph.exportCoreTopics': 'Core: ',
 
   // ── FileChatPanel ──
   'fileChat.running': 'Running…',

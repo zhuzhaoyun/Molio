@@ -17,7 +17,8 @@
  *   - hover 高亮节点与连线（焦点模式，hover 优先于搜索选中）；单击节点跳转文档；
  *     点击空白清除搜索选中；双击空白 fit
  */
-import { Application, Container, Graphics, Text, Circle } from 'pixi.js';
+import { Application, Container, Graphics, Text, Circle, Rectangle } from 'pixi.js';
+import { computeExportRect, resolveExportScale, viewportWorldRect, type Bounds } from './exportImage';
 import {
   forceSimulation,
   forceManyBody,
@@ -169,6 +170,10 @@ const LABEL_PAD = 2;
 const K_MIN = 0.1;
 const K_MAX = 4;
 const FIT_PADDING = 80;
+/** 出图：内容四周留白（屏幕 px，换算成 world 单位后使用） */
+const EXPORT_MARGIN_SCREEN = 48;
+/** 出图：目标输出长边（device px）；不卡死，实际受 1:1 下限与 4096 上限夹逼 */
+const EXPORT_TARGET_LONG_EDGE = 2000;
 /** v6 配方：forceX/Y 谐波约束强度 —— 让长弹簧向心屈服，整体紧凑、局部由 collide 撑开 */
 const CONTAIN_STRENGTH = 0.06;
 /** v6 配方：collide 半径 = 绘制半径 × MULT + PAD —— 远看均布、放大后节点彼此分离（Obsidian 同款空气感） */
@@ -603,6 +608,61 @@ export class PixiGraphEngine {
         h: this.height / t.k,
       },
     };
+  }
+
+  /**
+   * 把当前图谱渲染成一张位图（整图、已按主题铺底），交给调用方去排版。
+   * 无可导出内容时返回 null。
+   *
+   * 引擎只产出「图」；标题卡、图例、署名由 exportCard.ts 合成 —— 那些是版式，
+   * 不该跟 Pixi 生命周期纠缠，也才能在 node:test 里覆盖。
+   *
+   * 三个决定实现形状的事实：
+   *  1. **导出的是整张图，不是用户当前取景框** —— 分享出去是给人看懂的，框外的
+   *     东西对方补不回来。所以先 fitView 把整图收进视口，再据此取景。
+   *  2. **`extract` 的 frame 是 world 空间的**（见 exportImage.ts 头注）：取景矩形
+   *     按 world 单位算并夹在可见区域内，倍率按 frame 长边定，与当前缩放 k 无关。
+   *  3. **不往 stage 里加任何东西** —— 不碰实时场景，就不会闪、无需清理；
+   *     导出结束（含失败）视口一律还原成用户眼前那一帧。
+   *
+   * 背景必须显式传 clearColor：`extract` 的默认清屏色是**全透明**（不是 app 的
+   * background）。透明底在多数看图器与发布平台上会被合成到白底上——深色主题的
+   * 浅色标签会直接消失。
+   */
+  captureImage(): HTMLCanvasElement | null {
+    if (this.destroyed || this.nodes.length === 0) return null;
+    // 隐藏的 pane 尺寸为 0，取景会退化成空矩形
+    if (!(this.width > 0) || !(this.height > 0)) return null;
+
+    const prev = this.getViewport();
+    let frame: Bounds | null = null;
+    let resolution = 1;
+    try {
+      this.fitView({ animate: false });
+      const viewport = viewportWorldRect(this.getViewport(), { w: this.width, h: this.height });
+      const bounds = this.stage.getLocalBounds();
+      frame = computeExportRect(
+        { x: bounds.x, y: bounds.y, w: bounds.width, h: bounds.height },
+        viewport,
+        EXPORT_MARGIN_SCREEN / this.currentTransform.k,
+      );
+      if (frame) {
+        resolution = resolveExportScale(Math.max(frame.w, frame.h), { target: EXPORT_TARGET_LONG_EDGE });
+      }
+    } finally {
+      this.setTransform(prev.tx, prev.ty, prev.k);
+    }
+    if (!frame) return null;
+
+    // WebGL 画布默认 preserveDrawingBuffer:false，canvas.toDataURL 只会得到空白；
+    // 必须走 Pixi 的 render-to-texture（extract）重渲染一遍。
+    return this.app.renderer.extract.canvas({
+      target: this.stage,
+      frame: new Rectangle(frame.x, frame.y, frame.w, frame.h),
+      resolution,
+      antialias: true,
+      clearColor: this.theme.bg,
+    }) as unknown as HTMLCanvasElement;
   }
 
   /**
