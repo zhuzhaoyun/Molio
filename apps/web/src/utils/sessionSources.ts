@@ -20,7 +20,12 @@ export interface SessionSourceRef {
   count: number;
 }
 
-/** 有扩展名才算「文件」—— Grep 的 path 可能是目录（extractSources 对它标 navigable）。 */
+/** Grep 的 `path` 可能是 glob 模式（含 `*` `?` `[` `{`）—— 含元字符的不是文件。 */
+const GLOB_META_CHARS = ['*', '?', '[', '{'];
+function hasGlobMeta(p: string): boolean {
+  return GLOB_META_CHARS.some((c) => p.includes(c));
+}
+/** 供 Grep 判「是不是文件」用：Grep 的 path 可能是目录，目录无扩展名。 */
 const FILE_EXT_RE = /\.[A-Za-z0-9]+$/;
 
 /**
@@ -39,11 +44,17 @@ export function aggregateSessionSources(
     if (m.role !== 'assistant' || !m.tools?.length) continue;
     for (const s of extractSources(m.tools)) {
       if (s.kind === 'file') {
-        if (!s.navigable) continue; // Glob pattern 不是文件
-        if (!FILE_EXT_RE.test(s.target)) continue; // Grep 目录路径不是文件
+        if (!s.navigable) continue; // Glob 工具的 pattern 不是文件
+        if (hasGlobMeta(s.target)) continue; // Grep 的 glob 路径（含 * ? [ {）不是文件
+        // Grep 的 path 可能是目录 → 要求带扩展名；Read/Bash(cat) 一定是文件（agent 不会 Read 目录），
+        // 故不要求扩展名（否则 Makefile / LICENSE 这类真实文件会被静默丢掉）。
+        if (s.toolName === 'Grep' && !FILE_EXT_RE.test(s.target)) continue;
         if (classifyWritePath(writeKey(s.target, vaultPath)) === 'hidden') continue; // 库外/隐藏
       }
-      const key = `${s.kind}\u0000${s.target}`;
+      // 去重 key 用归一化路径：同一文件被先报绝对、后报相对是常见的 agent 上报行为
+      // （与 workSteps.collectSessionWrites 同一教训——用原始串会渲染成多行、label 被消歧成路径）。
+      const norm = s.kind === 'file' ? writeKey(s.target, vaultPath) : s.target;
+      const key = `${s.kind}\u0000${norm}`;
       let e = map.get(key);
       if (!e) {
         e = { target: s.target, label: s.label, kind: s.kind, count: 0 };

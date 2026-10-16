@@ -101,4 +101,33 @@ describe('aggregateSessionSources', () => {
     const labels = aggregateSessionSources(messages, '/v').filter((r) => r.kind === 'file').map((r) => r.label);
     assert.equal(new Set(labels).size, 2);
   });
+
+  test('同一文件的不同上报形态（绝对/./相对/相对）→ 只出一行、计数合并', () => {
+    const messages = [
+      msg('m1', [{ name: 'Read', input: { file_path: '/v/wiki/a.md' } }]),
+      msg('m2', [{ name: 'Bash', input: { command: 'cat ./wiki/a.md' } }]),
+      msg('m3', [{ name: 'Grep', input: { pattern: 'x', path: 'wiki/a.md' } }]),
+    ];
+    const out = aggregateSessionSources(messages, '/v').filter((r) => r.kind === 'file');
+    assert.equal(out.length, 1);            // 同一文件三形态归一化后只一行
+    assert.equal(out[0]!.count, 3);
+    assert.equal(out[0]!.label, 'a.md');    // 未触发同名消歧（无前缀路径）
+  });
+
+  test('Grep 的 glob 路径与目录路径不计入', () => {
+    const messages = [
+      msg('m1', [
+        { name: 'Grep', input: { pattern: 'x', path: '/v/src/**/*.ts' } }, // glob 元字符
+        { name: 'Grep', input: { pattern: 'x', path: '/v/raw' } },          // 目录（无扩展名）
+      ]),
+    ];
+    assert.deepEqual(aggregateSessionSources(messages, '/v'), []);
+  });
+
+  test('Read 无扩展名文件（Makefile）仍计入', () => {
+    const messages = [msg('m1', [{ name: 'Read', input: { file_path: '/v/Makefile' } }])];
+    const out = aggregateSessionSources(messages, '/v');
+    assert.equal(out.length, 1);
+    assert.equal(out[0]!.label, 'Makefile');
+  });
 });

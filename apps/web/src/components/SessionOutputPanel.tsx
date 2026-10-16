@@ -1,7 +1,7 @@
 // apps/web/src/components/SessionOutputPanel.tsx
 // 会话产出聚合面板（主页 dock）——本次会话 Molio 写入的 KB 文件 rollup。
-// 与逐消息 WorkCompleteBanner/SourceChips 共存：dock = 会话级汇总，消息内 = 单条 provenance
-// （外部引用只在消息内联的 SourceChips 展示，不在此重复）。
+// 与逐消息 WorkCompleteBanner/SourceChips 共存：dock = 会话级汇总（概览/变更/引用三 tab），
+// 消息内 = 单条 provenance。引用（读入）在独立「引用」tab，不与「概览」（产出）同屏。
 // 纯前端聚合（aggregateSessionOutput），零 daemon/contracts。
 import { useMemo, useState, useRef, useCallback, useEffect } from 'react';
 import type { ChatMessage } from '../hooks/useChatCore';
