@@ -8,6 +8,7 @@ import { knowledgeRoutes } from '../../src/routes/knowledge.js';
 import { openDatabase, closeDatabase, createVault } from '../../src/core/db.js';
 import { RunManager } from '../../src/core/RunManager.js';
 import { VaultWatcher } from '../../src/core/vault-watcher.js';
+import { reindexVault, searchVaultFiles } from '../../src/core/vault-search.js';
 
 /**
  * Knowledge base file-operation route tests.
@@ -28,11 +29,12 @@ describe('Knowledge routes — file operations', () => {
   let vaultDir: string;
   let tempDir: string;
   let vaultId: string;
+  let db: ReturnType<typeof openDatabase>;
 
   before(() => {
     tempDir = mkdtempSync(join(tmpdir(), 'molio-kb-test-'));
     vaultDir = mkdtempSync(join(tmpdir(), 'molio-vault-'));
-    const db = openDatabase(tempDir);
+    db = openDatabase(tempDir);
     const vault = createVault(db, 'test-vault', vaultDir);
     vaultId = vault.id;
     // Mount sub-app at /api/knowledge — routes use hardcoded prefix for path extraction
@@ -205,6 +207,28 @@ describe('Knowledge routes — file operations', () => {
         body: JSON.stringify({}),
       });
       assert.equal(res.status, 400);
+    });
+  });
+
+  // ─── Directory rename (索引随改名迁移) ───
+
+  describe('PUT /vaults/:id/files/* — rename directory', () => {
+    it('should re-index the renamed subtree and drop the old paths', async () => {
+      // 目录改名分支走 ensureVaultIndexed（单一 walk 单行道）；这里锁住它的
+      // 可见结果：新子树能被搜到、旧路径不留幽灵命中。
+      mkdirSync(join(vaultDir, 'dir-old'), { recursive: true });
+      writeFileSync(join(vaultDir, 'dir-old', 'g.md'), '甲组内容标记');
+      await reindexVault(db, vaultId, vaultDir);
+
+      const res = await app.request(`/api/knowledge/vaults/${vaultId}/files/dir-old`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ newPath: 'dir-new' }),
+      });
+      assert.equal(res.status, 200);
+
+      const { results } = await searchVaultFiles(db, vaultId, vaultDir, '甲组内容标记', 50);
+      assert.deepEqual(results.map((r) => r.filePath), ['dir-new/g.md']);
     });
   });
 
