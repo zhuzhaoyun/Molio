@@ -30,6 +30,7 @@
         "apps/web/src/components/SourceChips.*",
         "apps/web/src/components/FileRef.*",
         "apps/web/src/utils/workSteps.*",
+        "apps/web/src/utils/sessionSources.*",
         "apps/web/src/utils/toolRefs.*",
         "apps/web/src/utils/diff.*",
         "apps/web/src/api/sse.ts",
