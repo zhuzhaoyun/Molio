@@ -396,6 +396,51 @@ body.home-dock-resizing {
   font-variant-numeric: tabular-nums;
 }
 
+/* ─── 引用 tab ─── */
+
+/* URL 折叠组：沿用「其他写入」折叠区的收敛样式（原生 <details> 去掉默认三角） */
+.session-output-sources-urls {
+  margin-top: 4px;
+  border-top: 1px solid var(--border-soft);
+}
+.session-output-sources-urls > summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--text-soft);
+  cursor: pointer;
+  user-select: none;
+  list-style: none;
+}
+.session-output-sources-urls > summary::-webkit-details-marker {
+  display: none;
+}
+.session-output-sources-urls > summary:hover,
+.session-output-sources-urls > summary:focus-visible {
+  color: var(--text-muted);
+}
+/* URL 行是 <a>：去掉 UA 下划线，与文件行视觉一致 */
+a.session-output-item {
+  text-decoration: none;
+}
+/* 引用条目的被读次数徽标：右对齐，与 tab 计数同色系 */
+.session-output-item-count {
+  flex: none;
+  margin-left: auto;
+  min-width: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background-color: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--accent);
+  font-size: 10px;
+  line-height: 15px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
 /* 概览顶部的「写入 N · M 轮」仍在 header 里（.session-output-stats）；
    原来压在主列表上方的「新建 / 更新 / 追加」统计条已删 —— 它离清单太近，
    被读成清单的标题（而清单里混着更新）。新建/更新改成分段标题各带计数。 */
