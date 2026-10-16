@@ -31,6 +31,24 @@ function isIndexableExt(relPath: string): boolean {
   return TEXT_EXTS.includes(path.extname(relPath).toLowerCase());
 }
 
+/**
+ * rowid 配对约定（2026-10-16 Windows 卡死事故后引入）：FTS 行的 rowid 恒等于
+ * vault_files_state 对应行的 rowid。fts 表上 vault_id/file_path 是 UNINDEXED 列，
+ * 按它们 DELETE 是**全表扫描**——每行都要读出 content（trigram 大文本）比对。
+ * 一个几千文件、几亿字节的库单条 DELETE 就秒级 CPU；walk 里每个非文本文件
+ * （图片/PDF，isIndexableExt 不过）都会走到 removeVaultFile，几百条秒级扫描连
+ * 成片，事件循环被独占几分钟（分片让位救不了单条语句的开销——50 个文件才让
+ * 位一拍，一拍里可能含几十条全表扫描）。state 是普通小行表，按主键查 rowid 是
+ * O(log n)，配对后 fts 行按 rowid 删也是 O(log n)。写路径全部走「同一事务里先动
+ * state 再按其 rowid 动 fts」维持配对；升级迁移见 db.ts 的 vault_fts_rowid_paired。
+ */
+function stateRowId(db: SqliteDb, vaultId: string, normPath: string): number | undefined {
+  const row = db.prepare(
+    'SELECT rowid AS rid FROM vault_files_state WHERE vault_id = ? AND file_path = ?',
+  ).get(vaultId, normPath) as { rid: number } | undefined;
+  return row?.rid;
+}
+
 export function indexVaultFile(db: SqliteDb, vaultId: string, vaultPath: string, relPath: string): void {
   const norm = relPath.replace(/\\/g, '/');
   const resolved = path.resolve(path.join(vaultPath, norm));
@@ -50,8 +68,8 @@ export function indexVaultFile(db: SqliteDb, vaultId: string, vaultPath: string,
     }
     const mtime = Math.floor(stat.mtimeMs);
     const shadow = db.prepare(
-      'SELECT mtime, size FROM vault_files_state WHERE vault_id = ? AND file_path = ?',
-    ).get(vaultId, norm) as { mtime: number; size: number } | undefined;
+      'SELECT rowid AS rid, mtime, size FROM vault_files_state WHERE vault_id = ? AND file_path = ?',
+    ).get(vaultId, norm) as { rid: number; mtime: number; size: number } | undefined;
     if (shadow && shadow.mtime === mtime && shadow.size === stat.size) return; // 未变，跳过重读
 
     let content: string;
@@ -61,19 +79,31 @@ export function indexVaultFile(db: SqliteDb, vaultId: string, vaultPath: string,
       removeVaultFile(db, vaultId, norm);
       return;
     }
-    db.prepare('DELETE FROM vault_files_fts WHERE vault_id = ? AND file_path = ?').run(vaultId, norm);
-    db.prepare('INSERT INTO vault_files_fts(content, vault_id, file_path) VALUES (?, ?, ?)')
-      .run(content, vaultId, norm);
+    // 先写 state（新文件 INSERT 得到新 rowid，已存在则 upsert 保 rowid 不变），
+    // 再以 state 行的 rowid 作为 fts 行的 rowid 插入——见函数组头注释的配对约定。
     db.prepare(`INSERT INTO vault_files_state(vault_id, file_path, mtime, size) VALUES (?, ?, ?, ?)
                 ON CONFLICT(vault_id, file_path) DO UPDATE SET mtime = excluded.mtime, size = excluded.size`)
       .run(vaultId, norm, mtime, stat.size);
+    if (shadow) {
+      db.prepare('DELETE FROM vault_files_fts WHERE rowid = ?').run(shadow.rid);
+    }
+    db.prepare('INSERT INTO vault_files_fts(rowid, content, vault_id, file_path) VALUES (?, ?, ?, ?)')
+      .run(stateRowId(db, vaultId, norm), content, vaultId, norm);
   });
   apply();
 }
 
 export function removeVaultFile(db: SqliteDb, vaultId: string, relPath: string): void {
-  db.prepare('DELETE FROM vault_files_fts WHERE vault_id = ? AND file_path = ?').run(vaultId, relPath);
-  db.prepare('DELETE FROM vault_files_state WHERE vault_id = ? AND file_path = ?').run(vaultId, relPath);
+  // 先查 state（主键 O(log n)）：没有 state 行就不可能有 fts 行（两者同一事务写/删，
+  // 见配对约定）。直接返回——这条 O(1) 早退是 walk 里图片/PDF 触发的海量 no-op
+  // 删除风暴的关键：旧实现两条按 UNINDEXED 列的 DELETE 每条都是 fts 全表扫描。
+  const rid = stateRowId(db, vaultId, relPath);
+  if (rid === undefined) return;
+  const apply = db.transaction(() => {
+    db.prepare('DELETE FROM vault_files_fts WHERE rowid = ?').run(rid);
+    db.prepare('DELETE FROM vault_files_state WHERE rowid = ?').run(rid);
+  });
+  apply();
 }
 
 export function removeVaultDir(db: SqliteDb, vaultId: string, dirRelPath: string): void {
@@ -81,10 +111,19 @@ export function removeVaultDir(db: SqliteDb, vaultId: string, dirRelPath: string
   // LIKE 里的 % 和 _ 是通配符——目录名可能含 `_`（如 a_b），不转义会误删
   // 同模式的兄弟目录（a_b 会匹配 axb）。转义 + ESCAPE 让前缀按字面匹配。
   const escaped = norm.replace(/[\\%_]/g, '\\$&');
-  db.prepare("DELETE FROM vault_files_fts WHERE vault_id = ? AND (file_path = ? OR file_path LIKE ? ESCAPE '\\')")
-    .run(vaultId, norm, escaped + '/%');
-  db.prepare("DELETE FROM vault_files_state WHERE vault_id = ? AND (file_path = ? OR file_path LIKE ? ESCAPE '\\')")
-    .run(vaultId, norm, escaped + '/%');
+  const subtree = "file_path = ? OR file_path LIKE ? ESCAPE '\\'";
+  // 先在 state（小行表，扫描毫秒级）圈出子树 rowid，再按 rowid 出 fts——fts 上按
+  // UNINDEXED 列 LIKE 前缀删同样是全表扫描（见配对约定头注释）。
+  const rids = db.prepare(
+    `SELECT rowid AS rid FROM vault_files_state WHERE vault_id = ? AND (${subtree})`,
+  ).all(vaultId, norm, escaped + '/%') as Array<{ rid: number }>;
+  const apply = db.transaction(() => {
+    const delFts = db.prepare('DELETE FROM vault_files_fts WHERE rowid = ?');
+    for (const { rid } of rids) delFts.run(rid);
+    db.prepare(`DELETE FROM vault_files_state WHERE vault_id = ? AND (${subtree})`)
+      .run(vaultId, norm, escaped + '/%');
+  });
+  apply();
 }
 
 /**
@@ -248,8 +287,12 @@ export async function rebuildVaultFtsAll(db: SqliteDb, opts: ReindexOpts = {}): 
     try {
       await hasInflightBuild(db, v.id);
       await registerBuild(db, v.id, async () => {
+        // 清空走 rowid 配对约定（fts 上按 vault_id DELETE 是全表扫描，见函数组头注释）
+        const rids = db.prepare('SELECT rowid AS rid FROM vault_files_state WHERE vault_id = ?')
+          .all(v.id) as Array<{ rid: number }>;
         db.transaction(() => {
-          db.prepare('DELETE FROM vault_files_fts WHERE vault_id = ?').run(v.id);
+          const delFts = db.prepare('DELETE FROM vault_files_fts WHERE rowid = ?');
+          for (const { rid } of rids) delFts.run(rid);
           db.prepare('DELETE FROM vault_files_state WHERE vault_id = ?').run(v.id);
         })();
         await reindexVault(db, v.id, v.path, opts);

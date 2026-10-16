@@ -293,6 +293,22 @@ function migrate(db: SqliteDb): void {
     );
   `);
 
+  // rowid 配对约定迁移（约定见 core/vault-search.ts 头注释）：旧索引的 fts 行
+  // rowid 与 state 行没有配对关系，直接按 rowid 删会漏删/错删。旧数据不值得
+  // 逐行修复——丢弃旧 fts 表 + 清空 state，下次启动 sweep / 首搜触发全量重建
+  // （构建本身分片让位，期间 daemon 照常服务）。DROP 而非 DELETE：大 FTS 表
+  // 逐行删又是秒级全表扫描风暴，DROP 整表回收页面是管理操作，一次性成本可接受。
+  // 注意放在建表之后：全新库里 DELETE FROM vault_files_state 得表先存在。
+  if (!getKv(db, 'vault_fts_rowid_paired')) {
+    db.exec('DROP TABLE IF EXISTS vault_files_fts');
+    db.exec('DELETE FROM vault_files_state');
+    db.exec(`CREATE VIRTUAL TABLE IF NOT EXISTS vault_files_fts USING fts5(
+      content, vault_id UNINDEXED, file_path UNINDEXED,
+      tokenize = 'trigram'
+    )`);
+    setKv(db, 'vault_fts_rowid_paired', '1');
+  }
+
   // One-time backfill of pre-existing messages. Guarded by kv flag so repeated
   // openDatabase calls stay O(1). Disaster recovery uses POST /api/maintenance/rebuild-fts.
   if (!getKv(db, 'fts_seeded')) {
@@ -874,8 +890,15 @@ export function createVault(db: SqliteDb, name: string, vaultPath: string, descr
 export function deleteVault(db: SqliteDb, id: string): void {
   // 检索 P0 层1：删库必须一并清索引，否则该库全部文件的原文会永久滞留在
   // vault_files_fts 里（rebuildVaultFtsAll 只遍历现存 vault，回收不了）。
-  db.prepare('DELETE FROM vault_files_fts WHERE vault_id = ?').run(id);
-  db.prepare('DELETE FROM vault_files_state WHERE vault_id = ?').run(id);
+  // fts 清理走 rowid 配对约定（vault-search.ts 头注释）：按 UNINDEXED 的
+  // vault_id DELETE 是 fts 全表扫描，大库单条秒级；按 state 圈出的 rowid 删是 O(log n)。
+  const rids = db.prepare('SELECT rowid AS rid FROM vault_files_state WHERE vault_id = ?')
+    .all(id) as Array<{ rid: number }>;
+  db.transaction(() => {
+    const delFts = db.prepare('DELETE FROM vault_files_fts WHERE rowid = ?');
+    for (const { rid } of rids) delFts.run(rid);
+    db.prepare('DELETE FROM vault_files_state WHERE vault_id = ?').run(id);
+  })();
   db.prepare('DELETE FROM vaults WHERE id = ?').run(id);
   // Clear active-vault if it pointed at the deleted vault.
   if (getActiveVaultId(db) === id) {
