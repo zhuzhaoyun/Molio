@@ -266,4 +266,91 @@ test.describe('Graph local scope', () => {
     await expect(empty).toBeVisible({ timeout: 10_000 });
     await expect(empty).toContainText('该文件夹下没有 Markdown 笔记');
   });
+
+  // 回归（用户报障：切换局部图谱时「旧图纹丝不动」）：daemon 每次换 scope 都要整库重建
+  // （慢机器 + 移动盘可达数十秒），而屏幕上已有旧图时又不盖全屏 loading —— 此前这段时间
+  // 毫无反馈，点完像没反应。本用例用路由延迟把窗口放大到可确定断言，避免「跑太快」造成的假绿。
+  test('main graph tab: switching scope shows an in-flight chip while the old graph stays', async ({ page }) => {
+    await gotoVault(page);
+    await openNoteFile(page, 'alpha.md');
+
+    // ① 先让屏幕上有一张图——首次加载走全屏 loading，此时不应有在途芯片
+    const alphaItem = page.locator('.kb-tree-item').filter({ hasText: 'alpha.md' }).first();
+    await expect(alphaItem).toBeVisible({ timeout: 10_000 });
+    await alphaItem.click({ button: 'right' });
+    await expect(page.locator('.ctx-menu')).toBeVisible({ timeout: 5_000 });
+    await page.locator('[data-testid="kb-ctx-local-graph"]').click();
+
+    const pane = graphTab(page);
+    await expect(pane.locator('[data-testid="graph-scope-back"]')).toBeVisible({ timeout: 10_000 });
+    await expect(pane.locator('[data-testid="graph-scope-loading"]')).toHaveCount(0);
+
+    // ② 把换 scope 的请求窗口放大，让在途态确定可观测
+    await page.route('**/api/graph/**/local*', async (route) => {
+      await new Promise((r) => setTimeout(r, 1500));
+      await route.continue();
+    });
+
+    // ③ 换到 beta.md 的局部图（scope 变了 → 必须给在途反馈）
+    const betaItem = page.locator('.kb-tree-item').filter({ hasText: 'beta.md' }).first();
+    await expect(betaItem).toBeVisible({ timeout: 10_000 });
+    await betaItem.click({ button: 'right' });
+    await expect(page.locator('.ctx-menu')).toBeVisible({ timeout: 5_000 });
+    await page.locator('[data-testid="kb-ctx-local-graph"]').click();
+
+    await expect(pane.locator('[data-testid="graph-scope-loading"]')).toBeVisible({ timeout: 5_000 });
+    // 数据到了就撤掉
+    await expect(pane.locator('[data-testid="graph-scope-loading"]')).toHaveCount(0, { timeout: 15_000 });
+
+    await page.unroute('**/api/graph/**/local*');
+  });
+
+  /**
+   * 深色有两条路，都要成立（约定见 settings.spec.ts 同名注释）：
+   *
+   *   [data-theme="dark"]                  用户手动选「深色」→ html 带属性
+   *   @media (prefers-color-scheme: dark)  「跟随系统」+ 深色系统 → html 无属性
+   *
+   * 在途芯片最初只写了显式那条路，于是**默认设置**（主题默认就是「跟随系统」，见 utils/theme.ts）
+   * 下它会停在浅色，与周围深色画布割裂。本用例只碰媒体查询那条路：默认上下文没有
+   * molio.theme，html 不带 data-theme，颜色只能来自 @media。
+   */
+  test.describe('scope-loading chip on a dark OS', () => {
+    test.use({ colorScheme: 'dark' });
+
+    test('follows the system dark theme (no data-theme attribute)', async ({ page }) => {
+      await gotoVault(page);
+      await openNoteFile(page, 'alpha.md');
+
+      // 前置：确认走的是「跟随系统」那条路，否则本用例测的就不是它
+      expect(await page.evaluate(() => document.documentElement.getAttribute('data-theme'))).toBeNull();
+
+      const alphaItem = page.locator('.kb-tree-item').filter({ hasText: 'alpha.md' }).first();
+      await alphaItem.click({ button: 'right' });
+      await expect(page.locator('.ctx-menu')).toBeVisible({ timeout: 5_000 });
+      await page.locator('[data-testid="kb-ctx-local-graph"]').click();
+
+      const pane = graphTab(page);
+      await expect(pane.locator('[data-testid="graph-scope-back"]')).toBeVisible({ timeout: 10_000 });
+
+      // 放大换 scope 的请求窗口，让芯片在断言期间稳定在屏上
+      await page.route('**/api/graph/**/local*', async (route) => {
+        await new Promise((r) => setTimeout(r, 3000));
+        await route.continue();
+      });
+      const betaItem = page.locator('.kb-tree-item').filter({ hasText: 'beta.md' }).first();
+      await expect(betaItem).toBeVisible({ timeout: 10_000 });
+      await betaItem.click({ button: 'right' });
+      await expect(page.locator('.ctx-menu')).toBeVisible({ timeout: 5_000 });
+      await page.locator('[data-testid="kb-ctx-local-graph"]').click();
+
+      const chip = pane.locator('[data-testid="graph-scope-loading"]');
+      await expect(chip).toBeVisible({ timeout: 5_000 });
+      const bg = await chip.evaluate((el) => getComputedStyle(el).backgroundColor);
+      // 深色那份（浅色是 rgba(255, 255, 255, 0.92)）——漏掉媒体查询时这里量到的就是浅色
+      expect(bg).toBe('rgba(40, 40, 44, 0.92)');
+
+      await page.unroute('**/api/graph/**/local*');
+    });
+  });
 });
