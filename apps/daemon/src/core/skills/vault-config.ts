@@ -134,6 +134,8 @@ export async function reconcileAllVaultsAsync(
  * injectable so tests can point it at a temp `claudeHome` (never the real home).
  */
 export function cleanupLegacyGlobalSync(opts?: SkillPathsOpts): void {
+  // An isolated instance has no legacy global sync to clean up.
+  if (!opts && process.env['MOLIO_DATA_DIR']?.trim()) return;
   reconcileSync([], opts ?? {});
 }
 

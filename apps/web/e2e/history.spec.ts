@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import { gotoHome, clickNav } from './helpers/navigation';
+import { gotoHome, gotoChatSpa, clickNav } from './helpers/navigation';
 import {
   createProject,
   createConversation,
@@ -582,9 +582,10 @@ test.describe('History', () => {
       await page.locator('[data-testid=history-batch-delete-confirm]').click();
       await expect(rowByTitle(page, 'Stale Conv')).toHaveCount(0, { timeout: 5_000 });
 
-      // 回主页 → 聊天已清空（hero 空状态），旧内容不可见。
-      await clickNav(page, 'home');
-      await expect(page.locator('[data-testid=hero-brand]')).toBeVisible({ timeout: 5_000 });
+      // 回主页 → 聊天已清空，但标签还在 → 落在**空的全屏 shell**（不是 landing）。
+      // landing 只服务「一条会话都没有」，这里标签保留，所以 shell 继续承载。
+      await gotoChatSpa(page);
+      await expect(page.locator('.home-page.chat-active')).toBeVisible({ timeout: 5_000 });
       await expect(page.getByText('stale content marker')).toHaveCount(0);
     } finally {
       await deleteProject(project.id);
@@ -619,8 +620,8 @@ test.describe('History', () => {
       await item.locator('[data-testid=composer-history-delete]').click();
       await item.locator('[data-testid=composer-history-delete]').click();
 
-      // 聊天已清空（hero 空状态），旧内容不可见。
-      await expect(page.locator('[data-testid=hero-brand]')).toBeVisible({ timeout: 5_000 });
+      // 聊天已清空但标签还在 → 空的全屏 shell，旧内容不可见。
+      await expect(page.locator('.home-page.chat-active')).toBeVisible({ timeout: 5_000 });
       await expect(page.getByText('csync content marker')).toHaveCount(0);
     } finally {
       await deleteProject(project.id);
@@ -643,7 +644,7 @@ test.describe('History', () => {
       await expect(page.locator('[data-testid="kb-btn-ask"]')).toBeVisible({ timeout: 10_000 });
 
       // 主页加载该会话（经历史页打开 → 跳回主页显示其消息）。
-      await clickNav(page, 'home');
+      await gotoChatSpa(page);
       await clickNav(page, 'history');
       await page.locator('[data-testid=history-refresh]').click();
       await page.waitForTimeout(500);
@@ -665,9 +666,9 @@ test.describe('History', () => {
       await item.locator('[data-testid="composer-history-delete"]').click();
       await item.locator('[data-testid="composer-history-delete"]').click();
 
-      // 回主页 → 聊天已清空（hero 空状态），旧内容不可见。
-      await clickNav(page, 'home');
-      await expect(page.locator('[data-testid=hero-brand]')).toBeVisible({ timeout: 5_000 });
+      // 回主页 → 聊天已清空，标签还在 → 空的全屏 shell，旧内容不可见。
+      await gotoChatSpa(page);
+      await expect(page.locator('.home-page.chat-active')).toBeVisible({ timeout: 5_000 });
       await expect(page.getByText('kbsync content marker')).toHaveCount(0);
     } finally {
       await deleteProject(project.id);

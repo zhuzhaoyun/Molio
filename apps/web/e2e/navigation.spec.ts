@@ -55,16 +55,16 @@ test.describe('Navigation', () => {
     expect(page.url()).toContain('/resources');
   });
 
-  test('navigate back to home from another page', async ({ page }) => {
+  test('navigate back to knowledge base from another page', async ({ page }) => {
+    // 原来这条用「首页」做回跳目标。首页已从导航栏移除（`/` 直接落到知识库，
+    // 它不再是并列目的地），回跳目标改为落地页本身；覆盖点不变：
+    // 往返可达 + 当前项高亮。
     await gotoHome(page);
     await clickNav(page, 'settings');
     await expect(page.locator('.settings-shell')).toBeVisible();
 
-    // Navigate back to home
-    await clickNav(page, 'home');
-    await expect(page.locator('.home-page')).toBeVisible();
-
-    // Home nav item should be active
-    await expect(page.locator('[data-view="home"]')).toHaveClass(/is-active/);
+    await clickNav(page, 'knowledge');
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('[data-view="knowledge"]')).toHaveClass(/is-active/);
   });
 });

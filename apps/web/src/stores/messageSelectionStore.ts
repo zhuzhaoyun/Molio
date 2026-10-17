@@ -5,7 +5,7 @@
  * not the whole chat log.
  */
 import { useSyncExternalStore } from 'react';
-import type { ChatMessage } from '../hooks/useChat';
+import type { ChatMessage } from '../hooks/useChatCore';
 
 type Listener = () => void;
 

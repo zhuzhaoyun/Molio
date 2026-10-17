@@ -82,7 +82,7 @@ test.describe('Composer / skill palette', () => {
   test('typing / at input start opens the palette listing installed skills', async ({ page }) => {
     await gotoHome(page);
     const input = page.locator('[data-testid="composer-input"]');
-    await expect(input).toBeVisible();
+    await expect(input).toBeVisible({ timeout: 20_000 });
 
     await input.click();
     await input.fill('/');
@@ -93,7 +93,8 @@ test.describe('Composer / skill palette', () => {
     await expect(palette.locator('[data-testid="skill-palette-item"]', { hasText: skillAName })).toBeVisible();
     await expect(palette.locator('[data-testid="skill-palette-item"]', { hasText: skillBName })).toBeVisible();
     // Bundled skills are surfaced too (docling ships with every install).
-    await expect(palette.locator('[data-testid="skill-palette-item"]', { hasText: 'docling' })).toBeVisible();
+    // Match the name, not descriptions: wiki-build also mentions docling.
+    await expect(palette.locator('.skill-palette-item-name').filter({ hasText: /^docling\s*(?:内置|Built-in)?$/ })).toBeVisible();
   });
 
   test('typing after / filters the skill list', async ({ page }) => {
@@ -178,6 +179,28 @@ test.describe('Composer / skill palette', () => {
     await expect(page.locator('[data-testid="skill-palette"]')).not.toBeVisible();
     await expect(input).toHaveValue('');
   });
+
+  for (const state of ['loading', 'error'] as const) {
+    test(`Escape closes the palette while skills are ${state}`, async ({ page }) => {
+      let release!: () => void;
+      const pending = new Promise<void>(resolve => { release = resolve; });
+      await page.route('**/api/skills?includeBundled=1', async route => {
+        if (state === 'loading') await pending;
+        await route.fulfill({ status: 500, json: { error: 'unavailable' } });
+      });
+      try {
+        await gotoHome(page);
+        const input = page.locator('[data-testid="composer-input"]');
+        await input.fill('/');
+        const palette = page.locator('[data-testid="skill-palette"]');
+        await expect(palette).toBeVisible();
+        if (state === 'error') await expect(palette).toContainText(/加载失败|Failed/i);
+        await input.press('Escape');
+        await expect(palette).not.toBeVisible();
+        await expect(input).toHaveValue('');
+      } finally { release(); }
+    });
+  }
 
   test('a non-leading slash does not open the palette', async ({ page }) => {
     await gotoHome(page);

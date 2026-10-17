@@ -12,6 +12,7 @@ import { copyHtml } from '@molio/doocs-md/shared/utils/clipboard';
 import { FRONTMATTER_BLOCK_RE } from '@molio/doocs-md/src/renderer/renderer-impl';
 import { vaultStore, useActiveVaultId } from '../stores/vaultStore';
 import { currentContextStore } from '../stores/currentContextStore';
+import { normalizeEmbedTarget, preprocessLocalImages } from '../utils/kbImage';
 
 const FILE_LOAD_RETRY_MS = 600;
 
@@ -64,7 +65,7 @@ export function preprocessWikiEmbeds(markdown: string, vaultId: string): string 
     /!\[\[([^\]|]+)(?:\|(\d+)(?:x(\d+))?)?\]\]/g,
     (_m, file: string, w?: string, h?: string) => {
       const size = w ? (h ? `|${w}x${h}` : `|${w}`) : '';
-      const encoded = encodeURIComponent(file.trim());
+      const encoded = encodeURIComponent(normalizeEmbedTarget(file));
       const baseUrl = window.location.origin;
       return `![${file}${size}](${baseUrl}/api/knowledge/vaults/${vaultId}/raw/${encoded})`;
     },
@@ -135,12 +136,21 @@ export function stripTrackingPixels(markdown: string): string {
  * corruption this guard exists to prevent.
  */
 
-export function preprocessKbMarkdown(markdown: string, vaultId?: string): string {
+export function preprocessKbMarkdown(
+  markdown: string,
+  vaultId?: string,
+  notePath?: string,
+): string {
   const transform = (body: string): string => {
     const stripped = stripTrackingPixels(body);
     const withEmbeds = vaultId ? preprocessWikiEmbeds(stripped, vaultId) : stripped;
     const proxied = proxyExternalImages(withEmbeds);
-    return preprocessWikiLinks(proxied, vaultId);
+    // After the two above, so their output is already absolute-URLed and gets
+    // skipped by the local-image pass' external-URL guard. notePath is what
+    // makes `![](图.png)` resolve against the note's own folder — Obsidian's
+    // rule. Without it we can still resolve vault-root-relative paths.
+    const localized = vaultId ? preprocessLocalImages(proxied, vaultId, notePath) : proxied;
+    return preprocessWikiLinks(localized, vaultId);
   };
 
   const match = FRONTMATTER_BLOCK_RE.exec(markdown);
@@ -308,6 +318,20 @@ export function useKnowledge(): UseKnowledgeReturn {
     return () => { cancelled = true; };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  /**
+   * ?manage=1 —— 主页「首次运行引导卡」的建库入口：到知识库页直接把知识库管理器
+   * 打开，省掉用户自己找建库入口那一步（找不到入口正是这次事故的一环）。
+   * 读完即从 URL 摘掉——刷新不该再弹一次；?vault= 原样保留。
+   */
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('manage') !== '1') return;
+    setShowVaultSwitcher(true);
+    params.delete('manage');
+    const qs = params.toString();
+    window.history.replaceState(null, '', window.location.pathname + (qs ? `?${qs}` : ''));
+  }, []);
+
   // Track previous vault ID to distinguish mount vs vault switch
   const prevVaultIdRef = useRef<string | null>(null);
 
@@ -459,7 +483,7 @@ export function useKnowledge(): UseKnowledgeReturn {
 
   const openVault = useCallback(async (path: string) => {
     // Derive a name from the last path segment
-    const name = path.split(/[\/]/).pop() || '未命名仓库';
+    const name = path.split(/[\/]/).pop() || '未命名知识库';
     const vault = await api.createVault({ name, path, description: `从本地文件夹打开: ${path}` });
     const next = [vault, ...vaultsRef.current];
     setVaults(next);

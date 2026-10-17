@@ -6,6 +6,7 @@ import { mkdtempSync, rmSync, writeFileSync, mkdirSync, chmodSync } from 'node:f
 import { Hono } from 'hono';
 import { knowledgeRoutes } from '../../src/routes/knowledge.js';
 import { openDatabase, closeDatabase, createVault } from '../../src/core/db.js';
+import { reindexVault } from '../../src/core/vault-search.js';
 import { RunManager } from '../../src/core/RunManager.js';
 import { VaultWatcher } from '../../src/core/vault-watcher.js';
 
@@ -18,6 +19,7 @@ describe('Knowledge routes — full-text search', () => {
   let vaultDir: string;
   let tempDir: string;
   let vaultId: string;
+  let dbRef: ReturnType<typeof openDatabase>;
 
   before(() => {
     tempDir = mkdtempSync(join(tmpdir(), 'molio-search-'));
@@ -31,11 +33,19 @@ describe('Knowledge routes — full-text search', () => {
     const db = openDatabase(tempDir);
     const vault = createVault(db, 'search-vault', vaultDir);
     vaultId = vault.id;
+    dbRef = db;
     // 路由用硬编码 /api/knowledge 前缀做 path 提取，必须挂到该前缀
     const root = new Hono();
     root.route('/api/knowledge', knowledgeRoutes(db, new RunManager(), new VaultWatcher(db)));
     app = root;
   });
+
+  // FTS5 索引只在「首搜建库」一次性快照 + 增量更新（写路径挂钩 / tree-changed
+  // sweep）。本套件直接 writeFileSync 落盘（不经 API、不触发 watcher），故新增
+  // 文件后须显式同步索引，才能被后续搜索看见——替换旧实现的「每次搜索重扫」。
+  async function resync(): Promise<void> {
+    await reindexVault(dbRef, vaultId, vaultDir);
+  }
 
   after(() => {
     closeDatabase();
@@ -79,6 +89,7 @@ describe('Knowledge routes — full-text search', () => {
     for (let i = 0; i < 5; i++) {
       writeFileSync(join(vaultDir, `f${i}.md`), `内容包含关键词词\n`);
     }
+    await resync();
     const res = await app.request(`/api/knowledge/vaults/${vaultId}/search?q=关键词&limit=2`);
     assert.equal(res.status, 200);
     const body = await json(res);
@@ -118,6 +129,7 @@ describe('Knowledge routes — full-text search', () => {
     writeFileSync(readablePath, '# 可读\n包含关键词 微服务 的内容\n');
     writeFileSync(unreadablePath, '# 不可读\n包含关键词 微服务 的内容\n');
     chmodSync(unreadablePath, 0o000);
+    resync(); // unreadable 不可读 → 索引器读取失败 → 不入索引（行为不变量）
 
     try {
       const res = await app.request(`/api/knowledge/vaults/${vaultId}/search?q=微服务`);

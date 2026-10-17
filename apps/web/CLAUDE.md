@@ -26,8 +26,7 @@ src/
     sse.ts             SSE 订阅 (EventSource)
   hooks/
     useAgents.ts       获取可用 agent 列表
-    useChat.ts         聊天状态管理 (消息、发送、SSE 订阅)
-    useChatCore.ts     聊天核心逻辑
+    useChatCore.ts     聊天核心逻辑（ChatMessage / ToolEvent 类型的唯一来源）
     useProjects.ts     项目管理
     useKnowledge.ts    知识库状态管理（vault、文件树、排版模式）
     useKbTabs.ts       知识库 Tab 状态管理
@@ -42,9 +41,9 @@ src/
     messageSelectionStore.ts  消息删除勾选态（同模式 + 每气泡精准订阅）
     authStore.ts           登录态快照（同模式；镜像 daemon GET /api/auth/status，App 挂载拉取 + 30s 轮询 + focus 刷新；refresh 永不抛错）
   components/
-    HomePage.tsx       主页：agent 选择 + 聊天面板
+    HomePage.tsx       主页（`/chat`）：landing + 活动会话全屏态
     NavRail.tsx        左侧导航栏
-    ChatPane.tsx       聊天消息列表
+    ChatSessionView.tsx 会话消息列表纯视图（`/chat` 与悬浮面板共用；消息级动作在此）
     ChatComposer.tsx   消息输入框
     UserMessage.tsx    用户消息气泡
     AssistantMessage.tsx 助手消息气泡 (thinking + tool cards)
@@ -89,7 +88,7 @@ src/
       WikiChatPanel.tsx       Wiki 对话面板
     account/           账号组件（用户模块 M3；合规勾选 M5；「我的」页面化）
       AccountPage.tsx      「我的」独立页面（/me，页内 Tab：资料/已购/上架[仅管理员]；未登录直达时内嵌登录表单）
-      AccountModal.tsx     登录弹窗（纯登录职责；NavRail 分流：未登录点击 → 弹窗，已登录 → 导航 /me；登录成功非意图场景自动导航 /me）
+      AccountModal.tsx     登录弹窗（纯登录职责；NavRail 分流：未登录点击 → 弹窗，已登录 → 导航 /me；登录成功非意图场景自动导航 /resources 资源页，已登录点账号入口才去 /me）
       PurchasesSection.tsx 我的已购分区（/me?tab=purchases；GET /api/market/purchases + 下载按钮重复下载最新版）
       ListingsSection.tsx  我的上架分区（/me?tab=listings；查看/下架/恢复，前身 MyListingsPanel 弹层）
       LoginForm.tsx        验证码登录表单（邮箱 → 验证码两步 + 重发倒计时；注册=登录）；发送验证码前须勾选「用户协议 + 隐私政策」（个保法前置，链接 molio.cn/terms|privacy）
@@ -150,7 +149,7 @@ pnpm build        # vite build
 pnpm preview      # vite preview
 pnpm typecheck    # tsc --noEmit
 pnpm test         # node:test 单测（graph engine 纯函数 + settings 迁移，Node 24 原生 TS）
-pnpm test:e2e     # Playwright E2E 测试（需先运行 pnpm dev）
+pnpm test:e2e     # Playwright 自动启动隔离的 daemon/cloud/web（先关闭占用测试端口的服务）
 ```
 
 ## E2E 同步规则（强制）
@@ -183,7 +182,8 @@ pnpm test:e2e     # Playwright E2E 测试（需先运行 pnpm dev）
 
 | 视图 | 路径 | 组件 |
 |------|------|------|
-| 主页 (聊天) | `/` | HomePage, ChatPane, ChatComposer |
+| 入口（非页面） | `/` | `EntryRedirect`（恢复上次路由，否则落默认落点） |
+| 对话 | `/chat` | HomePage（landing / 悬浮面板活动会话的全屏态）+ ChatSessionView, ChatComposer |
 | 知识库 | `/knowledge` | KnowledgeBasePage + kb/* |
 | 历史 | `/history` | HistoryPage |
 | 设置 | `/settings` | SettingsPage（含 RuntimesPanel、ChannelsPanel） |

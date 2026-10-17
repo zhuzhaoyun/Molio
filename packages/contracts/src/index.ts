@@ -10,6 +10,7 @@ export type {
   InstallEvent,
   InstallSource,
   NpmNativeInstallSource,
+  ScriptInstallSource,
   NpmJsInstallSource,
   PlatformRequirement,
   InstallConfig,
@@ -23,6 +24,7 @@ export type {
   StreamHandler,
   ActivityInfo,
   SubagentActivity,
+  ApiRetryInfo,
 } from './event.js';
 
 export type {
@@ -151,6 +153,12 @@ export type {
   CodexPresetId,
   CodexProviderPreset,
 } from './codex-provider.js';
+
+export { HERMES_PROVIDER_PRESETS, getHermesPreset } from './hermes-provider.js';
+export type {
+  HermesPresetId,
+  HermesProviderPreset,
+} from './hermes-provider.js';
 export type {
   MarketTag,
   MarketIcon,

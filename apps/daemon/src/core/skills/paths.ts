@@ -22,8 +22,8 @@
  * Every helper accepts optional `molioHome` / `claudeHome` overrides so tests
  * can point them at temp directories (no HOME monkey-patching needed).
  */
-import os from 'node:os';
 import path from 'node:path';
+import { molioDataDir, runtimeHome } from '../data-dir.js';
 
 export interface SkillPathsOpts {
   molioHome?: string;
@@ -34,11 +34,11 @@ export interface SkillPathsOpts {
 export const MOLIO_PREFIX = 'molio--';
 
 export function defaultMolioHome(): string {
-  return path.join(os.homedir(), '.molio');
+  return molioDataDir();
 }
 
 export function defaultClaudeHome(): string {
-  return path.join(os.homedir(), '.claude');
+  return runtimeHome('claude');
 }
 
 /**

@@ -61,7 +61,9 @@ describe('main.js dev-mode window visibility (regression: dev window never shown
 
   it('production show paths (loadAppWindow / error page) are untouched', () => {
     // The ARMS one-navigation-one-injection design requires production to
-    // keep showing the window only after the real app URL finishes loading.
+    // show the window off the real app navigation — no splash/loading page.
+    // (It may also reveal on a timeout, so a hung load cannot leave the user
+    // with an invisible window — see window-reveal.js.)
     const loadAppStart = mainSource.indexOf('function loadAppWindow(');
     assert.notEqual(loadAppStart, -1, 'loadAppWindow() must exist');
     const loadAppSrc = mainSource.slice(
@@ -75,8 +77,12 @@ describe('main.js dev-mode window visibility (regression: dev window never shown
     );
     assert.match(
       loadAppSrc,
-      /onFinish\s*=[\s\S]*?\.show\(\)/,
-      'loadAppWindow() onFinish must call win.show()',
+      /onFinish\s*=[\s\S]*?gate\.loaded\(\)/,
+      'loadAppWindow() onFinish must reveal through the reveal gate, which also bounds how long the window may stay invisible',
+    );
+    assert.ok(
+      !loadAppSrc.includes('splash.html'),
+      'loadAppWindow() must not add a loading navigation — it would eat the ARMS injection',
     );
   });
 });

@@ -4,7 +4,7 @@
 
 import { Hono } from 'hono';
 import { stream } from 'hono/streaming';
-import { createReadStream, existsSync, mkdirSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import { createReadStream, existsSync, mkdirSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import type Database from 'better-sqlite3';
 import type { CreateVaultRequest } from '@molio/contracts';
@@ -32,11 +32,12 @@ import {
   validateVaultPath,
   renamePath,
   ensureVaultDir,
-  searchFiles,
   importFiles,
   isInsideProtected,
+  listPublishableTopDirs,
   type ImportResult,
 } from '../core/knowledge.js';
+import { searchVaultFiles, indexVaultFile, removeVaultFile, removeVaultDir, ensureVaultIndexed, hasInflightBuild } from '../core/vault-search.js';
 import { annotateTreeStatus } from '../core/wiki-status.js';
 import { VAULT_TREE_CHANGED_EVENT, type VaultWatcher } from '../core/vault-watcher.js';
 import type { RunManager } from '../core/RunManager.js';
@@ -167,15 +168,7 @@ export function knowledgeRoutes(
       return c.json({ error: { code: 'NOT_FOUND', message: 'Vault not found' } }, 404);
     }
     try {
-      const dirs: string[] = [];
-      for (const entry of readdirSync(vault.path, { withFileTypes: true })) {
-        if (!entry.isDirectory()) continue;
-        // 隐藏目录排除，但 .molio 显式放行
-        if (entry.name.startsWith('.') && entry.name !== '.molio') continue;
-        dirs.push(entry.name);
-      }
-      dirs.sort();
-      return c.json({ dirs });
+      return c.json({ dirs: listPublishableTopDirs(vault.path) });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to scan vault';
       return c.json({ error: { code: 'INTERNAL', message } }, 500);
@@ -260,6 +253,8 @@ export function knowledgeRoutes(
     try {
       const body = await c.req.json<{ content: string }>();
       writeFile(vault.path, relPath, body.content);
+      // 检索 P0 层1：经 Molio API 的写入即时更新索引（不等 watcher/sweep）
+      indexVaultFile(db, vault.id, vault.path, relPath);
       addKbHistory(db, vault.id, 'edit', `File "${relPath}" saved`);
       return c.json({ ok: true });
     } catch (err) {
@@ -285,6 +280,7 @@ export function knowledgeRoutes(
 
     try {
       await deleteFile(vault.path, relPath);
+      removeVaultFile(db, vault.id, relPath);
       addKbHistory(db, vault.id, 'edit', `File "${relPath}" deleted`);
       return c.body(null, 204);
     } catch (err) {
@@ -320,7 +316,25 @@ export function knowledgeRoutes(
       if (isInsideProtected(body.newPath)) {
         return c.json({ error: { code: 'BAD_REQUEST', message: `Cannot move files into protected directory: ${body.newPath}` } }, 400);
       }
+      // renamePath 同时服务文件与目录——先判源类型再改名（改名后源路径即消失）。
+      const oldAbs = path.resolve(path.join(vault.path, relPath));
+      const wasDir = existsSync(oldAbs) && statSync(oldAbs).isDirectory();
       renamePath(vault.path, relPath, body.newPath);
+      if (wasDir) {
+        // 目录改名/移动：清旧子树索引 + 重建（新子树路径全变，需重新索引）。
+        // 构建走单行道（ensureVaultIndexed）而不是裸 reindexVault：同一 vault 同时
+        // 只允许一次 walk。直接并发 walk 的话，先启动的那个构建收尾时会把它没走到的
+        // 路径当「已删除」清掉——包括这次刚索引的新路径（静默漏结果）。
+        // 先等在跑的收工（它可能经过了改名前的位置，未必看得到新树），再由这次
+        // ——起点在改名之后——重建。
+        removeVaultDir(db, vault.id, relPath);
+        await hasInflightBuild(db, vault.id);
+        await ensureVaultIndexed(db, vault.id, vault.path);
+      } else {
+        // 先清旧路径再索引新路径——否则旧路径残留幽灵命中
+        removeVaultFile(db, vault.id, relPath);
+        indexVaultFile(db, vault.id, vault.path, body.newPath);
+      }
       addKbHistory(db, vault.id, 'edit', `Renamed "${relPath}" → "${body.newPath}"`);
       return c.json({ ok: true });
     } catch (err) {
@@ -347,7 +361,13 @@ export function knowledgeRoutes(
     }
 
     try {
-      const absPath = resolveFilePath(vault.path, relPath);
+      // Match text-file resolution so bare ![[image.png]] embeds can find
+      // nested attachments. The canonical resolver also checks vault bounds.
+      const canonical = resolveCanonicalPath(vault.path, relPath);
+      if (!canonical) {
+        return c.json({ error: { code: 'NOT_FOUND', message: `File not found: ${relPath}` } }, 404);
+      }
+      const absPath = resolveFilePath(vault.path, canonical);
       const ext = path.extname(absPath).toLowerCase();
       const mime = RAW_MIME[ext] ?? 'application/octet-stream';
       const stat = statSync(absPath);
@@ -569,6 +589,10 @@ export function knowledgeRoutes(
 
       const result = importFiles(vault.path, fileEntries, targetDir, conflict);
       result.errors = [...perFileErrors, ...result.errors];
+      // 导入的每个落盘文件（含改名后的）即时入索引
+      for (const p of [...result.imported, ...result.renamed.map((r) => r.to)]) {
+        indexVaultFile(db, vault.id, vault.path, p);
+      }
 
       // If conflict: "ask" and conflicts were found, return 409
       if (result.conflicts && result.conflicts.length > 0) {
@@ -622,6 +646,7 @@ export function knowledgeRoutes(
 
     try {
       await deleteDirectory(vault.path, relPath);
+      removeVaultDir(db, vault.id, relPath);
       addKbHistory(db, vault.id, 'edit', `Directory "${relPath}" deleted`);
       return c.body(null, 204);
     } catch (err) {
@@ -664,7 +689,7 @@ export function knowledgeRoutes(
   });
 
   // GET /api/knowledge/vaults/:id/search — 全文搜索
-  app.get('/vaults/:id/search', (c) => {
+  app.get('/vaults/:id/search', async (c) => {
     const vault = getVault(db, c.req.param('id'));
     if (!vault) {
       return c.json({ error: { code: 'NOT_FOUND', message: 'Vault not found' } }, 404);
@@ -680,7 +705,7 @@ export function knowledgeRoutes(
       : Math.min(rawLimit, 100);
 
     try {
-      const { results, truncated } = searchFiles(vault.path, q, limit);
+      const { results, truncated } = await searchVaultFiles(db, vault.id, vault.path, q, limit);
       return c.json({ results, truncated });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to search vault';

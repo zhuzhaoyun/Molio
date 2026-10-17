@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { clickNav } from './helpers/navigation';
+import { gotoChatSpa, clickNav } from './helpers/navigation';
 import { createTempVault, cleanupTempVault, type TempVault } from './helpers/cleanup';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -26,10 +26,19 @@ test.describe('Graph as tab', () => {
   test.afterAll(async () => { if (vault) await cleanupTempVault(vault); });
 
   test('NavRail 图谱 opens a graph tab in the KB workspace', async ({ page }) => {
+    // Hold vault resolution until after the click: the graph intent must survive
+    // opening the page before its per-vault tab store has been created.
+    let release!: () => void;
+    const pending = new Promise<void>(resolve => { release = resolve; });
+    await page.route('**/api/knowledge/vaults', async route => {
+      await pending;
+      await route.continue();
+    });
     await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 10_000 });
 
     await clickNav(page, 'graph');
+    release();
 
     // 图谱标签被打开并激活 → 图谱 pane 渲染（graph-open 才挂载 GraphPage）
     await expect(page.locator('.graph-page')).toBeVisible({ timeout: 10_000 });
@@ -117,7 +126,7 @@ test.describe('Graph as tab', () => {
 
     // 切主页触发 KB 页卸载 → engine.destroy() → 炸弹在 Pixi 纹理归还路径引爆。
     // 回归要求：异常被引擎吞掉（不得逃逸成 pageerror），应用整体存活、主页正常渲染。
-    await clickNav(page, 'home');
+    await gotoChatSpa(page);
     await expect(page.locator('.home-landing')).toBeVisible({ timeout: 10_000 });
     expect(pageErrors.filter((e) => e.includes("reading 'push'"))).toHaveLength(0);
   });

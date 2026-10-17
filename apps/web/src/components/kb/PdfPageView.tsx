@@ -110,7 +110,7 @@ export const PdfPageView = forwardRef<HTMLDivElement, PdfPageViewProps>(
           renderTask = task;
           await task.promise;
         } catch (err) {
-          if (!cancelled) console.error(`[PdfViewer] page ${pageNum} render failed`, err);
+          if (!cancelled) console.warn(`[PdfViewer] page ${pageNum} render failed`, err);
         }
       })();
 
@@ -153,7 +153,7 @@ export const PdfPageView = forwardRef<HTMLDivElement, PdfPageViewProps>(
           itemsRef.current = textContent.items as TextItemLike[];
           applyHighlights();
         } catch (err) {
-          if (!cancelled) console.error(`[PdfViewer] page ${pageNum} text layer failed`, err);
+          if (!cancelled) console.warn(`[PdfViewer] page ${pageNum} text layer failed`, err);
         }
       })();
 

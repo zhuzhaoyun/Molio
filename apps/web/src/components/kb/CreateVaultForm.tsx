@@ -69,10 +69,10 @@ export function CreateVaultForm({ onCreate, onCancel, isLoading }: CreateVaultFo
       <button className="vm-back-btn" onClick={onCancel}>
         ← 返回
       </button>
-      <h2 className="vm-create-title">创建本地仓库</h2>
+      <h2 className="vm-create-title">创建知识库</h2>
 
       <div className="vm-form-group">
-        <label className="vm-form-label">仓库名称</label>
+        <label className="vm-form-label">知识库名称</label>
         <input
           className="vm-form-input"
           type="text"
@@ -84,12 +84,12 @@ export function CreateVaultForm({ onCreate, onCancel, isLoading }: CreateVaultFo
       </div>
 
       <div className="vm-form-group">
-        <label className="vm-form-label">仓库位置</label>
+        <label className="vm-form-label">知识库位置</label>
         <div className="vm-form-row">
           <input
             className="vm-form-input"
             type="text"
-            placeholder={isDesktop ? '指定新仓库的存放位置' : '挂载进容器的路径，例如 /vaults/笔记'}
+            placeholder={isDesktop ? '指定新知识库的存放位置' : '挂载进容器的路径，例如 /vaults/笔记'}
             value={vaultPath}
             onChange={(e) => setVaultPath(e.target.value)}
             onKeyDown={handleKeyDown}
@@ -111,7 +111,7 @@ export function CreateVaultForm({ onCreate, onCancel, isLoading }: CreateVaultFo
         <input
           className="vm-form-input"
           type="text"
-          placeholder="简短描述这个仓库"
+          placeholder="简短描述这个知识库"
           value={description}
           onChange={(e) => setDescription(e.target.value)}
           onKeyDown={handleKeyDown}

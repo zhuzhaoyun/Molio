@@ -1,5 +1,5 @@
 import { useMemo, useCallback } from 'react';
-import type { ChatMessage } from '../hooks/useChat';
+import type { ChatMessage } from '../hooks/useChatCore';
 import { renderMarkdown, splitContent } from '../utils/markdown';
 import { groupTools, isInteractive } from '../utils/toolGroups';
 import { splitMessageParts } from '../utils/messageText';
