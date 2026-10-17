@@ -267,12 +267,10 @@ test.describe('Resources login gate', () => {
     }
     await page.locator('[data-testid="account-code-input"]').fill(body.devCode as string);
     await page.locator('[data-testid="account-verify-btn"]').click();
-    await expect(page.locator('[data-testid="account-logged-email"]')).toHaveText(email, {
-      timeout: 10_000,
-    });
-    // 账号模块页面化：登录成功 → 弹窗自动收起并导航 /me；回资源页断言按钮文案
-    await expect(page).toHaveURL(/\/me$/);
-    await clickNav(page, 'resources');
+    // 登录成功 → 弹窗收起并直接落在资源页（登录后默认落地页），无需再点 nav 回资源页
+    await expect(page.locator('[data-testid="nav-account-btn"]')).toHaveClass(/is-logged-in/);
+    await expect(page.locator('.account-modal')).not.toBeVisible();
+    await expect(page).toHaveURL(/\/resources$/);
     await expect(page.locator('.resources-shell')).toBeVisible();
 
     // 登录后文案回归正常（未登录前缀消失）。不点击——点击会向真实支付后端下单。

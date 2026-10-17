@@ -19,7 +19,7 @@
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import * as os from 'node:os';
+import { molioDataDir, runtimeHome } from '../data-dir.js';
 import { parse, stringify } from 'smol-toml';
 import {
   CODEX_PROVIDER_PRESETS,
@@ -42,7 +42,7 @@ export interface CodexProviderState {
 export class CodexConfigError extends Error {}
 
 function codexDirOrDefault(codexDir?: string): string {
-  return codexDir ?? path.join(os.homedir(), '.codex');
+  return codexDir ?? runtimeHome('codex');
 }
 
 const configTomlPath = (dir: string): string => path.join(dir, 'config.toml');
@@ -115,7 +115,7 @@ export interface ApplyCodexProviderOpts {
 }
 
 function defaultBackupDir(): string {
-  return path.join(os.homedir(), '.molio', 'backups', 'codex');
+  return path.join(molioDataDir(), 'backups', 'codex');
 }
 
 /* ── atomic writes ── */

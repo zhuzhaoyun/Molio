@@ -16,19 +16,43 @@ export interface HistoryFilters {
 const STALE_MS = 30_000;
 const PAGE_SIZE = 50;
 
+/**
+ * 跨挂载共享的列表快照（模块级 —— 与 kbChatSessionsStore 等同一做法）。
+ *
+ * 为什么必须在模块级：历史页离开路由就**卸载**，而 useRef 级的缓存跟着组件实例走 ——
+ * 「切走再回来」于是必定重新请求、并从空列表重渲染。全屏态 ⇄ 悬浮面板的切换把这条往返
+ * 变成了日常动作，而那个重挂载恰好撞在过渡收尾处：既占住主线程掉帧，也让用户看到
+ * 「历史页刷新了」。放到模块级后，返回时直接命中缓存 —— 文档里早就写的
+ * 「30s 缓存、跨页切换不重复请求」终于真的成立。
+ *
+ * 一致性由唯一写入点保证：所有列表变更（取数 / 翻页 / 删除 / 重命名 / 置顶）都汇流经
+ * `syncRef`，缓存写在那里，因此它永远等于界面 —— 不会残留已删除的行。
+ */
+let cachedAt = 0;
+let cachedPinned: ConversationHistoryItem[] = [];
+let cachedItems: ConversationHistoryItem[] = [];
+let cachedNextCursor: number | null = null;
+
 export function useHistoryFilters(currentVaultId?: string | null) {
   const [filters, setFilters] = useState<HistoryFilters>(() => ({
     vaultFilter: initialVaultFilter(currentVaultId ?? null),
     query: '',
   }));
-  const [pinnedItems, setPinnedItems] = useState<ConversationHistoryItem[]>([]);
-  const [items, setItems] = useState<ConversationHistoryItem[]>([]);
+  // 挂载时判定一次：缓存是否新鲜（后续变化由 syncRef 维护，不需要跟着重算）。
+  const cacheUsable = useRef(cachedAt > 0 && Date.now() - cachedAt < STALE_MS).current;
+  const [pinnedItems, setPinnedItems] = useState<ConversationHistoryItem[]>(
+    () => (cacheUsable ? cachedPinned : []),
+  );
+  const [items, setItems] = useState<ConversationHistoryItem[]>(() => (cacheUsable ? cachedItems : []));
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [nextCursor, setNextCursor] = useState<number | null>(null);
+  const [nextCursor, setNextCursor] = useState<number | null>(
+    () => (cacheUsable ? cachedNextCursor : null),
+  );
 
   const reqToken = useRef(0);
-  const lastFetchAt = useRef(0);
+  // 命中缓存即视为「刚取过」→ 挂载 effect 不再重复请求。
+  const lastFetchAt = useRef(cacheUsable ? cachedAt : 0);
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const filtersRef = useRef(filters);
   filtersRef.current = filters;
@@ -53,6 +77,7 @@ export function useHistoryFilters(currentVaultId?: string | null) {
       setItems(page.items);
       syncRef(nextPinned, page.items);
       setNextCursor(page.nextCursor);
+      cachedNextCursor = page.nextCursor;
       lastFetchAt.current = Date.now();
     } catch (err) {
       if (token !== reqToken.current) return;
@@ -79,6 +104,7 @@ export function useHistoryFilters(currentVaultId?: string | null) {
         return next;
       });
       setNextCursor(page.nextCursor);
+      cachedNextCursor = page.nextCursor;
       lastFetchAt.current = Date.now();
     } catch (err) {
       if (token !== reqToken.current) return;
@@ -146,6 +172,10 @@ export function useHistoryFilters(currentVaultId?: string | null) {
   // 两个独立的 setState 闭包各自看到过期 state，会互相覆盖对方的搬移结果。
   const stateRef = useRef<{ pinned: ConversationHistoryItem[]; items: ConversationHistoryItem[] }>({ pinned: [], items: [] });
   const syncRef = (pinned: ConversationHistoryItem[], items: ConversationHistoryItem[]) => {
+    // 模块级缓存与界面同源：所有列表变更都从这里过，所以缓存不会残留已删除/已改名的行。
+    cachedPinned = pinned;
+    cachedItems = items;
+    cachedAt = Date.now();
     stateRef.current = { pinned, items };
   };
   const mergeSorted = (arr: ConversationHistoryItem[], item: ConversationHistoryItem): ConversationHistoryItem[] => {

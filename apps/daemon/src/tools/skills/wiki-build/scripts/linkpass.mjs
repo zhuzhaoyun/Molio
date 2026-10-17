@@ -65,6 +65,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { cleanAliasToken } from './lib/cli.mjs';
+import { collectPageEntries } from './lib/vault.mjs';
 import { residueRe, frontmatterEnd, overlaps, protectedIntervals } from './lib/linktext.mjs';
 
 // Navigational pages are link targets of last resort, not prose vocabulary —
@@ -112,24 +113,6 @@ function parseArgs(argv) {
   return opts;
 }
 
-function collectPages(vault) {
-  const wikiDir = path.join(vault, 'wiki');
-  const pages = [];
-  if (!fs.existsSync(wikiDir)) return pages;
-  const walk = (dir, rel) => {
-    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
-      const abs = path.join(dir, e.name);
-      const rp = rel ? `${rel}/${e.name}` : e.name;
-      if (e.isDirectory()) walk(abs, rp);
-      else if (e.isFile() && e.name.endsWith('.md')) {
-        pages.push({ rel: rp, base: e.name.replace(/\.md$/i, '') });
-      }
-    }
-  };
-  walk(wikiDir, '');
-  return pages;
-}
-
 function main() {
   const opts = parseArgs(process.argv.slice(2));
   const vault = path.resolve(opts.vault);
@@ -138,7 +121,7 @@ function main() {
     process.exit(2);
   }
 
-  const pages = collectPages(vault);
+  const pages = collectPageEntries(vault);
   if (pages.length === 0) {
     process.stderr.write(JSON.stringify({ ok: true, editedFiles: 0, addedLinks: 0 }) + '\n');
     process.stdout.write('linkpass: no wiki pages found.\n');
@@ -227,6 +210,23 @@ function main() {
   let residueFixed = 0;
   let residueTruncated = 0;
   const perFile = [];
+
+  // Vault-side opt-in for the CJK guard's one remaining blind spot: a page name
+  // that is a PREFIX of a longer word. The both-sides-Han test only fires when
+  // Han is on BOTH sides, so `第六章 平面向量` / `精神，对数学` slip through and
+  // wrap [[平面]]向量 / [[对数]]学. A general fix needs a lexicon of Chinese
+  // function words; a particle list mis-fires on good links ([[平面]]内的点).
+  // So the vault lists the pairs it has actually been bitten by:
+  //   wiki/.linkpass-compounds.json   →   { "对数": ["学"], "平面": ["向"] }
+  // Extend it whenever a `[[X]]Y` mis-split is spotted (the收尾 scan in the
+  // wiki-build SKILL documents how to find them).
+  const compoundGuard = new Map();
+  try {
+    const raw = JSON.parse(fs.readFileSync(path.join(vault, 'wiki', '.linkpass-compounds.json'), 'utf-8'));
+    for (const [name, follow] of Object.entries(raw)) {
+      if (Array.isArray(follow) && follow.length) compoundGuard.set(name, new Set(follow));
+    }
+  } catch { /* no vault-side compound list — guard behaves exactly as before */ }
 
   for (const p of pages) {
     const baseLower = p.base.toLowerCase();
@@ -325,17 +325,30 @@ function main() {
     for (const lm of content.matchAll(/\[([^\]\n]*)\]\([^)\n]*\)/g)) {
       rememberLink(lm.index, lm[0].length, lm[1] ?? '');
     }
+    // Inline emphasis/code markers are as transparent as link syntax. A guard
+    // reading `**对数学` must see the character before 对 (in 精神对数学), not the
+    // `*`: reading the raw marker makes the CJK guard judge a word-initial page
+    // name to be a standalone mention and wrap it, producing `[[对数]]学` out of
+    // the word 对数学. Judging the rendered text is also what keeps the verdict
+    // stable across runs, since the markers do not move when links are inserted.
+    const MARKUP = /[*_~`]/;
     const prevChar = (s) => {
       if (prevDisplayChar.has(s)) return prevDisplayChar.get(s);
-      if (s <= 0) return '';
-      const cp = content.codePointAt(s - 1);
+      let i = s;
+      while (i > 0 && MARKUP.test(content[i - 1])) i -= 1;
+      if (prevDisplayChar.has(i)) return prevDisplayChar.get(i);
+      if (i <= 0) return '';
+      const cp = content.codePointAt(i - 1);
       // low surrogate → the real code point (ext-B Han etc.) starts one unit earlier
-      if (cp >= 0xdc00 && cp <= 0xdfff && s > 1) return String.fromCodePoint(content.codePointAt(s - 2));
+      if (cp >= 0xdc00 && cp <= 0xdfff && i > 1) return String.fromCodePoint(content.codePointAt(i - 2));
       return String.fromCodePoint(cp);
     };
     const nextChar = (e) => {
       if (nextDisplayChar.has(e)) return nextDisplayChar.get(e);
-      return e < content.length ? String.fromCodePoint(content.codePointAt(e)) : '';
+      let i = e;
+      while (i < content.length && MARKUP.test(content[i])) i += 1;
+      if (nextDisplayChar.has(i)) return nextDisplayChar.get(i);
+      return i < content.length ? String.fromCodePoint(content.codePointAt(i)) : '';
     };
 
     // Reject occurrences embedded in a larger Latin/ASCII word — `abi` inside
@@ -351,7 +364,16 @@ function main() {
     // idempotent.
     const cjkEmbedded = (s, e, surface) => {
       if ([...surface].length > CJK_GUARD_MAX || !HAN.test(surface)) return false;
-      return HAN.test(prevChar(s)) && HAN.test(nextChar(e));
+      const next = nextChar(e);
+      // A name that is a PREFIX of a longer word: the both-sides-Han test below
+      // misses it whenever the left neighbour is a space or punctuation, so
+      // 第六章 [[平面]]向量 and ，[[对数]]学 got wrapped out of 平面向量 / 对数学.
+      // The general fix would need a lexicon of Chinese function words, and a
+      // particle list mis-fires on perfectly good noun+particle links
+      // ([[平面]]内的点). So the vault names its own offenders instead.
+      const follows = compoundGuard.get(surface);
+      if (follows && follows.has(next)) return true;
+      return HAN.test(prevChar(s)) && HAN.test(next);
     };
 
     const edits = [];

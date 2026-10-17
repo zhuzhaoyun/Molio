@@ -74,6 +74,45 @@
   color: var(--text-soft);
   user-select: none;
 }
+/* ── 「其他写入」折叠区：库内脚本 / 数据 / 登记元文件（INDEX.md·log.md·hot.md），默认收起 ── */
+.session-output-others {
+  box-sizing: border-box;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  background-color: var(--bg-elevated);
+  padding: 2px 0 3px;
+  overflow: hidden;
+}
+.session-output-others-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 6px 12px;
+  border: none;
+  background-color: transparent;
+  font: inherit;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--text-soft);
+  cursor: pointer;
+  text-align: left;
+  user-select: none;
+  transition: color 0.15s ease;
+}
+.session-output-others-toggle:hover,
+.session-output-others-toggle:focus-visible {
+  color: var(--text-muted);
+}
+.session-output-others-chevron {
+  flex: none;
+  width: 1em;
+}
+.session-output-others-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .session-output-item {
   display: flex;
   align-items: center;
@@ -89,6 +128,11 @@
   cursor: pointer;
   text-align: left;
   transition: color 0.15s ease, background-color 0.15s ease;
+}
+/* 折叠区条目：比主列表更收敛（低一级的视觉权重） */
+.session-output-item.is-other {
+  color: var(--text-soft);
+  font-size: 11.5px;
 }
 /* 条目间发丝分隔线（与卡片边框区分「组 vs 项」两级） */
 .session-output-item + .session-output-item {
@@ -352,29 +396,9 @@ body.home-dock-resizing {
   font-variant-numeric: tabular-nums;
 }
 
-/* ── 概览统计条：新建 / 更新 / 追加（只显示非零项） ── */
-.session-output-statbar {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  padding: 10px 12px 2px;
-}
-.session-output-stat {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 4px;
-  padding: 1px 8px;
-  border-radius: 999px;
-  border: 1px solid var(--border-soft);
-  background-color: var(--bg-elevated);
-  font-size: 10.5px;
-  color: var(--text-faint);
-}
-.session-output-stat b {
-  font-weight: 600;
-  color: var(--text-muted);
-  font-variant-numeric: tabular-nums;
-}
+/* 概览顶部的「写入 N · M 轮」仍在 header 里（.session-output-stats）；
+   原来压在主列表上方的「新建 / 更新 / 追加」统计条已删 —— 它离清单太近，
+   被读成清单的标题（而清单里混着更新）。新建/更新改成分段标题各带计数。 */
 
 /* ── 变更 tab：按文件分组的改动序列 ── */
 .session-output-changes-group {

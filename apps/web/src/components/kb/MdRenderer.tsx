@@ -150,7 +150,10 @@ export const MdRenderer = memo(function MdRenderer({
       ensureMathJax()
         .then(doRender)
         .catch((err) => {
-          console.error('MathJax unavailable; formulas render as raw LaTeX:', err);
+          // console.warn 而非 error：本地优先应用离线时 CDN 加载必失败，公式已降级为
+          // 原始 LaTeX（预期行为）。ARMS 渲染端 consoleError 采集器会把 console.error
+          // 当异常上报，用 warn 避免每篇含公式的文档都产生一条无用异常。
+          console.warn('MathJax unavailable; formulas render as raw LaTeX:', err);
         });
     }
 
@@ -188,7 +191,7 @@ export const MdRenderer = memo(function MdRenderer({
         appendToThemeStyle(codeThemeCssRef.current);
       }
     }).catch((err) => {
-      console.error('Failed to apply theme:', err);
+      console.warn('Failed to apply theme:', err); // 预期降级，见上（不用 error 免上报噪音）
     });
   }, [themeConfig]);
 
@@ -212,7 +215,7 @@ export const MdRenderer = memo(function MdRenderer({
         appendToThemeStyle(css);
       })
       .catch((err) => {
-        if (!aborted) console.error('Failed to load code theme CSS:', err);
+        if (!aborted) console.warn('Failed to load code theme CSS:', err); // 预期降级（CDN/离线），见上
       });
 
     return () => {

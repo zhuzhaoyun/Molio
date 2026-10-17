@@ -62,7 +62,7 @@ export function VaultManagerModal({
         await onOpen(path);
         setView('list');
       } catch (err) {
-        setOpenError(err instanceof Error ? err.message : '打开仓库失败');
+        setOpenError(err instanceof Error ? err.message : '打开知识库失败');
       } finally {
         setCreating(false);
       }
@@ -113,7 +113,7 @@ export function VaultManagerModal({
 
   return (
     <div className="vm-overlay" onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="vm-modal">
+      <div className="vm-modal" data-testid="vault-manager-modal">
         {/* Left: Vault List */}
         <div className="vm-modal-left">
           <VaultList
@@ -150,7 +150,7 @@ export function VaultManagerModal({
       {/* Sits outside the modal box but inside the overlay so it stacks above it. */}
       <ConfirmDialog
         show={!!openError}
-        title="无法打开仓库"
+        title="无法打开知识库"
         message={openError ?? ''}
         confirmLabel="知道了"
         hideCancel
@@ -187,7 +187,7 @@ function OpenVaultForm({
       <button className="vm-back-btn" onClick={onCancel}>
         ← 返回
       </button>
-      <h2 className="vm-create-title">打开本地仓库</h2>
+      <h2 className="vm-create-title">打开知识库</h2>
 
       <div className="vm-form-group">
         <label className="vm-form-label">文件夹路径</label>

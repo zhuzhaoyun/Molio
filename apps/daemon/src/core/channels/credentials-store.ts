@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { molioDataDir } from '../data-dir.js';
 
 /**
  * Cross-channel credential file management.
@@ -16,7 +17,7 @@ import path from 'node:path';
 
 /** `~/.molio` — the config root shared by all channels. */
 export function configDir(): string {
-  return path.join(os.homedir(), '.molio');
+  return molioDataDir();
 }
 
 /** Default credentials file path for a channel: `~/.molio/<channel>-credentials.json`. */

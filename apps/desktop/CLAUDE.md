@@ -41,15 +41,13 @@ src/
   monitoring-sanitize.js  脱敏 + userId 注入纯函数（sanitizeBundle/injectUserId，可单测）
   crypto-server.js safeStorage 加密 HTTP 服务（用户模块 M4；127.0.0.1 随机端口，经 MOLIO_DESKTOP_CRYPTO_PORT 注入 daemon；每次启动新生共享密钥经 MOLIO_DESKTOP_CRYPTO_TOKEN 注入，encrypt/decrypt 校验 Bearer；safeStorage 经构造参数注入便于测试）
   auth-status-watch.js  轮询 daemon /api/auth/status（15s）维护 Molio userId，供 ARMS 注入
-  daemon-metrics.js     轮询 daemon /api/health 上报内存指标到 ARMS
-  polling-interval.js   轮询间隔 env 覆盖统一解析（resolvePollIntervalMs；负数/超短间隔防护，两轮询器共用）
+  polling-interval.js   轮询间隔 env 覆盖统一解析（resolvePollIntervalMs；负数/超短间隔防护）
   wiki-fetcher.js / wiki-fetcher-login.js  飞书 wiki 抓取隐藏窗口 + 本机 HTTP server（crypto-server 的先例）
 test/               测试用例 (node:test)，按源码模块子目录组织
   updater/         retry, updater-state-machine, updater-structure
   monitoring/      sanitize（含 injectUserId）
   crypto-server/   mock safeStorage + 真 http server（成功/503/400/413 矩阵）
   auth-status-watch/  mock fetch 驱动登录/登出/daemon 宕机状态转换
-  daemon-metrics/  mock fetch 轮询行为
   polling-interval/  env 间隔解析（负数/超短/非数字回落默认）
   logger.test.js
   daemon-startup.test.js
@@ -58,6 +56,7 @@ scripts/
   prepare-resources.mjs  构建时打包 daemon 和复制资源
   package.mjs            打包脚本
   fix-exe-metadata.mjs   修复 exe 元数据
+e2e/                Playwright Electron GUI E2E（打 win-unpacked 真包驱动；Windows only，每 spec 独占 app 生命周期 + 3100 端口，不进 PR 快检；nightly e2e.yml `desktop-e2e` job 运行，可 workflow_dispatch 手动触发）
 ```
 
 ### 用户模块 M4：token 加密 + ARMS userId（2026-08-11）

@@ -31,7 +31,9 @@ export function useProjects(): UseProjectsReturn {
         setActiveProject(list[0]!);
       }
     } catch (err) {
-      console.error('Failed to load projects:', err);
+      // warn 而非 error：daemon 冷启动竞态时拉取会失败，UI 有兜底态；用 error 会被
+      // ARMS 渲染端 consoleError 采集器当异常上报（无用噪音）。
+      console.warn('Failed to load projects:', err);
     }
   }, [activeProject]);
 
@@ -40,7 +42,7 @@ export function useProjects(): UseProjectsReturn {
       const list = await api.listConversations(projectId);
       setConversations(list);
     } catch (err) {
-      console.error('Failed to load conversations:', err);
+      console.warn('Failed to load conversations:', err);
     }
   }, []);
 

@@ -173,7 +173,7 @@ function PdfThumb({ doc, pageNum, current, onJump }: {
         task = t;
         await t.promise;
       } catch (err) {
-        if (!cancelled) console.error(`[PdfViewer] thumb ${pageNum} failed`, err);
+        if (!cancelled) console.warn(`[PdfViewer] thumb ${pageNum} failed`, err);
       }
     })();
     return () => { cancelled = true; task?.cancel(); };

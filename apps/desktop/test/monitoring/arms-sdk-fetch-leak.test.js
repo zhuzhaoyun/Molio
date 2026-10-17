@@ -32,7 +32,7 @@
  *    upstream regress to rethrowing?
  * 2. Upstream regression → pin back to 0.0.7 or re-introduce a pnpm patch
  *    (see git history: patches/@arms__rum-electron@0.0.5.patch, commit
- *    cf0ec08). dropFetchFailedNoise in monitoring-sanitize.js remains the
+ *    cf0ec08). dropNoiseEvents in monitoring-sanitize.js remains the
  *    runtime backstop either way.
  */
 

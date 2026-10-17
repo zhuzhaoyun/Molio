@@ -20,7 +20,7 @@
  */
 
 import { test, expect, type Page } from '@playwright/test';
-import { gotoHome } from './helpers/navigation';
+import { gotoHome, gotoChatSpa } from './helpers/navigation';
 
 const ACCOUNT_MODAL = '.account-modal';
 
@@ -54,15 +54,22 @@ async function sendCodeAndVerify(page: Page, email: string) {
   await expect(page.locator('[data-testid="account-notice"]')).toBeVisible();
   await page.locator('[data-testid="account-code-input"]').fill(body.devCode as string);
   await page.locator('[data-testid="account-verify-btn"]').click();
-  await expect(page.locator('[data-testid="account-logged-email"]')).toHaveText(email, {
-    timeout: 10_000,
-  });
+  // 登录成功（非登录意图）→ 弹窗收起并导航资源页（登录后默认落地页）
+  await expect(page.locator(ACCOUNT_MODAL)).not.toBeVisible();
+  await expect(page).toHaveURL(/\/resources$/);
 }
 
 async function loginViaUi(page: Page, email: string) {
   // 未登录打开面板即邮箱验证表单（无中间欢迎页），直接填码登录
   await openAccount(page);
   await sendCodeAndVerify(page, email);
+  // 下方用例断言的是「我的」页面（资料/已购）：已登录点账号入口进入 /me
+  await expect(page.locator('[data-testid="nav-account-btn"]')).toHaveClass(/is-logged-in/);
+  await page.locator('[data-testid="nav-account-btn"]').click();
+  await expect(page).toHaveURL(/\/me$/);
+  await expect(page.locator('[data-testid="account-logged-email"]')).toHaveText(email, {
+    timeout: 10_000,
+  });
 }
 
 test.describe('Account panel (always available)', () => {
@@ -154,7 +161,8 @@ test.describe('Login chain (requires configured daemon)', () => {
     const email = uniqueEmail('nick');
     await loginViaUi(page, email);
 
-    // 登录成功（非登录意图）→ 自动导航「我的」页面
+    // loginViaUi 末步已点账号入口进入 /me；此处断言登录落地页为资源页的逻辑
+    // 在 sendCodeAndVerify 内（URL /resources$）
     await expect(page).toHaveURL(/\/me$/);
     await expect(page.locator('[data-testid="me-page"]')).toBeVisible();
 
@@ -188,7 +196,11 @@ test.describe('Login chain (requires configured daemon)', () => {
     await expect(input).not.toBeVisible();
 
     // 离开再回到 /me 仍是新昵称（数据源 = daemon 本地 token/权益快照）
-    await page.locator('[data-view="home"]').click();
+    //
+    // 原先点导航栏的 home 项离开——首页撤出导航栏后那个按钮不存在了。改用
+    // gotoChatSpa（pushState + popstate）走真 SPA 导航：**不能用整页 goto**，
+    // 页面被整个换掉同样会让「/me 卸载」这条断言假通过。
+    await gotoChatSpa(page);
     await expect(page.locator('[data-testid="me-page"]')).not.toBeVisible();
     await page.locator('[data-testid="nav-account-btn"]').click();
     await expect(page.locator('[data-testid="account-nickname"]')).toHaveText('E2E 墨流君');

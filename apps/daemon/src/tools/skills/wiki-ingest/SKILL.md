@@ -1,7 +1,7 @@
 ---
 name: wiki-ingest
 description: 将源文件/资料增量导入（入库）到现有 wiki，使知识持续积累和演进。读取源文件，生成或更新 source 摘要页与实体/概念/对比等页面，建立交叉链接，检测矛盾，更新分层 INDEX/log/hot（旧单索引库首次入库时自动升级为分层索引）。支持显式文件路径、URL、或无显式目标时自动找最近 raw/wechat 暂存资料。Triggers on: 入库, 导入, 整理进知识库, 保存到知识库, 归档这个文件, ingest, add this to the wiki, process this source, 把这个文件加入 wiki, read and file this.
-version: 2.1.0
+version: 2.3.0
 ---
 
 # wiki-ingest: 增量导入（入库）
@@ -101,6 +101,8 @@ sources:
 - **无显式目标（如只说「入库」「整理进知识库」）**：找 `raw/wechat/YYYY-MM-DD/` 下最近一次新增的暂存资料（实体文件或 `.md`）作为导入目标。如果有多份或无法确定，先问用户确认，不要猜测。
 
 实体文件（PDF/图片等）本身就是暂存资料，直接读其内容做摘要，**不要再额外新建 `.md` 暂存文件**，也不要重命名或移动它。
+
+**含图资料（扫描版教材、PPT、带插图的 PDF）**：入库时图必须一起进来，不能只留文字。转换用 docling `--image-export-mode referenced`，再用 `media.mjs collect` 归置到 `wiki/images/<主名>/`，页面里用 `![[ ]]` 嵌入——完整流程和硬规范见 wiki-build SKILL.md「含图源文件（图版）处理」节。**缩短版三条**：只能 `![[ ]]` 不能 `![]( )`；只能写完整 vault 相对路径；caption 要 Read 图片看准了再写。收尾跑 `media.mjs check` 确认无悬空引用。
 
 ## 超长源文件处理
 

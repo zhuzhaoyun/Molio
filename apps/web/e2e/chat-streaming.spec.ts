@@ -282,4 +282,68 @@ test.describe('Chat — streaming details', () => {
     // Error text should appear in the message
     await expect(assistantMsg).toContainText('Something went wrong', { timeout: 5_000 });
   });
+
+  test('recovered tool failures keep the work-block header at 已完成 (✗ stays on the tool row)', async ({ page }) => {
+    // 回归（2026-10-10 用户报障「卡片显示执行出错，但任务是后台执行完了的」）：
+    // 旧判据把任意一次 tool_result isError 升级成整卡失败。agent 的工具失败却是正常工作流 ——
+    // patch 上下文不匹配 → 重读 → 重试成功；write_file 撞已存在文件 → 改用 patch。
+    // 现在卡片头只认 run 级 error（daemon 对 failed run 必发 error 事件），逐工具 ✗ 保留在工具行上。
+    await mockChatRun(page, {
+      script: [
+        { type: 'status', label: 'running' },
+        { type: 'tool_use', id: 'p1', name: 'Edit', input: { file_path: 'wiki/INDEX.md' } },
+        { type: 'tool_result', toolUseId: 'p1', content: '', isError: true },
+        { type: 'tool_use', id: 'r1', name: 'Read', input: { file_path: 'wiki/INDEX.md' } },
+        { type: 'tool_result', toolUseId: 'r1', content: '# INDEX', isError: false },
+        { type: 'tool_use', id: 'p2', name: 'Edit', input: { file_path: 'wiki/INDEX.md' } },
+        { type: 'tool_result', toolUseId: 'p2', content: '', isError: false },
+        { type: 'text_delta', delta: '索引已更新。' },
+        { type: 'turn_end', stopReason: 'end_turn' },
+        { type: 'usage', usage: { input_tokens: 300, output_tokens: 40 }, costUsd: 0.015 },
+      ],
+      frameDelay: 150,
+    });
+    await gotoHome(page);
+    await sendMessage(page, '更新 wiki 索引');
+
+    const summary = page.locator('[data-testid="work-timeline-summary"]');
+    await expect(summary).toBeVisible({ timeout: 10_000 });
+    await expect(summary).toContainText('已完成');
+    await expect(summary).not.toContainText('执行出错');
+    await expect(summary.locator('.work-block-summary-icon')).toHaveText('✓');
+    await expect(summary.locator('.work-block-summary-icon')).not.toHaveClass(/error/);
+
+    // 工具级失败信号没丢：三个不同名工具收进「批量操作」组，组头带失败计数，
+    // 展开后失败行仍是 ✗（error 态）、成功行是 ✓
+    await summary.click();
+    const batch = page.locator('[data-testid="tool-batch-group"]');
+    await expect(batch).toBeVisible();
+    await expect(batch.locator('.tool-group-label')).toContainText('1 失败');
+    await batch.locator('.tool-batch-row').click();
+    await expect(batch.locator('.tool-line-status.error')).toHaveCount(1);
+    await expect(batch.locator('.tool-line-status.done')).toHaveCount(2);
+  });
+
+  test('run-level error flips the work-block header to 执行出错 even when every tool succeeded', async ({ page }) => {
+    // 对照用例：卡片头认的是 run 结局。工具全绿但 run 以 error 收尾（ACP 超时 / prompt failed）
+    // → 仍必须显示「执行出错」，防止上一个用例的修复把真失败也一起吞掉。
+    await mockChatRun(page, {
+      script: [
+        { type: 'status', label: 'running' },
+        { type: 'tool_use', id: 'r1', name: 'Read', input: { file_path: 'wiki/INDEX.md' } },
+        { type: 'tool_result', toolUseId: 'r1', content: '# INDEX', isError: false },
+        { type: 'error', message: 'ACP idle timeout: session/prompt' },
+        { type: 'turn_end', stopReason: 'error' },
+      ],
+      frameDelay: 150,
+    });
+    await gotoHome(page);
+    await sendMessage(page, '更新 wiki 索引');
+
+    const summary = page.locator('[data-testid="work-timeline-summary"]');
+    await expect(summary).toBeVisible({ timeout: 10_000 });
+    await expect(summary).toContainText('执行出错');
+    await expect(summary.locator('.work-block-summary-icon')).toHaveText('✗');
+    await expect(summary.locator('.work-block-summary-icon.error')).toHaveCount(1);
+  });
 });
