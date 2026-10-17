@@ -38,11 +38,19 @@ test.describe('Chat — Hermes repair UX', () => {
     await gotoHome(page);
     await sendMessage(page, 'hi');
 
-    // While the repair phase is in progress, the spinner shows the latest
-    // progress message.
+    // While the repair phase is in progress, the spinner shows a progress line.
+    //
+    // 断言只钉「repairing 行出现了，且内容是 Hermes 安装进度」，**不钉具体第几帧**：
+    // 每帧只活一个 frameDelay 就被下一帧覆盖/被 text_delta 永久清掉，而 CI 负载下
+    // Node 定时器会成簇到期（150ms 的间隔被挤压成一簇），React 也会合并渲染——
+    // 中间帧可能**从未落到 DOM**。2026-10-13 CI 实测：只观察到第 1、2 帧，第 3 帧
+    // 「验证 Hermes 安装」始终没出现（call log 停在 "修复 Hermes 安装：安装
+    // agent-client-protocol..."），而页面快照显示整条 script 已经跑完、回复与
+    // usage 都已渲染——即流没有断，是断言窗口太窄。三帧文案都含「Hermes 安装」，
+    // 取交集才是稳定且仍然有意义的断言（钉住「repairing 行渲染成了安装进度」）。
     const status = page.locator('[data-testid="repairing-status"]');
     await expect(status).toBeVisible({ timeout: 5_000 });
-    await expect(status).toContainText('验证 Hermes 安装');
+    await expect(status).toContainText('Hermes 安装');
 
     // After text_delta arrives, the repair status is cleared — it's a
     // transient phase, not part of the saved message.

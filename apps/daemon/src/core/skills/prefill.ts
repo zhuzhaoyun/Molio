@@ -118,7 +118,7 @@ export async function prefillFromContent(
       }
       if (timer) clearTimeout(timer);
       if (runId) {
-        try { runManager.cancelRun(runId); } catch { /* ignore */ }
+        try { runManager.cancelRun(runId, 'skill-prefill:timeout'); } catch { /* ignore */ }
       }
       resolve(result);
     };
@@ -135,7 +135,7 @@ export async function prefillFromContent(
         // this prefill while createRun was still pending, the run is an orphan —
         // cancel it right away instead of leaking the agent process.
         if (settled) {
-          try { runManager.cancelRun(rid); } catch { /* ignore */ }
+          try { runManager.cancelRun(rid, 'skill-prefill:race'); } catch { /* ignore */ }
           return;
         }
         runId = rid;

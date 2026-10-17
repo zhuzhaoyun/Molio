@@ -1,6 +1,6 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import * as os from 'node:os';
+import { molioDataDir, runtimeHome } from './data-dir.js';
 
 /**
  * Compute config paths lazily so tests that override `process.env.USERPROFILE`
@@ -9,17 +9,16 @@ import * as os from 'node:os';
  * the test's beforeEach runs.
  */
 function configDir(): string {
-  // MOLIO_DATA_DIR（见 db.ts 同名钩子）：E2E 洁净数据目录——config.json 与
+  // MOLIO_DATA_DIR（见 core/data-dir.ts）：E2E 洁净数据目录——config.json 与
   // app.sqlite 同迁，测试读写 agent/provider 配置不再落到用户真实 ~/.molio。
   // claudeDir（~/.claude）刻意不跟随：读取真实 CC Switch 配置是功能语义。
-  if (process.env.MOLIO_DATA_DIR) return process.env.MOLIO_DATA_DIR;
-  return path.join(os.homedir(), '.molio');
+  return molioDataDir();
 }
 function configFile(): string {
   return path.join(configDir(), 'config.json');
 }
 function claudeDir(): string {
-  return path.join(os.homedir(), '.claude');
+  return runtimeHome('claude');
 }
 function claudeSettingsFile(): string {
   return path.join(claudeDir(), 'settings.json');
@@ -36,8 +35,13 @@ const CLAUDE_MANAGED_ENV_KEYS = new Set([
   'ANTHROPIC_MODEL',
 ]);
 
-/** 供应商选择元信息（不含密钥）。codex 专用：活文件在 ~/.codex/，这里只存 UI 默认选中。 */
-export interface CodexProviderMeta {
+/**
+ * 供应商选择元信息（不含密钥），codex / hermes 共用形状。活文件在各自原生
+ * 配置（~/.codex/、<hermes home>/config.yaml+.env），这里只存 UI 默认选中，
+ * 供 GET /:agentId/provider 在活文件无 provider 时回填 presetHint。
+ * `wireApi` 仅 codex 使用。
+ */
+export interface AgentProviderMeta {
   presetId?: string;
   baseUrl?: string;
   model?: string;
@@ -47,7 +51,7 @@ export interface CodexProviderMeta {
 export interface AgentConfig {
   binaryPath?: string;
   env?: Record<string, string>;
-  provider?: CodexProviderMeta;
+  provider?: AgentProviderMeta;
 }
 
 export interface WeixinConfig {

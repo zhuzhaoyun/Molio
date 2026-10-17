@@ -12,7 +12,7 @@
 
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { sanitizeString, sanitizeBundle, sanitizeViewName, sanitizeResourceName, injectUserId, dropFetchFailedNoise } from '../../src/monitoring-sanitize.js';
+import { sanitizeString, sanitizeBundle, sanitizeViewName, sanitizeResourceName, injectUserId, dropNoiseEvents } from '../../src/monitoring-sanitize.js';
 
 describe('sanitizeString', () => {
   it('redacts Windows absolute paths', () => {
@@ -192,7 +192,7 @@ describe('injectUserId', () => {
   });
 });
 
-describe('dropFetchFailedNoise', () => {
+describe('dropNoiseEvents', () => {
   // 构造 SDK exception collector 产生的「fetch failed」自报噪音事件。
   // 形态对齐 dist/index.mjs 里 errorHandle 构造的 EXCEPTION 事件。
   const noiseEvent = {
@@ -212,60 +212,106 @@ describe('dropFetchFailedNoise', () => {
 
   it('drops the SDK self-reported "fetch failed" exception event', () => {
     const real = { event_type: 'exception', type: 'error', source: 'unhandledRejection', name: 'ReferenceError', message: 'foo is not defined', stack: 'ReferenceError: foo is not defined\n at x.js:1:1' };
-    const out = dropFetchFailedNoise(mkBundle([{ ...noiseEvent }, real]));
+    const out = dropNoiseEvents(mkBundle([{ ...noiseEvent }, real]));
     assert.ok(out, 'bundle should survive when real events remain');
     assert.equal(out.events.length, 1);
     assert.equal(out.events[0].message, 'foo is not defined');
   });
 
   it('returns null when every event is noise (SDK skips falsy bundles)', () => {
-    const out = dropFetchFailedNoise(mkBundle([{ ...noiseEvent }, { ...noiseEvent }]));
+    const out = dropNoiseEvents(mkBundle([{ ...noiseEvent }, { ...noiseEvent }]));
     assert.equal(out, null);
   });
 
-  it('keeps renderer "Failed to fetch" (Chromium message differs, must not be dropped)', () => {
+  it('drops transport-level "Failed to fetch" (daemon unreachable — benign noise)', () => {
+    // 渲染端 fetch 到 localhost:3100 失败（daemon 冷启动竞态/宕机/退出中）→ 整条消息
+    // 就是 "Failed to fetch"，无 HTTP 状态码，属传输层噪音。
     const rendererEvent = { event_type: 'exception', type: 'error', source: 'unhandledrejection', name: 'TypeError', message: 'Failed to fetch', stack: 'TypeError: Failed to fetch' };
-    const out = dropFetchFailedNoise(mkBundle([rendererEvent]));
-    assert.ok(out, 'renderer fetch failure must NOT be filtered');
+    const out = dropNoiseEvents(mkBundle([rendererEvent]));
+    assert.equal(out, null, 'transport-level fetch failure is benign → whole bundle dropped');
+  });
+
+  it('KEEPS client.ts "Failed to fetch <res>: <status>" (real daemon 4xx/5xx, not transport noise)', () => {
+    // apps/web/src/api/client.ts 对非 2xx 抛 `Failed to fetch agents: 500`——带状态码，
+    // 是真实服务端错误，$ 锚定的传输层规则不得误伤。
+    const httpError = { event_type: 'exception', type: 'error', name: 'Error', message: 'Failed to fetch agents: 500', stack: 'Error: Failed to fetch agents: 500' };
+    const out = dropNoiseEvents(mkBundle([httpError]));
+    assert.ok(out, 'real HTTP error must NOT be filtered');
     assert.equal(out.events.length, 1);
+  });
+
+  it('drops Vite lazy-chunk load failures (stale hash after release)', () => {
+    const e = { event_type: 'exception', name: 'ChunkLoadError', message: 'Loading chunk 42 failed.' };
+    const cssE = { event_type: 'exception', name: 'Error', message: 'Loading CSS chunk 7 failed. (/assets/x.css)' };
+    assert.equal(dropNoiseEvents(mkBundle([e])), null);
+    assert.equal(dropNoiseEvents(mkBundle([cssE])), null);
+  });
+
+  it('drops ERR_CONNECTION_REFUSED / ECONNREFUSED (daemon not up yet)', () => {
+    const e = { event_type: 'exception', name: 'Error', message: 'connect ECONNREFUSED 127.0.0.1:3100' };
+    assert.equal(dropNoiseEvents(mkBundle([e])), null);
+  });
+
+  it('drops renderer benign-degradation exceptions (backstop for console.warn downgrade)', () => {
+    const cases = [
+      { event_type: 'exception', name: 'Error', message: 'MathJax unavailable; formulas render as raw LaTeX: Error: load failed' },
+      { event_type: 'exception', name: 'Error', message: 'Failed to load code theme CSS: TypeError' },
+      { event_type: 'exception', name: 'Error', message: 'Failed to load projects: Error' },
+    ];
+    for (const c of cases) {
+      assert.equal(dropNoiseEvents(mkBundle([c])), null, `should drop: ${c.message}`);
+    }
+  });
+
+  it('KEEPS genuine application errors', () => {
+    const genuine = [
+      { event_type: 'exception', name: 'TypeError', message: "Cannot read properties of undefined (reading 'map')" },
+      { event_type: 'exception', name: 'ReferenceError', message: 'foo is not defined' },
+      { event_type: 'exception', name: 'Error', message: '[app] render error caught by boundary' },
+    ];
+    for (const g of genuine) {
+      const out = dropNoiseEvents(mkBundle([g]));
+      assert.ok(out, `should keep: ${g.message}`);
+      assert.equal(out.events.length, 1);
+    }
   });
 
   it('keeps non-exception events even if message matches', () => {
     // api/resource 事件的 message 也可能出现 fetch failed（daemon 健康检查失败等），
     // 只过滤 exception 类型，避免误伤 API 监控数据。
     const apiEvent = { event_type: 'resource', type: 'api', url: '/api/health', message: 'fetch failed', success: 'failed' };
-    const out = dropFetchFailedNoise(mkBundle([apiEvent]));
+    const out = dropNoiseEvents(mkBundle([apiEvent]));
     assert.ok(out);
     assert.equal(out.events.length, 1);
   });
 
   it('returns bundle unchanged when there is no noise', () => {
     const b = mkBundle([{ event_type: 'view', name: '/' }]);
-    const out = dropFetchFailedNoise(b);
+    const out = dropNoiseEvents(b);
     assert.equal(out, b, 'same reference when nothing filtered');
   });
 
   it('passes through null / undefined / non-object / no events array', () => {
-    assert.equal(dropFetchFailedNoise(null), null);
-    assert.equal(dropFetchFailedNoise(undefined), undefined);
-    assert.equal(dropFetchFailedNoise(42), 42);
+    assert.equal(dropNoiseEvents(null), null);
+    assert.equal(dropNoiseEvents(undefined), undefined);
+    assert.equal(dropNoiseEvents(42), 42);
     const noEvents = { app: { id: 'x' } };
-    assert.equal(dropFetchFailedNoise(noEvents), noEvents);
+    assert.equal(dropNoiseEvents(noEvents), noEvents);
   });
 
   it('tolerates malformed entries inside events array', () => {
     // 过滤是保守的：只丢「精确匹配噪音特征」的事件，畸形条目原样保留。
-    const out = dropFetchFailedNoise(mkBundle([null, 'str', 42, { ...noiseEvent }]));
+    const out = dropNoiseEvents(mkBundle([null, 'str', 42, { ...noiseEvent }]));
     assert.deepEqual(out.events, [null, 'str', 42], 'junk preserved, only exact noise dropped');
-    const out2 = dropFetchFailedNoise(mkBundle([null, { ...noiseEvent }]));
+    const out2 = dropNoiseEvents(mkBundle([null, { ...noiseEvent }]));
     assert.equal(out2.events.length, 1, 'still not null while any non-noise entry remains');
   });
 
   it('composes with sanitizeBundle as wired in monitoring.js', () => {
-    // monitoring.js: beforeReport = (b) => sanitizeBundle(dropFetchFailedNoise(b))
-    const allNoise = sanitizeBundle(dropFetchFailedNoise(mkBundle([{ ...noiseEvent }])));
+    // monitoring.js: beforeReport = (b) => sanitizeBundle(dropNoiseEvents(b))
+    const allNoise = sanitizeBundle(dropNoiseEvents(mkBundle([{ ...noiseEvent }])));
     assert.equal(allNoise, null, 'all-noise bundle stays falsy after sanitize');
-    const mixed = sanitizeBundle(dropFetchFailedNoise(mkBundle([{ ...noiseEvent }, { event_type: 'exception', name: 'Error', message: 'leak D:/secret/x.md' }])));
+    const mixed = sanitizeBundle(dropNoiseEvents(mkBundle([{ ...noiseEvent }, { event_type: 'exception', name: 'Error', message: 'leak D:/secret/x.md' }])));
     assert.equal(mixed.events.length, 1);
     assert.ok(!JSON.stringify(mixed).includes('D:/secret'), 'sanitization still applied after filtering');
   });

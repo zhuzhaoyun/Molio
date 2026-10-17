@@ -6,6 +6,7 @@ import { loginIntentStore } from '../stores/loginIntentStore';
 import { useActiveVaultId } from '../stores/vaultStore';
 import { useGraphViewActive } from '../stores/graphViewStore';
 import { AccountModal } from './account/AccountModal';
+import { DEFAULT_ROUTE } from '../routes';
 
 export function NavRail() {
   const { t } = useI18n();
@@ -48,8 +49,8 @@ export function NavRail() {
   /**
    * 竞态兜底：整页加载后 authStore 快照未决（首拉 /api/auth/status 尚未落定）时
    * 点账号入口会误走「打开登录弹窗」分支。快照落定发现其实已登录 → 收起弹窗；
-   * 有挂起的登录意图则续接原动作（下载/发布门槛场景），否则导航 /me——
-   * 用户点击账号入口的意图就是进入「我的」。
+   * 有挂起的登录意图则续接原动作（下载/发布门槛场景），否则导航资源页——
+   * 与 onLoggedIn 登录成功后的默认落地页保持一致。
    */
   useEffect(() => {
     if (!accountOpen || auth?.loggedIn !== true) return;
@@ -58,39 +59,17 @@ export function NavRail() {
     setIntentOpen(false);
     setAccountOpen(false);
     if (resume) resume();
-    else navigate('/me');
+    else navigate('/resources');
   }, [accountOpen, auth?.loggedIn, navigate]);
 
   return (
     <>
     <nav className="entry-nav-rail">
       <div className="entry-nav-rail__group">
-        {/* Home — Create/Chat */}
+        {/* Knowledge Base — 排第一：它就是应用的落地页（入口 `/` 默认落到这里），
+            导航顺序与落地页一致，用户第一眼看到的就是第一项被选中。 */}
         <NavLink
-          to="/"
-          end
-          data-view="home"
-          className={({ isActive }) =>
-            `entry-nav-rail__btn ${isActive ? 'is-active' : ''}`
-          }
-          data-tooltip={t('nav.home')}
-        >
-          <svg
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
-            <polyline points="9 22 9 12 15 12 15 22" />
-          </svg>
-        </NavLink>
-
-        {/* Knowledge Base */}
-        <NavLink
-          to="/knowledge"
+          to={DEFAULT_ROUTE}
           data-view="knowledge"
           className={({ isActive }) =>
             `entry-nav-rail__btn ${isActive ? 'is-active' : ''}`
@@ -109,6 +88,10 @@ export function NavRail() {
             <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
           </svg>
         </NavLink>
+
+        {/* 原「首页」（整页对话）**不再占一个导航项**：`/` 直接落到知识库之后，
+            它既不是入口、也不再是一个需要并列陈列的目的地。页面本体仍在
+            `CHAT_ROUTE`（历史页回跳、深链、多窗口都用它），只是不再从导航栏可达。 */}
 
         {/* Graph View — opens the graph tab in the knowledge-base workspace */}
         <button
@@ -274,8 +257,9 @@ export function NavRail() {
           // 登录意图：把画面让给续接动作（如下载/发布向导自动打开），不抢导航
           resume();
         } else {
-          // 用户主动点账号按钮登录：登录的目的地就是「我的」页面
-          navigate('/me');
+          // 用户主动点账号按钮登录：登录成功统一落地资源页（默认目的地；
+          // 已登录再点账号入口才去「我的」）
+          navigate('/resources');
         }
       }}
     />

@@ -7,7 +7,7 @@
 
 <!-- SEO -->
 <title>图纸数据提取：为什么直接读 DWG 拿不到门窗表，从解析到导出 Excel 的完整链路</title>
-<meta name="description" content="图纸数据提取难在哪：DWG 解析读得到图元、图层与块，读不到工程语义。语义在制图约定里，不在文件里。这篇讲清 CAD 图纸数据提取导出 Excel 的完整链路：位图化的不可逆损失、解析与识别分链、表格识别与计算口径，兼答图纸为什么要矢量化和 AI 审图的边界。">
+<meta name="description" content="图纸数据提取难在哪：DWG 解析读得到图元、图层与块，读不到工程语义。语义在制图约定里，不在文件里。这篇讲清从图元到结构化数据的完整链路，位图化的不可逆损失、解析与识别分链、表格识别与计算口径，并说明买软件、找服务与看方法三者的区别。">
 <meta name="robots" content="index, follow">
 <link rel="canonical" href="https://molio.cn/blog/drawing-data-extraction.html">
 
@@ -21,7 +21,7 @@
 
 <!-- Open Graph -->
 <meta property="og:title" content="图纸数据提取：为什么直接读 DWG 拿不到门窗表，从解析到导出 Excel 的完整链路">
-<meta property="og:description" content="图纸数据提取难在哪：DWG 解析读得到图元、图层与块，读不到工程语义。语义在制图约定里，不在文件里。这篇讲清 CAD 图纸数据提取导出 Excel 的完整链路：位图化的不可逆损失、解析与识别分链、表格识别与计算口径，兼答图纸为什么要矢量化和 AI 审图的边界。">
+<meta property="og:description" content="图纸数据提取难在哪：DWG 解析读得到图元、图层与块，读不到工程语义。语义在制图约定里，不在文件里。这篇讲清从图元到结构化数据的完整链路，位图化的不可逆损失、解析与识别分链、表格识别与计算口径，并说明买软件、找服务与看方法三者的区别。">
 <meta property="og:type" content="article">
 <meta property="og:url" content="https://molio.cn/blog/drawing-data-extraction.html">
 <meta property="og:image" content="https://molio.cn/images/brand.png">
@@ -31,7 +31,7 @@
 <!-- Twitter -->
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="图纸数据提取：为什么直接读 DWG 拿不到门窗表，从解析到导出 Excel 的完整链路">
-<meta name="twitter:description" content="图纸数据提取难在哪：DWG 解析读得到图元、图层与块，读不到工程语义。语义在制图约定里，不在文件里。这篇讲清 CAD 图纸数据提取导出 Excel 的完整链路：位图化的不可逆损失、解析与识别分链、表格识别与计算口径，兼答图纸为什么要矢量化和 AI 审图的边界。">
+<meta name="twitter:description" content="图纸数据提取难在哪：DWG 解析读得到图元、图层与块，读不到工程语义。语义在制图约定里，不在文件里。这篇讲清从图元到结构化数据的完整链路，位图化的不可逆损失、解析与识别分链、表格识别与计算口径，并说明买软件、找服务与看方法三者的区别。">
 <meta name="twitter:image" content="https://molio.cn/images/brand.png">
 
 <!-- JSON-LD -->
@@ -42,7 +42,7 @@
     {
       "@type": "Article",
       "headline": "图纸数据提取：为什么直接读 DWG 拿不到门窗表，从解析到导出 Excel 的完整链路",
-      "description": "图纸数据提取难在哪：DWG 解析读得到图元、图层与块，读不到工程语义。语义在制图约定里，不在文件里。这篇讲清 CAD 图纸数据提取导出 Excel 的完整链路：位图化的不可逆损失、解析与识别分链、表格识别与计算口径，兼答图纸为什么要矢量化和 AI 审图的边界。",
+      "description": "图纸数据提取难在哪：DWG 解析读得到图元、图层与块，读不到工程语义。语义在制图约定里，不在文件里。这篇讲清从图元到结构化数据的完整链路，位图化的不可逆损失、解析与识别分链、表格识别与计算口径，并说明买软件、找服务与看方法三者的区别。",
       "url": "https://molio.cn/blog/drawing-data-extraction.html",
       "datePublished": "2026-09-23",
       "author": { "@type": "Organization", "name": "Molio" },
@@ -153,7 +153,12 @@
 <p>导出 Excel 前还有两件事不能省。一是每条数据带来源引用和置信度，低置信度进人工复核队列。没有出处的数据，签字的场合没人敢用。二是想清楚数据用途：如果它要支撑算量，书稿的论断是<strong>算量的核心是口径而非精度</strong>。梁柱相交处的归属、洞口扣减的面积下限、装饰面层算不算柱侧壁，在不同计量规范、地方定额与企业口径下答案不同，多数对量差异源于口径而非识别误差。把口径差异误判成精度问题，改进方向就错了。落地次序上，书稿建议按构件统计、土建主体量、装饰、机电、钢筋五个阶段推进。构件统计（门窗数量与规格、房间面积）结果可直接用、争议小，适合作为首个交付；钢筋构造规则最多，放在最后。</p>
 <h2>这条链路的知识散在几十份资料里，没人替你串</h2>
 <p>回看这条链：DXF 段结构和块机制在 CAD 二次开发的资料里；矢量化和识别方法在计算机视觉的资料里；表格对应关系和计算口径在造价资料里。每一环都有人讲，串起来的完整链路。从一个 DWG 文件到一条带来源、带置信度、口径明确的 Excel 记录，没有现成的地方可查。</p>
-<p>《AI 时代的工程图纸数据处理》做的就是这个串联：第 1 章讲为什么，第 2 章讲怎么做，第 3 章讲做什么，共 14 节正文，加术语表、制图规范与图例库、工程对象字典三份附录，八个核心论点贯穿全书。Molio（墨流）把这套书稿整理成了结构化的“工程图纸数字化应用”知识库，工程对象字典、判定规则、附录资产都拆成了可检索、可引用的条目。这套知识库已上线：<a href="https://molio.cn/resource/01M35QEB3RMK46SGCQ6WSZ3GZR.html">图纸数据提取：工程图纸数字化与 AI 识别技术全景</a>。给工程对象建统一字典，本质上是一次本体建模，字段与层级怎么定义可以看<a href="https://molio.cn/blog/ontology-modeling-guide.html">这篇</a>。</p>
+<p>《AI 时代的工程图纸数据处理》做的就是这个串联。它的实际结构是这样：</p>
+<table><thead><tr><th>部分</th><th>内容</th></tr></thead><tbody><tr><td><strong>第 1 章 为什么</strong></td><td>图纸数据概述、可计算化、主要障碍、AI 时代的 CAD 数据形态</td></tr><tr><td><strong>第 2 章 怎么做</strong></td><td>图纸数据阐述、解析技术、识别技术、业务数据识别、数据与模型工程</td></tr><tr><td><strong>第 3 章 做什么</strong></td><td>AI 数字化管理、智能助手、图纸智能体、AI 审查、AI 算量</td></tr><tr><td><strong>附录 A</strong></td><td>术语表</td></tr><tr><td><strong>附录 B</strong></td><td>制图规范与图例库</td></tr><tr><td><strong>附录 C</strong></td><td>工程对象字典</td></tr></tbody></table>
+<p>共 14 节正文加 3 份附录。第 1 章讲为什么，第 2 章讲怎么做，第 3 章讲做什么，八个核心论点贯穿全书。Molio（墨流）把这套书稿整理成了结构化的“工程图纸数字化应用”知识库。交付的是<strong>一个本地文件夹</strong>，里面的实际文件是这样：</p>
+<table><thead><tr><th>部分</th><th>页数</th><th>是什么</th></tr></thead><tbody><tr><td>书稿正文与附录</td><td>17</td><td>上面那 14 节正文 + 3 份附录，逐节成文</td></tr><tr><td>概念条目</td><td>73</td><td>标注、表格识别、AI 审查、AI 算量、大语言模型知识边界等，逐条成页并互相链接</td></tr><tr><td>源文件摘要</td><td>17</td><td>每份源各自一页摘要</td></tr><tr><td>实体条目</td><td>11</td><td>DWG、DXF、DGN、BIM、PDF、AECV-Bench、ODA Drawings SDK 等</td></tr><tr><td>对比</td><td>3</td><td>几组并列分析</td></tr><tr><td>总览</td><td>1</td><td>AI 图纸数据处理总览，从任何一页都能接上全局</td></tr></tbody></table>
+<p><strong>合计 131 个 Markdown 文件</strong>，工程对象字典、判定规则、附录资产都拆成了可检索、可引用的条目；放进自己的环境后，Claude Code、Codex 这类 Agent 可以直接读它。</p>
+<p>这套知识库已上线：<a href="https://molio.cn/resource/01M35QEB3RMK46SGCQ6WSZ3GZR.html">图纸数据提取：工程图纸数字化与 AI 识别技术全景</a>。给工程对象建统一字典，本质上是一次本体建模，字段与层级怎么定义可以看<a href="https://molio.cn/blog/ontology-modeling-guide.html">这篇</a>。</p>
 <p>还有一层要说破：软件解决共性，制图约定和口径解决不了共性。你单位的图层习惯、你项目采用的计量口径，只能你的团队自己定义。团队要基于这套知识做内部方案定制，可以从<a href="https://molio.cn/enterprise.html">企业定制</a>入口谈。</p>
 <h2>常见问题</h2>
 <h3>这套知识库具体交付什么？</h3>

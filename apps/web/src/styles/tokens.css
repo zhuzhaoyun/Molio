@@ -113,7 +113,16 @@
   color-scheme: light;
 }
 
-/* System mode: follow OS preference */
+/*
+ * System mode: follow OS preference.
+ *
+ * ⚠️ 这份调色板与上面的 [data-theme="dark"] 是同一份，必须逐条同步。曾经只同步到
+ * 中性色 + accent 就收手，漏掉了 green/blue/purple/red/amber 五组语义色 —— 用户选
+ * 「跟随系统」+ 深色系统时（默认设置，mac 上最常见的深色路径），--amber-bg 等会回落到
+ * :root 的浅色值，于是深色卡片上出现奶白色块：Star 引导条 hover 变成浅底 + 浅字
+ * （#eceae6 on #fdf5e8，对比度 1.11，字完全看不见）。同批受影响的还有红/绿/蓝/紫
+ * 底色的状态条、徽标与提示。改这份就照抄上面那份，别只改看得见的那几个。
+ */
 @media (prefers-color-scheme: dark) {
   html:not([data-theme]) {
     color-scheme: dark;
@@ -138,6 +147,21 @@
     --accent-soft: #3a2218;
     --accent-tint: #2e1a12;
     --accent-hover: #e8896a;
+
+    --green: #5cb87a;
+    --green-bg: #1a2e1f;
+    --green-border: #2a4a32;
+    --blue: #7a9aed;
+    --blue-bg: #1a2038;
+    --blue-border: #2a3658;
+    --purple: #b89ad8;
+    --purple-bg: #2a1a40;
+    --red: #e87872;
+    --red-bg: #3a1816;
+    --red-border: #582825;
+    --amber: #e0ac58;
+    --amber-bg: #3a2e16;
+    --amber-border: #4d3c1e;
 
     --shadow-xs: 0 1px 0 rgba(0, 0, 0, 0.2);
     --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.25), 0 1px 2px rgba(0, 0, 0, 0.15);

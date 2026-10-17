@@ -163,6 +163,10 @@ test('更新版本：zip 覆盖 + v1.1 + 效果图整组替换', async () => {
   assert.equal(after.version, 'v1.1');
   assert.equal(after.previews.length, 1);
   assert.match(after.previews[0]!, /-p1\.jpg$/);
+  // 回归（2026-10 落地页「版本变了、大小不变」）：首版 zip=1，升版 zip=2，
+  // fileSize 必须跟着新包走 —— 落地页/目录页读的就是这个字段。
+  assert.equal(after.fileSize, 2);
+  assert.equal((await svc.get(c.listingId)).fileSize, 2);
 });
 
 test('定价(§六)：管理员可设价，非管理员传值强制 0；付费下载 402 门禁', async () => {

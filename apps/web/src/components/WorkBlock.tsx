@@ -3,8 +3,9 @@
 // 运行中 = 当前动作 + 静态底条 + 思考 + 工具行 + meta（模型·时间）；完成后 = 折叠成摘要头 + meta，
 // 展开可看思考与工具行。旧的步骤列表（work-timeline-step）已删除 —— 工具行本身就地渲染，杜绝与时间线容余。
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
-import type { ChatMessage } from '../hooks/useChat';
+import type { ChatMessage } from '../hooks/useChatCore';
 import { deriveStepsForMessage } from '../utils/workSteps';
+import { isWorkBlockFailed } from '../utils/workOutcome';
 import { bucketSegmentsByDone, type MessageSegment } from '../utils/messageText';
 import { UNGROUPABLE, type ToolItem } from '../utils/toolGroups';
 import { useI18n } from '../i18n';
@@ -157,7 +158,10 @@ export function WorkBlock({ message, toolItems, processText, processSegments, is
   // 没有任何工作痕迹时整块不渲染（纯问答、无工具无思考）。
   if (!isRunning && !hasThinking && !hasTools) return null;
 
-  const hasError = !!message.error || (message.tools ?? []).some((tl) => tl.isError);
+  // 卡片头 = 这次回复（run）的结局。工具级失败由 agent 自行恢复（patch 不匹配→重读→重试、
+  // write_file 撞已存在文件→改用 patch），run 正常收尾时整卡不该翻成「执行出错」；逐工具 ✓/✗
+  // 仍在工具行上。判据与实测依据见 utils/workOutcome.ts。
+  const hasError = isWorkBlockFailed(message);
 
   // ── 耗时：运行中实时算，完成后用 finishedAt（消息创建时刻为起点） ──
   const elapsedMs = isRunning

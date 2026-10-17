@@ -211,18 +211,26 @@ describe('main.js: protocol launch should load app when daemon is not yet ready'
     // with a dead daemon, the window shows the static daemon-error page (not
     // the SPA), so molio:renderer-ready never fires and a queued navigation
     // was silently dropped — the clip saved but the file never opened.
-    // The fix: if rendererReady is false, loadURL the knowledge route
+    // The fix: if the renderer is not ready, loadURL the knowledge route
     // directly instead of queuing.
+    //
+    // "Not ready" now comes from renderer-readiness.js (isReady) instead of a
+    // raw Map lookup — same condition, but it no longer becomes false merely
+    // because the SPA changed route (clip-open-navigation.test.js).
     const navigatePos = mainJs.indexOf('function navigateFromProtocolUrl');
     assert.ok(navigatePos !== -1, 'navigateFromProtocolUrl must exist');
     const navigateBlock = mainJs.slice(navigatePos, navigatePos + 2000);
     assert.ok(
-      navigateBlock.includes('!state?.ready'),
-      'open-file navigation must fall back to loadURL when the renderer is not ready'
+      navigateBlock.includes('rendererStates.isReady('),
+      'open-file navigation must consult the readiness gate'
     );
     assert.ok(
-      /isWaitingForApp\(targetWin\)\s*\|\|\s*!state\?\.ready/.test(navigateBlock),
+      /isWaitingForApp\(targetWin\)\s*\|\|\s*!ready/.test(navigateBlock),
       'the loadURL fallback condition must cover both waiting-for-app and not-ready states'
+    );
+    assert.ok(
+      navigateBlock.includes('targetWin.loadURL(appUrl)'),
+      'the not-ready branch must still loadURL the knowledge route (daemon error page case)'
     );
   });
 });

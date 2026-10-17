@@ -1,6 +1,8 @@
 {
   "_comment": "Area → path globs + E2E spec mapping. Used by scripts/select-specs.mjs to pick affected specs from git diff.",
   "_priority_default": "P0 specs always run; P1 specs run only when their area is touched; P2 specs run only in nightly full.",
+  "_dependent_specs_note": "specs 列表要收「会被该 area 源码改动打红」的 spec，而不只是「属于该 area」的。NavRail 是被多个 area 的 spec 点击的公共依赖——auth.spec 点 [data-view=home]、market-community.spec 也点导航项——所以挂到 navigation 下，否则删一个导航按钮只有 navigation 自己的 spec 会跑。",
+  "_paths_note": "注册 spec 还只是半件事：同一个 spec 测的每个源文件都必须被某个 area 的 paths glob 罩住，否则「改那个文件」选不出任何 P1 spec（CI 的 impact-analysis 会打「No area matched」）。三种踩过的坏法都在 specs 侧或 paths 侧，area-map.test.ts 的守卫只覆盖 specs 侧契约——paths 侧没有机器校验，改完源码必须自己倒着验一次：node e2e/scripts/select-specs.mjs --diff <含该文件的一行 unified diff>（注意没有 --stdin 这个选项，传了会被静默忽略、退回按 git diff 算，看起来「跑了」其实没测到你喂的文件）。",
   "areas": {
     "chat": {
       "paths": [
@@ -15,13 +17,22 @@
         "apps/web/src/components/ThinkingBlock.*",
         "apps/web/src/components/ToolCard.*",
         "apps/web/src/components/ToolGroup.*",
-        "apps/web/src/components/ChatPane.*",
+        "apps/web/src/components/ChatSessionView.*",
         "apps/web/src/components/CodeBlock.*",
         "apps/web/src/components/SaveToKbButton.*",
         "apps/web/src/components/SaveAsSkillButton.*",
         "apps/web/src/stores/skillPrefillStore.*",
         "apps/web/src/components/icons.*",
         "apps/web/src/utils/markdown.*",
+        "apps/web/src/components/WorkBlock.*",
+        "apps/web/src/components/WorkCompleteBanner.*",
+        "apps/web/src/components/SessionOutputPanel.*",
+        "apps/web/src/components/SourceChips.*",
+        "apps/web/src/components/FileRef.*",
+        "apps/web/src/utils/workSteps.*",
+        "apps/web/src/utils/toolRefs.*",
+        "apps/web/src/utils/diff.*",
+        "apps/web/src/api/sse.ts",
         "apps/web/src/hooks/useChat*",
         "apps/web/src/hooks/useChatCore*",
         "apps/daemon/src/routes/runs.ts",
@@ -50,21 +61,29 @@
         "chat-repairing",
         "chat-timeout-fallback",
         "chat-work-visibility",
+        "chat-fullscreen",
         "file-ref-navigation",
         "model-switcher",
-        "composer-hints"
+        "composer-hints",
+        "chat-markdown",
+        "session-output",
+        "session-output-history"
       ]
     },
     "kb": {
       "paths": [
         "apps/web/src/components/kb/*",
         "apps/web/src/hooks/useKnowledge*",
+        "apps/web/src/utils/kbImage*",
         "apps/web/src/hooks/useKbTabs*",
         "apps/web/src/hooks/useScrollMemory*",
         "apps/web/src/stores/kbChatSessionsStore*",
         "apps/daemon/src/core/knowledge.ts",
         "apps/daemon/src/core/db.ts",
         "apps/daemon/src/routes/knowledge.ts",
+        "apps/daemon/src/core/vault-search.ts",
+        "apps/daemon/src/core/citations.ts",
+        "apps/daemon/src/routes/maintenance.ts",
         "apps/web/src/stores/splitViewStore*",
         "apps/web/src/hooks/useCompanionFile*",
         "apps/web/src/components/kb/CompanionHeader*"
@@ -75,11 +94,13 @@
         "kb-open-vault-error",
         "knowledge",
         "markdown-render",
+        "kb-images",
         "kb-tree-sort-locate",
         "kb-chat-entry",
         "kb-chat-sessions",
         "kb-qa-trigger",
         "file-chat-panel",
+        "floating-chat",
         "kb-tab-limit",
         "kb-tab-stale",
         "kb-scroll-memory",
@@ -90,7 +111,10 @@
         "kb-large-file-too-large",
         "pdf-preview",
         "chat-work-visibility",
-        "split-view"
+        "split-view",
+        "kb-terminology",
+        "kb-search",
+        "market-community"
       ]
     },
     "publish": {
@@ -138,7 +162,11 @@
       ],
       "specs": [
         "bootstrap",
-        "navigation"
+        "navigation",
+        "home-onboarding",
+        "default-landing",
+        "auth",
+        "market-community"
       ]
     },
     "settings": {
@@ -211,6 +239,7 @@
       "paths": [
         "apps/web/src/components/kb/KbFilePanel.*",
         "apps/web/src/components/kb/KbFileTree.*",
+        "apps/web/src/components/kb/KbMainContent.*",
         "apps/web/src/components/kb/KbModals.*",
         "apps/web/src/components/kb/ImportConflictDialog.*",
         "apps/web/src/components/kb/KnowledgeBasePage.*",
@@ -219,6 +248,8 @@
         "apps/daemon/src/core/knowledge.ts"
       ],
       "specs": [
+        "kb-import-entry",
+        "kb-terminology",
         "drag-drop-import",
         "kb-folder-ops",
         "kb-folder-drag-real",
@@ -295,6 +326,10 @@
       "priority": "P0",
       "file": "chat-codeblock.spec.ts"
     },
+    "chat-markdown": {
+      "priority": "P1",
+      "file": "chat-markdown.spec.ts"
+    },
     "chat-repairing": {
       "priority": "P1",
       "file": "chat-repairing.spec.ts"
@@ -343,6 +378,18 @@
       "priority": "P1",
       "file": "kb-tree-sort-locate.spec.ts"
     },
+    "kb-import-entry": {
+      "priority": "P0",
+      "file": "kb-import-entry.spec.ts"
+    },
+    "kb-terminology": {
+      "priority": "P1",
+      "file": "kb-terminology.spec.ts"
+    },
+    "kb-search": {
+      "priority": "P1",
+      "file": "kb-search.spec.ts"
+    },
     "kb-chat-entry": {
       "priority": "P1",
       "file": "kb-chat-entry.spec.ts"
@@ -358,6 +405,10 @@
     "file-chat-panel": {
       "priority": "P1",
       "file": "file-chat-panel.spec.ts"
+    },
+    "floating-chat": {
+      "priority": "P1",
+      "file": "floating-chat.spec.ts"
     },
     "kb-tab-limit": {
       "priority": "P0",
@@ -379,6 +430,10 @@
       "priority": "P0",
       "file": "kb-large-file.spec.ts"
     },
+    "home-onboarding": {
+      "priority": "P1",
+      "file": "home-onboarding.spec.ts"
+    },
     "kb-large-file-gbk": {
       "priority": "P0",
       "file": "kb-large-file-gbk.spec.ts"
@@ -395,9 +450,17 @@
       "priority": "P1",
       "file": "markdown-render.spec.ts"
     },
+    "kb-images": {
+      "priority": "P1",
+      "file": "kb-images.spec.ts"
+    },
     "navigation": {
       "priority": "P1",
       "file": "navigation.spec.ts"
+    },
+    "default-landing": {
+      "priority": "P1",
+      "file": "default-landing.spec.ts"
     },
     "resources": {
       "priority": "P1",
@@ -462,6 +525,46 @@
     "chat-work-visibility": {
       "priority": "P1",
       "file": "chat-work-visibility.spec.ts"
+    },
+    "session-output": {
+      "priority": "P1",
+      "file": "session-output.spec.ts"
+    },
+    "session-output-history": {
+      "priority": "P1",
+      "file": "session-output-history.spec.ts"
+    },
+    "chat-fullscreen": {
+      "priority": "P1",
+      "file": "chat-fullscreen.spec.ts"
+    },
+    "chat-continue": {
+      "priority": "P1",
+      "file": "chat-continue.spec.ts"
+    },
+    "chat-save-kb": {
+      "priority": "P1",
+      "file": "chat-save-kb.spec.ts"
+    },
+    "chat-timeout-fallback": {
+      "priority": "P1",
+      "file": "chat-timeout-fallback.spec.ts"
+    },
+    "composer-hints": {
+      "priority": "P1",
+      "file": "composer-hints.spec.ts"
+    },
+    "model-switcher": {
+      "priority": "P1",
+      "file": "model-switcher.spec.ts"
+    },
+    "kb-open-vault-error": {
+      "priority": "P1",
+      "file": "kb-open-vault-error.spec.ts"
+    },
+    "kb-vault-list-menu": {
+      "priority": "P1",
+      "file": "kb-vault-list-menu.spec.ts"
     }
   }
 }

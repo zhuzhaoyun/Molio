@@ -4,7 +4,8 @@
 // 发丝边框 pill + 品牌 terracotta 只在 hover/focus 兑现交互。
 import { useMemo } from 'react';
 import type { ToolEvent } from '../hooks/useChatCore';
-import { extractWrites } from '../utils/toolRefs';
+import { extractWrites, classifyWritePath, writeKey } from '../utils/toolRefs';
+import { useSessionWriteKinds, writeKindOf } from './SessionWriteKinds';
 import { isRevealAvailable, revealInFolder } from '../utils/reveal';
 import { useFileNavigation } from '../hooks/useFileNavigation';
 import { useActiveVault } from '../stores/vaultStore';
@@ -17,13 +18,21 @@ interface Props {
 
 export function WorkCompleteBanner({ tools }: Props) {
   const { t } = useI18n();
-  const writes = useMemo(() => extractWrites(tools), [tools]);
   const activeVault = useActiveVault();
   const vaultId = activeVault?.id ?? null;
   const vaultPath = activeVault?.path ?? null;
+  // 与产出面板同一分层规则：横幅标题是「产出已写入知识库」，脚本 / 日志 / 库外写入
+  // 不是这份会话的产出，混进来就等于给用户两个点不通/找不到的按钮。
+  const writes = useMemo(
+    () => extractWrites(tools).filter((w) => classifyWritePath(writeKey(w.path, vaultPath ?? undefined)) === 'product'),
+    [tools, vaultPath],
+  );
   const { openFile } = useFileNavigation();
   // 「在资源管理器中显示」：仅桌面壳（window.__electron__）且选中 vault 时渲染
   const revealReady = isRevealAvailable() && !!vaultPath;
+  // 新建 / 更新来自会话级判据（与产出面板同一真值源）；少了这个上下文就判不出来，
+  // 此时不标图标 —— 宁可不说，也不要按工具名猜。
+  const kinds = useSessionWriteKinds();
 
   if (writes.length === 0) return null;
 
@@ -34,18 +43,21 @@ export function WorkCompleteBanner({ tools }: Props) {
         {t('complete.title')}
       </span>
       <div className="work-complete-files">
-        {writes.map((w) => (
+        {writes.map((w) => {
+          const kind = writeKindOf(kinds, w.path, vaultPath ?? undefined);
+          return (
           <span key={w.path} className="work-complete-file-wrap">
             <button
               type="button"
               className="work-complete-file"
               data-testid="work-complete-file"
+              data-kind={kind ?? ''}
               title={w.path}
               disabled={!vaultId}
               onClick={() => { if (vaultId) openFile(vaultId, w.path); }}
             >
               <span className="work-complete-file-icon" aria-hidden>
-                {w.kind === 'create' ? '＋' : '✎'}
+                {kind === 'create' ? '＋' : kind === 'update' ? '✎' : ''}
               </span>
               <span className="work-complete-file-label">{w.label}</span>
             </button>
@@ -62,7 +74,8 @@ export function WorkCompleteBanner({ tools }: Props) {
               </button>
             )}
           </span>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

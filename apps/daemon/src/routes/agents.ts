@@ -10,7 +10,16 @@ import {
   CodexConfigError,
   type ApplyCodexProviderOpts,
 } from '../core/runtimes/codex-config.js';
-import type { InstallEvent } from '@molio/contracts';
+import {
+  applyHermesProvider,
+  getHermesProviderState,
+  HermesConfigError,
+  type ApplyHermesProviderOpts,
+} from '../core/runtimes/hermes-config.js';
+import type { InstallEvent, ApiRetryInfo } from '@molio/contracts';
+
+/** Agent ids whose provider config Molio manages (native config files). */
+const PROVIDER_AGENTS = new Set(['codex', 'hermes']);
 
 export function agentsRoutes(runManager: RunManager): Hono {
   const app = new Hono();
@@ -18,7 +27,10 @@ export function agentsRoutes(runManager: RunManager): Hono {
   // GET / — list detected agents. Detection is async + TTL-cached + probed in
   // parallel (see RunManager.detectAgentsAsync): the old sync re-scan froze
   // the whole daemon event loop for seconds on every first-screen load.
+  // ?refresh=1 drops the TTL cache first, so the settings 「重新扫描」 button
+  // really re-probes instead of being handed the cached snapshot.
   app.get('/', async (c) => {
+    if (c.req.query('refresh') === '1') runManager.invalidateAgentCache();
     const agents = await runManager.detectAgentsAsync();
     return c.json({ agents });
   });
@@ -65,6 +77,12 @@ export function agentsRoutes(runManager: RunManager): Hono {
 
       let turnCompleted = false;
       let turnError: string | null = null;
+      // Last system/api_retry diagnostic (Claude Code retries failed API calls
+      // with exponential backoff for minutes). Included in the timeout error
+      // so "Test timed out" alone doesn't hide an ongoing 429/5xx retry storm.
+      // 401/403 never reach here — the stream handler fails fast on those.
+      // Holder object: TS CFA narrows closure-assigned `let`s to null/never.
+      const retryState: { last: ApiRetryInfo | null } = { last: null };
 
       const unsubscribe = runManager.onEvent(runId, (event) => {
         if (acpPromptTest) {
@@ -86,6 +104,8 @@ export function agentsRoutes(runManager: RunManager): Hono {
         } else if (event.type === 'error') {
           turnError = event.message;
           turnCompleted = true;
+        } else if (event.type === 'status' && event.label === 'retrying' && event.retry) {
+          retryState.last = event.retry;
         }
       });
 
@@ -94,7 +114,7 @@ export function agentsRoutes(runManager: RunManager): Hono {
       while (Date.now() < deadline) {
         if (turnCompleted) {
           unsubscribe?.();
-          runManager.cancelRun(runId);
+          runManager.cancelRun(runId, 'agent-test:done');
           const elapsed = Date.now() - startedAt;
           const ok = !turnError;
           return c.json({
@@ -123,9 +143,18 @@ export function agentsRoutes(runManager: RunManager): Hono {
 
       // Timeout — clean up
       unsubscribe?.();
-      runManager.cancelRun(runId);
+      runManager.cancelRun(runId, 'agent-test:timeout');
       const elapsed = Date.now() - startedAt;
-      return c.json({ ok: false, elapsed, error: `Test timed out after ${Math.round(timeoutMs / 1000)}s` }, 408);
+      // If the agent was stuck retrying API errors (429/5xx/network), say so —
+      // a bare "timed out" hides the real cause (observed: Claude Code retries
+      // with exponential backoff for minutes on a dead/expired provider).
+      const lastRetry = retryState.last;
+      const retryHint = lastRetry
+        ? ` (agent was retrying API errors — attempt ${lastRetry.attempt ?? '?'}/${lastRetry.maxRetries ?? '?'}`
+          + `${lastRetry.errorStatus ? `, HTTP ${lastRetry.errorStatus}` : ''}`
+          + `${lastRetry.error ? ` ${lastRetry.error}` : ''})`
+        : '';
+      return c.json({ ok: false, elapsed, error: `Test timed out after ${Math.round(timeoutMs / 1000)}s${retryHint}` }, 408);
     } catch (err) {
       const elapsed = Date.now() - startedAt;
       return c.json({
@@ -182,12 +211,27 @@ export function agentsRoutes(runManager: RunManager): Hono {
     });
   });
 
-  // GET /:agentId/provider — current Codex provider state (reads live ~/.codex files)
+  // GET /:agentId/provider — current provider state (reads live native config:
+  // ~/.codex for codex, <hermes home>/config.yaml+.env for hermes)
   app.get('/:agentId/provider', (c) => {
     const agentId = c.req.param('agentId');
-    if (agentId !== 'codex') {
-      return c.json({ error: 'Provider config is only supported for codex' }, 400);
+    if (!PROVIDER_AGENTS.has(agentId)) {
+      return c.json({ error: `Provider config is only supported for: ${[...PROVIDER_AGENTS].join(', ')}` }, 400);
     }
+
+    if (agentId === 'hermes') {
+      const state = getHermesProviderState();
+      // Nothing configured in live files → fall back to the last preset saved
+      // in Molio config so the UI shows the user's previous selection.
+      if (!state.provider && !state.baseUrl && !state.model) {
+        const saved = getAgentConfig('hermes').provider;
+        if (saved?.presetId) {
+          return c.json({ ...state, presetHint: saved.presetId });
+        }
+      }
+      return c.json(state);
+    }
+
     const state = getCodexProviderState();
     // No override in live files → fall back to last preset saved in Molio config
     if (state.presetHint === 'official' && !state.model && !state.baseUrl) {
@@ -199,23 +243,60 @@ export function agentsRoutes(runManager: RunManager): Hono {
     return c.json(state);
   });
 
-  // PUT /:agentId/provider — apply Codex provider config (writes ~/.codex files)
+  // PUT /:agentId/provider — apply provider config (writes native config files)
   app.put('/:agentId/provider', async (c) => {
     const agentId = c.req.param('agentId');
-    if (agentId !== 'codex') {
-      return c.json({ error: 'Provider config is only supported for codex' }, 400);
+    if (!PROVIDER_AGENTS.has(agentId)) {
+      return c.json({ error: `Provider config is only supported for: ${[...PROVIDER_AGENTS].join(', ')}` }, 400);
     }
-    let body: ApplyCodexProviderOpts;
+    let body: Record<string, unknown>;
     try {
-      body = await c.req.json<ApplyCodexProviderOpts>();
+      body = await c.req.json<Record<string, unknown>>();
     } catch {
       return c.json({ error: 'Invalid JSON body' }, 400);
     }
     if (!body || typeof body !== 'object') {
       return c.json({ error: 'Invalid JSON body' }, 400);
     }
+
+    if (agentId === 'hermes') {
+      const opts = body as unknown as ApplyHermesProviderOpts;
+      try {
+        applyHermesProvider(opts);
+      } catch (err) {
+        if (err instanceof HermesConfigError) {
+          return c.json({ error: err.message }, 400);
+        }
+        return c.json({ error: `Failed to apply provider config: ${(err as Error).message}` }, 500);
+      }
+      try {
+        const existing = getAgentConfig('hermes');
+        setAgentConfig('hermes', {
+          ...existing,
+          provider: {
+            presetId: opts.presetId,
+            baseUrl: opts.baseUrl,
+            model: opts.model,
+          },
+        });
+      } catch (err) {
+        return c.json(
+          { error: `Provider applied, but failed to persist selection: ${(err as Error).message}` },
+          500,
+        );
+      }
+      // Recycle the pooled warm hermes process (if any): it was spawned with
+      // the OLD config.yaml/.env, and hermes loads those at startup — keeping
+      // it alive would silently answer with the previous provider/credentials.
+      // The next run respawns via AcpPool.acquire. (acquire's fingerprint check
+      // is the fallback for hand-edited config that bypasses this route.)
+      runManager.drainAcpPool('hermes');
+      return c.json({ ok: true });
+    }
+
+    const opts = body as unknown as ApplyCodexProviderOpts;
     try {
-      applyCodexProvider(body);
+      applyCodexProvider(opts);
     } catch (err) {
       if (err instanceof CodexConfigError) {
         return c.json({ error: err.message }, 400);
@@ -231,10 +312,10 @@ export function agentsRoutes(runManager: RunManager): Hono {
       setAgentConfig('codex', {
         ...existing,
         provider: {
-          presetId: body.presetId,
-          baseUrl: body.baseUrl,
-          model: body.model,
-          wireApi: body.wireApi,
+          presetId: opts.presetId,
+          baseUrl: opts.baseUrl,
+          model: opts.model,
+          wireApi: opts.wireApi,
         },
       });
     } catch (err) {

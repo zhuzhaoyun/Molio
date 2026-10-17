@@ -7,6 +7,7 @@ import type Database from 'better-sqlite3';
 import { AuthCloudError, type AuthClient } from '../core/auth/auth-client.js';
 import { MarketClient, putToSignedUrl } from '../core/market/client.js';
 import { packVaultToZip } from '../core/market/packager.js';
+import { listPublishableTopDirs } from '../core/knowledge.js';
 import { denyCrossOrigin } from './auth.js';
 import type { MarketPublishSuggestion } from '@molio/contracts';
 import { suggestPublishMeta } from '../core/market/suggest.js';
@@ -15,8 +16,8 @@ import { suggestPublishMeta } from '../core/market/suggest.js';
 const MAX_MULTIPART_BYTES = 32 * 1024 * 1024;
 /** 单张效果图上限 */
 const MAX_PREVIEW_BYTES = 5 * 1024 * 1024;
-/** 打包后 zip 上限（与云端 confirm 实测口径一致的声明值约束） */
-const MAX_ZIP_BYTES = 50 * 1024 * 1024;
+/** 打包后 zip 上限（与云端 MOLIO_MARKET_MAX_ZIP_MB 保持一致的声明值约束；2026-10 50→200） */
+const MAX_ZIP_BYTES = 200 * 1024 * 1024;
 /** Plan 2 预留：管理员直传 zip 的 body 闸门（当前未启用） */
 export const MAX_ADMIN_DIRECT_ZIP_BYTES = 70 * 1024 * 1024;
 /** publish-suggest 的 JSON body 闸门（仅 vaultId 字段，64KB 已宽裕） */
@@ -275,6 +276,13 @@ export function marketRoutes(db: Database.Database, auth: AuthClient, opts: Mark
     try {
       let include: string[] | undefined;
       try { include = JSON.parse(parsed && typeof parsed['include'] === 'string' ? parsed['include'] : '[]') as string[]; } catch { /* ignore */ }
+      // 升版表单不显示目录选择、也就不传 include，语义是「整个 vault」。但打包器缺省
+      // 排除所有点目录，`.molio` 会因此被静默丢掉——故兜底为一级可发布目录，让它走
+      // explicitDir 豁免通道（与发布页 GET /vaults/:id/top-dirs 同一规则）。
+      // 读目录失败时不吞错：回落 undefined，交给 packVaultToZip 报它自己的 vault_not_found。
+      if (!include?.length) {
+        try { include = listPublishableTopDirs(vaultPath); } catch { include = undefined; }
+      }
       pack = await packVaultToZip(vaultPath, { maxBytes: MAX_ZIP_BYTES, include: include?.length ? include : undefined });
       const previews = previewFiles.length > 0 ? await checkPreviews(previewFiles) : []; // 不传 = 沿用旧图
       const upd = await client.update(

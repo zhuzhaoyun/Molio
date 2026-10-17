@@ -9,10 +9,11 @@ import Database from 'better-sqlite3';
 import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
+import { molioDataDir } from './data-dir.js';
 import { randomUUID } from 'node:crypto';
 import type { ChatMessage, Project, Conversation, ConversationHistoryItem, ConversationHistoryPage, ListHistoryQuery, Vault, KbHistoryEntry } from '@molio/contracts';
 
-type SqliteDb = Database.Database;
+export type SqliteDb = Database.Database;
 
 export const CHANNELS_PROJECT_ID = '__molio_channels__';
 export const DESKTOP_PROJECT_ID = '__molio_desktop__';
@@ -46,9 +47,9 @@ export function openDatabase(dataDir?: string): SqliteDb {
   // MOLIO_DATA_DIR：数据目录环境钩子（E2E 用洁净目录，避免与真实 ~/.molio
   // 共库——测试建删 vault 不再读写用户数据，也免去重型真实 vault 的同步扫描）。
   // 显式参数优先级最高。
-  if (!dataDir && !process.env.MOLIO_DATA_DIR) migrateLegacyDir();
+  if (!dataDir && !process.env['MOLIO_DATA_DIR']?.trim()) migrateLegacyDir();
 
-  const dir = dataDir ?? process.env.MOLIO_DATA_DIR ?? path.join(os.homedir(), '.molio');
+  const dir = dataDir ?? molioDataDir();
   const file = path.join(dir, 'app.sqlite');
 
   if (dbInstance && dbFile === file) return dbInstance;
@@ -273,6 +274,41 @@ function migrate(db: SqliteDb): void {
         VALUES (new.content, new.conversation_id, new.id);
     END;
   `);
+
+  // Vault 文件全文索引（检索 P0 层 1）。与 messages_fts 同款 trigram 分词：
+  // CJK 子串友好、免 jieba。mtime/size 记在影子表 vault_files_state（不在 fts
+  // 行里）——判「变没变」是索引器的事，查询只管 MATCH + bm25。无触发器：文件
+  // 在磁盘不在行内，更新入口在 core/vault-search.ts（写咽喉挂钩 + tree-changed
+  // 巡检 + 搜索时惰性校验）。灾难恢复：POST /api/maintenance/rebuild-vault-fts。
+  db.exec(`
+    CREATE VIRTUAL TABLE IF NOT EXISTS vault_files_fts USING fts5(
+      content, vault_id UNINDEXED, file_path UNINDEXED,
+      tokenize = 'trigram'
+    );
+    CREATE TABLE IF NOT EXISTS vault_files_state (
+      vault_id TEXT NOT NULL,
+      file_path TEXT NOT NULL,
+      mtime INTEGER NOT NULL,
+      size INTEGER NOT NULL,
+      PRIMARY KEY (vault_id, file_path)
+    );
+  `);
+
+  // rowid 配对约定迁移（约定见 core/vault-search.ts 头注释）：旧索引的 fts 行
+  // rowid 与 state 行没有配对关系，直接按 rowid 删会漏删/错删。旧数据不值得
+  // 逐行修复——丢弃旧 fts 表 + 清空 state，下次启动 sweep / 首搜触发全量重建
+  // （构建本身分片让位，期间 daemon 照常服务）。DROP 而非 DELETE：大 FTS 表
+  // 逐行删又是秒级全表扫描风暴，DROP 整表回收页面是管理操作，一次性成本可接受。
+  // 注意放在建表之后：全新库里 DELETE FROM vault_files_state 得表先存在。
+  if (!getKv(db, 'vault_fts_rowid_paired')) {
+    db.exec('DROP TABLE IF EXISTS vault_files_fts');
+    db.exec('DELETE FROM vault_files_state');
+    db.exec(`CREATE VIRTUAL TABLE IF NOT EXISTS vault_files_fts USING fts5(
+      content, vault_id UNINDEXED, file_path UNINDEXED,
+      tokenize = 'trigram'
+    )`);
+    setKv(db, 'vault_fts_rowid_paired', '1');
+  }
 
   // One-time backfill of pre-existing messages. Guarded by kv flag so repeated
   // openDatabase calls stay O(1). Disaster recovery uses POST /api/maintenance/rebuild-fts.
@@ -853,6 +889,17 @@ export function createVault(db: SqliteDb, name: string, vaultPath: string, descr
 }
 
 export function deleteVault(db: SqliteDb, id: string): void {
+  // 检索 P0 层1：删库必须一并清索引，否则该库全部文件的原文会永久滞留在
+  // vault_files_fts 里（rebuildVaultFtsAll 只遍历现存 vault，回收不了）。
+  // fts 清理走 rowid 配对约定（vault-search.ts 头注释）：按 UNINDEXED 的
+  // vault_id DELETE 是 fts 全表扫描，大库单条秒级；按 state 圈出的 rowid 删是 O(log n)。
+  const rids = db.prepare('SELECT rowid AS rid FROM vault_files_state WHERE vault_id = ?')
+    .all(id) as Array<{ rid: number }>;
+  db.transaction(() => {
+    const delFts = db.prepare('DELETE FROM vault_files_fts WHERE rowid = ?');
+    for (const { rid } of rids) delFts.run(rid);
+    db.prepare('DELETE FROM vault_files_state WHERE vault_id = ?').run(id);
+  })();
   db.prepare('DELETE FROM vaults WHERE id = ?').run(id);
   // Clear active-vault if it pointed at the deleted vault.
   if (getActiveVaultId(db) === id) {

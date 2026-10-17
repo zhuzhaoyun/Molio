@@ -47,6 +47,15 @@ describe('Well-known toolchain dirs detection', () => {
         d === path.join(home, '.cargo', 'bin')
       );
       assert.ok(hasCargo, 'POSIX should include ~/.cargo/bin');
+
+      // Hermes Agent — official install.sh (uv-based) puts the binary in the
+      // `.hermes` venv, NOT `venv/bin`. Regression guard for the wrong-layout
+      // path that would leave hermes undetected when the ~/.local/bin shim is
+      // absent. (Layout verified via a real macOS install in PR #277 review.)
+      const hasHermesDotVenv = dirs.some(d =>
+        d === path.join(home, '.hermes', 'hermes-agent', '.hermes', 'bin')
+      );
+      assert.ok(hasHermesDotVenv, 'POSIX should include ~/.hermes/hermes-agent/.hermes/bin');
     }
   });
 

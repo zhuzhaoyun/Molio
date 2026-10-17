@@ -85,11 +85,15 @@
 
 /* ── Update Card ── */
 .settings-update-card {
+  /* 卡片内边距提成变量：页脚 band 要靠负外边距抵掉它才能铺到卡片内缘 */
+  --card-pad-x: 20px;
+  --card-pad-y: 16px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
-  padding: 16px 20px;
+  flex-wrap: wrap;
+  gap: 16px 24px;
+  padding: var(--card-pad-y) var(--card-pad-x);
   background: var(--bg-panel);
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -102,9 +106,31 @@
   min-width: 0;
 }
 
+/* 品牌区：logo + 产品名，让这张卡片读起来是「关于 Molio」而非一条裸配置 */
+.settings-update-card__brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.settings-update-card__logo {
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
+.settings-update-card__name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
 .settings-update-card__version-row {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
 }
 
@@ -148,13 +174,142 @@
   color: var(--red);
 }
 
+/* ── Actions ── */
 .settings-update-card__actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
   flex-shrink: 0;
 }
 
+/*
+ * 外链按钮：与主按钮同高同字号，但描边保持中性灰。
+ * 「离开应用去看一眼」和「执行更新」不是一个权重——不给外链 accent 色，
+ * 卡片里就只有一个东西在邀请点击。
+ */
+.settings-update-card__link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-panel);
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 500;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: all 120ms ease;
+}
+
+.settings-update-card__link:hover {
+  background: var(--bg-subtle);
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+
+.settings-update-card__link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.settings-update-card__action {
+  gap: 6px;
+}
+
+/* 检查中的旋转图标，复用下方 settings-spin 关键帧 */
+.settings-update-card__action .is-spinning {
+  animation: settings-spin 900ms linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .settings-update-card__action .is-spinning {
+    animation: none;
+  }
+}
+
+/*
+ * web 端「为什么没有更新按钮」的唯一说明。用 --text-faint 时在白卡上只有 2.03:1，
+ * 低于 WCAG AA 的 4.5:1 —— 全卡最该读清的一句反而做得最浅，这里升到 --text-muted（5.5:1）。
+ */
 .settings-update-card__hint {
   font-size: 12px;
-  color: var(--text-faint);
+  color: var(--text-muted);
+}
+
+/*
+ * Star 引导条 —— 卡片的页脚 band。整行铺满（flex-basis:100% 把它挤到第二行），
+ * 压一条分隔线：有它，这条读起来是「页脚」，不与上方主动作争注意力；没它，
+ * 一句请求就会混进操作区，变成第二个 CTA。
+ *
+ * 负外边距抵掉卡片内边距，让分隔线与 hover 底色一直铺到卡片内缘，文字仍与上方内容
+ * 左对齐；卡片净高度不变（padding-bottom 加回来的正是 margin-bottom 抵掉的），底部
+ * 圆角按卡片内圆角 calc(var(--radius) - 1px) 收边。
+ *
+ * flex-basis 必须写成 calc(100% + 2*内边距)：flex-basis 的百分比是按容器的**内容盒**
+ * 解析的，而外边距是在算出宽度之后再扣的 —— 只写 100% 的话，左边的负外边距会把行推出去、
+ * 右边却因为宽度没变而缩不回来（实测左贴边、右留 20px 空档）。加上这一份，行的外侧宽度
+ * 才正好等于内容盒宽度。
+ *
+ * align-items 是 flex-start 而非 center：窄屏下这句话会折成两行，center 会把星标和
+ * 外链箭头摆到两行的中缝上——星悬在左边空白里，像是谁掉在那儿的。图标属于**第一行**，
+ * 所以按第一行对齐，再用 margin-top 把各自光学居中到那一行里。
+ * 行高这里写死 1.5（与全局一致），下面的 margin 数值是按 1.5×13px=19.5px 算的。
+ */
+.settings-update-card__star {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  flex-basis: calc(100% + 2 * var(--card-pad-x));
+  margin: 0 calc(-1 * var(--card-pad-x)) calc(-1 * var(--card-pad-y));
+  padding: 12px var(--card-pad-x) var(--card-pad-y);
+  border-top: 1px solid var(--border);
+  border-radius: 0 0 calc(var(--radius) - 1px) calc(var(--radius) - 1px);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-muted);
+  text-decoration: none;
+  transition:
+    background-color 140ms ease,
+    color 140ms ease;
+}
+
+/*
+ * 整行是一整个 <a>，反馈就必须是整行的 —— 只让文字从 --text-muted 变到 --text，
+ * 在这条 1134px 宽的行上肉眼几乎看不出变化，等于白白浪费了这块点击区。
+ * 底色用 --amber-bg：与星标同色系（不是外链按钮那套中性灰），读起来是「暖了一下」
+ * 而不是「这里还有第五个按钮」，也就不会跟主动作抢。键盘聚焦给同一份视觉。
+ */
+.settings-update-card__star:hover,
+.settings-update-card__star:focus-visible {
+  background: var(--amber-bg);
+  color: var(--text);
+}
+
+/* 描边内收：行已铺到卡片内缘，+2px 会压到卡片自己的边框上 */
+.settings-update-card__star:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* 星标走 amber（暖金）：星是通用符号，且要与主动作的 accent 拉开，不争同一个色 */
+.settings-update-card__star-icon {
+  color: var(--amber);
+  flex-shrink: 0;
+  /* (19.5 - 15) / 2 —— 在一行文字里光学居中 */
+  margin-top: 2px;
+}
+
+/*
+ * 外链箭头跟随文字色（不再单独调浅）：它比文字还浅时读起来是渲染污点而非「会跳走」的
+ * 提示，反而削弱可点击感。父级改色时它自动跟随。
+ */
+.settings-update-card__star-go {
+  flex-shrink: 0;
+  /* (19.5 - 13) / 2 */
+  margin-top: 3px;
 }
 
 /* ── Progress Bar ── */
@@ -187,50 +342,11 @@
   color: var(--text);
 }
 
-/* ── Ready to Install ── */
-.settings-ready {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-top: 12px;
-  padding: 12px 16px;
-  background: var(--green-bg);
-  border: 1px solid var(--green-border);
-  border-radius: var(--radius-sm);
-}
-
-.settings-ready__text {
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--green);
-}
-
-.settings-ready__btn {
-  background: var(--green);
-  color: #fff;
-  border-color: var(--green);
-}
-
-.settings-ready__btn:hover {
-  opacity: 0.9;
-}
-
 /* ── Spinner ── */
+/* 供「检查更新」按钮里的刷新图标旋转使用（.settings-update-card__action .is-spinning） */
 @keyframes settings-spin {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
-}
-
-.settings-spinner {
-  display: inline-block;
-  width: 12px;
-  height: 12px;
-  border: 2px solid var(--border);
-  border-top-color: var(--text-muted);
-  border-radius: 50%;
-  animation: settings-spin 600ms linear infinite;
-  flex-shrink: 0;
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -376,6 +492,14 @@
   .settings-update-card {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  /* 卡片转为纵向后 flex-basis 作用于主轴（高度），改用 width 铺满 */
+  /* 卡片转纵向后 flex-basis 作用于主轴（高度），铺满改用 width ——
+     同样要带上两侧内边距，否则背景比行窄 2*内边距 */
+  .settings-update-card__star {
+    flex-basis: auto;
+    width: calc(100% + 2 * var(--card-pad-x));
   }
 
   .update-toast {
