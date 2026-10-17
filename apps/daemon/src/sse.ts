@@ -208,9 +208,11 @@ export function createSSEStream(
 
   return {
     stream,
+    // cleanup() is the external API for Hono route handlers — triggers cancel()
+    // which does the actual teardown. cancel() resolves silently on closed streams.
     cleanup: () => {
       dbgLog(`stream cleanup runId=${runId}`);
-      teardown();
+      stream.cancel().catch(() => {});
     },
   };
 }

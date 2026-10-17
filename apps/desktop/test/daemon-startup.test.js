@@ -116,16 +116,17 @@ describe('main.js: must load URL only after daemon is ready (not in createWindow
     const fnEnd = mainJs.indexOf('\nfunction ', fnStart + 1);
     const fnBody = mainJs.slice(fnStart, fnEnd > fnStart ? fnEnd : fnStart + 500);
 
-    // 生产 URL 经 DAEMON_BASE 常量拼接（端口单点定义 DAEMON_PORT = 3100），
-    // 不再有 'localhost:3100' 字面量。
+    // 生产 URL 经 DAEMON_BASE 常量拼接（端口单点定义在 DAEMON_PORT），
+    // 不再有 'localhost:3100' 字面量。端口可被 MOLIO_PORT 覆盖（E2E 与
+    // 已安装应用并行时用），未设置时仍是 3100。
     assert.ok(
       fnBody.includes('loadURL(DAEMON_BASE + url)'),
       'loadAppWindow must loadURL the daemon base URL'
     );
     assert.ok(
-      mainJs.includes('const DAEMON_PORT = 3100') &&
+      mainJs.includes('const DAEMON_PORT = Number(process.env.MOLIO_PORT) || 3100') &&
         mainJs.includes('const DAEMON_BASE = `http://localhost:${DAEMON_PORT}`'),
-      'DAEMON_BASE must be derived from the single DAEMON_PORT constant (:3100)'
+      'DAEMON_BASE must be derived from the single DAEMON_PORT constant (default :3100, MOLIO_PORT override)'
     );
   });
 
