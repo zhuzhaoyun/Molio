@@ -63,7 +63,10 @@ test.describe('multi-window vault isolation', () => {
     const ctxB = await browser.newContext();
     const pageA = await ctxA.newPage();
     const pageB = await ctxB.newPage();
+    const vaultResponse = pageA.waitForResponse(r => new URL(r.url()).pathname === '/api/knowledge/vaults');
     await pageA.goto(`${WEB}/knowledge?vault=${vaultAId}`);
+    const snapshot = await (await vaultResponse).json();
+    expect(snapshot.vaults.map((v: { id: string }) => v.id)).toContain(vaultAId);
     await pageB.goto(`${WEB}/knowledge?vault=${vaultBId}`);
     await expect(pageA.locator('.kb-vault-bar__name')).toHaveText('mw-a', { timeout: 5000 });
     await expect(pageB.locator('.kb-vault-bar__name')).toHaveText('mw-b', { timeout: 5000 });

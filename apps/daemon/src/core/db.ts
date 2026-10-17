@@ -9,6 +9,7 @@ import Database from 'better-sqlite3';
 import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
+import { molioDataDir } from './data-dir.js';
 import { randomUUID } from 'node:crypto';
 import type { ChatMessage, Project, Conversation, ConversationHistoryItem, ConversationHistoryPage, ListHistoryQuery, Vault, KbHistoryEntry } from '@molio/contracts';
 
@@ -46,9 +47,9 @@ export function openDatabase(dataDir?: string): SqliteDb {
   // MOLIO_DATA_DIR：数据目录环境钩子（E2E 用洁净目录，避免与真实 ~/.molio
   // 共库——测试建删 vault 不再读写用户数据，也免去重型真实 vault 的同步扫描）。
   // 显式参数优先级最高。
-  if (!dataDir && !process.env.MOLIO_DATA_DIR) migrateLegacyDir();
+  if (!dataDir && !process.env['MOLIO_DATA_DIR']?.trim()) migrateLegacyDir();
 
-  const dir = dataDir ?? process.env.MOLIO_DATA_DIR ?? path.join(os.homedir(), '.molio');
+  const dir = dataDir ?? molioDataDir();
   const file = path.join(dir, 'app.sqlite');
 
   if (dbInstance && dbFile === file) return dbInstance;

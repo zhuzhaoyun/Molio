@@ -27,7 +27,10 @@ export function agentsRoutes(runManager: RunManager): Hono {
   // GET / — list detected agents. Detection is async + TTL-cached + probed in
   // parallel (see RunManager.detectAgentsAsync): the old sync re-scan froze
   // the whole daemon event loop for seconds on every first-screen load.
+  // ?refresh=1 drops the TTL cache first, so the settings 「重新扫描」 button
+  // really re-probes instead of being handed the cached snapshot.
   app.get('/', async (c) => {
+    if (c.req.query('refresh') === '1') runManager.invalidateAgentCache();
     const agents = await runManager.detectAgentsAsync();
     return c.json({ agents });
   });

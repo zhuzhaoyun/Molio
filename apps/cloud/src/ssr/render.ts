@@ -73,6 +73,18 @@ function productJsonLd(m: MarketListing): string {
     image,
     sku: m.id,
     brand: { '@type': 'Brand', name: 'Molio 墨流' },
+    // 以下三项都是**页面上已经可见**的事实（侧栏「格式 / 兼容」行与分类标签）。
+    // 结构化数据应与可见内容一致，而 AI / 搜索引擎读的正是这一层：
+    // 页面写了而 JSON-LD 没写，等于对机器隐形。2026-10-08 补。
+    ...(m.category?.name ? { category: m.category.name } : {}),
+    itemCondition: 'https://schema.org/NewCondition',
+    additionalProperty: [
+      { '@type': 'PropertyValue', name: '交付形式', value: 'Markdown 文件夹（.zip）' },
+      { '@type': 'PropertyValue', name: '兼容', value: 'Molio / Obsidian' },
+      ...(m.resourceType?.name
+        ? [{ '@type': 'PropertyValue', name: '资源类型', value: m.resourceType.name }]
+        : []),
+    ],
     offers: {
       '@type': 'Offer',
       url: productUrl(m.id),
@@ -168,6 +180,23 @@ var _hmt = _hmt || [];
 // ── 商品页 ──
 
 /** 购买/下载 CTA：按付费形态三选一（与旧 resource.html renderMarketDetail 同逻辑） */
+/** 通用交付边界（2026-10-08 补）。
+ *
+ *  为什么放模板：这一类边界本来写在 15 份商品页**文案**里（每件措辞不同），
+ *  但那要卖家逐个粘贴。而**这一条对全部 17 件都成立** ——
+ *  本库 2026-10-08 实测：17 个商品页登记的交付格式**全部是「Markdown（.zip）」**
+ *  （`curl` 逐页取 `<span class="k">格式</span>` 的登记值）。
+ *
+ *  与商品**目录/条目数**无关，所以不涉及那些还在核的口径问题。
+ *  商品特有的边界（图纸不是识别软件、PCB 不含 MES、妇产超声不是诊断工具、
+ *  广东高考不是填报工具、古典诗文/金瓶梅不含全文）**仍走文案**，此处不替代它们。 */
+const DELIVERY_BOUNDARY = `<p class="res-boundary"><strong>这是一份 Markdown 知识资料，不是可运行的软件</strong>，
+        不包含程序、模型权重或 AI 调用服务。买到的是一个解压即可阅读的文件夹。</p>
+      <p class="res-boundary">解压后，Obsidian 与 Molio（墨流）可以直接打开；
+        <strong>放进你自己的环境，Claude Code、Codex 这类 Agent 也能直接读它</strong>。
+        这是它和电子书最根本的区别。
+        <strong>数据全程在你自己电脑上，不需要上传，也不需要注册任何服务。</strong></p>`;
+
 function renderCta(m: MarketListing): { cta: string; note: string } {
   const price = formatPriceYuan(m.priceCents);
   if (m.priceCents > 0 && m.payUrl) {
@@ -186,6 +215,58 @@ function renderCta(m: MarketListing): { cta: string; note: string } {
     cta: '<button type="button" class="btn btn-primary" id="market-dl-btn" data-auth-gate="下载 .zip">下载 .zip</button>',
     note: '下载解压后，用 Molio“打开本地仓库”加载即可开始阅读与写作。',
   };
+}
+
+/**
+ * 商品 → 配套解释文的映射（2026-10-07 补，对应本库 action-board 的 S05）。
+ *
+ * 为什么需要它：此前 17 个商品页**没有一个链到配套文章**。
+ * 而文章是「这套东西怎么用、为什么这样整理」的唯一说明，
+ * 也是搜索与 AI 抓取的主要对象。商品页已被 Bing 收录，从它链出去
+ * 是一条能立刻建立的发现路径（本库 2026-10-07 实测：全站外链只有 6 条）。
+ *
+ * ⚠️ **这是第二处真相，会漂。** 权威清单在本库的 `seo/product-content-map.md`
+ * 与文章自己的 frontmatter。改文章标题或换配套文章时，**这里要跟着改**。
+ * 只有 8 件商品有配套文章；其余 9 件没有对应文章，此处留空是正常的。
+ */
+const RELATED_ARTICLES: Record<string, { slug: string; title: string }> = {
+  '01M10MC4S9ZH54WVFCXJWZ2JWS': { slug: 'western-philosophy-history-map', title: '西方哲学史梳理：2500 年只有几条主线，人物要按对手关系记' },
+  '01M10RZP9118BA6YRBZ1D4FKM2': { slug: 'zizhitongjian-people-graph', title: '资治通鉴人物关系图：294 卷、626 个人物，一张图为什么不够用' },
+  '01M10WWK7WNMM61QNJJJXHNWS2': { slug: 'shiji-knowledge-system', title: '史记知识体系：130 篇、近 3000 年，怎么读才不乱' },
+  '01M110NNMKNWXKBXT01HVJ06ZW': { slug: 'hongloumeng-knowledge-graph', title: '红楼梦知识图谱：60 个人物、6 组对照，怎么把人物读明白' },
+  '01M111M5CSYX96FTKGC3V1QC2T': { slug: 'mingshi-people-and-institutions', title: '明史人物与制度：列传 220 卷、311 个人物条目，每条都能回到原文' },
+  '01M13QT669Q6E94PWACEH00YJF': { slug: 'ontology-modeling-guide', title: '本体论怎么落地：GB/T 48000 要求的三类构件，和 Palantir 多出的那个“动作”' },
+  '01M35QEB3RMK46SGCQ6WSZ3GZR': { slug: 'drawing-data-extraction', title: '图纸数据提取：为什么直接读 DWG 拿不到门窗表，从解析到导出 Excel 的完整链路' },
+  '01M35RVX9S3TQK6ZE0QT9J6NG4': { slug: 'sanguo-people-graph', title: '三国人物关系图：关羽与曹操的关系怎样随事件变化' },
+};
+
+function renderArticleLink(m: MarketListing): string {
+  const art = RELATED_ARTICLES[m.id];
+  if (!art) return '';
+  return `
+<section class="res-section">
+  <h2 class="res-section-title">这套东西怎么用</h2>
+  <p><a href="${SITE_BASE}/blog/${escapeHtml(art.slug)}.html">${escapeHtml(art.title)}</a></p>
+  <p>配套长文讲的是：这份知识库为什么这样整理、它能回答哪类问题、不能回答哪类，
+  以及实际用起来是什么样。买之前可以先读一遍。</p>
+</section>`;
+}
+
+/** 购买决策点上的「免费样品」入口（2026-10-08 补）。
+ *
+ *  为什么放在模板里、而不是只写进商品页文案：
+ *  文案要靠卖家逐个粘贴（15 份），而**模板一次部署就覆盖全部商品页**。
+ *
+ *  本库 2026-10-08 实测：两件免费商品（周易、老庄）的源目录结构与付费品**完全一致**
+ *  （entities / concepts / comparisons / sources 四类目录相同），是现成的同格式样品。
+ *  数字商品最大的购买顾虑是「我到底买到什么」，这一行直接回答它。
+ *
+ *  ⚠️ 免费品自己不需要这一行（它本来就是样品）。 */
+const FREE_SAMPLE_IDS = ['01M12YMV1144F4RZMX1HBK8GQ0', '01M114523M19P4J7GZMZ7E6188'];
+
+function renderSampleHint(m: MarketListing): string {
+  if (m.priceCents === 0 || FREE_SAMPLE_IDS.indexOf(m.id) >= 0) return '';
+  return `${'`'}<p class="res-side-note" style="margin-top:12px;padding-top:10px;border-top:1px solid rgba(0,0,0,.08)">想先看清到手是什么形式？可以先下载免费的两套：<a href="/resource/01M12YMV1144F4RZMX1HBK8GQ0.html">《周易》六十四卦全解</a> · <a href="/resource/01M114523M19P4J7GZMZ7E6188.html">老庄思想图谱</a>。结构与这件商品一致。${'`'}`;
 }
 
 function renderRelated(related: MarketListing[]): string {
@@ -284,6 +365,7 @@ ${NAV}
         ${previews ? `<h2 class="res-section-title">效果预览</h2>
         <div class="res-preview-grid">${previews}</div>` : ''}
         <h2 class="res-section-title">资源包导入说明</h2>
+        ${DELIVERY_BOUNDARY}
         <div class="step-card"><ol>
           <li>下载资源包 <code>.zip</code> 并解压到本地任意目录</li>
           <li>打开 Molio，在知识库管理界面选择“打开本地仓库”</li>
@@ -291,7 +373,7 @@ ${NAV}
         </ol></div>
       </div>
       <aside class="res-side">
-        <div class="res-side-card reveal">${cta}<p class="res-side-note">${escapeHtml(note)}</p></div>
+        <div class="res-side-card reveal">${cta}<p class="res-side-note">${escapeHtml(note)}</p>${renderSampleHint(m)}</div>
         <div class="res-side-card reveal">
           <div class="res-info-row"><span class="k">作者</span><span class="v">${escapeHtml(m.author)}</span></div>
           <div class="res-info-row"><span class="k">版本</span><span class="v">${escapeHtml(m.version)}</span></div>
@@ -303,6 +385,7 @@ ${NAV}
         </div>
       </aside>
     </div>
+    ${renderArticleLink(m)}
     ${renderRelated(related)}
   </div>
 </main>
@@ -369,6 +452,9 @@ function itemListJsonLd(listings: MarketListing[]): string {
         url: productUrl(m.id),
         image,
         description: metaDescription(m.summary, 160),
+        // 列表页卡片**可见**「分类 / 类型」，结构化数据里此前没有。
+        // 对「Molio 有哪些历史类资源」这类问句，category 是机器可用的分组依据。
+        ...(m.category?.name ? { category: m.category.name } : {}),
         offers: {
           '@type': 'Offer',
           url: productUrl(m.id),
@@ -397,6 +483,15 @@ function itemListJsonLd(listings: MarketListing[]): string {
  * .rl-buy[data-id]（内联脚本在 #res-grid 上做购买/下载事件委托）。
  * 详情入口在标题的 <a> 上 —— 底栏再放一个「查看详情」是同一个去处的重复，也挤占底栏宽度。
  */
+/** 卡片级的长文入口：复用 rl-desc 样式，不引入新 CSS。
+ *  放在卡片上而不是只放商品详情页，是因为这个组件同时被列表页与商品页复用，
+ *  两处都能把链接带出去（见本库 audits/2026-10-07/internal-link-gap.md）。 */
+function renderCardArticleLink(m: MarketListing): string {
+  const art = RELATED_ARTICLES[m.id];
+  if (!art) return '';
+  return `<p class="rl-desc"><a href="/blog/${escapeHtml(art.slug)}.html">这套是怎么整理出来的 →</a></p>`;
+}
+
 function renderResourceCard(m: MarketListing): string {
   const paid = m.priceCents > 0;
   const price = formatPriceYuan(m.priceCents);
@@ -412,6 +507,7 @@ function renderResourceCard(m: MarketListing): string {
     </div>
     <h3 class="rl-name"><a href="/resource/${encodeURIComponent(m.id)}.html">${escapeHtml(m.name)}</a></h3>
     <p class="rl-desc">${escapeHtml(metaDescription(m.summary, 160))}</p>
+    ${renderCardArticleLink(m)}
     ${tags}
     <div class="rl-cardfoot">
       <span class="rl-price ${paid ? 'paid' : 'free'}">${paid ? '¥' + escapeHtml(price) : '免费'}</span>
@@ -678,7 +774,7 @@ export async function renderLlmsTxt(listings: MarketListing[]): Promise<string> 
   const out: string[] = [
     '# Molio 墨流 · 知识图谱资源库',
     '',
-    '> 本站是「结构化知识图谱 / 知识体系」资源库。提供《红楼梦》人物关系图谱、《资治通鉴》知识体系、妇产超声知识图谱、知识工程全景图谱等，Markdown 格式，购买后可一键导入 Molio 或 Obsidian 等本地 AI 知识库。',
+    '> 本站是“结构化知识图谱 / 知识体系”资源库。提供《红楼梦》人物关系图谱、《资治通鉴》知识体系、妇产超声知识图谱、知识工程全景图谱等，Markdown 格式，购买后可一键导入 Molio 或 Obsidian 等本地 AI 知识库。',
     '',
     '## 本站卖什么',
     '',
@@ -687,7 +783,10 @@ export async function renderLlmsTxt(listings: MarketListing[]): Promise<string> 
     '',
     '## 与免费开源资源的区别',
     '',
-    '免费开源图谱（如 OpenKG、HonglouData）是「原始数据集」，需自行清洗、建关系、写导读；本站资源是「成品」——已结构化、带导读、可直接导入 AI 知识库做问答与联想。',
+    '免费开源的知识图谱项目很多，各有其定位与取舍，本站不对它们作评价。',
+    '本站资源要回答的是另一个问题：**买回来就是一个能直接读、能直接喂给 AI 的本地文件夹**。',
+    '已经结构化、条目之间互相链接、带导读，导入 Obsidian 或 Molio 即可查阅，也能直接放进 Agent 的环境。',
+    '如果你要的是可编程、可二次开发的数据集，免费开源项目往往是更好的起点；如果你要的是一份拿来就能用的成品，这里是成品。',
     '',
     '## 资源品类',
     '',

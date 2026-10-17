@@ -228,6 +228,7 @@ test.describe('Home 会话产出面板', () => {
       const reviewAbs = `${vault.path}/wiki/2026-08-27-要闻综述.md`;
       const deepAbs = `${vault.path}/wiki/2026-08-27-深度报道.md`;
       const pyAbs = `${vault.path}/scripts/build_report.py`;
+      const hotAbs = `${vault.path}/wiki/hot.md`;
       await page.route('**/knowledge/vaults/*/files/**', (route) => {
         const rawUrl = route.request().url();
         if (rawUrl.includes(encodeURIComponent(newsAbs))) sawEncoded = true;
@@ -259,21 +260,21 @@ test.describe('Home 会话产出面板', () => {
       await expect(panel.locator('[data-testid="session-output-stats"]')).toContainText('写入 3 · 1 轮');
       // kind 判据是「会话里该路径出现过没有」，不是工具名：新建的 Write → create；
       // Read 过的文档再用 Write 覆写 → update（用户报障的核心：一切 Write 都标成了新建）
-      await expect(panel.locator(`[data-path="${newsAbs}"]`)).toHaveAttribute('data-kind', 'create');
-      await expect(panel.locator(`[data-path="${deepAbs}"]`)).toHaveAttribute('data-kind', 'update');
-      await expect(panel.locator(`[data-path="${reviewAbs}"]`)).toHaveAttribute('data-kind', 'update');
+      await expect(panel.locator(`[data-path=${JSON.stringify(newsAbs)}]`)).toHaveAttribute('data-kind', 'create');
+      await expect(panel.locator(`[data-path=${JSON.stringify(deepAbs)}]`)).toHaveAttribute('data-kind', 'update');
+      await expect(panel.locator(`[data-path=${JSON.stringify(reviewAbs)}]`)).toHaveAttribute('data-kind', 'update');
       // 折叠区（登记元文件 INDEX.md·log.md·hot.md + 脚本）默认收起：条目不进 DOM
       await expect(panel.locator('[data-testid="session-output-others-toggle"]')).toContainText('其他写入 4 项');
       await expect(panel.locator('[data-testid="session-output-others-toggle"]')).toContainText('索引·日志·脚本');
       await expect(panel.locator('[data-testid="session-output-other-item"]')).toHaveCount(0);
       // 隐藏目录与库外写入：任何一栏都不得出现
       await expect(panel.locator('[data-path*=".molio"]')).toHaveCount(0);
-      await expect(panel.locator(`[data-path="${OUTSIDE_PATH}"]`)).toHaveCount(0);
+      await expect(panel.locator(`[data-path=${JSON.stringify(OUTSIDE_PATH)}]`)).toHaveCount(0);
       await expect(panel).not.toContainText('MEMORY.md');
       await expect(panel).not.toContainText('plan.md');
 
       // md 预览正常渲染（不是「无法读取」错误）
-      await panel.locator(`[data-path="${newsAbs}"]`).click();
+      await panel.locator(`[data-path=${JSON.stringify(newsAbs)}]`).click();
       await expect(panel.locator('[data-testid="session-output-preview"]')).toContainText('近端上下文正文', { timeout: 5_000 });
       await panel.locator('[data-testid="session-output-preview-back"]').click();
 
@@ -285,11 +286,11 @@ test.describe('Home 会话产出面板', () => {
       await expect(others).toContainText('INDEX.md');
       await expect(others).toContainText('log.md');
       // hot.md 的 ./ 相对形态不产生第二行
-      await expect(panel.locator(`[data-path="${vault.path}/wiki/hot.md"]`)).toHaveCount(1);
+      await expect(panel.locator(`[data-path=${JSON.stringify(hotAbs)}]`)).toHaveCount(1);
       await expect(panel.locator('[data-testid="session-output-write"]').filter({ hasText: 'hot.md' })).toHaveCount(0);
 
       // .py 脚本 → 等宽代码视图原文展示，不被 markdown 吞掉
-      await panel.locator(`[data-path="${pyAbs}"]`).click();
+      await panel.locator(`[data-path=${JSON.stringify(pyAbs)}]`).click();
       const codeView = panel.locator('.session-output-preview-code');
       await expect(codeView).toBeVisible({ timeout: 5_000 });
       await expect(codeView).toContainText('print("build report")');

@@ -9,6 +9,24 @@
 // sharing one across files breaks silently the day someone calls .exec/.test.
 export const residueRe = () => /\[\[[^\]|]+\|([^\]]+)\]\]\1\]\]/g;
 
+// ─── 图片/附件嵌入 ───
+//
+// `![[路径]]` 是嵌入（渲染成图），`[[路径]]` 是链接（在图谱里会变成 dead 节点，
+// 因为 graph.ts 的 resolveLink 硬拒附件扩展名）。两者只差一个前导 `!`，
+// 所以解析、校验、保护必须共用同一套定义，否则三个脚本迟早各判各的。
+
+/** 图片扩展名。这些是媒体，不是页面。 */
+export const IMAGE_EXT = /\.(png|jpe?g|gif|svg|webp|bmp|avif|tiff?)$/i;
+
+/** 非页面附件（图片 + 文档 + 压缩包）。deadcheck 用它跳过「不是死链」的目标。 */
+export const ATTACHMENT_EXT = /\.(png|jpe?g|gif|svg|webp|bmp|avif|tiff?|pdf|docx?|xlsx?|pptx?|zip)$/i;
+
+/**
+ * `![[目标]]` 嵌入。捕获组 1 = 目标路径（去掉 `|尺寸/别名` 之后的部分）。
+ * 工厂函数而非共享实例：/g 正则带可变 lastIndex，跨文件共享会静默出错。
+ */
+export const embedRe = () => /!\[\[([^\]|#]+?)(?:\|[^\]]*)?\]\]/g;
+
 /** End offset of YAML frontmatter block, or 0 if none. */
 export function frontmatterEnd(content) {
   if (!content.startsWith('---')) return 0;
@@ -20,6 +38,33 @@ export function frontmatterEnd(content) {
 export function overlaps(a, list) {
   for (const [s, e] of list) if (a[0] < e && a[1] > s) return true;
   return false;
+}
+
+/**
+ * Line start offsets of content.split('\n'): starts[i] = byte offset of line i.
+ * Shared home for the "byte offset -> line number" math every scanner needs.
+ * deadcheck's residue scan used to recompute it per match via
+ * content.slice(0, idx).split('\n').length — O(matches x filesize); media.mjs
+ * carried its own copy of this exact loop. One definition, binary search.
+ */
+export function lineStartsOf(content) {
+  const starts = [];
+  let acc = 0;
+  for (const ln of content.split('\n')) {
+    starts.push(acc);
+    acc += ln.length + 1;
+  }
+  return starts;
+}
+
+/** 0-based index of the line containing `offset` (binary search over lineStarts). */
+export function lineOfOffset(starts, offset) {
+  let lo = 0, hi = starts.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi + 1) >> 1;
+    if (starts[mid] <= offset) lo = mid; else hi = mid - 1;
+  }
+  return lo;
 }
 
 /**
@@ -59,10 +104,13 @@ export function protectedIntervals(content, fmEnd, { links = true } = {}) {
   const prot = [[0, fmEnd], ...codeIntervals(content)];
 
   if (links) {
-    // Existing wikilinks.
-    for (const im of content.matchAll(/\[\[[^\]]*\]\]/g)) prot.push([im.index, im.index + im[0].length]);
-    // Markdown links [text](url).
-    for (const im of content.matchAll(/\[[^\]\n]*\]\([^)\n]*\)/g)) prot.push([im.index, im.index + im[0].length]);
+    // Existing wikilinks. `!?` includes the embed marker: covering only the
+    // inner [[...]] would leave the leading `!` exposed, so a page whose name
+    // happens to start there could be wrapped INSIDE an embed and corrupt it
+    // (`![[甲]][[乙]]`). Protecting the whole token is the only safe span.
+    for (const im of content.matchAll(/!?\[\[[^\]]*\]\]/g)) prot.push([im.index, im.index + im[0].length]);
+    // Markdown links [text](url) — same `!?` reasoning for images ![alt](url).
+    for (const im of content.matchAll(/!?\[[^\]\n]*\]\([^)\n]*\)/g)) prot.push([im.index, im.index + im[0].length]);
   }
 
   // Quoted spans — citations must stay byte-identical for prep.mjs verify.
