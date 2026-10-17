@@ -17,6 +17,7 @@ apps/
   web/          @molio/web       — Vite + React web UI, consuming daemon SSE (→ apps/web/CLAUDE.md)
   desktop/      @molio/desktop   — Electron shell (→ apps/desktop/CLAUDE.md)
   cloud/        @molio/cloud     — 云端认证服务（用户模块；邮箱验证码登录，独立部署，不进应用镜像）(→ apps/cloud/CLAUDE.md)
+  cli/          @molio/cli       — 知识库能力 CLI + MCP server（供 WorkBuddy/千问等外部桌面 agent 只读调用）(→ apps/cli/CLAUDE.md)
 ```
 
 ## Build & Dev Commands
@@ -339,3 +340,5 @@ git tag v0.3.22 && git push origin v0.3.22
 ```
 
 CI 中通过 `grep -qiE '(test|beta|alpha|rc|dirty)'` 判断是否为预发布版，匹配则跳过 OSS latest 文件更新。
+
+**@molio/cli 独立发布**：tag `cli-v*`（如 `cli-v0.1.0`）触发 `cli-publish.yml` 发布 npm 包，与桌面端 `v*` tag 互不干扰。详见 `apps/cli/CLAUDE.md` 的「npm 发布」节。

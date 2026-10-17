@@ -1,0 +1,47 @@
+{
+  "name": "@molio/cli",
+  "version": "0.1.0",
+  "description": "Molio CLI — 知识库命令 + MCP server，daemon 的薄 HTTP 客户端，供外部桌面 agent（WorkBuddy / 千问等）调用",
+  "type": "module",
+  "bin": {
+    "molio": "dist/src/index.js"
+  },
+  "main": "dist/src/index.js",
+  "files": [
+    "dist/src",
+    "connector"
+  ],
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "license": "SEE LICENSE IN LICENSE",
+  "keywords": [
+    "molio",
+    "knowledge-base",
+    "mcp",
+    "cli"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zhuzhaoyun/Molio.git",
+    "directory": "apps/cli"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "dev": "tsx src/index.ts",
+    "build": "tsc",
+    "start": "node dist/src/index.js",
+    "test": "node --input-type=module -e \"import { rmSync } from 'node:fs'; rmSync('dist', { recursive: true, force: true })\" && tsc && node --test --test-timeout=30000 \"dist/test/**/*.test.js\"",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.1",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@molio/contracts": "workspace:*",
+    "tsx": "^4.19.0"
+  }
+}

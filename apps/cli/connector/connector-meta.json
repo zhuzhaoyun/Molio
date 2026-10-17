@@ -1,0 +1,24 @@
+{
+  "name": "Molio KB",
+  "name_zh": "Molio 知识库",
+  "name_en": "Molio KB",
+  "description": "Connect to the local Molio knowledge base: browse files, full-text search, and AI Q&A grounded in your own notes.",
+  "description_zh": "连接本机 Molio 知识库：浏览文件树、全文搜索、读取原文，并基于你自己的积累做 AI 问答。全部只读，不修改知识库。",
+  "description_en": "Connect to the local Molio knowledge base: browse the file tree, full-text search, read documents, and ask AI questions grounded in your own notes. Read-only by design.",
+  "source": "molio-kb",
+  "type": "mcp",
+  "version": "0.1.0",
+  "examples_zh": [
+    "在我的知识库里搜一下「分布式事务」",
+    "看看我的知识库都有哪些文件",
+    "基于我的知识库总结一下今年的项目复盘",
+    "把知识库里 notes/2026 目录下的会议纪要读给我听"
+  ],
+  "examples_en": [
+    "Search my knowledge base for 'distributed transactions'",
+    "Show me what files are in my knowledge base",
+    "Summarize this year's project retrospectives from my knowledge base",
+    "Read me the meeting notes under notes/2026 in my knowledge base"
+  ],
+  "minWorkbuddyVersion": "5.0.0"
+}
