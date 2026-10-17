@@ -27,11 +27,22 @@ import { ThrottledWarn } from './throttled-warn.js';
 
 export const VAULT_TREE_CHANGED_EVENT = 'tree-changed';
 
+/**
+ * 某个 vault 的监听「就绪 / 失活」时发出（payload = vaultId）。
+ *
+ * 为什么需要：就绪前（初次扫描中）与监听失败后，落盘变化**不会**产生任何
+ * `tree-changed`。把 `tree-changed` 当唯一失效信号的缓存类消费者（图谱缓存）
+ * 必须先知道这个信号在不在，否则会把「没有信号」当成「内容没变」。
+ */
+export const VAULT_WATCH_STATE_CHANGED_EVENT = 'watch-state-changed';
+
 const DEBOUNCE_MS = 300;
 
 export class VaultWatcher extends EventEmitter {
   private watchers = new Map<string, FSWatcher>();
   private timers = new Map<string, ReturnType<typeof setTimeout>>();
+  // 已就绪（初次扫描完成、事件可靠）的 vault。
+  private readyVaults = new Set<string>();
   private started = false;
   // Throttles the chokidar 'error' warning per vault — a flapping watched path
   // can fire it continuously (see throttled-warn.ts for the stderr-noise rationale).
@@ -66,6 +77,22 @@ export class VaultWatcher extends EventEmitter {
   }
 
   /**
+   * 该 vault 的监听是否就绪（初次扫描已完成 → 落盘变化会触发 tree-changed）。
+   * 就绪前 / 监听失败后为 false：此时**没有**失效信号可用。
+   */
+  isReady(vaultId: string): boolean {
+    return this.readyVaults.has(vaultId);
+  }
+
+  /** 就绪态变化时对外广播（只在真正翻转时发）。 */
+  private setReady(vaultId: string, ready: boolean): void {
+    const was = this.readyVaults.has(vaultId);
+    if (ready) this.readyVaults.add(vaultId);
+    else this.readyVaults.delete(vaultId);
+    if (was !== ready) this.emit(VAULT_WATCH_STATE_CHANGED_EVENT, vaultId);
+  }
+
+  /**
    * Start watching a single vault. Idempotent — re-calling with the same id
    * first closes the previous watcher.
    */
@@ -73,6 +100,10 @@ export class VaultWatcher extends EventEmitter {
     if (this.watchers.has(vaultId)) {
       await this.unwatch(vaultId);
     }
+
+    // 扫描完成前落盘的变化可能一个事件都没有 → 先声明未就绪（重新 watch
+    // 会开出新的空窗，上一个 watcher 的就绪态立即作废）。
+    this.setReady(vaultId, false);
 
     try {
       // `await` works for both chokidar v3 (returns FSWatcher) and v4
@@ -157,18 +188,26 @@ export class VaultWatcher extends EventEmitter {
       // Wait for the initial scan to complete so callers (and tests) can write
       // files and reliably receive events. Bound by a timeout so a missing
       // path never hangs watch() forever.
+      //
+      // 超时兜底（2s，大库/慢盘上扫描可能更久）到点后也算「就绪」：chokidar
+      // 在扫描期间已经在收事件，只是不知道后续还有没有初始扫描的 add 要发。
       await new Promise<void>((resolve) => {
         const done = () => resolve();
         watcher.once('ready', done);
         setTimeout(done, 2000).unref?.();
       });
+      // 只有仍是当前 watcher 才算就绪——同 id 的 watch() 可能已经把它顶掉：
+      // 旧 watcher 的 ready 不能替新 watcher 宣布「信号可用」。
+      if (this.watchers.get(vaultId) === watcher) this.setReady(vaultId, true);
     } catch (err) {
+      this.setReady(vaultId, false);
       console.warn(`[vault-watcher] failed to watch ${vaultId} (${vaultPath}):`, (err as Error).message);
     }
   }
 
   /** Stop watching a single vault. */
   async unwatch(vaultId: string): Promise<void> {
+    this.setReady(vaultId, false);
     const timer = this.timers.get(vaultId);
     if (timer) {
       clearTimeout(timer);
