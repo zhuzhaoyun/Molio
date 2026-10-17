@@ -188,6 +188,41 @@ function renderCta(m: MarketListing): { cta: string; note: string } {
   };
 }
 
+/**
+ * 商品 → 配套解释文的映射（2026-10-07 补，对应本库 action-board 的 S05）。
+ *
+ * 为什么需要它：此前 17 个商品页**没有一个链到配套文章**。
+ * 而文章是「这套东西怎么用、为什么这样整理」的唯一说明，
+ * 也是搜索与 AI 抓取的主要对象。商品页已被 Bing 收录，从它链出去
+ * 是一条能立刻建立的发现路径（本库 2026-10-07 实测：全站外链只有 6 条）。
+ *
+ * ⚠️ **这是第二处真相，会漂。** 权威清单在本库的 `seo/product-content-map.md`
+ * 与文章自己的 frontmatter。改文章标题或换配套文章时，**这里要跟着改**。
+ * 只有 8 件商品有配套文章；其余 9 件没有对应文章，此处留空是正常的。
+ */
+const RELATED_ARTICLES: Record<string, { slug: string; title: string }> = {
+  '01M10MC4S9ZH54WVFCXJWZ2JWS': { slug: 'western-philosophy-history-map', title: '西方哲学史梳理：2500 年只有几条主线，人物要按对手关系记' },
+  '01M10RZP9118BA6YRBZ1D4FKM2': { slug: 'zizhitongjian-people-graph', title: '资治通鉴人物关系图：294 卷、626 个人物，一张图为什么不够用' },
+  '01M10WWK7WNMM61QNJJJXHNWS2': { slug: 'shiji-knowledge-system', title: '史记知识体系：130 篇、近 3000 年，怎么读才不乱' },
+  '01M110NNMKNWXKBXT01HVJ06ZW': { slug: 'hongloumeng-knowledge-graph', title: '红楼梦知识图谱：60 个人物、6 组对照，怎么把人物读明白' },
+  '01M111M5CSYX96FTKGC3V1QC2T': { slug: 'mingshi-people-and-institutions', title: '明史人物与制度：列传 220 卷、311 个人物条目，每条都能回到原文' },
+  '01M13QT669Q6E94PWACEH00YJF': { slug: 'ontology-modeling-guide', title: '本体论怎么落地：GB/T 48000 要求的三类构件，和 Palantir 多出的那个“动作”' },
+  '01M35QEB3RMK46SGCQ6WSZ3GZR': { slug: 'drawing-data-extraction', title: '图纸数据提取：为什么直接读 DWG 拿不到门窗表，从解析到导出 Excel 的完整链路' },
+  '01M35RVX9S3TQK6ZE0QT9J6NG4': { slug: 'sanguo-people-graph', title: '三国人物关系图：关羽与曹操的关系怎样随事件变化' },
+};
+
+function renderArticleLink(m: MarketListing): string {
+  const art = RELATED_ARTICLES[m.id];
+  if (!art) return '';
+  return `
+<section class="res-section">
+  <h2 class="res-section-title">这套东西怎么用</h2>
+  <p><a href="${SITE_BASE}/blog/${escapeHtml(art.slug)}.html">${escapeHtml(art.title)}</a></p>
+  <p>配套长文讲的是：这份知识库为什么这样整理、它能回答哪类问题、不能回答哪类，
+  以及实际用起来是什么样。买之前可以先读一遍。</p>
+</section>`;
+}
+
 function renderRelated(related: MarketListing[]): string {
   if (related.length === 0) return '';
   // 复用列表页的卡片：全站一种卡片一套样式（原型 .card）
@@ -303,6 +338,7 @@ ${NAV}
         </div>
       </aside>
     </div>
+    ${renderArticleLink(m)}
     ${renderRelated(related)}
   </div>
 </main>
