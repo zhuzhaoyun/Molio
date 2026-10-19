@@ -4,6 +4,10 @@
  * Three real milestones, not a click-through tour: vault ready, a document
  * opened or imported, and a question actually sent. The banner stays one line
  * tall and can be dismissed; it never blocks the workspace.
+ *
+ * The next action is a filled button sitting next to the step markers, not a
+ * far-right text link: a quiet 36px line of grey text is easy to scroll past,
+ * and activation lives or dies on that one click (user feedback 2026-10-19).
  */
 
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
@@ -17,6 +21,8 @@ interface Props {
   onBuildWiki: () => void;
   onOpenGraph: () => void;
 }
+
+const STEP_KEYS = ['vault', 'openOrImport', 'ask'] as const;
 
 export function OnboardingChecklist({ hasVault, onImport, onAsk, onBuildWiki, onOpenGraph }: Props) {
   const { t } = useI18n();
@@ -70,6 +76,7 @@ export function OnboardingChecklist({ hasVault, onImport, onAsk, onBuildWiki, on
 
   const steps = state.steps;
   const doneCount = Number(steps.vault) + Number(steps.openOrImport) + Number(steps.ask);
+  const firstPending = STEP_KEYS.findIndex((key) => !steps[key]);
   const next = !steps.openOrImport ? 'import' : !steps.ask ? 'ask' : null;
 
   return (
@@ -82,18 +89,51 @@ export function OnboardingChecklist({ hasVault, onImport, onAsk, onBuildWiki, on
           aria-expanded={expanded}
           onClick={() => setExpanded((value) => !value)}
         >
-          <span>{t('kb.onboarding.title')}</span>
+          <span className="kb-onboarding__dots" aria-hidden="true">
+            {STEP_KEYS.map((key, index) => {
+              const done = steps[key];
+              return (
+                <span
+                  key={key}
+                  className={`kb-onboarding__dot${done ? ' is-done' : ''}${index === firstPending ? ' is-current' : ''}`}
+                >
+                  {done ? '✓' : index + 1}
+                </span>
+              );
+            })}
+          </span>
+          <span className="kb-onboarding__title">{t('kb.onboarding.title')}</span>
           <span className="kb-onboarding__progress">{doneCount}/3</span>
+          <svg
+            className="kb-onboarding__chevron"
+            width="10"
+            height="10"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
+            <polyline points="6 9 12 15 18 9" />
+          </svg>
         </button>
 
         {next && (
-          <button
-            type="button"
-            className="kb-onboarding__next"
-            onClick={next === 'import' ? onImport : onAsk}
-          >
-            {next === 'import' ? t('kb.onboarding.nextImport') : t('kb.onboarding.nextAsk')}
-          </button>
+          <>
+            <span className="kb-onboarding__hint">
+              {next === 'import' ? t('kb.onboarding.nextImport') : t('kb.onboarding.nextAsk')}
+            </span>
+            <button
+              type="button"
+              className="kb-onboarding__cta"
+              data-testid="kb-onboarding-cta"
+              onClick={next === 'import' ? onImport : onAsk}
+            >
+              {next === 'import' ? t('kb.onboarding.actionImport') : t('kb.onboarding.actionAsk')}
+            </button>
+          </>
         )}
 
         <button
@@ -108,6 +148,11 @@ export function OnboardingChecklist({ hasVault, onImport, onAsk, onBuildWiki, on
         </button>
       </div>
 
+      {/* 进度线：把「走到哪一步」变成结构，而不是只靠一行小字。 */}
+      <div className="kb-onboarding__rail" aria-hidden="true">
+        <span style={{ width: `${(doneCount / STEP_KEYS.length) * 100}%` }} />
+      </div>
+
       {expanded && (
         <ol className="kb-onboarding__steps">
           <li className={steps.vault ? 'is-done' : ''}>
@@ -117,30 +162,10 @@ export function OnboardingChecklist({ hasVault, onImport, onAsk, onBuildWiki, on
           <li className={steps.openOrImport ? 'is-done' : ''}>
             <span className="kb-onboarding__check">{steps.openOrImport ? '✓' : '2'}</span>
             <span>{t('kb.onboarding.step2')}</span>
-            {!steps.openOrImport && (
-              <button
-                type="button"
-                className="kb-onboarding__link"
-                data-testid="kb-onboarding-step-2"
-                onClick={onImport}
-              >
-                {t('kb.onboarding.actionImport')}
-              </button>
-            )}
           </li>
           <li className={steps.ask ? 'is-done' : ''}>
             <span className="kb-onboarding__check">{steps.ask ? '✓' : '3'}</span>
             <span>{t('kb.onboarding.step3')}</span>
-            {!steps.ask && (
-              <button
-                type="button"
-                className="kb-onboarding__link"
-                data-testid="kb-onboarding-step-3"
-                onClick={onAsk}
-              >
-                {t('kb.onboarding.actionAsk')}
-              </button>
-            )}
           </li>
         </ol>
       )}

@@ -749,7 +749,7 @@ const en: Record<string, string> = {
   'kb.chatMenu.hide': 'Hide button',
   'kb.chatMenu.show': 'Show button',
   'kb.chatMenu.resetPos': 'Reset position',
-  'kb.onboarding.title': '🚀 Get started',
+  'kb.onboarding.title': 'Get started',
   'kb.onboarding.nextImport': 'Next: import a file',
   'kb.onboarding.nextAsk': 'Next: ask a question',
   'kb.onboarding.step1': 'Your library is ready',

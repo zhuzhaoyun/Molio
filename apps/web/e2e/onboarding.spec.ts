@@ -102,6 +102,10 @@ test('全新安装点示例库后 checklist 紧接着出现', async ({ page }) =
   await expect(page.locator('[data-testid="kb-onboarding"]')).toBeVisible();
   // 建库 + 自动打开入口文档至少完成两步，不可能是 0/3。
   await expect(page.locator('[data-testid="kb-onboarding"]')).toContainText(/[12]\/3/);
+  // 下一步必须是可点的主按钮，而不是一段容易被忽略的说明文字。
+  const cta = page.locator('[data-testid="kb-onboarding-cta"]');
+  await expect(cta).toBeVisible();
+  await expect(cta).toHaveRole('button');
 });
 
 test('checklist 1/3 → 2/3 → 3/3，完成后显示完成态', async ({ page }) => {
@@ -137,7 +141,8 @@ test('checklist 1/3 → 2/3 → 3/3，完成后显示完成态', async ({ page }
     await page.locator('.kb-tree-item').filter({ hasText: 'test.md' }).first().click();
     await expect(page.locator('[data-testid="kb-onboarding"]')).toContainText('2/3');
 
-    await page.locator('[data-testid="kb-btn-ask-tab"]').click();
+    // 走 checklist 自己的主按钮，而不是 Tab 栏入口：这是新手唯一被明确指路的路径。
+    await page.locator('[data-testid="kb-onboarding-cta"]').click();
     const input = page.locator('[data-testid="kb-chat-panel"] [data-testid="composer-input"]');
     await input.fill('这篇文档讲了什么？');
     await page.locator('[data-testid="kb-chat-panel"] [data-testid="composer-send"]').click();

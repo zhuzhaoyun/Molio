@@ -752,7 +752,7 @@ const zh: Record<string, string> = {
   'kb.chatMenu.show': '唤回按钮',
   'kb.chatMenu.resetPos': '恢复默认位置',
   // 首次激活 checklist（仅全新安装、0 库时出现；老用户直接 done 不显示）
-  'kb.onboarding.title': '🚀 开始使用',
+  'kb.onboarding.title': '开始使用',
   'kb.onboarding.nextImport': '下一步：导入一个文件',
   'kb.onboarding.nextAsk': '下一步：提一个问题',
   'kb.onboarding.step1': '知识库已就绪',

@@ -3701,16 +3701,18 @@
 .kb-onboarding {
   flex: none;
   border-bottom: 1px solid var(--border);
-  background: var(--bg-subtle);
+  /* 比文档底色暖一档：让它读起来像「正在进行的引导」，而不是又一条工具栏。 */
+  background: color-mix(in srgb, var(--accent-tint) 55%, var(--bg-panel));
   font-size: 13px;
+  position: relative;
 }
 
 .kb-onboarding__bar {
   display: flex;
   align-items: center;
-  gap: 12px;
-  min-height: 36px;
-  padding: 0 12px;
+  gap: 10px;
+  min-height: 44px;
+  padding: 0 8px 0 12px;
 }
 
 .kb-onboarding__toggle {
@@ -3722,7 +3724,58 @@
   color: var(--text);
   font: inherit;
   cursor: pointer;
-  padding: 4px 0;
+  padding: 4px 6px;
+  border-radius: 6px;
+  flex: none;
+}
+
+.kb-onboarding__toggle:hover {
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+}
+
+.kb-onboarding__toggle:focus-visible,
+.kb-onboarding__cta:focus-visible,
+.kb-onboarding__dismiss:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.kb-onboarding__dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.kb-onboarding__dot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 1px solid var(--border-strong);
+  color: var(--text-muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  flex: none;
+}
+
+.kb-onboarding__dot.is-current {
+  border-color: var(--accent);
+  border-width: 1.5px;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.kb-onboarding__dot.is-done {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.kb-onboarding__title {
+  font-weight: 600;
+  white-space: nowrap;
 }
 
 .kb-onboarding__progress {
@@ -3730,16 +3783,46 @@
   font-variant-numeric: tabular-nums;
 }
 
-.kb-onboarding__next {
-  margin-left: auto;
+.kb-onboarding__chevron {
+  color: var(--text-muted);
+  transition: transform 150ms ease;
+}
+
+.kb-onboarding__toggle[aria-expanded='true'] .kb-onboarding__chevron {
+  transform: rotate(180deg);
+}
+
+/* 下一步说明紧跟在进度后面，主按钮就在它旁边——不把唯一动作推到远端角落。 */
+.kb-onboarding__hint {
+  color: var(--text-muted);
+  margin-left: 6px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kb-onboarding__cta {
+  flex: none;
+  height: 28px;
+  padding: 0 14px;
   border: 0;
-  background: transparent;
-  color: var(--accent);
+  border-radius: var(--radius-sm);
+  background: var(--accent);
+  color: #fff;
   font: inherit;
+  font-size: 13px;
+  font-weight: 600;
   cursor: pointer;
+  transition: background 120ms ease;
+}
+
+.kb-onboarding__cta:hover {
+  background: var(--accent-hover);
 }
 
 .kb-onboarding__dismiss {
+  margin-left: auto;
   border: 0;
   background: transparent;
   color: var(--text-muted);
@@ -3747,15 +3830,41 @@
   line-height: 1;
   cursor: pointer;
   padding: 4px 6px;
+  flex: none;
+}
+
+.kb-onboarding__rail {
+  height: 2px;
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+.kb-onboarding__rail > span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width 240ms ease;
+}
+
+@media (max-width: 720px) {
+  .kb-onboarding__hint {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kb-onboarding__rail > span,
+  .kb-onboarding__chevron {
+    transition: none;
+  }
 }
 
 .kb-onboarding__steps {
   margin: 0;
-  padding: 4px 12px 10px;
+  padding: 2px 12px 10px 14px;
   list-style: none;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
 }
 
 .kb-onboarding__steps li {
@@ -3776,7 +3885,7 @@
   width: 18px;
   height: 18px;
   border-radius: 50%;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-strong);
   font-size: 11px;
   flex: none;
 }
