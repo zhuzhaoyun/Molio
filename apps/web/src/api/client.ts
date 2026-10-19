@@ -12,6 +12,7 @@ import type {
   HubSkillsQuery, HubSkillsListResponse, HubCategoriesResponse,
   InstallHubSkillRequest, InstallHubSkillResponse,
   HubSkillDetailQuery, HubSkillDetailResponse,
+  SaveQuizAttemptsRequest,
 } from '@molio/contracts';
 
 /**
@@ -670,6 +671,16 @@ export const api = {
       body: JSON.stringify({ content }),
     });
     if (!res.ok) throw new Error(`Failed to write file: ${res.status}`);
+  },
+
+  /** Persist a submitted quiz's per-question attempts (batch). */
+  async saveQuizAttempts(payload: SaveQuizAttemptsRequest): Promise<void> {
+    const res = await fetch(`${BASE}/quiz/attempts`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) throw new Error(`Failed to save quiz attempts: ${res.status}`);
   },
 
   /** Upload an image asset to the vault's .molio/assets/ directory. */

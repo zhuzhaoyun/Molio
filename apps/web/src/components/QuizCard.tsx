@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { api } from '../api/client';
 import { useI18n } from '../i18n';
 import { useActiveVaultId } from '../stores/vaultStore';
 import { useWikiLinkClick } from '../hooks/useWikiLinkClick';
@@ -163,7 +164,24 @@ function QuizBody({
   const handleSubmit = useCallback(() => {
     if (!ready || submitted) return;
     setSubmitted(true);
-  }, [ready, submitted]);
+
+    // 本地判分已完成；落库失败不阻塞用户看结果。
+    if (fingerprint) {
+      const attempts = gradeQuiz(quiz, selections).map((grade) => ({
+        questionId: grade.questionId,
+        chosen: grade.chosen,
+        correct: grade.correct,
+      }));
+      void api.saveQuizAttempts({
+        vaultId: vaultId ?? null,
+        quizFingerprint: fingerprint,
+        conversationId: conversationId ?? null,
+        attempts,
+      }).catch(() => {
+        // 一期不向用户暴露落库失败：答题体验优先，错题本/统计是二期能力。
+      });
+    }
+  }, [ready, submitted, fingerprint, quiz, selections, vaultId, conversationId]);
 
   const handleRedo = useCallback(() => {
     setSelections({});

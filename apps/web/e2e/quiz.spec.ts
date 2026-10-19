@@ -99,6 +99,15 @@ test.describe('Quiz interaction block', () => {
         body: JSON.stringify({ path: 'notes/番茄工作法.md' }),
       });
     });
+
+    // 默认把答题落库挡在浏览器里：否则 E2E 会写进开发者的真实数据库。
+    await page.route('**/api/quiz/attempts', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ ok: true, inserted: 0 }),
+      });
+    });
   });
 
   test.afterEach(async ({ page }) => {
@@ -106,6 +115,7 @@ test.describe('Quiz interaction block', () => {
     await page.unroute('**/api/knowledge/vaults');
     await page.unroute('**/api/knowledge/active-vault');
     await page.unroute('**/api/knowledge/vaults/vault-1/resolve/**');
+    await page.unroute('**/api/quiz/attempts');
   });
 
   test('renders questions, options and a disabled submit until every question is answered', async ({ page }) => {
@@ -147,7 +157,26 @@ test.describe('Quiz interaction block', () => {
     await card.locator('[data-testid="quiz-option"][data-question-id="q2"][data-key="A"]').click();
     await card.locator('[data-testid="quiz-option"][data-question-id="q2"][data-key="B"]').click();
     await card.locator('[data-testid="quiz-option"][data-question-id="q3"][data-key="B"]').click();
+
+    await page.unroute('**/api/quiz/attempts');
+    let attemptBody: any = null;
+    await page.route('**/api/quiz/attempts', async (route) => {
+      attemptBody = JSON.parse(route.request().postData() || '{}');
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ ok: true, inserted: 3 }),
+      });
+    });
+
     await card.locator('[data-testid="quiz-submit"]').click();
+
+    await expect.poll(() => attemptBody?.attempts?.length).toBe(3);
+    expect(attemptBody.quizFingerprint).toMatch(/^[0-9a-f]{64}$/);
+    expect(attemptBody.conversationId).toBe('conv-1');
+    expect(attemptBody.attempts[0]).toMatchObject({
+      questionId: 'q1', chosen: ['B'], correct: true,
+    });
 
     const results = card.locator('[data-testid="quiz-result"]');
     await expect(results).toHaveCount(3);
