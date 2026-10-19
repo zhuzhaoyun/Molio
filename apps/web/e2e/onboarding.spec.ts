@@ -6,7 +6,7 @@ import { test, expect, type Page } from '@playwright/test';
 import { rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { createTempVault, cleanupTempVault } from './helpers/cleanup';
-import { mockChatRun, mockNoAgents } from './helpers/mock-sse';
+import { mockChatRun, mockUnavailableAgents } from './helpers/mock-sse';
 
 const DAEMON = `http://localhost:${Number(process.env.MOLIO_E2E_DAEMON_PORT ?? 3100)}`;
 const SAMPLE_PATH = join(process.env.MOLIO_E2E_DATA_DIR!, 'sample-vault');
@@ -324,7 +324,9 @@ test('没有可用运行时时，提问步先引导配置 AI', async ({ page }) 
       mapDismissed: true,
       startedAt: Date.now(),
     });
-    await mockNoAgents(page);
+    // 真机形状：daemon 仍列出所有已知运行时，只是全部 available:false。
+    // 用空数组 mock 会掩盖「只判 agents.length === 0」的 bug。
+    await mockUnavailableAgents(page);
     await page.goto(`/knowledge?vault=${vault.id}`);
 
     const cta = page.locator('[data-testid="kb-onboarding-cta"]');

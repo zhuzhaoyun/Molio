@@ -325,7 +325,10 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
   // 保存 → 消息工具条。没有可用运行时的那一帧例外：提问键点了也发不出去，
   // 此时动画仍留在 checklist 的「先配置 AI」上。
   const { agents, loading: agentsLoading, error: agentsError } = useAgents();
-  const noRuntime = !agentsLoading && !agentsError && agents.length === 0;
+  // daemon 永远会列出全部已知运行时（包括没装的），「没装」体现在 available
+  // 为 false，而不是数组为空——只判 length 会让真机上这条分流永远不生效。
+  const noRuntime =
+    !agentsLoading && !agentsError && !agents.some((a) => a.available);
   const onboardingHint = useOnboardingHint();
 
   // 只在库列表首次取回时初始化：0 库 → 激活，老用户 → 直接 done。

@@ -434,6 +434,41 @@ export async function mockNoAgents(page: Page) {
   });
 }
 
+/**
+ * Mock GET /api/agents → the shape a real daemon returns when nothing is
+ * installed: every known runtime is still listed, but `available` is false.
+ * `mockNoAgents` (empty array) is a shape the daemon never actually emits —
+ * use this one to test "已安装 0 个运行时" logic.
+ */
+export async function mockUnavailableAgents(page: Page) {
+  const agents = ['claude', 'codex', 'gemini', 'qwen', 'hermes', 'dsh'].map((id) => ({
+    id,
+    name: id,
+    available: false,
+    binary: '/dev/null',
+    source: 'env-override',
+    version: null,
+    probeError: 'spawn /dev/null EACCES',
+    models: [],
+    installUrl: '',
+    installable: true,
+  }));
+  await page.route('**/api/agents', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ agents }),
+    });
+  });
+  await page.route('**/api/config', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ locale: 'zh' }),
+    });
+  });
+}
+
 // ── Cleanup ────────────────────────────────────────────────────────────
 
 /**
