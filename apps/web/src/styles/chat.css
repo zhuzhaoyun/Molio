@@ -1659,22 +1659,26 @@
   line-height: 1;
 }
 
-/* First-run save step: a short breathing ring, matched to the checklist CTA.
- * The text label says what it is; the motion says where it is. Three cycles
- * only — a permanently pulsing toolbar would compete with the answer. */
+/* First-run save step: a breathing ring matched to the real KB buttons.
+ * The text label says what it is; the motion says where it is. Keeps cycling
+ * until the file is written — a 3-shot burst is easy to miss if the user
+ * looks away for a few seconds (2026-10-19 acceptance feedback). */
 @keyframes icon-guide-pulse {
-  0%   { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 40%, transparent); }
-  70%  { box-shadow: 0 0 0 5px transparent; }
+  0%   { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 45%, transparent); }
+  55%  { box-shadow: 0 0 0 5px transparent; }
   100% { box-shadow: 0 0 0 0 transparent; }
 }
 .icon-btn--guide {
   color: var(--accent);
   border-color: var(--accent-soft);
   background: color-mix(in srgb, var(--accent) 8%, transparent);
-  animation: icon-guide-pulse 1.4s ease-out 3;
+  animation: icon-guide-pulse 2.4s ease-out infinite;
 }
 @media (prefers-reduced-motion: reduce) {
-  .icon-btn--guide { animation: none; }
+  .icon-btn--guide {
+    animation: none;
+    box-shadow: 0 0 0 2px var(--accent-soft);
+  }
 }
 
 /* Copied micro-interaction: a brief accent pulse so the checkmark lands. */

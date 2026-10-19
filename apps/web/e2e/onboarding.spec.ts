@@ -155,6 +155,8 @@ test('checklist 1/5 → 5/5：打开、导入、提问、存回都走通', async
     //    而不是 checklist 的中转按钮——引导收起后用户日常点的是前者。
     const importBtn = page.locator('[data-testid="kb-btn-import"]');
     await expect(importBtn).toHaveCSS('animation-name', 'kb-guide-pulse');
+    // 必须持续循环：只播几次的话，用户晚看几秒就什么都看不到。
+    await expect(importBtn).toHaveCSS('animation-iteration-count', 'infinite');
     await importBtn.click();
     const dialog = page.locator('.kb-modal').filter({ has: page.locator('.kb-dropzone') });
     await expect(dialog).toBeVisible({ timeout: 5_000 });
@@ -169,6 +171,7 @@ test('checklist 1/5 → 5/5：打开、导入、提问、存回都走通', async
     // 4. 就这份资料提一个问题：同样指向文档头的真实问答键。
     const askBtn = page.locator('[data-testid="kb-btn-ask"]');
     await expect(askBtn).toHaveCSS('animation-name', 'kb-guide-pulse');
+    await expect(askBtn).toHaveCSS('animation-iteration-count', 'infinite');
     await askBtn.click();
     const input = page.locator('[data-testid="kb-chat-panel"] [data-testid="composer-input"]');
     await input.fill('这份资料讲了什么？');

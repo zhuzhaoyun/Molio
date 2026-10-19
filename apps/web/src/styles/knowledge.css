@@ -3828,16 +3828,19 @@
 }
 
 /* 引导呼吸环长在「真实按钮」上（导入 / 问答 / 保存）：引导收起后用户日常用的
-   就是这些键，动画不该只教会用户点 checklist 上的中转按钮。三次后停下，
-   避免常驻跳动变成噪音（2026-10-19 验收反馈：只靠一行说明注意不到）。 */
+   就是这些键，动画不该只教会用户点 checklist 上的中转按钮。
+
+   持续循环而不是只播 3 次：验收时用户恰好没看向那一块，4 秒后动画已经结束，
+   结果就是「我没看到」。2.4s 一个周期、大半时间停留在静止状态，既有存在感
+   又不至于变成频闪；步骤一完成 class 移除，动画随之消失。 */
 @keyframes kb-guide-pulse {
-  0%   { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 45%, transparent); }
-  70%  { box-shadow: 0 0 0 6px transparent; }
+  0%   { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 50%, transparent); }
+  55%  { box-shadow: 0 0 0 6px transparent; }
   100% { box-shadow: 0 0 0 0 transparent; }
 }
 
 .kb-guide-pulse {
-  animation: kb-guide-pulse 1.4s ease-out 3;
+  animation: kb-guide-pulse 2.4s ease-out infinite;
 }
 
 .kb-onboarding__cta:hover {
@@ -3845,7 +3848,12 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .kb-guide-pulse { animation: none; }
+  /* 关闭动画不等于去掉提示：留一圈静态高亮，否则「减弱动态效果」的用户
+     会彻底看不到引导目标。 */
+  .kb-guide-pulse {
+    animation: none;
+    box-shadow: 0 0 0 2px var(--accent-soft);
+  }
 }
 
 .kb-onboarding__dismiss {
