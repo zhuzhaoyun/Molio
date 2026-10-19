@@ -1,12 +1,12 @@
-import { useMemo, useCallback } from 'react';
+import { useMemo } from 'react';
 import type { ChatMessage } from '../hooks/useChatCore';
 import { renderMarkdown, splitContent } from '../utils/markdown';
 import { groupTools, isInteractive } from '../utils/toolGroups';
 import { splitMessageParts } from '../utils/messageText';
 import { CodeBlock } from './CodeBlock';
+import { QuizCard } from './QuizCard';
+import { useWikiLinkClick } from '../hooks/useWikiLinkClick';
 import { useI18n } from '../i18n';
-import { useActiveVaultId } from '../stores/vaultStore';
-import { useFileNavigation } from '../hooks/useFileNavigation';
 import { ToolCard } from './ToolCard';
 import { WorkBlock } from './WorkBlock';
 import { WorkCompleteBanner } from './WorkCompleteBanner';
@@ -31,9 +31,11 @@ interface Props {
   onContinue?: () => void;
   /** Request to delete (opens selection mode with this message's pair). */
   onRequestDelete?: (id: string) => void;
+  /** Conversation id — scopes quiz localStorage keys. */
+  conversationId?: string | null;
 }
 
-export function AssistantMessage({ message, isLast, onAnswerToolUse, onSubmitForm, onRegenerate, onContinue, onRequestDelete }: Props) {
+export function AssistantMessage({ message, isLast, onAnswerToolUse, onSubmitForm, onRegenerate, onContinue, onRequestDelete, conversationId }: Props) {
   const { t } = useI18n();
   const selectMode = useSelectMode();
   const selected = useIsSelected(message.id);
@@ -64,33 +66,7 @@ export function AssistantMessage({ message, isLast, onAnswerToolUse, onSubmitFor
   // 有工作痕迹（思考 / 工具 / 运行中）时整块渲染；纯问答降级为独立 usage-footer。
   const hasWorkBlock = !!message.streaming || workItems.length > 0 || !!message.thinking;
 
-  const activeVaultId = useActiveVaultId();
-  const { openFile } = useFileNavigation();
-
-  const handleProseClick = useCallback(
-    (e: React.MouseEvent<HTMLDivElement>) => {
-      const target = e.target as HTMLElement;
-      const link = target.closest('.kb-wiki-link') as HTMLAnchorElement | null;
-      if (!link || !activeVaultId) return;
-
-      e.preventDefault();
-      const filePath = link.getAttribute('data-file-path') || link.textContent?.trim();
-      if (!filePath) return;
-
-      // Check if file exists before navigating (dead link handling)
-      const encoded = encodeURIComponent(filePath).replace(/%2F/g, '/');
-      fetch(`/api/knowledge/vaults/${activeVaultId}/resolve/${encoded}`)
-        .then((res) => {
-          if (res.status === 404) {
-            window.alert(`文件 "${filePath}" 不存在`);
-            return;
-          }
-          openFile(activeVaultId, filePath);
-        })
-        .catch(() => openFile(activeVaultId, filePath));
-    },
-    [openFile, activeVaultId],
-  );
+  const handleProseClick = useWikiLinkClick();
 
   return (
     <div
@@ -132,13 +108,14 @@ export function AssistantMessage({ message, isLast, onAnswerToolUse, onSubmitFor
             <span className="assistant-error-label">错误</span>
           </div>
           <div className="assistant-error-body">
-            {splitContent(message.error).map((seg, i) =>
-              seg.type === 'text' ? (
-                <div key={i} dangerouslySetInnerHTML={{ __html: renderMarkdown(seg.content) }} />
-              ) : (
-                <CodeBlock key={i} lang={seg.lang} code={seg.code} streaming={false} />
-              ),
-            )}
+            {splitContent(message.error).map((seg, i) => {
+              if (seg.type === 'text') {
+                return <div key={i} dangerouslySetInnerHTML={{ __html: renderMarkdown(seg.content) }} />;
+              }
+              const code = seg.type === 'quiz' ? seg.raw : seg.code;
+              const lang = seg.type === 'quiz' ? 'quiz' : seg.lang;
+              return <CodeBlock key={i} lang={lang} code={code} streaming={false} />;
+            })}
           </div>
         </div>
       )}
@@ -166,13 +143,23 @@ export function AssistantMessage({ message, isLast, onAnswerToolUse, onSubmitFor
           onClick={handleProseClick}
           role="presentation"
         >
-          {segments.map((seg, i) =>
-            seg.type === 'text' ? (
-              <div key={i} dangerouslySetInnerHTML={{ __html: renderMarkdown(seg.content) }} />
-            ) : (
-              <CodeBlock key={i} lang={seg.lang} code={seg.code} streaming={message.streaming} />
-            ),
-          )}
+          {segments.map((seg, i) => {
+            if (seg.type === 'text') {
+              return <div key={i} dangerouslySetInnerHTML={{ __html: renderMarkdown(seg.content) }} />;
+            }
+            if (seg.type === 'quiz') {
+              return (
+                <QuizCard
+                  key={i}
+                  raw={seg.raw}
+                  complete={seg.complete}
+                  streaming={message.streaming}
+                  conversationId={conversationId}
+                />
+              );
+            }
+            return <CodeBlock key={i} lang={seg.lang} code={seg.code} streaming={message.streaming} />;
+          })}
         </div>
       )}
 

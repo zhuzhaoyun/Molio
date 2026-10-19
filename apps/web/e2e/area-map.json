@@ -44,7 +44,11 @@
         "apps/daemon/src/streams/*",
         "apps/web/src/components/RuntimeModelPill.*",
         "apps/web/src/components/runtimeModelOptions.*",
-        "apps/web/src/stores/chatRuntimeStore.*"
+        "apps/web/src/stores/chatRuntimeStore.*",
+        "apps/web/src/components/QuizCard.*",
+        "apps/web/src/utils/quiz.*",
+        "apps/web/src/utils/quizFile.*",
+        "apps/web/src/hooks/useWikiLinkClick.*"
       ],
       "specs": [
         "chat-single",
@@ -67,7 +71,8 @@
         "composer-hints",
         "chat-markdown",
         "session-output",
-        "session-output-history"
+        "session-output-history",
+        "quiz"
       ]
     },
     "kb": {
@@ -293,6 +298,10 @@
     "chat-single": {
       "priority": "P0",
       "file": "chat-single.spec.ts"
+    },
+    "quiz": {
+      "priority": "P0",
+      "file": "quiz.spec.ts"
     },
     "chat-multi": {
       "priority": "P0",

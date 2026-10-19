@@ -76,6 +76,7 @@ export function ChatSessionView({
   messages,
   isRunning,
   activity,
+  conversationId,
   onSend,
   onSubmitForm,
   onCancel,
@@ -214,6 +215,7 @@ export function ChatSessionView({
               <AssistantMessage
                 key={msg.id}
                 message={msg}
+                conversationId={conversationId}
                 isLast={msg.id === lastAssistantId}
                 onAnswerToolUse={onSubmitToolResult ? onAnswerToolUse : undefined}
                 onSubmitForm={onSubmitForm ?? ((text: string) => handleSend(text, []))}
