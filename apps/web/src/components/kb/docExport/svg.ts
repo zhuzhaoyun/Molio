@@ -29,7 +29,12 @@ export interface PageSvgOptions {
   bodyHeight: number;
   viewBoxY: number;
   viewBoxHeight: number;
-  /** 只有正常整页带页脚；超大块的切片不带。 */
+  /**
+   * 页面坐标下「正文可见内容」的高度：正常整页 = 上内边距 + 正文高；切片页 =
+   * 切片高。`viewBoxY + contentHeight` 是页脚带上沿，页脚前的遮罩从这里盖住
+   * 切片溢出到页脚区的正文。
+   */
+  contentHeight: number;
   footer?: PageFooter;
 }
 
@@ -50,10 +55,15 @@ function cdata(css: string): string {
 function buildFooter(footer: PageFooter, bottom: number): string {
   const baseline = bottom - 34;
   const style = `font-family="${FONT_STACK}" font-size="24" fill="${escapeXml(footer.ink)}"`;
+  // 水印恒有；页码只在多页时出现——单页导出写 `1 / 1` 只会让读者以为还有下一页。
+  const pageNumber =
+    footer.total > 1
+      ? `<text x="${EXPORT_WIDTH - EXPORT_PADDING_X}" y="${baseline}" text-anchor="end" ${style}>` +
+        `${footer.page} / ${footer.total}</text>`
+      : '';
   return (
     `<text x="${EXPORT_PADDING_X}" y="${baseline}" ${style}>${escapeXml(footer.watermark)}</text>` +
-    `<text x="${EXPORT_WIDTH - EXPORT_PADDING_X}" y="${baseline}" text-anchor="end" ${style}>` +
-    `${footer.page} / ${footer.total}</text>`
+    pageNumber
   );
 }
 
@@ -68,6 +78,17 @@ export function buildPageSvg(options: PageSvgOptions): string {
   const footerBottom = options.viewBoxY + pageHeight;
   const footer = options.footer ? buildFooter(options.footer, footerBottom) : '';
 
+  // 切片页的 foreignObject 装的是整块内容，远超当前页的可见高度；不遮住
+  // 页脚带的话，切片正文会从页脚文字下面穿过去。遮罩用页面背景色铺满
+  // 「内容底 → 页底」这一段，正好把页脚带盖成一块干净底板。
+  const maskTop = options.viewBoxY + options.contentHeight;
+  const maskHeight = pageHeight - options.contentHeight;
+  const mask =
+    options.footer && maskHeight > 0
+      ? `<rect x="0" y="${maskTop}" width="${EXPORT_WIDTH}" height="${maskHeight}"` +
+        ` fill="${escapeXml(options.background)}"/>`
+      : '';
+
   return [
     `<svg xmlns="http://www.w3.org/2000/svg" width="${pixelWidth}" height="${pixelHeight}"` +
       ` viewBox="0 ${options.viewBoxY} ${EXPORT_WIDTH} ${pageHeight}">`,
@@ -79,6 +100,7 @@ export function buildPageSvg(options: PageSvgOptions): string {
     options.bodyHtml,
     `</div>`,
     `</foreignObject>`,
+    mask,
     footer,
     `</svg>`,
   ].join('');

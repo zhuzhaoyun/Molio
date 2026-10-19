@@ -46,6 +46,8 @@ export interface ExportCssParts {
   background: string;
   /** 应用主题色（wiki 链接边框用）。 */
   accent: string;
+  /** 应用 `base.css` 里影响代码排版的变量解析值。 */
+  code: { fontFamily: string; background: string; color: string };
 }
 
 /**
@@ -57,12 +59,42 @@ export interface ExportCssParts {
  * 写死就会在深色模式下导出黑字。
  */
 export function composeExportCss(parts: ExportCssParts): string {
+  // 以下两条规则复制自 apps/web/src/styles/base.css（`* { box-sizing }` 与
+  // `code { … }`）。离屏测量宿主长在应用文档里，天然吃得到 base.css；导出的
+  // SVG 是隔离文档，只会拿到这里。两边不同级联时量出来的高度会比画出来的矮
+  // （代码块尤其明显：少一条 `font-size: 0.92em` 就矮 8.7%），分页随后按错的
+  // 高度裁切，正文底部被静默丢掉。**改 base.css 这两条时必须同步改这里。**
+  // 选择器必须带 `.molio-doc-export` 作用域：同一份 CSS 也以 <style> 注入
+  // 实时宿主，裸规则会漏到整个应用。主题自己的 `.codespan` /
+  // `pre.code__pre > code` 选择器优先级仍高于这里的元素规则，两个世界一致。
+  // base.css 里 button/input/textarea/select 的规则尚未镜像：Markdown 里内嵌
+  // 原始表单控件属于极少数场景，导出会与预览不一致；需要时按同一方式补。
   const compat = [
     `${EXPORT_SCOPE} { color: ${parts.color}; background: ${parts.background}; }`,
+    `${EXPORT_SCOPE} * { box-sizing: border-box; }`,
+    `${EXPORT_SCOPE} code { font-family: ${parts.code.fontFamily};` +
+      ` background: ${parts.code.background}; color: ${parts.code.color};` +
+      ` padding: 1px 5px; border-radius: 4px; font-size: 0.92em; }`,
     `${EXPORT_SCOPE} a.kb-wiki-link { cursor: pointer; color: ${parts.accent};` +
       ` text-decoration: none; border-bottom: 1px dashed ${parts.accent}; }`,
   ].join('\n');
-  return [EXPORT_ROOT_CSS, compat, rewriteScope(parts.theme), rewriteScope(parts.inline)].join('\n');
+  // 导出专属的有意偏离：预览里长代码行可以横向滚动，静态图里滚不了，
+  // 保持 nowrap 等于把行尾静默裁掉。放在主题 CSS 之后，才能压过主题同
+  // 优先级的 `white-space: nowrap`。
+  const deviations = [
+    `${EXPORT_SCOPE} pre.code__pre > code,`,
+    `${EXPORT_SCOPE} .hljs.code__pre > code {`,
+    '  white-space: pre-wrap;',
+    '  overflow-wrap: anywhere;',
+    '}',
+  ].join('\n');
+  return [
+    EXPORT_ROOT_CSS,
+    compat,
+    rewriteScope(parts.theme),
+    rewriteScope(parts.inline),
+    deviations,
+  ].join('\n');
 }
 
 export interface BlockRect {

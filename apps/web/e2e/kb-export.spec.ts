@@ -46,6 +46,23 @@ const SHORT_MD = `# 导出短文
 短文档应该只出一张图。
 `;
 
+// 公式单独成篇：栅格后的墨迹像素数必须显著大于空白页，否则说明公式在
+// foreignObject 里被吞掉了（PNG 字节数不可靠——空白页也有一堆压缩噪声）。
+const FORMULA_MD = `$$
+\\int_0^1 x^2 \\, dx = \\frac{1}{3}
+$$
+`;
+
+// 一行 300+ 字符：导出时若不换行，静态图里会被横向裁掉；预览里只是可滚动，
+// 所以必须靠 SVG 侧的 scrollWidth <= clientWidth 判定。
+const LONG_LINE = 'abcdefghij'.repeat(32);
+const LONGLINE_MD = `# 长行代码
+
+\`\`\`ts
+const veryLong = '${LONG_LINE}';
+\`\`\`
+`;
+
 const LONG_MD = [
   '# 长文档分页',
   ...Array.from({ length: 60 }, (_, i) =>
@@ -136,9 +153,119 @@ function decodeSvgDataUrl(dataUrl: string): string {
   return Buffer.from(dataUrl.slice(dataUrl.indexOf(',') + 1), 'base64').toString('utf8');
 }
 
-async function openExportFile(page: Page, filename: string) {
+/** 栅格化真正用到的 SVG data URL（公式栅格需要原始 data URL 再交给 Image）。 */
+async function readCapturedSvgDataUrls(page: Page): Promise<string[]> {
+  const captured = await page.evaluate(
+    () => (window as unknown as { __capturedExportSvg?: string[] }).__capturedExportSvg ?? [],
+  );
+  return captured.filter((dataUrl) => decodeSvgDataUrl(dataUrl).includes('molio-doc-export'));
+}
+
+/** 栅格化真正用到的 SVG 字符串（按捕获顺序；重试会带来同一页的重复项）。 */
+async function readCapturedSvgs(page: Page): Promise<string[]> {
+  const captured = await readCapturedSvgDataUrls(page);
+  return captured.map(decodeSvgDataUrl);
+}
+
+interface ParsedPageSvg {
+  viewBoxY: number;
+  viewBoxHeight: number;
+  foreignObjectHeight: number;
+  page: number;
+  total: number;
+}
+
+function parsePageSvg(svg: string): ParsedPageSvg {
+  const viewBox = /viewBox="0 ([\d.]+) 1080 ([\d.]+)"/.exec(svg);
+  const foreignObject = /<foreignObject[^>]*height="([\d.]+)"/.exec(svg);
+  const pageNumber = /(\d+) \/ (\d+)<\/text>/.exec(svg);
+  expect(viewBox, `SVG 少了 viewBox: ${svg.slice(0, 200)}`).toBeTruthy();
+  expect(foreignObject, `SVG 少了 foreignObject 高度`).toBeTruthy();
+  expect(pageNumber, `多页 SVG 少了页码`).toBeTruthy();
+  return {
+    viewBoxY: Number(viewBox![1]),
+    viewBoxHeight: Number(viewBox![2]),
+    foreignObjectHeight: Number(foreignObject![1]),
+    page: Number(pageNumber![1]),
+    total: Number(pageNumber![2]),
+  };
+}
+
+/**
+ * 把导出的 SVG 装进同源 iframe 重新排版并测量。
+ *
+ * srcdoc 按 HTML 解析，XML 专用的 `<![CDATA[…]]>` 会被当成样式表内容里的
+ * 非法 token，整段 CSS 规则失效（实测 styleSheets 规则数为 0）——测量前
+ * 剥掉 CDATA 包装。加载后把根 SVG 强制成 viewBox 原尺寸（1:1），这样
+ * getBoundingClientRect 的读数就是 SVG 用户单位，和 foreignObject 属性可比。
+ */
+async function inspectSvgInIframe(
+  page: Page,
+  svg: string,
+  selector: string,
+): Promise<{
+  height: number;
+  scrollWidth: number;
+  clientWidth: number;
+  cssRuleCount: number;
+} | null> {
+  // 只拆 CDATA 包装，并还原生产 cdata() 对字面 `]]>` 的拆分
+  // （`]]]]><![CDATA[>`）。整段删 `]]>` 会改坏含该字面量的自定义主题 CSS。
+  const markup = svg.replace(
+    /<!\[CDATA\[([\s\S]*?)\]\]>/g,
+    (_match, css: string) => css.replace(/\]\]\]\]><!\[CDATA\[>/g, ']]>'),
+  );
+  return page.evaluate(
+    async ({ markup, selector }) => {
+      const iframe = document.createElement('iframe');
+      iframe.style.cssText =
+        'position:fixed;left:-10000px;top:0;width:2160px;height:8000px;border:0';
+      document.body.appendChild(iframe);
+      try {
+        await new Promise<void>((resolve, reject) => {
+          const timer = setTimeout(() => reject(new Error('svg iframe load timeout')), 10_000);
+          iframe.onload = () => {
+            clearTimeout(timer);
+            resolve();
+          };
+          iframe.srcdoc = markup;
+        });
+        const doc = iframe.contentDocument;
+        if (!doc) return null;
+        const root = doc.querySelector('svg') as SVGSVGElement | null;
+        if (!root || !root.viewBox?.baseVal) return null;
+        root.setAttribute('width', String(root.viewBox.baseVal.width));
+        root.setAttribute('height', String(root.viewBox.baseVal.height));
+        const el = doc.querySelector(selector) as HTMLElement | null;
+        if (!el) return null;
+        // CSS 规则数为 0 说明 CDATA/样式在 iframe 里没生效——此时未加样式的
+        // 内容只会量得更矮、`code` 的 scrollWidth/clientWidth 都是 0，两条
+        // 断言会双双「通过」。把它作为前置判据，防止判别器退化成空断言。
+        const cssRuleCount = Array.from(doc.styleSheets).reduce((count, sheet) => {
+          try {
+            return count + sheet.cssRules.length;
+          } catch {
+            return count;
+          }
+        }, 0);
+        return {
+          height: el.getBoundingClientRect().height,
+          scrollWidth: el.scrollWidth,
+          clientWidth: el.clientWidth,
+          cssRuleCount,
+        };
+      } finally {
+        iframe.remove();
+      }
+    },
+    { markup, selector },
+  );
+}
+
+async function openExportFile(page: Page, filename: string, expectOutput = true) {
+  // 不要再 reload({waitUntil:'networkidle'})：SSE/HMR 长连接下 networkidle
+  // 不可靠，且 gotoHome 已完成导航、addInitScript 也已生效。
   await gotoHome(page);
-  await page.reload({ waitUntil: 'networkidle' });
   await clickNav(page, 'knowledge');
   await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
 
@@ -151,7 +278,12 @@ async function openExportFile(page: Page, filename: string) {
   await expect(page.locator('.kb-header-filename-center')).toContainText(filename, {
     timeout: 10_000,
   });
-  await expect(page.locator('#output')).toBeVisible({ timeout: 10_000 });
+  // 空文档的 #output 是 0 高，Playwright 会判定不可见；它仍然存在（导出按钮据此渲染）。
+  if (expectOutput) {
+    await expect(page.locator('#output')).toBeVisible({ timeout: 10_000 });
+  } else {
+    await expect(page.locator('#output')).toHaveCount(1, { timeout: 10_000 });
+  }
 }
 
 test.describe('Document image export', () => {
@@ -161,6 +293,9 @@ test.describe('Document image export', () => {
     writeFileSync(join(vaultPath, 'long.md'), LONG_MD);
     writeFileSync(join(vaultPath, 'rich.md'), RICH_MD);
     writeFileSync(join(vaultPath, 'giant.md'), GIANT_MD);
+    writeFileSync(join(vaultPath, 'formula.md'), FORMULA_MD);
+    writeFileSync(join(vaultPath, 'longline.md'), LONGLINE_MD);
+    writeFileSync(join(vaultPath, 'empty.md'), '');
     writeFileSync(join(vaultPath, 'tiny.png'), TINY_PNG);
 
     const res = await fetch(`${DAEMON_API}/knowledge/vaults`, {
@@ -180,13 +315,15 @@ test.describe('Document image export', () => {
   });
 
   test('exports a short document as one 2x PNG', async ({ page }) => {
+    await installSvgCapture(page);
     await openExportFile(page, 'short.md');
 
     const downloadPromise = page.waitForEvent('download', { timeout: 30_000 });
     await page.locator('[data-testid="kb-btn-export-image"]').click();
     const download = await downloadPromise;
 
-    expect(download.suggestedFilename()).toMatch(/^molio-doc-short-\d{8}-\d{4}\.png$/);
+    // 文件名优先用文档 H1（`# 导出短文`），而不是文件 stem `short`。
+    expect(download.suggestedFilename()).toMatch(/^molio-doc-导出短文-\d{8}-\d{4}\.png$/);
     const filePath = await download.path();
     expect(filePath).toBeTruthy();
 
@@ -197,6 +334,12 @@ test.describe('Document image export', () => {
     await expect(page.locator('[data-testid="kb-export-notice"]')).toContainText('已导出', {
       timeout: 30_000,
     });
+
+    // 单页导出：署名恒有，页码不渲染（`1 / 1` 只会让人以为还有下一页）。
+    const svgs = await readCapturedSvgs(page);
+    expect(svgs.length).toBeGreaterThanOrEqual(1);
+    expect(svgs[0]).toContain('Molio');
+    expect(svgs[0]).not.toMatch(/\d+ \/ \d+/);
   });
 
   test('splits a long document into numbered pages', async ({ page }) => {
@@ -215,8 +358,8 @@ test.describe('Document image export', () => {
     await expect.poll(() => downloads.length, { timeout: 90_000 }).toBeGreaterThanOrEqual(2);
 
     const names = downloads.map((d) => d.suggestedFilename());
-    expect(names[0]).toMatch(/^molio-doc-long-\d{8}-\d{4}-1\.png$/);
-    expect(names[1]).toMatch(/^molio-doc-long-\d{8}-\d{4}-2\.png$/);
+    expect(names[0]).toMatch(/^molio-doc-长文档分页-\d{8}-\d{4}-1\.png$/);
+    expect(names[1]).toMatch(/^molio-doc-长文档分页-\d{8}-\d{4}-2\.png$/);
 
     for (const download of downloads) {
       const filePath = await download.path();
@@ -298,10 +441,10 @@ test.describe('Document image export', () => {
     // 只有 3 张，这一步就会失败。
     await expect.poll(() => downloads.length, { timeout: 120_000 }).toBeGreaterThanOrEqual(4);
 
-    // 页名按序编号：-1 / -2 / -3 …（时间戳是分钟精度，跨分钟时允许各页不同）
+    // 页名按序编号：-1 / -2 / -3 …（一次导出共用同一个时间戳，所以整组一致）
     const names = downloads.map((d) => d.suggestedFilename());
     names.forEach((name, i) => {
-      expect(name).toMatch(new RegExp(`^molio-doc-giant-\\d{8}-\\d{4}-${i + 1}\\.png$`));
+      expect(name).toMatch(new RegExp(`^molio-doc-超大单块分片-\\d{8}-\\d{4}-${i + 1}\\.png$`));
     });
 
     for (const [i, download] of downloads.entries()) {
@@ -323,17 +466,144 @@ test.describe('Document image export', () => {
 
     // 内容分区：首段必须落在第一张，尾段必须落在最后一张——证明切片没有把
     // 首尾段落吞掉，也没有把整块内容重复塞进每一页。
-    const captured = await page.evaluate(
-      () =>
-        (window as unknown as { __capturedExportSvg?: string[] }).__capturedExportSvg ?? [],
-    );
-    const exportSvgs = captured
-      .map(decodeSvgDataUrl)
-      .filter((svg) => svg.includes('molio-doc-export'));
+    const exportSvgs = await readCapturedSvgs(page);
     expect(exportSvgs.length).toBeGreaterThanOrEqual(4);
     expect(exportSvgs[0]).toContain(GIANT_LEAD);
     expect(exportSvgs[exportSvgs.length - 1]).toContain(GIANT_TAIL);
     expect(exportSvgs[0]).not.toContain(GIANT_TAIL);
     expect(exportSvgs[exportSvgs.length - 1]).not.toContain(GIANT_LEAD);
+
+    // ── 级联一致性 / 内容不丢（Critical 的直接回归）──────────────────────────
+    // 切片的 foreignObject 装的是整块内容，foreignObject.height = 64 + 测量高度；
+    // 把导出的 SVG 按同一份 CSS 重新排版后，首元素的渲染高度必须落在测量高度内；
+    // 各切片的可见高度之和也必须覆盖整块。测量宿主少了 base.css 的 code 规则时，
+    // 渲染高度会高出约 8.7%，两条断言同时失败。
+    const parsedPages = exportSvgs.map((svg) => ({ svg, info: parsePageSvg(svg) }));
+    const totals = new Set(parsedPages.map(({ info }) => info.total));
+    expect(totals.size).toBe(1);
+    const total = parsedPages[0].info.total;
+    const pageNumbers = [...new Set(parsedPages.map(({ info }) => info.page))].sort(
+      (a, b) => a - b,
+    );
+    expect(pageNumbers).toEqual(Array.from({ length: total }, (_, i) => i + 1));
+    await expect.poll(() => downloads.length, { timeout: 30_000 }).toBe(total);
+    for (const svg of exportSvgs) expect(svg).toContain('Molio');
+
+    // 切片页 viewBox 的 Y 非 0（正常整页从 0 起）；重试会重复捕获同一页，去重。
+    const slicesByY = new Map<number, { svg: string; info: ParsedPageSvg }>();
+    for (const parsed of parsedPages) {
+      if (parsed.info.viewBoxY !== 0 && !slicesByY.has(parsed.info.viewBoxY)) {
+        slicesByY.set(parsed.info.viewBoxY, parsed);
+      }
+    }
+    const slices = [...slicesByY.values()];
+    expect(slices.length).toBeGreaterThanOrEqual(2);
+
+    const firstSlice = slices[0];
+    const rendered = await inspectSvgInIframe(
+      page,
+      firstSlice.svg,
+      'section.container > :first-child',
+    );
+    expect(rendered, '切片页里找不到正文块').toBeTruthy();
+    // 前置判据：导出 CSS 必须在 iframe 里真正生效。规则数为 0 时内容不带
+    // 样式、只会量得更矮，下面的 `<=` 会变成空断言。
+    expect(rendered!.cssRuleCount).toBeGreaterThan(50);
+    expect(rendered!.height).toBeLessThanOrEqual(firstSlice.info.foreignObjectHeight - 64 + 1);
+
+    const sliceCoverage = slices.reduce(
+      (sum, { info }) => sum + (info.viewBoxHeight - 88),
+      0,
+    );
+    expect(sliceCoverage).toBeGreaterThanOrEqual(rendered!.height);
+  });
+
+  test('rasterizes the formula instead of a blank page', async ({ page }) => {
+    test.setTimeout(90_000);
+    await installSvgCapture(page);
+    await openExportFile(page, 'formula.md');
+
+    // 前置：公式已经升级成 MathJax SVG（否则导出的只是原始 LaTeX 文本）
+    await expect(page.locator('#output .katex-block svg')).toHaveCount(1, { timeout: 15_000 });
+
+    const downloadPromise = page.waitForEvent('download', { timeout: 60_000 });
+    await page.locator('[data-testid="kb-btn-export-image"]').click();
+    await downloadPromise;
+
+    const dataUrls = await readCapturedSvgDataUrls(page);
+    expect(dataUrls.length).toBeGreaterThanOrEqual(1);
+    const dataUrl = dataUrls[0];
+
+    // 不用 PNG 字节数当判据（空白页压缩后也不小）：直接把导出的 SVG 画进
+    // canvas，以左上角像素为底色，数「明显偏离底色」的墨迹像素。
+    // 只数页脚带以上：`Molio` 水印本身就有 1600+ 墨迹像素，会把「公式被
+    // 抹掉」的空白页顶到阈值以上，让断言失去判别力。
+    const ink = await page.evaluate(async (src) => {
+      const image = new Image();
+      image.src = src;
+      await image.decode();
+      const canvas = document.createElement('canvas');
+      canvas.width = image.naturalWidth;
+      canvas.height = image.naturalHeight;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) throw new Error('no 2d context');
+      ctx.drawImage(image, 0, 0);
+      const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const background = [data[0], data[1], data[2]];
+      // 页脚带固定 88 用户单位；栅格倍率 = 像素宽 / 1080。
+      const scale = canvas.width / 1080;
+      const contentBottom = canvas.height - 88 * scale;
+      let count = 0;
+      for (let i = 0; i < data.length; i += 4) {
+        const y = Math.floor(i / 4 / canvas.width);
+        if (y >= contentBottom) continue;
+        const distance =
+          Math.abs(data[i] - background[0]) +
+          Math.abs(data[i + 1] - background[1]) +
+          Math.abs(data[i + 2] - background[2]);
+        if (distance > 60) count += 1;
+      }
+      return count;
+    }, dataUrl);
+
+    expect(ink).toBeGreaterThan(200);
+  });
+
+  test('wraps long code lines instead of clipping them', async ({ page }) => {
+    test.setTimeout(90_000);
+    await installSvgCapture(page);
+    await openExportFile(page, 'longline.md');
+
+    const downloadPromise = page.waitForEvent('download', { timeout: 60_000 });
+    await page.locator('[data-testid="kb-btn-export-image"]').click();
+    await downloadPromise;
+
+    const svgs = await readCapturedSvgs(page);
+    expect(svgs.length).toBeGreaterThanOrEqual(1);
+    const rendered = await inspectSvgInIframe(page, svgs[0], 'pre.code__pre > code');
+    expect(rendered, '导出的 SVG 里找不到代码元素').toBeTruthy();
+    // CSS 没生效时默认 inline code 的 scrollWidth/clientWidth 都是 0，
+    // `0 <= 1` 会让下面的断言空转；先钉住「样式确实生效且元素有宽度」。
+    expect(rendered!.cssRuleCount).toBeGreaterThan(50);
+    expect(rendered!.clientWidth).toBeGreaterThan(100);
+    expect(rendered!.scrollWidth).toBeLessThanOrEqual(rendered!.clientWidth + 1);
+  });
+
+  test('reports nothing to export for an empty document', async ({ page }) => {
+    await openExportFile(page, 'empty.md', false);
+
+    let downloaded = false;
+    page.on('download', () => {
+      downloaded = true;
+    });
+
+    await page.locator('[data-testid="kb-btn-export-image"]').click();
+    await expect(page.locator('[data-testid="kb-export-notice"]')).toContainText(
+      '没有可导出的内容',
+      { timeout: 15_000 },
+    );
+    // 给下载事件一个可能到达的窗口：空文档绝不能产出空白图片。
+    await page.waitForTimeout(1_500);
+    expect(downloaded).toBe(false);
   });
 });

@@ -46,7 +46,7 @@ describe('planPages', () => {
       bodyHeight: EXPORT_PADDING_TOP + 3000,
       viewBoxY: 0,
       viewBoxHeight: EXPORT_PADDING_TOP + 3000 + EXPORT_FOOTER_HEIGHT,
-      withFooter: true,
+      contentHeight: EXPORT_PADDING_TOP + 3000,
     });
   });
 
@@ -65,7 +65,7 @@ describe('planPages', () => {
       bodyHeight: EXPORT_PADDING_TOP + rangeHeight(rects, 0, 1),
       viewBoxY: 0,
       viewBoxHeight: EXPORT_PADDING_TOP + rangeHeight(rects, 0, 1) + EXPORT_FOOTER_HEIGHT,
-      withFooter: true,
+      contentHeight: EXPORT_PADDING_TOP + rangeHeight(rects, 0, 1),
     });
 
     const second = pages[1];
@@ -78,16 +78,26 @@ describe('planPages', () => {
       second.viewBoxHeight,
       EXPORT_PADDING_TOP + rangeHeight(rects, 1, 3) + EXPORT_FOOTER_HEIGHT,
     );
-    assert.strictEqual(second.withFooter, true);
+    assert.strictEqual(second.contentHeight, EXPORT_PADDING_TOP + rangeHeight(rects, 1, 3));
   });
 
-  it('slices a first-block oversized block from the page top', () => {
+  it('slices a first-block oversized block from the page top and keeps a footer band', () => {
     const pages = planPages([{ top: 0, height: 9000 }], BUDGET);
-    const slices = pages.filter((page) => !page.withFooter);
+    const slices = pages.filter((page) => page.viewBoxY !== 0);
 
+    assert.strictEqual(slices.length, 2);
     assert.deepStrictEqual(
       slices.map((page) => page.viewBoxY),
       [EXPORT_PADDING_TOP, EXPORT_PADDING_TOP + BUDGET],
+    );
+    assert.deepStrictEqual(
+      slices.map((page) => page.contentHeight),
+      [BUDGET, 9000 - BUDGET],
+    );
+    // 切片页也有页脚带：可见高度 + 88 = viewBox 高度。
+    assert.deepStrictEqual(
+      slices.map((page) => page.viewBoxHeight),
+      [BUDGET + EXPORT_FOOTER_HEIGHT, 9000 - BUDGET + EXPORT_FOOTER_HEIGHT],
     );
   });
 
@@ -107,7 +117,7 @@ describe('planPages', () => {
       bodyHeight: EXPORT_PADDING_TOP + 100,
       viewBoxY: 0,
       viewBoxHeight: EXPORT_PADDING_TOP + 100 + EXPORT_FOOTER_HEIGHT,
-      withFooter: true,
+      contentHeight: EXPORT_PADDING_TOP + 100,
     });
 
     const slices = pages.slice(1);
@@ -116,10 +126,14 @@ describe('planPages', () => {
       [EXPORT_PADDING_TOP, EXPORT_PADDING_TOP + BUDGET],
     );
     assert.deepStrictEqual(
-      slices.map((page) => ({ from: page.from, to: page.to, withFooter: page.withFooter })),
+      slices.map((page) => ({
+        from: page.from,
+        to: page.to,
+        contentHeight: page.contentHeight,
+      })),
       [
-        { from: 1, to: 2, withFooter: false },
-        { from: 1, to: 2, withFooter: false },
+        { from: 1, to: 2, contentHeight: BUDGET },
+        { from: 1, to: 2, contentHeight: 9000 - BUDGET },
       ],
     );
     assert.deepStrictEqual(

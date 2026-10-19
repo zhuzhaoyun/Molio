@@ -722,6 +722,7 @@ const zh: Record<string, string> = {
   'kb.exportDone': '已导出图片',
   'kb.exportPages': '已导出 {pages} 张图片',
   'kb.exportFailed': '导出失败，请重试',
+  'kb.exportUnsupported': '没有可导出的内容',
 
   // ── FilePicker ──
   'filePicker.justNow': '刚刚',

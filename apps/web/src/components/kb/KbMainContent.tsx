@@ -18,7 +18,7 @@ import { TooLargeCard } from './TooLargeCard';
 import { ViewerErrorBoundary } from './ViewerErrorBoundary';
 import type { KbCodeMirrorViewerHandle } from './KbCodeMirrorViewer';
 import { KbFrontmatterCard } from './KbFrontmatterCard';
-import { exportDocument } from './docExport';
+import { exportDocument, ExportError } from './docExport';
 import { formatFileSize } from '../../utils/format';
 import { preprocessKbMarkdown } from '../../hooks/useKnowledge';
 import { useScrollMemory, type ScrollIntent } from '../../hooks/useScrollMemory';
@@ -424,7 +424,7 @@ export function KbMainContent({
     ) as HTMLElement | null;
 
     if (!target) {
-      setExportNotice(t('kb.exportFailed'));
+      setExportNotice(t('kb.exportUnsupported'));
       window.setTimeout(() => setExportNotice(null), 4_000);
       return;
     }
@@ -432,9 +432,12 @@ export function KbMainContent({
     setExporting(true);
     setExportNotice(t('kb.exporting'));
     try {
+      // 文件名优先用渲染后的 H1（读者认得的标题），没有 H1 才退回文件 stem。
+      const h1 = target.querySelector('h1')?.textContent?.trim();
       const stem = fileName.replace(/\.[^.]+$/, '');
+      const title = h1 || stem;
       const result = await exportDocument(target, {
-        title: stem,
+        title,
         onProgress: (done, total) =>
           setExportNotice(t('kb.exportProgress', { done, total })),
       });
@@ -443,7 +446,12 @@ export function KbMainContent({
       );
     } catch (error) {
       console.warn('Document export failed:', error);
-      setExportNotice(t('kb.exportFailed'));
+      // 「文档没有内容可导」和「导出过程失败」是两件事，给用户的下一步不同。
+      setExportNotice(
+        error instanceof ExportError && error.code === 'no-output'
+          ? t('kb.exportUnsupported')
+          : t('kb.exportFailed'),
+      );
     } finally {
       setExporting(false);
       window.setTimeout(() => setExportNotice(null), 4_000);

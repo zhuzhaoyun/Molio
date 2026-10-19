@@ -720,6 +720,7 @@ const en: Record<string, string> = {
   'kb.exportDone': 'Image exported',
   'kb.exportPages': 'Exported {pages} images',
   'kb.exportFailed': 'Export failed, please try again',
+  'kb.exportUnsupported': 'Nothing to export',
 
   // ── FilePicker ──
   'filePicker.justNow': 'Just now',

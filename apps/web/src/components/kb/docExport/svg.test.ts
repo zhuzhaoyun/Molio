@@ -17,6 +17,7 @@ const baseOptions = {
   bodyHeight: 800,
   viewBoxY: 0,
   viewBoxHeight: 900,
+  contentHeight: 800,
 };
 
 describe('escapeXml', () => {
@@ -87,7 +88,50 @@ describe('buildPageSvg', () => {
   });
 
   it('omits the footer when none is supplied', () => {
-    assert.ok(!buildPageSvg(baseOptions).includes('<text'), 'slice pages carry no footer');
+    assert.ok(!buildPageSvg(baseOptions).includes('<text'));
+    assert.ok(!buildPageSvg(baseOptions).includes('<rect x="0" y="800"'));
+  });
+
+  it('renders only the watermark on a single-page export', () => {
+    const svg = buildPageSvg({
+      ...baseOptions,
+      footer: { page: 1, total: 1, watermark: WATERMARK, ink: '#fff' },
+    });
+    assert.ok(svg.includes(`>${WATERMARK}</text>`), svg);
+    assert.ok(!/\d+ \/ \d+/.test(svg), `single page must not print a page number: ${svg}`);
+  });
+
+  it('masks the content that would bleed into the footer band', () => {
+    // 切片页：viewBox 从 7064 起（64 + 7000），可见内容到 7064+800，
+    // 页脚带 88 由遮罩盖住，正文不会从页码下面穿出来。
+    const svg = buildPageSvg({
+      ...baseOptions,
+      viewBoxY: 7064,
+      viewBoxHeight: 888,
+      contentHeight: 800,
+      footer: { page: 2, total: 3, watermark: WATERMARK, ink: '#fff' },
+    });
+    assert.ok(
+      svg.includes(
+        `<rect x="0" y="7864" width="${EXPORT_WIDTH}" height="88" fill="#1e1e1e"/>`,
+      ),
+      svg,
+    );
+    // 遮罩必须排在 foreignObject 之后、页脚文字之前
+    assert.ok(svg.indexOf('7864"') > svg.indexOf('</foreignObject>'), svg);
+    assert.ok(svg.indexOf('7864"') < svg.indexOf('<text'), svg);
+  });
+
+  it('skips the mask when there is no footer band left', () => {
+    const svg = buildPageSvg({
+      ...baseOptions,
+      viewBoxY: 7000,
+      viewBoxHeight: 400,
+      contentHeight: 400,
+      footer: { page: 1, total: 2, watermark: WATERMARK, ink: '#fff' },
+    });
+    assert.ok(!svg.includes('<rect x="0" y="7400"'), svg);
+    assert.ok(svg.includes('>1 / 2</text>'), svg);
   });
 
   it('writes the watermark and page numbers into the footer', () => {

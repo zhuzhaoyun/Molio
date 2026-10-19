@@ -49,6 +49,11 @@ describe('composeExportCss', () => {
     color: 'rgb(230, 230, 230)',
     background: '#1e1e1e',
     accent: 'rgb(99, 102, 241)',
+    code: {
+      fontFamily: "ui-monospace, 'SF Mono', monospace",
+      background: '#f4f2ef',
+      color: '#1a1917',
+    },
   };
 
   it('writes the captured foreground and background onto the export root', () => {
@@ -71,6 +76,41 @@ describe('composeExportCss', () => {
     const css = composeExportCss(parts);
     assert.ok(css.includes('.molio-doc-export a.kb-wiki-link'), css);
     assert.ok(css.includes('rgb(99, 102, 241)'), css);
+  });
+
+  it('carries the base.css box-sizing and code rules into the export cascade', () => {
+    // 测量宿主吃得到 base.css、SVG 吃不到；少这两条就会「量的矮、画的高」，
+    // 分页按错高度裁切，代码块底部静默丢失。
+    const css = composeExportCss(parts);
+    assert.ok(css.includes('.molio-doc-export * { box-sizing: border-box; }'), css);
+    assert.ok(
+      css.includes(
+        ".molio-doc-export code { font-family: ui-monospace, 'SF Mono', monospace;" +
+          ' background: #f4f2ef; color: #1a1917;' +
+          ' padding: 1px 5px; border-radius: 4px; font-size: 0.92em; }',
+      ),
+      css,
+    );
+    // font-size 必须是相对值：live 的 0.92em 乘在 pre 的 90% 上，复制成 px 两边又不同级联。
+    assert.ok(css.includes('font-size: 0.92em'), css);
+    // 兼容规则必须排在主题 CSS 之前，主题的 .codespan / pre > code 才能继续优先。
+    assert.ok(css.indexOf('.molio-doc-export code') < css.indexOf('-md-font-size'), css);
+  });
+
+  it('wraps long code lines after the theme CSS so static images do not clip', () => {
+    const css = composeExportCss(parts);
+    const wrap = css.indexOf('.molio-doc-export pre.code__pre > code');
+    assert.ok(wrap > css.indexOf('-md-font-size'), 'wrap override must follow the theme');
+    assert.ok(
+      css.includes(
+        '.molio-doc-export pre.code__pre > code,\n' +
+          '.molio-doc-export .hljs.code__pre > code {\n' +
+          '  white-space: pre-wrap;\n' +
+          '  overflow-wrap: anywhere;\n' +
+          '}',
+      ),
+      css,
+    );
   });
 });
 

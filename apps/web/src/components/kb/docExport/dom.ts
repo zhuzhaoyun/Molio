@@ -45,7 +45,6 @@ export interface ExportOptions {
 
 export interface ExportResult {
   pages: number;
-  fileName: string;
 }
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
@@ -91,6 +90,11 @@ export function collectExportCss(output: HTMLElement): string {
     ...output.querySelectorAll<HTMLStyleElement>(':scope > style'),
     ...output.querySelectorAll<HTMLStyleElement>(':scope > section.container > style'),
   ]);
+  // base.css 的代码规则用了三个变量；SVG 隔离文档里它们不会解析，必须抓成
+  // 字面量写进导出 CSS。空值（自定义主题没定义）时用 2026-10-19 设计稿的值。
+  const rootStyle = getComputedStyle(document.documentElement);
+  const cssVar = (name: string, fallback: string) =>
+    rootStyle.getPropertyValue(name).trim() || fallback;
   return composeExportCss({
     theme: document.getElementById('md-theme')?.textContent ?? '',
     inline: Array.from(inlineStyles)
@@ -98,8 +102,12 @@ export function collectExportCss(output: HTMLElement): string {
       .join('\n'),
     color: getComputedStyle(output).color,
     background: effectiveBackground(output),
-    accent:
-      getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#4f46e5',
+    accent: cssVar('--accent', '#3b82f6'),
+    code: {
+      fontFamily: cssVar('--mono', 'ui-monospace, monospace'),
+      background: cssVar('--bg-subtle', '#f4f2ef'),
+      color: cssVar('--text', '#1a1917'),
+    },
   });
 }
 
@@ -124,12 +132,10 @@ export function buildHost(output: HTMLElement, css: string): HTMLElement {
   style.textContent = css;
   host.appendChild(style);
 
+  // 只克隆内容容器：没有它时 collectBlocks 会抛 `no-output`，整段 innerHTML
+  // 兜底既量不准（直接子元素不是分页单位）又会让「空文档」被当成有内容。
   const container = output.querySelector(':scope > section.container');
-  if (container) {
-    host.appendChild(container.cloneNode(true));
-  } else {
-    host.insertAdjacentHTML('beforeend', output.innerHTML);
-  }
+  if (container) host.appendChild(container.cloneNode(true));
 
   document.body.appendChild(host);
   return host;
@@ -170,13 +176,20 @@ export async function inlineImages(root: HTMLElement): Promise<void> {
       const src = img.getAttribute('src') ?? '';
       if (!src || src.startsWith('data:')) return;
       try {
-        const res = await fetch(src, { credentials: 'same-origin' });
-        if (!res.ok) return;
+        // 没有超时的话，一个挂起的请求会把导出按钮永久锁在 disabled——
+        // 用户除了刷新页面没有别的出路。
+        const res = await fetch(src, {
+          credentials: 'same-origin',
+          signal: AbortSignal.timeout(10_000),
+        });
+        // 非 2xx 也按失败处理：保持原 src，并留下一条可排查的 warn。
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const blob = await res.blob();
         img.src = await blobToDataUrl(blob);
         img.removeAttribute('srcset');
-      } catch {
-        // 断图 / 跨域失败：保留原 src，栅格化时自然缺失
+      } catch (error) {
+        // 断图 / 跨域 / 超时：保留原 src，栅格化时自然缺失
+        console.warn('文档出图：图片内联失败', src, error);
       }
     }),
   );
@@ -298,8 +311,8 @@ export interface PagePlan {
   bodyHeight: number;
   viewBoxY: number;
   viewBoxHeight: number;
-  /** 只有正常整页带页脚；超大块的切片不带。 */
-  withFooter: boolean;
+  /** 页面坐标下正文可见高度；页脚带上沿 = viewBoxY + contentHeight。 */
+  contentHeight: number;
 }
 
 /**
@@ -318,7 +331,7 @@ export function planPages(rects: BlockRect[], budget: number = PAGE_BUDGET): Pag
         bodyHeight: EXPORT_PADDING_TOP + height,
         viewBoxY: 0,
         viewBoxHeight: EXPORT_PADDING_TOP + height + EXPORT_FOOTER_HEIGHT,
-        withFooter: true,
+        contentHeight: EXPORT_PADDING_TOP + height,
       });
       continue;
     }
@@ -333,8 +346,9 @@ export function planPages(rects: BlockRect[], budget: number = PAGE_BUDGET): Pag
         to,
         bodyHeight: EXPORT_PADDING_TOP + height,
         viewBoxY: EXPORT_PADDING_TOP + slice.top,
-        viewBoxHeight: slice.height,
-        withFooter: false,
+        // 切片页同样保留页脚带（署名 + 页码），页脚带上沿刚好是切片底边。
+        viewBoxHeight: slice.height + EXPORT_FOOTER_HEIGHT,
+        contentHeight: slice.height,
       });
     }
   }
@@ -346,7 +360,7 @@ interface RasterPage {
   bodyHeight: number;
   viewBoxY: number;
   viewBoxHeight: number;
-  withFooter: boolean;
+  contentHeight: number;
 }
 
 /**
@@ -368,6 +382,7 @@ async function rasterizePage(
         bodyHeight: page.bodyHeight,
         viewBoxY: page.viewBoxY,
         viewBoxHeight: page.viewBoxHeight,
+        contentHeight: page.contentHeight,
         footer: context.footer,
       });
       // 高度必须与 buildPageSvg 内部一致：先对 viewBox 高度取整，再乘倍率。
@@ -421,27 +436,27 @@ export async function exportDocument(
         bodyHeight: plan.bodyHeight,
         viewBoxY: plan.viewBoxY,
         viewBoxHeight: plan.viewBoxHeight,
-        withFooter: plan.withFooter,
+        contentHeight: plan.contentHeight,
       };
     });
 
     const total = pages.length;
+    // 所有页共用同一个 `now`：一篇文章的多张图落在同一分钟里，按文件名排序
+    // 就是阅读顺序（`-1`、`-2` …），不会因为跨分钟而乱序。
     const now = new Date();
-    // 返回真正落盘的文件名：多页时下载名带 `-1`，单页不带。
-    const fileName = docExportFileName(options.title, now, 1, total);
 
     for (let i = 0; i < pages.length; i += 1) {
       const page = pages[i];
-      const footer = page.withFooter
-        ? { page: i + 1, total, watermark: WATERMARK, ink }
-        : undefined;
+      // 每一页都有页脚（署名恒有；页码由 buildFooter 按 total 决定是否渲染）：
+      // 切片页也不例外，否则长文档中间几张会突然没有署名和页码。
+      const footer = { page: i + 1, total, watermark: WATERMARK, ink };
       const blob = await rasterizePage(page, { css, background, footer });
       triggerDownload(blob, docExportFileName(options.title, now, i + 1, total));
       options.onProgress?.(i + 1, total);
       if (i < pages.length - 1) await sleep(DOWNLOAD_INTERVAL_MS);
     }
 
-    return { pages: total, fileName };
+    return { pages: total };
   } finally {
     host.remove();
   }
