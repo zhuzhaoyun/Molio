@@ -15,6 +15,8 @@
  * stage-local = sim + 画布中心偏移；屏幕 = stage-local * k + t。
  */
 
+import { slugifyTitle } from '../../../utils/exportFileName.ts';
+
 export interface Bounds {
   x: number;
   y: number;
@@ -101,17 +103,5 @@ export function exportFileName(date: Date, title?: string): string {
   const slug = slugifyTitle(title);
   const stem = slug ? `molio-graph-${slug}` : 'molio-graph';
   return `${stem}-${ymd}-${p(date.getHours())}${p(date.getMinutes())}.png`;
-}
-
-/** 文件名片段：去掉 Windows 非法字符（`<>:"/\|?*` 与控制字符），空白折成单个 `-`。 */
-function slugifyTitle(title: string | undefined): string {
-  if (!title) return '';
-  return title
-    .replace(/[\u0000-\u001f<>:"/\\|?*]+/g, ' ')
-    .replace(/\s+/g, '-')
-    .replace(/-+/g, '-')
-    .replace(/^[-.]+|[-.]+$/g, '')
-    .slice(0, 40)
-    .replace(/[-.]+$/, '');
 }
 
