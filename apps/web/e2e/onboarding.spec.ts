@@ -6,7 +6,7 @@ import { test, expect, type Page } from '@playwright/test';
 import { rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { createTempVault, cleanupTempVault } from './helpers/cleanup';
-import { mockChatRun } from './helpers/mock-sse';
+import { mockChatRun, mockNoAgents } from './helpers/mock-sse';
 
 const DAEMON = `http://localhost:${Number(process.env.MOLIO_E2E_DAEMON_PORT ?? 3100)}`;
 const SAMPLE_PATH = join(process.env.MOLIO_E2E_DATA_DIR!, 'sample-vault');
@@ -62,7 +62,15 @@ test('零库首启展示两个对等动作', async ({ page }) => {
 
 const ACTIVE_STATE = {
   status: 'active',
-  steps: { vault: false, openOrImport: false, ask: false },
+  steps: { vault: false, openOrImport: false, import: false, ask: false, save: false },
+  mapDismissed: true,
+  startedAt: Date.now(),
+};
+
+const DONE_STATE = {
+  status: 'done',
+  steps: { vault: true, openOrImport: true, import: true, ask: true, save: true },
+  mapDismissed: false,
   startedAt: Date.now(),
 };
 
@@ -100,15 +108,15 @@ test('全新安装点示例库后 checklist 紧接着出现', async ({ page }) =
 
   await expect(page.locator('.kb-wtab-title').filter({ hasText: '开始使用' })).toBeVisible();
   await expect(page.locator('[data-testid="kb-onboarding"]')).toBeVisible();
-  // 建库 + 自动打开入口文档至少完成两步，不可能是 0/3。
-  await expect(page.locator('[data-testid="kb-onboarding"]')).toContainText(/[12]\/3/);
+  // 建库 + 自动打开入口文档至少完成两步，不可能是 0/5。
+  await expect(page.locator('[data-testid="kb-onboarding"]')).toContainText(/[12]\/5/);
   // 下一步必须是可点的主按钮，而不是一段容易被忽略的说明文字。
   const cta = page.locator('[data-testid="kb-onboarding-cta"]');
   await expect(cta).toBeVisible();
   await expect(cta).toHaveRole('button');
 });
 
-test('checklist 1/3 → 2/3 → 3/3，完成后显示完成态', async ({ page }) => {
+test('checklist 1/5 → 5/5：打开、导入、提问、存回都走通', async ({ page }) => {
   const vault = await createTempVault('e2e-onboarding-checklist');
   try {
     // 真实库里已有测试 vault，首屏会写 done —— 清掉后让下一次 GET 返回 0 库，
@@ -135,19 +143,97 @@ test('checklist 1/3 → 2/3 → 3/3，完成后显示完成态', async ({ page }
 
     // 重新加载真实库列表并进入测试库
     await page.goto(`/knowledge?vault=${vault.id}`);
-    await expect(page.locator('[data-testid="kb-onboarding"]')).toBeVisible();
-    await expect(page.locator('[data-testid="kb-onboarding"]')).toContainText('1/3');
+    const checklist = page.locator('[data-testid="kb-onboarding"]');
+    await expect(checklist).toBeVisible();
+    await expect(checklist).toContainText('1/5');
 
+    // 2. 打开一篇笔记
     await page.locator('.kb-tree-item').filter({ hasText: 'test.md' }).first().click();
-    await expect(page.locator('[data-testid="kb-onboarding"]')).toContainText('2/3');
+    await expect(checklist).toContainText('2/5');
 
-    // 走 checklist 自己的主按钮，而不是 Tab 栏入口：这是新手唯一被明确指路的路径。
+    // 3. 导入一份自己的资料：走 checklist 自己的主按钮，而不是工具栏入口
+    await page.locator('[data-testid="kb-onboarding-cta"]').click();
+    const dialog = page.locator('.kb-modal').filter({ has: page.locator('.kb-dropzone') });
+    await expect(dialog).toBeVisible({ timeout: 5_000 });
+    await dialog.locator('input[type="file"]').setInputFiles({
+      name: 'own-material.md',
+      mimeType: 'text/markdown',
+      buffer: Buffer.from('# 我自己的资料\n\n这是一份用于验收导入步骤的文件。\n'),
+    });
+    await dialog.locator('[data-testid="kb-import-submit"]').click();
+    await expect(checklist).toContainText('3/5');
+
+    // 4. 就这份资料提一个问题
     await page.locator('[data-testid="kb-onboarding-cta"]').click();
     const input = page.locator('[data-testid="kb-chat-panel"] [data-testid="composer-input"]');
-    await input.fill('这篇文档讲了什么？');
+    await input.fill('这份资料讲了什么？');
     await page.locator('[data-testid="kb-chat-panel"] [data-testid="composer-send"]').click();
+    await expect(checklist).toContainText('4/5');
+
+    // 5. 把 AI 的回答存回知识库
+    await expect(checklist).toContainText('保存到知识库');
+    // 消息工具条默认 pointer-events:none，悬停到消息上才可点（与用户操作一致）。
+    await page.locator('[data-testid="assistant-message"]').last().hover();
+    const saveBtn = page.locator('[data-testid="msg-save-kb-btn"]').first();
+    await expect(saveBtn).toBeVisible();
+    await saveBtn.click();
 
     await expect(page.locator('[data-testid="kb-onboarding-done"]')).toBeVisible();
+    await expect(page.locator('[data-testid="kb-onboarding-done"]')).toContainText('主流程已跑通');
+  } finally {
+    await cleanupTempVault(vault);
+  }
+});
+
+test('完成地图收起后，可从帮助菜单重新打开', async ({ page }) => {
+  const vault = await createTempVault('e2e-onboarding-map');
+  try {
+    await page.addInitScript((state) => {
+      if (!localStorage.getItem('molio.onboarding.v1')) {
+        localStorage.setItem('molio.onboarding.v1', JSON.stringify(state));
+      }
+    }, DONE_STATE);
+    await page.goto(`/knowledge?vault=${vault.id}`);
+
+    const map = page.locator('[data-testid="kb-onboarding-done"]');
+    await expect(map).toBeVisible();
+    await page.locator('[data-testid="kb-onboarding-map-dismiss"]').click();
+    await expect(map).toHaveCount(0);
+    await expect
+      .poll(() => page.evaluate(() => localStorage.getItem('molio.onboarding.v1')))
+      .toContain('"mapDismissed":true');
+
+    // 帮助菜单必须是找回引导的入口：收起不等于永久消失。
+    await page.locator('[data-testid="nav-help-btn"]').click();
+    await expect(page.locator('[data-testid="nav-help-menu"]')).toBeVisible();
+    await page.locator('[data-testid="nav-reopen-guide"]').click();
+    await expect(map).toBeVisible();
+  } finally {
+    await cleanupTempVault(vault);
+  }
+});
+
+test('没有可用运行时时，提问步先引导配置 AI', async ({ page }) => {
+  const vault = await createTempVault('e2e-onboarding-no-runtime');
+  try {
+    // 已经完成前 3 步（建库/打开/导入），只剩提问：这是第一次需要 AI 的时刻。
+    await page.addInitScript((state) => {
+      if (!localStorage.getItem('molio.onboarding.v1')) {
+        localStorage.setItem('molio.onboarding.v1', JSON.stringify(state));
+      }
+    }, {
+      status: 'active',
+      steps: { vault: true, openOrImport: true, import: true, ask: false, save: false },
+      mapDismissed: true,
+      startedAt: Date.now(),
+    });
+    await mockNoAgents(page);
+    await page.goto(`/knowledge?vault=${vault.id}`);
+
+    const cta = page.locator('[data-testid="kb-onboarding-cta"]');
+    await expect(cta).toContainText('先配置 AI');
+    await cta.click();
+    await expect(page).toHaveURL(/\/settings\?tab=runtimes/);
   } finally {
     await cleanupTempVault(vault);
   }

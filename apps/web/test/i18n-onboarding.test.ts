@@ -23,4 +23,30 @@ describe('onboarding failure copy', () => {
     assert.ok(en['kb.connectionFailed']);
     assert.doesNotMatch(en['kb.connectionFailed'], /[一-鿿]/);
   });
+
+  it('localises every five-step checklist and feature-map string', () => {
+    const keys = [
+      'nextImport', 'nextAsk', 'nextSave', 'nextRuntime',
+      'step1', 'step2', 'step3', 'step4', 'step5',
+      'actionImport', 'actionAsk', 'actionConfigureAi',
+      'mapTitle', 'mapBody', 'mapDaily', 'mapDailyBody',
+      'mapOrganize', 'mapOrganizeBody', 'mapOutput', 'mapOutputBody',
+      'mapManage', 'mapManageBody', 'mapBuild', 'mapGraph',
+      'mapHistory', 'mapRuntime', 'mapDismiss',
+    ];
+    for (const key of keys) {
+      const fullKey = `kb.onboarding.${key}`;
+      assert.ok(zh[fullKey], `zh is missing ${fullKey}`);
+      assert.ok(en[fullKey], `en is missing ${fullKey}`);
+      assert.doesNotMatch(en[fullKey], /[一-鿿]/, `${fullKey} must not fall back to zh`);
+    }
+  });
+
+  it('localises the help menu entries in both languages', () => {
+    for (const key of ['nav.helpOnline', 'nav.reopenGuide']) {
+      assert.ok(zh[key], `zh is missing ${key}`);
+      assert.ok(en[key], `en is missing ${key}`);
+      assert.doesNotMatch(en[key], /[一-鿿]/, `${key} must not fall back to zh`);
+    }
+  });
 });

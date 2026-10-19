@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { api } from '../api/client';
 import { useActiveVault, useActiveVaultId } from '../stores/vaultStore';
+import { onboardingStore } from '../stores/onboardingStore';
 import { isRevealAvailable, revealInFolder } from '../utils/reveal';
 import { SaveIcon, CheckIcon, FolderIcon } from './icons';
 
@@ -64,6 +65,7 @@ export function SaveToKbButton({ content }: Props) {
     const filename = `${deriveTitle(content)}-${timestampStamp()}.md`;
     try {
       await api.writeFile(vaultId, filename, content);
+      onboardingStore.markSave();
       setSaved(true);
       setSavedPath(filename);
       setTip(`已保存 · ${filename}`);

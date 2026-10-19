@@ -10,12 +10,16 @@
 export interface OnboardingSteps {
   vault: boolean;
   openOrImport: boolean;
+  import: boolean;
   ask: boolean;
+  save: boolean;
 }
 
 export interface OnboardingState {
   status: 'active' | 'done' | 'dismissed';
   steps: OnboardingSteps;
+  /** The completion map ("what else can I do") collapses to a quiet line. */
+  mapDismissed: boolean;
   startedAt: number;
 }
 
@@ -24,13 +28,19 @@ type Listener = () => void;
 
 export const ONBOARDING_STORAGE_KEY = 'molio.onboarding.v1';
 
+export const ONBOARDING_STEP_KEYS = ['vault', 'openOrImport', 'import', 'ask', 'save'] as const;
+
+function allSteps(value: boolean): OnboardingSteps {
+  return { vault: value, openOrImport: value, import: value, ask: value, save: value };
+}
+
 function freshState(status: OnboardingState['status'], now: () => number): OnboardingState {
   return {
     status,
-    steps:
-      status === 'done'
-        ? { vault: true, openOrImport: true, ask: true }
-        : { vault: false, openOrImport: false, ask: false },
+    steps: allSteps(status === 'done'),
+    // Existing installs initialize straight to `done`; they never ran the guide,
+    // so the completion map stays collapsed until Help asks for it.
+    mapDismissed: status !== 'active',
     startedAt: now(),
   };
 }
@@ -44,13 +54,22 @@ function parseState(raw: string | null, now: () => number): OnboardingState | nu
       return null;
     }
     const steps = (parsed.steps ?? {}) as Partial<OnboardingSteps>;
+    // States written before the 5-step model lack `import`/`save`; they read as
+    // not-done so the checklist continues from real progress. A `done` state is
+    // complete by definition, so normalize its steps instead of showing 3/5.
+    const complete = parsed.status === 'done';
     return {
       status: parsed.status,
       steps: {
-        vault: steps.vault === true,
-        openOrImport: steps.openOrImport === true,
-        ask: steps.ask === true,
+        vault: complete || steps.vault === true,
+        openOrImport: complete || steps.openOrImport === true,
+        import: complete || steps.import === true,
+        ask: complete || steps.ask === true,
+        save: complete || steps.save === true,
       },
+      // Absent means a state written before the map existed: keep it collapsed
+      // rather than surprise existing users with a panel they did not earn yet.
+      mapDismissed: parsed.mapDismissed !== false,
       startedAt: typeof parsed.startedAt === 'number' ? parsed.startedAt : now(),
     };
   } catch {
@@ -88,8 +107,14 @@ export function createOnboardingStore(storage: StorageLike, now: () => number = 
   function mark(step: keyof OnboardingSteps) {
     if (!state || state.status !== 'active' || state.steps[step]) return;
     const steps = { ...state.steps, [step]: true };
-    const complete = steps.vault && steps.openOrImport && steps.ask;
-    persist({ ...state, steps, status: complete ? 'done' : 'active' });
+    const complete = ONBOARDING_STEP_KEYS.every((key) => steps[key]);
+    persist({
+      ...state,
+      steps,
+      status: complete ? 'done' : 'active',
+      // 完成的那一刻必须看到地图，哪怕这条状态是从旧版迁移来的（旧状态默认收起）。
+      mapDismissed: complete ? false : state.mapDismissed,
+    });
   }
 
   return {
@@ -110,11 +135,34 @@ export function createOnboardingStore(storage: StorageLike, now: () => number = 
 
     markVault() { mark('vault'); },
     markOpenOrImport() { mark('openOrImport'); },
+    markImport() { mark('import'); },
     markAsk() { mark('ask'); },
+    markSave() { mark('save'); },
 
     dismiss() {
       if (!state || state.status !== 'active') return;
       persist({ ...state, status: 'dismissed' });
+    },
+
+    /** Collapse the completed feature map; it stays reopenable from Help. */
+    dismissMap() {
+      if (!state || state.status !== 'done' || state.mapDismissed) return;
+      persist({ ...state, mapDismissed: true });
+    },
+
+    /**
+     * Bring the guide back from Help: resumes a dismissed checklist at its
+     * current progress, or re-expands the completion map.
+     */
+    reopen() {
+      const current = state;
+      if (!current) return;
+      if (current.status === 'done') {
+        if (current.mapDismissed) persist({ ...current, mapDismissed: false });
+        return;
+      }
+      const complete = ONBOARDING_STEP_KEYS.every((key) => current.steps[key]);
+      persist({ ...current, status: complete ? 'done' : 'active', mapDismissed: false });
     },
   };
 }

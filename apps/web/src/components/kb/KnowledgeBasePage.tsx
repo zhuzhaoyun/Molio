@@ -1242,7 +1242,10 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
       const imported = result.imported.length;
       const renamed = result.renamed.length;
       const skipped = result.skipped.length;
-      if (imported + renamed > 0) onboardingStore.markOpenOrImport();
+      if (imported + renamed > 0) {
+        onboardingStore.markOpenOrImport();
+        onboardingStore.markImport();
+      }
 
       const parts: string[] = [];
       if (imported > 0) parts.push(`${imported} 个文件`);
@@ -1272,7 +1275,10 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
       const imported = result.imported.length;
       const renamed = result.renamed.length;
       const skipped = result.skipped.length;
-      if (imported + renamed > 0) onboardingStore.markOpenOrImport();
+      if (imported + renamed > 0) {
+        onboardingStore.markOpenOrImport();
+        onboardingStore.markImport();
+      }
 
       const parts: string[] = [];
       if (imported + renamed > 0) parts.push(`成功导入 ${imported + renamed} 个文件`);
@@ -1428,7 +1434,14 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
           onImport={() => kb.setShowImport(true)}
           onAsk={handleOpenQa}
           onBuildWiki={() => { void handleBuildWiki(); }}
-          onOpenGraph={() => navigate('/graph')}
+          onOpenGraph={() => {
+            // 图谱已是知识库里的标签页，没有独立的 /graph 路由。
+            const q = new URLSearchParams({ panel: 'graph' });
+            if (kb.activeVault) q.set('vault', kb.activeVault.id);
+            navigate(`/knowledge?${q.toString()}`);
+          }}
+          onOpenHistory={() => navigate('/history')}
+          onOpenRuntimeSettings={() => navigate('/settings?tab=runtimes')}
         />
         <KbTabBar
           tabs={tabs.tabs}
@@ -1712,7 +1725,10 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
           const imported = result.imported.length;
           const renamed = result.renamed.length;
           const skipped = result.skipped.length;
-          if (imported + renamed > 0) onboardingStore.markOpenOrImport();
+          if (imported + renamed > 0) {
+            onboardingStore.markOpenOrImport();
+            onboardingStore.markImport();
+          }
           const parts: string[] = [];
           if (imported + renamed > 0) parts.push(`成功导入 ${imported + renamed} 个文件`);
           if (skipped > 0) parts.push(`${skipped} 个已跳过`);

@@ -3896,24 +3896,117 @@
   color: #fff;
 }
 
-.kb-onboarding__link {
+/* ── Completion: persistent feature map ──
+   不是 8 秒消失的庆祝条：跑通闭环之后，用户真正的问题是「这个产品还能
+   干什么」。地图留到用户主动收起，并且可以从帮助菜单重新打开。 */
+.kb-onboarding--map {
+  padding: 12px 14px 14px;
+}
+
+.kb-onboarding__map-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+}
+
+.kb-onboarding__map-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  margin-top: 1px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  font-size: 11px;
+  flex: none;
+}
+
+.kb-onboarding__map-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.kb-onboarding__map-title {
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.kb-onboarding__map-body {
+  color: var(--text-muted);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.kb-onboarding__map-head .kb-onboarding__dismiss {
   margin-left: auto;
+}
+
+.kb-onboarding__map-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px 18px;
+  margin-top: 11px;
+  padding-top: 11px;
+  border-top: 1px solid color-mix(in srgb, var(--accent) 18%, var(--border));
+}
+
+.kb-onboarding__map-grid section {
+  min-width: 0;
+}
+
+.kb-onboarding__map-grid h4 {
+  margin: 0 0 3px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.kb-onboarding__map-grid p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+
+.kb-onboarding__map-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin-top: 4px;
+}
+
+.kb-onboarding__map-actions button {
   border: 0;
   background: transparent;
   color: var(--accent);
   font: inherit;
-  cursor: pointer;
+  font-size: 12.5px;
   padding: 0;
+  cursor: pointer;
 }
 
-.kb-onboarding__done {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-  padding: 8px 12px;
+.kb-onboarding__map-actions button:hover {
+  text-decoration: underline;
 }
 
-.kb-onboarding__done-body {
-  color: var(--text-muted);
+.kb-onboarding__map-actions button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+@media (max-width: 1100px) {
+  .kb-onboarding__map-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .kb-onboarding__map-grid {
+    grid-template-columns: 1fr;
+  }
 }
