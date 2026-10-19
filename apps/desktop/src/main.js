@@ -177,6 +177,7 @@ async function startDaemonProduction() {
       ELECTRON_RUN_AS_NODE: '1',
       MOLIO_PORT: String(DAEMON_PORT),
       MOLIO_STATIC_DIR: webStaticDir,
+      MOLIO_DOCUMENTS_DIR: app.getPath('documents'),
     };
     // 云端认证地址：显式设置的 MOLIO_AUTH_URL（私有化/Docker/测试）优先；
     // 缺省或纯空白（与 daemon auth-client 的 trim 语义一致）时注入内置官方地址，

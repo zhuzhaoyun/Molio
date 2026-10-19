@@ -326,6 +326,24 @@ function copySkillSources() {
   console.log('  Skill sources copied.');
 }
 
+/**
+ * Copy the built-in sample vault into resources/daemon/sample-vault/.
+ * daemon's resolveSampleVaultSourceDir() looks for `__dirname/sample-vault`
+ * in packaged builds; without this the activation CTA fails with
+ * "Sample vault source not found".
+ */
+function copySampleVaultSources() {
+  console.log('Copying sample vault sources...');
+  const sampleSrc = join(daemonDir, 'src', 'tools', 'sample-vault');
+  if (!existsSync(sampleSrc)) {
+    console.warn('  WARNING: sample vault source directory not found, skipping');
+    return;
+  }
+  const sampleDest = join(resourcesDir, 'daemon', 'sample-vault');
+  cpSync(sampleSrc, sampleDest, { recursive: true, dereference: true });
+  console.log('  Sample vault sources copied.');
+}
+
 // ─── Main ───
 
 // Graceful skip: if daemon/web haven't been built yet (e.g. during `pnpm install`
@@ -349,5 +367,6 @@ copyTrashBinaries();
 downloadElectronPrebuilds();
 copyWebBuild();
 copySkillSources();
+copySampleVaultSources();
 
 console.log('\nResources prepared successfully!');
