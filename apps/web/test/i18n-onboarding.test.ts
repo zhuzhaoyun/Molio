@@ -28,6 +28,8 @@ describe('onboarding failure copy', () => {
     const keys = [
       'nextImport', 'nextAsk', 'nextSave', 'nextRuntime',
       'step1', 'step2', 'step3', 'step4', 'step5',
+      'step1How', 'step2How', 'step3How', 'step4How', 'step5How',
+      'current', 'expand', 'collapse', 'autoHint',
       'actionImport', 'actionAsk', 'actionConfigureAi',
       'mapTitle', 'mapBody', 'mapDaily', 'mapDailyBody',
       'mapOrganize', 'mapOrganizeBody', 'mapOutput', 'mapOutputBody',

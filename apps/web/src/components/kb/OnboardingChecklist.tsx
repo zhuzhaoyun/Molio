@@ -33,12 +33,12 @@ interface Props {
 }
 
 const STEPS = [
-  ['vault', 'kb.onboarding.step1'],
-  ['openOrImport', 'kb.onboarding.step2'],
-  ['import', 'kb.onboarding.step3'],
-  ['ask', 'kb.onboarding.step4'],
-  ['save', 'kb.onboarding.step5'],
-] as const satisfies readonly (readonly [keyof OnboardingSteps, string])[];
+  ['vault', 'kb.onboarding.step1', 'kb.onboarding.step1How'],
+  ['openOrImport', 'kb.onboarding.step2', 'kb.onboarding.step2How'],
+  ['import', 'kb.onboarding.step3', 'kb.onboarding.step3How'],
+  ['ask', 'kb.onboarding.step4', 'kb.onboarding.step4How'],
+  ['save', 'kb.onboarding.step5', 'kb.onboarding.step5How'],
+] as const satisfies readonly (readonly [keyof OnboardingSteps, string, string])[];
 
 export function OnboardingChecklist({
   hasVault,
@@ -158,13 +158,10 @@ export function OnboardingChecklist({
   return (
     <div className="kb-onboarding" data-testid="kb-onboarding">
       <div className="kb-onboarding__bar">
-        <button
-          type="button"
-          className="kb-onboarding__toggle"
-          data-testid="kb-onboarding-toggle"
-          aria-expanded={expanded}
-          onClick={() => setExpanded((value) => !value)}
-        >
+        {/* 圆点是进度，不是五个按钮。它曾经整体包在展开按钮里：点第 4 个圆点
+            实际只是把详情折起来，用户读到的是「选了第 4 步却毫无反应」
+            （2026-10-19 验收反馈）。现在只有标题/进度/箭头这一个明确的展开控件。 */}
+        <div className="kb-onboarding__summary">
           <span className="kb-onboarding__dots" aria-hidden="true">
             {STEPS.map(([key], index) => {
               const done = steps[key];
@@ -178,23 +175,33 @@ export function OnboardingChecklist({
               );
             })}
           </span>
-          <span className="kb-onboarding__title">{t('kb.onboarding.title')}</span>
-          <span className="kb-onboarding__progress">{doneCount}/{STEPS.length}</span>
-          <svg
-            className="kb-onboarding__chevron"
-            width="10"
-            height="10"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden="true"
+          <button
+            type="button"
+            className="kb-onboarding__toggle"
+            data-testid="kb-onboarding-toggle"
+            aria-expanded={expanded}
+            aria-label={expanded ? t('kb.onboarding.collapse') : t('kb.onboarding.expand')}
+            title={expanded ? t('kb.onboarding.collapse') : t('kb.onboarding.expand')}
+            onClick={() => setExpanded((value) => !value)}
           >
-            <polyline points="6 9 12 15 18 9" />
-          </svg>
-        </button>
+            <span className="kb-onboarding__title">{t('kb.onboarding.title')}</span>
+            <span className="kb-onboarding__progress">{doneCount}/{STEPS.length}</span>
+            <svg
+              className="kb-onboarding__chevron"
+              width="10"
+              height="10"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <polyline points="6 9 12 15 18 9" />
+            </svg>
+          </button>
+        </div>
 
         {hintKey && (
           <>
@@ -230,14 +237,36 @@ export function OnboardingChecklist({
       </div>
 
       {expanded && (
-        <ol className="kb-onboarding__steps">
-          {STEPS.map(([key, label], index) => (
-            <li key={key} className={steps[key] ? 'is-done' : ''}>
-              <span className="kb-onboarding__check">{steps[key] ? '✓' : index + 1}</span>
-              <span>{t(label)}</span>
-            </li>
-          ))}
-        </ol>
+        <div className="kb-onboarding__details" data-testid="kb-onboarding-details">
+          <ol className="kb-onboarding__steps">
+            {STEPS.map(([key, label, how], index) => {
+              const done = steps[key];
+              const current = index === firstPending;
+              return (
+                <li
+                  key={key}
+                  className={`${done ? 'is-done' : ''}${current ? ' is-current' : ''}`}
+                >
+                  <span className="kb-onboarding__check" aria-hidden="true">
+                    {done ? '✓' : index + 1}
+                  </span>
+                  <span className="kb-onboarding__step-copy">
+                    <span className="kb-onboarding__step-label">
+                      {t(label)}
+                      {current && (
+                        <span className="kb-onboarding__current">{t('kb.onboarding.current')}</span>
+                      )}
+                    </span>
+                    <span className="kb-onboarding__step-how">{t(how)}</span>
+                  </span>
+                </li>
+              );
+            })}
+          </ol>
+          {/* 用户问过「能不能自己跳步骤」：这里直接说明打勾来自真实操作，
+              步骤不是可手动勾选的清单。 */}
+          <p className="kb-onboarding__auto-hint">{t('kb.onboarding.autoHint')}</p>
+        </div>
       )}
     </div>
   );

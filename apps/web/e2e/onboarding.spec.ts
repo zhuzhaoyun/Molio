@@ -325,6 +325,44 @@ test('没有可用运行时时，提问步先引导配置 AI', async ({ page }) 
   }
 });
 
+test('步骤圆点只是进度，不是可点击的跳步控件', async ({ page }) => {
+  const vault = await createTempVault('e2e-onboarding-step-affordance');
+  try {
+    await page.addInitScript((state) => {
+      if (!localStorage.getItem('molio.onboarding.v1')) {
+        localStorage.setItem('molio.onboarding.v1', JSON.stringify(state));
+      }
+    }, {
+      status: 'active',
+      steps: { vault: true, openOrImport: true, import: false, ask: false, save: false },
+      mapDismissed: true,
+      startedAt: Date.now(),
+    });
+    await page.goto(`/knowledge?vault=${vault.id}`);
+
+    const checklist = page.locator('[data-testid="kb-onboarding"]');
+    await expect(checklist).toContainText('2/5');
+
+    // 圆点是进度标记，不是跳步入口：2026-10-19 验收时点第 4 个圆点，
+    // 只会把整条栏的详情展开/收起，看上去像「选了第 4 步却什么也没发生」。
+    await checklist.locator('.kb-onboarding__dot').nth(3).click();
+    await expect(page.locator('[data-testid="kb-onboarding-details"]')).toHaveCount(0);
+    await expect(checklist).toContainText('2/5');
+
+    // 展开后每一步都写明「怎么完成」，当前步有标记，且没有可跳步的控件。
+    await page.locator('[data-testid="kb-onboarding-toggle"]').click();
+    const details = page.locator('[data-testid="kb-onboarding-details"]');
+    await expect(details).toBeVisible();
+    await expect(details).toContainText('点「导入资料」，把文件放进当前知识库');
+    await expect(details).toContainText('当前');
+    await expect(details).toContainText('不需要手动勾选');
+    await expect(details.locator('button, a')).toHaveCount(0);
+    await expect(checklist).toContainText('2/5');
+  } finally {
+    await cleanupTempVault(vault);
+  }
+});
+
 test('关闭 checklist 后刷新不再出现', async ({ page }) => {
   const vault = await createTempVault('e2e-onboarding-dismiss');
   try {
