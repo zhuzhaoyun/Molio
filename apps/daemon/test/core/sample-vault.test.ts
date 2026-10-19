@@ -205,3 +205,18 @@ describe('resolveSampleVaultSourceDir', () => {
     assert.equal(resolveSampleVaultSourceDir({ baseDir: base }), prod);
   });
 });
+
+describe('sample vault packaging', () => {
+  it('ships the source files with the deployed package', () => {
+    // `pnpm deploy` (Docker/NAS runtime stage) only copies paths listed in
+    // package.json "files". Without this entry the image resolves no source
+    // directory and the zero-vault "try the sample" CTA fails with a 500.
+    const pkg = JSON.parse(
+      readFileSync(new URL('../../../package.json', import.meta.url), 'utf8'),
+    ) as { files?: string[] };
+    assert.ok(
+      pkg.files?.includes('src/tools/sample-vault'),
+      'package.json files must include src/tools/sample-vault',
+    );
+  });
+});
