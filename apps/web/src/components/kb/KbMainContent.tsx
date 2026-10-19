@@ -165,6 +165,9 @@ interface KbMainContentProps {
   onOpenOutline?: () => void;
   /** Open the unified KB chat panel in QA mode for the current file. */
   onAskAboutFile?: () => void;
+  /** First-run guide is on the ask step and a runtime is available: pulse the
+   *  real document-level ask button (not the checklist's proxy button). */
+  guideAsk?: boolean;
   /** 编辑后的内容（用于阅读模式显示未保存的更改） */
   editedContent?: string | null;
   /** Force-load a too-large file past the safe cap (wired to useKnowledge.forceLoadFile). */
@@ -213,6 +216,7 @@ export function KbMainContent({
   onAskAboutSelection,
   onOpenOutline,
   onAskAboutFile,
+  guideAsk = false,
   editedContent,
   onForceLoad,
   onCloseTab,
@@ -1170,7 +1174,7 @@ export function KbMainContent({
           {onAskAboutFile && selectedFile && (
             <button
               type="button"
-              className="kb-btn kb-btn-ghost"
+              className={`kb-btn kb-btn-ghost${guideAsk ? ' kb-guide-pulse' : ''}`}
               onClick={onAskAboutFile}
               title={t('kb.askButton')}
               data-testid="kb-btn-ask"

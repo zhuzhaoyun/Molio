@@ -1659,6 +1659,24 @@
   line-height: 1;
 }
 
+/* First-run save step: a short breathing ring, matched to the checklist CTA.
+ * The text label says what it is; the motion says where it is. Three cycles
+ * only — a permanently pulsing toolbar would compete with the answer. */
+@keyframes icon-guide-pulse {
+  0%   { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 40%, transparent); }
+  70%  { box-shadow: 0 0 0 5px transparent; }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+.icon-btn--guide {
+  color: var(--accent);
+  border-color: var(--accent-soft);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  animation: icon-guide-pulse 1.4s ease-out 3;
+}
+@media (prefers-reduced-motion: reduce) {
+  .icon-btn--guide { animation: none; }
+}
+
 /* Copied micro-interaction: a brief accent pulse so the checkmark lands. */
 @keyframes icon-copied-pulse {
   0%   { box-shadow: 0 0 0 0 var(--accent-tint); }

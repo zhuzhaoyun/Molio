@@ -12,6 +12,8 @@ import type { ScrollIntent } from '../../hooks/useScrollMemory';
 import { useKbTabs, MAX_TABS, type WorkspaceTab } from '../../hooks/useKbTabs';
 import { vaultStore, useActiveVaultId, useVaultsLoaded, useVaults } from '../../stores/vaultStore';
 import { onboardingStore } from '../../stores/onboardingStore';
+import { useAgents } from '../../hooks/useAgents';
+import { useOnboardingHint } from '../../hooks/useOnboardingHint';
 import { OnboardingChecklist } from './OnboardingChecklist';
 import { kbChatSessionsStore } from '../../stores/kbChatSessionsStore';
 import { navigationHistoryStore } from '../../stores/navigationHistoryStore';
@@ -318,6 +320,13 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
   // 本地 state，它的提交可能晚于 vaultStore 的 emit 一帧——用它会读到「已加载但空」，
   // 对着老用户错误激活引导（init 幂等，写一次 active 就再也回不去 done）。
   const storeVaults = useVaults();
+
+  // 引导动画指向真实按钮：导入 → 文件面板的导入键，提问 → 文档头的问答键，
+  // 保存 → 消息工具条。没有可用运行时的那一帧例外：提问键点了也发不出去，
+  // 此时动画仍留在 checklist 的「先配置 AI」上。
+  const { agents, loading: agentsLoading, error: agentsError } = useAgents();
+  const noRuntime = !agentsLoading && !agentsError && agents.length === 0;
+  const onboardingHint = useOnboardingHint();
 
   // 只在库列表首次取回时初始化：0 库 → 激活，老用户 → 直接 done。
   useEffect(() => {
@@ -1431,6 +1440,7 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
       <div className="kb-main-wrapper">
         <OnboardingChecklist
           hasVault={storeVaults.length > 0}
+          noRuntime={noRuntime}
           onImport={() => kb.setShowImport(true)}
           onAsk={handleOpenQa}
           onBuildWiki={() => { void handleBuildWiki(); }}
@@ -1540,6 +1550,7 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
               onAskAboutSelection={handleAskAboutSelection}
               onOpenOutline={() => setShowOutline(true)}
               onAskAboutFile={handleOpenQa}
+              guideAsk={onboardingHint === 'ask' && !noRuntime}
               showFileName={true}
               isEditMode={kb.isEditMode}
               onToggleEdit={kb.toggleEditMode}

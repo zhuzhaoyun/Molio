@@ -151,8 +151,11 @@ test('checklist 1/5 → 5/5：打开、导入、提问、存回都走通', async
     await page.locator('.kb-tree-item').filter({ hasText: 'test.md' }).first().click();
     await expect(checklist).toContainText('2/5');
 
-    // 3. 导入一份自己的资料：走 checklist 自己的主按钮，而不是工具栏入口
-    await page.locator('[data-testid="kb-onboarding-cta"]').click();
+    // 3. 导入一份自己的资料：动画必须长在文件面板的真实导入键上，
+    //    而不是 checklist 的中转按钮——引导收起后用户日常点的是前者。
+    const importBtn = page.locator('[data-testid="kb-btn-import"]');
+    await expect(importBtn).toHaveCSS('animation-name', 'kb-guide-pulse');
+    await importBtn.click();
     const dialog = page.locator('.kb-modal').filter({ has: page.locator('.kb-dropzone') });
     await expect(dialog).toBeVisible({ timeout: 5_000 });
     await dialog.locator('input[type="file"]').setInputFiles({
@@ -163,8 +166,10 @@ test('checklist 1/5 → 5/5：打开、导入、提问、存回都走通', async
     await dialog.locator('[data-testid="kb-import-submit"]').click();
     await expect(checklist).toContainText('3/5');
 
-    // 4. 就这份资料提一个问题
-    await page.locator('[data-testid="kb-onboarding-cta"]').click();
+    // 4. 就这份资料提一个问题：同样指向文档头的真实问答键。
+    const askBtn = page.locator('[data-testid="kb-btn-ask"]');
+    await expect(askBtn).toHaveCSS('animation-name', 'kb-guide-pulse');
+    await askBtn.click();
     const input = page.locator('[data-testid="kb-chat-panel"] [data-testid="composer-input"]');
     await input.fill('这份资料讲了什么？');
     await page.locator('[data-testid="kb-chat-panel"] [data-testid="composer-send"]').click();
@@ -179,6 +184,9 @@ test('checklist 1/5 → 5/5：打开、导入、提问、存回都走通', async
     await expect(toolbar).toHaveCSS('opacity', '1');
     const saveBtn = lastMessage.locator('[data-testid="msg-save-kb-btn"]');
     await expect(saveBtn).toContainText('保存到知识库');
+    // 保存步的真实点击目标是工具条按钮，不是 checklist 的 CTA；呼吸环必须
+    // 跟到那里，否则动画指着一个只打开面板的按钮。
+    await expect(saveBtn).toHaveCSS('animation-name', 'icon-guide-pulse');
     await saveBtn.click();
 
     await expect(page.locator('[data-testid="kb-onboarding-done"]')).toBeVisible();
@@ -318,6 +326,9 @@ test('没有可用运行时时，提问步先引导配置 AI', async ({ page }) 
 
     const cta = page.locator('[data-testid="kb-onboarding-cta"]');
     await expect(cta).toContainText('先配置 AI');
+    // 没有运行时是唯一一个「真实目标不在本页」的步骤：此时中转按钮就是
+    // 用户真正该点的东西，呼吸环留在它身上。
+    await expect(cta).toHaveCSS('animation-name', 'kb-guide-pulse');
     await cta.click();
     await expect(page).toHaveURL(/\/settings\?tab=runtimes/);
   } finally {

@@ -98,7 +98,9 @@ export function SaveToKbButton({ content, labeled }: Props) {
     <>
       <button
         type="button"
-        className={`icon-btn${saved ? ' copied' : ''}${labeled ? ' icon-btn--labeled' : ''}`}
+        // labeled 只会在引导的保存步为 true；此时再给一个短促呼吸环，
+        // 把「这一步点这里」从文字提示变成视觉提示（保存成功即停）。
+        className={`icon-btn${saved ? ' copied' : ''}${labeled ? ' icon-btn--labeled' : ''}${labeled && !saved ? ' icon-btn--guide' : ''}`}
         data-tip={tip}
         data-testid="msg-save-kb-btn"
         onClick={save}

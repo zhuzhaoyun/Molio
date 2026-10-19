@@ -20,10 +20,12 @@
 import { useState, useSyncExternalStore } from 'react';
 import { useI18n } from '../../i18n';
 import { onboardingStore, type OnboardingSteps } from '../../stores/onboardingStore';
-import { useAgents } from '../../hooks/useAgents';
 
 interface Props {
   hasVault: boolean;
+  /** No usable agent: the ask step's real action is configuring one, which
+   *  only the checklist can surface in place. */
+  noRuntime: boolean;
   onImport: () => void;
   onAsk: () => void;
   onBuildWiki: () => void;
@@ -42,6 +44,7 @@ const STEPS = [
 
 export function OnboardingChecklist({
   hasVault,
+  noRuntime,
   onImport,
   onAsk,
   onBuildWiki,
@@ -56,9 +59,6 @@ export function OnboardingChecklist({
     onboardingStore.getState,
   );
   const [expanded, setExpanded] = useState(false);
-  // 提问是唯一需要 AI 的步骤：没有可用运行时就把 CTA 改成去配置，
-  // 而不是让用户点进输入框才发现发不出去。
-  const { agents, loading: agentsLoading, error: agentsError } = useAgents();
 
   if (!state || !hasVault) return null;
   if (state.status === 'dismissed') return null;
@@ -128,7 +128,6 @@ export function OnboardingChecklist({
   const steps = state.steps;
   const doneCount = STEPS.filter(([key]) => steps[key]).length;
   const firstPending = STEPS.findIndex(([key]) => !steps[key]);
-  const noRuntime = !agentsLoading && !agentsError && agents.length === 0;
 
   let next: 'import' | 'ask' | 'runtime' | 'save' | null = null;
   if (!steps.openOrImport || !steps.import) next = 'import';
@@ -206,10 +205,15 @@ export function OnboardingChecklist({
         {hintKey && (
           <>
             <span className="kb-onboarding__hint">{t(hintKey)}</span>
+            {/* 换动作时 key 变化 → 重新挂载，重播一次呼吸环
+                （动画只跑 3 次，不常驻跳动）。 */}
             {cta && (
               <button
+                key={next}
                 type="button"
-                className="kb-onboarding__cta"
+                // 其余步骤的动画长在真实按钮上（导入 / 问答 / 保存）；
+                // 只有「先配置 AI」没有页内真实按钮，才由这颗中转键承担提示。
+                className={`kb-onboarding__cta${next === 'runtime' ? ' kb-guide-pulse' : ''}`}
                 data-testid="kb-onboarding-cta"
                 onClick={cta.action}
               >

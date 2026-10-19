@@ -3827,8 +3827,25 @@
   transition: background 120ms ease;
 }
 
+/* 引导呼吸环长在「真实按钮」上（导入 / 问答 / 保存）：引导收起后用户日常用的
+   就是这些键，动画不该只教会用户点 checklist 上的中转按钮。三次后停下，
+   避免常驻跳动变成噪音（2026-10-19 验收反馈：只靠一行说明注意不到）。 */
+@keyframes kb-guide-pulse {
+  0%   { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 45%, transparent); }
+  70%  { box-shadow: 0 0 0 6px transparent; }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+
+.kb-guide-pulse {
+  animation: kb-guide-pulse 1.4s ease-out 3;
+}
+
 .kb-onboarding__cta:hover {
   background: var(--accent-hover);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kb-guide-pulse { animation: none; }
 }
 
 .kb-onboarding__dismiss {

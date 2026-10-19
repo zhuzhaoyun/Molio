@@ -8,6 +8,7 @@ import type { ReactNode } from 'react';
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState, useCallback } from 'react';
 import type { TreeNode } from '@molio/contracts';
 import { useI18n } from '../../i18n';
+import { useOnboardingHint } from '../../hooks/useOnboardingHint';
 import { KbFileTree } from './KbFileTree';
 import { OpenNewWindowIcon } from '../icons';
 import { openInNewWindow } from '../../utils/openWindow';
@@ -91,6 +92,9 @@ export const KbFilePanel = forwardRef<KbFilePanelHandle, KbFilePanelProps>(funct
   children,
 }, ref) {
   const { t } = useI18n();
+  // 引导要指向真实入口，而不是 checklist 上的中转按钮：引导消失后，
+  // 用户日常用的就是这颗「导入」。
+  const guideImport = useOnboardingHint() === 'import';
   // Expansion state is owned here so the toggle button can read it directly.
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set());
   const anyExpanded = expandedPaths.size > 0;
@@ -462,7 +466,7 @@ export const KbFilePanel = forwardRef<KbFilePanelHandle, KbFilePanelProps>(funct
         {onImportClick && (
           <button
             type="button"
-            className="kb-btn-import kb-toolbar-btn-accent"
+            className={`kb-btn-import kb-toolbar-btn-accent${guideImport ? ' kb-guide-pulse' : ''}`}
             title={t('kb.import')}
             onClick={onImportClick}
             data-testid="kb-btn-import"
