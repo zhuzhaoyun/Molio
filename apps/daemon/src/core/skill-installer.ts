@@ -48,6 +48,9 @@ export const BUILTIN_SKILLS = [
   // injection (silently dropped by the CLI): retrieval now lives in an on-demand
   // skill, triggered by the always-on CLAUDE.md rule below + the KB qa panel.
   'wiki-query',
+  // quiz-generate — 从库出客观题。输出纯文本 quiz 围栏，不依赖工具调用，
+  // 因此对所有 runtime 可用（Codex/Gemini 等没有 AskUserQuestion）。
+  'quiz-generate',
   // NOTE: remotion used to be bundled here. It was retired (see
   // RETIRED_BUNDLED_SKILLS): users who want video creation install the
   // third-party `am-will/remotion` skill from the skill hub instead — a
