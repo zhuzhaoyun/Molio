@@ -3692,3 +3692,115 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* ── First-run checklist banner ── */
+.kb-onboarding {
+  flex: none;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-subtle);
+  font-size: 13px;
+}
+
+.kb-onboarding__bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 36px;
+  padding: 0 12px;
+}
+
+.kb-onboarding__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+  padding: 4px 0;
+}
+
+.kb-onboarding__progress {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.kb-onboarding__next {
+  margin-left: auto;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+}
+
+.kb-onboarding__dismiss {
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 4px 6px;
+}
+
+.kb-onboarding__steps {
+  margin: 0;
+  padding: 4px 12px 10px;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.kb-onboarding__steps li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text);
+}
+
+.kb-onboarding__steps li.is-done {
+  color: var(--text-muted);
+}
+
+.kb-onboarding__check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  font-size: 11px;
+  flex: none;
+}
+
+.kb-onboarding__steps li.is-done .kb-onboarding__check {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.kb-onboarding__link {
+  margin-left: auto;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+  padding: 0;
+}
+
+.kb-onboarding__done {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 8px 12px;
+}
+
+.kb-onboarding__done-body {
+  color: var(--text-muted);
+}

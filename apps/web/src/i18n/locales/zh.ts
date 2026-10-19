@@ -751,6 +751,20 @@ const zh: Record<string, string> = {
   'kb.chatMenu.hide': '隐藏按钮',
   'kb.chatMenu.show': '唤回按钮',
   'kb.chatMenu.resetPos': '恢复默认位置',
+  // 首次激活 checklist（仅全新安装、0 库时出现；老用户直接 done 不显示）
+  'kb.onboarding.title': '🚀 开始使用',
+  'kb.onboarding.nextImport': '下一步：导入一个文件',
+  'kb.onboarding.nextAsk': '下一步：提一个问题',
+  'kb.onboarding.step1': '知识库已就绪',
+  'kb.onboarding.step2': '打开一篇笔记，或导入你的文件',
+  'kb.onboarding.step3': '向知识库提一个问题',
+  'kb.onboarding.actionImport': '导入文件',
+  'kb.onboarding.actionAsk': '去提问',
+  'kb.onboarding.dismiss': '关闭引导',
+  'kb.onboarding.doneTitle': '🎉 已跑通闭环',
+  'kb.onboarding.doneBody': '接下来可以试试「构建 Wiki」或「知识图谱」',
+  'kb.onboarding.doneBuild': '构建 Wiki',
+  'kb.onboarding.doneGraph': '打开图谱',
 
   // ── 文档出图 ──
   'kb.exportImage': '导出图片',

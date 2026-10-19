@@ -9,6 +9,7 @@ import { api } from '../../api/client';
 import { useChatCore, type CreateRunContext, type ChatMessage } from '../../hooks/useChatCore';
 import { kbChatSessionsStore, type ChatSessionTab } from '../../stores/kbChatSessionsStore';
 import { chatRuntimeStore } from '../../stores/chatRuntimeStore';
+import { onboardingStore } from '../../stores/onboardingStore';
 import { type PastedImage, buildAttachmentPrefix } from '../ChatComposer';
 import { useI18n } from '../../i18n';
 import { WIKI_QUERY_TRIGGER, deriveChatTitle } from './kbChatPrompts';
@@ -267,6 +268,7 @@ export function KbChatSessionController({
   const buildSend = useCallback(
     (selectedText?: string | null, onSelectedTextConsumed?: () => void) =>
       (text: string, pastedImages?: PastedImage[]) => {
+        if (session.mode === 'qa') onboardingStore.markAsk();
         // Inline @/skill refs in `text` were already expanded by ChatComposer.
         const prefix = buildAttachmentPrefix(pastedImages ?? []);
         let message = text;
@@ -287,7 +289,10 @@ export function KbChatSessionController({
     isRunning: chat.isRunning,
     activity: chat.activity ?? null,
     conversationId: chat.conversationId ?? null,
-    send: (text, opts) => sendRef.current(text, opts),
+    send: (text, opts) => {
+      if (session.mode === 'qa') onboardingStore.markAsk();
+      sendRef.current(text, opts);
+    },
     cancel: () => { void cancelRef.current(); },
     submitToolResult: (toolUseId, content) => submitToolResultRef.current(toolUseId, content),
     regenerateLast: () => { void regenerateRef.current(); },
@@ -295,7 +300,7 @@ export function KbChatSessionController({
     deleteMessages: (ids) => deleteMessagesRef.current(ids),
     buildSend,
   }), [
-    chat.messages, chat.isRunning, chat.activity, chat.conversationId, buildSend,
+    chat.messages, chat.isRunning, chat.activity, chat.conversationId, buildSend, session.mode,
   ]);
 
   return <>{children(state)}</>;
