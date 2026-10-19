@@ -98,6 +98,36 @@ describe('onboardingStore', () => {
     assert.equal(reopened.getState()?.status, 'active');
   });
 
+  it('treats a storage read that throws as absent and keeps working in memory', () => {
+    const hostile = {
+      getItem(): string | null { throw new Error('SecurityError'); },
+      setItem(): void { throw new Error('QuotaExceededError'); },
+    };
+    const s = createOnboardingStore(hostile);
+    assert.equal(s.getState(), null, 'a throwing getItem must not escape the constructor');
+    s.init(0);
+    assert.equal(s.getState()?.status, 'active', 'setItem failure must not lose in-memory state');
+    s.markVault();
+    assert.equal(s.getState()?.steps.vault, true);
+  });
+
+  it('falls back to noop storage when the localStorage accessor itself throws', async () => {
+    const { resolveDefaultStorage } = await import('../src/stores/onboardingStore.ts');
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+    Object.defineProperty(globalThis, 'localStorage', {
+      configurable: true,
+      get() { throw new Error('SecurityError'); },
+    });
+    try {
+      const fallback = resolveDefaultStorage();
+      assert.equal(fallback.getItem('molio.onboarding.v1'), null);
+      assert.doesNotThrow(() => fallback.setItem('molio.onboarding.v1', '{}'));
+    } finally {
+      if (descriptor) Object.defineProperty(globalThis, 'localStorage', descriptor);
+      else delete (globalThis as Record<string, unknown>).localStorage;
+    }
+  });
+
   it('notifies subscribers on every state change', () => {
     const s = createOnboardingStore(storage);
     let n = 0;

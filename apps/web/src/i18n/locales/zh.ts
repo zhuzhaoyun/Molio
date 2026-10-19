@@ -765,6 +765,8 @@ const zh: Record<string, string> = {
   'kb.onboarding.doneBody': '接下来可以试试「构建 Wiki」或「知识图谱」',
   'kb.onboarding.doneBuild': '构建 Wiki',
   'kb.onboarding.doneGraph': '打开图谱',
+  'kb.sampleVaultCreateFailed': '创建示例知识库失败：{error}',
+  'kb.connectionFailed': '无法连接到服务',
 
   // ── 文档出图 ──
   'kb.exportImage': '导出图片',

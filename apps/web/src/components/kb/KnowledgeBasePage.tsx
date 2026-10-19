@@ -343,11 +343,13 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
         `/knowledge?vault=${encodeURIComponent(result.vault.id)}&file=${encodeURIComponent(result.entryFile)}`,
       );
     } catch (err) {
-      showToast(`创建示例知识库失败：${err instanceof Error ? err.message : '无法连接到服务'}`);
+      showToast(t('kb.sampleVaultCreateFailed', {
+        error: err instanceof Error ? err.message : t('kb.connectionFailed'),
+      }));
     } finally {
       setCreatingSampleVault(false);
     }
-  }, [creatingSampleVault, kb.refreshVaults, navigate, showToast]);
+  }, [creatingSampleVault, kb.refreshVaults, navigate, showToast, t]);
 
   // ─── Tab-aware file selection ───
 

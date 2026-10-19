@@ -58,8 +58,17 @@ function parseState(raw: string | null, now: () => number): OnboardingState | nu
   }
 }
 
+function safeGetItem(storage: StorageLike, key: string): string | null {
+  try {
+    return storage.getItem(key);
+  } catch {
+    // Storage blocked (Third-party context / SecurityError): behave as "no key".
+    return null;
+  }
+}
+
 export function createOnboardingStore(storage: StorageLike, now: () => number = Date.now) {
-  let state: OnboardingState | null = parseState(storage.getItem(ONBOARDING_STORAGE_KEY), now);
+  let state: OnboardingState | null = parseState(safeGetItem(storage, ONBOARDING_STORAGE_KEY), now);
   const listeners = new Set<Listener>();
 
   function emit() {
@@ -115,7 +124,24 @@ const noopStorage: StorageLike = {
   setItem: () => {},
 };
 
+/**
+ * Resolve browser storage defensively: in storage-restricted contexts even
+ * *reading* the `localStorage` global throws (SecurityError), and this module
+ * is imported by App-level code — a throw here would break boot, not just the
+ * banner. Probe once and fall back to noop.
+ */
+export function resolveDefaultStorage(): StorageLike {
+  try {
+    if (typeof localStorage !== 'undefined') {
+      // Probe: merely referencing the global can throw in blocked contexts.
+      localStorage.getItem(ONBOARDING_STORAGE_KEY);
+      return localStorage;
+    }
+  } catch {
+    // fall through to noop
+  }
+  return noopStorage;
+}
+
 /** Singleton used by the app; node:test builds its own via createOnboardingStore. */
-export const onboardingStore = createOnboardingStore(
-  typeof localStorage !== 'undefined' ? localStorage : noopStorage,
-);
+export const onboardingStore = createOnboardingStore(resolveDefaultStorage());

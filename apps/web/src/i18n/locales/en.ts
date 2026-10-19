@@ -762,6 +762,8 @@ const en: Record<string, string> = {
   'kb.onboarding.doneBody': 'Next, try "Build Wiki" or the knowledge graph',
   'kb.onboarding.doneBuild': 'Build Wiki',
   'kb.onboarding.doneGraph': 'Open graph',
+  'kb.sampleVaultCreateFailed': 'Failed to create the sample library: {error}',
+  'kb.connectionFailed': 'Could not reach the service',
 
   // ── Document image export ──
   'kb.exportImage': 'Export image',

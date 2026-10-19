@@ -59,8 +59,12 @@ const ACTIVE_STATE = {
 };
 
 async function seedActiveOnboarding(page: Page) {
+  // Seed once only. `addInitScript` runs on every navigation: re-writing on the
+  // reload below would resurrect a dismissed state and hide a persistence bug.
   await page.addInitScript((state) => {
-    localStorage.setItem('molio.onboarding.v1', JSON.stringify(state));
+    if (!localStorage.getItem('molio.onboarding.v1')) {
+      localStorage.setItem('molio.onboarding.v1', JSON.stringify(state));
+    }
   }, ACTIVE_STATE);
 }
 
@@ -129,7 +133,13 @@ test('关闭 checklist 后刷新不再出现', async ({ page }) => {
     await expect(page.locator('[data-testid="kb-onboarding"]')).toBeVisible();
     await page.locator('[data-testid="kb-onboarding-dismiss"]').click();
     await expect(page.locator('[data-testid="kb-onboarding"]')).toHaveCount(0);
+    await expect
+      .poll(() => page.evaluate(() => localStorage.getItem('molio.onboarding.v1')))
+      .toContain('dismissed');
     await page.reload();
+    // 等库真的加载完再断言：reload 的 load 事件早于 React 挂载，空 DOM 窗口里
+    // checklist 本来就不可见，直接 toHaveCount(0) 会对着真空窗假绿。
+    await expect(page.locator('.kb-tree-item').first()).toBeVisible();
     await expect(page.locator('[data-testid="kb-onboarding"]')).toHaveCount(0);
   } finally {
     await cleanupTempVault(vault);
