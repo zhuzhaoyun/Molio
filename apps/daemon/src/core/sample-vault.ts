@@ -127,9 +127,15 @@ export function createSampleVault(
   if (existing) {
     // Repair drift: if the registered sample directory lost files (partial
     // delete, failed copy), put the missing ones back. Existing user edits
-    // are still never overwritten.
+    // are still never overwritten. The directory itself can be gone too — the
+    // user may have deleted it from Finder while the vault row survived — so
+    // recreate it first instead of letting copyFileSync hit ENOENT (and before,
+    // whether the copy worked depended on readdir returning a subdirectory first).
     const sourceDir = resolveSourceDir(opts);
-    if (isSampleVaultSource(sourceDir)) copyMissingFiles(sourceDir, vaultPath);
+    if (isSampleVaultSource(sourceDir)) {
+      ensureVaultDir(vaultPath);
+      copyMissingFiles(sourceDir, vaultPath);
+    }
     return { vault: existing, entryFile: SAMPLE_VAULT_ENTRY, created: false };
   }
 

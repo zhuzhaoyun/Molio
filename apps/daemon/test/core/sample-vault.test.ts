@@ -83,6 +83,24 @@ describe('sample vault core', () => {
     assert.equal(readFileSync(entry, 'utf-8'), '# 我自己改过的内容\n');
   });
 
+  it('rebuilds a registered sample vault whose directory was deleted from disk', () => {
+    // Registration and disk can drift: the user deletes 示例知识库 in Finder while
+    // the vault row survives. Clicking the CTA again must restore the content,
+    // not fail with ENOENT on the missing parent directory. The source holds a
+    // single top-level file so the repair cannot lean on readdir order creating
+    // the directory first (that made the old code pass on APFS by luck).
+    const flatSource = join(root, 'flat-source');
+    mkdirSync(flatSource);
+    writeFileSync(join(flatSource, SAMPLE_VAULT_ENTRY), '# 开始使用\n');
+
+    const first = createSampleVault(db, watcher, { samplePath: target, sourceDir: flatSource });
+    rmSync(target, { recursive: true, force: true });
+    const second = createSampleVault(db, watcher, { samplePath: target, sourceDir: flatSource });
+    assert.equal(second.created, false);
+    assert.equal(second.vault.id, first.vault.id);
+    assert.equal(readFileSync(join(target, SAMPLE_VAULT_ENTRY), 'utf-8'), '# 开始使用\n');
+  });
+
   it('fills only missing files when the directory was partially deleted', () => {
     createSampleVault(db, watcher, { samplePath: target, sourceDir });
     const manual = join(target, '使用手册', '导入文件.md');
