@@ -172,10 +172,13 @@ test('checklist 1/5 → 5/5：打开、导入、提问、存回都走通', async
 
     // 5. 把 AI 的回答存回知识库
     await expect(checklist).toContainText('保存到知识库');
-    // 消息工具条默认 pointer-events:none，悬停到消息上才可点（与用户操作一致）。
-    await page.locator('[data-testid="assistant-message"]').last().hover();
-    const saveBtn = page.locator('[data-testid="msg-save-kb-btn"]').first();
-    await expect(saveBtn).toBeVisible();
+    // 进入保存步时，保存按钮必须**不靠悬停**就能看见并带文字标签：消息工具条
+    // 平时 hover 才显形，纯图标在这里没人找得到（用户 2026-10-19 验收反馈）。
+    const lastMessage = page.locator('[data-testid="assistant-message"]').last();
+    const toolbar = lastMessage.locator('[data-testid="message-toolbar"]');
+    await expect(toolbar).toHaveCSS('opacity', '1');
+    const saveBtn = lastMessage.locator('[data-testid="msg-save-kb-btn"]');
+    await expect(saveBtn).toContainText('保存到知识库');
     await saveBtn.click();
 
     await expect(page.locator('[data-testid="kb-onboarding-done"]')).toBeVisible();
@@ -206,8 +209,66 @@ test('完成地图收起后，可从帮助菜单重新打开', async ({ page }) 
     // 帮助菜单必须是找回引导的入口：收起不等于永久消失。
     await page.locator('[data-testid="nav-help-btn"]').click();
     await expect(page.locator('[data-testid="nav-help-menu"]')).toBeVisible();
-    await page.locator('[data-testid="nav-reopen-guide"]').click();
+    await page.locator('[data-testid="nav-onboarding-guide"]').click();
     await expect(map).toBeVisible();
+  } finally {
+    await cleanupTempVault(vault);
+  }
+});
+
+test('没有知识库时从帮助打开引导：等同于首次启动', async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem('molio.onboarding.v1', JSON.stringify({
+      status: 'dismissed',
+      steps: { vault: true, openOrImport: true, import: true, ask: true, save: true },
+      mapDismissed: true,
+      startedAt: 1,
+    }));
+  });
+  await mockZeroVaultsUntilSampleCreated(page);
+  await page.goto('/knowledge');
+  await expect(page.locator('[data-testid="kb-onboarding"]')).toHaveCount(0);
+
+  await page.locator('[data-testid="nav-help-btn"]').click();
+  await page.locator('[data-testid="nav-onboarding-guide"]').click();
+
+  // 首次启动的入口就是零库欢迎页，不是一份已经完成的地图。
+  await expect(page.locator('[data-testid="kb-empty-sample-vault-cta"]')).toBeVisible();
+  await expect(page.locator('[data-testid="kb-empty-create-vault-cta"]')).toBeVisible();
+  await expect
+    .poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('molio.onboarding.v1')!)))
+    .toMatchObject({
+      status: 'active',
+      steps: { vault: false, openOrImport: false, import: false, ask: false, save: false },
+    });
+});
+
+test('已有知识库时打开引导：从当前进度继续，不重置也不建示例库', async ({ page }) => {
+  const vault = await createTempVault('e2e-onboarding-guide-existing');
+  try {
+    await page.addInitScript(() => {
+      localStorage.setItem('molio.onboarding.v1', JSON.stringify({
+        status: 'dismissed',
+        steps: { vault: false, openOrImport: true, import: true, ask: false, save: false },
+        mapDismissed: true,
+        startedAt: 1,
+      }));
+    });
+    await page.goto(`/knowledge?vault=${vault.id}`);
+    await expect(page.locator('[data-testid="kb-onboarding"]')).toHaveCount(0);
+
+    await page.locator('[data-testid="nav-help-btn"]').click();
+    await page.locator('[data-testid="nav-onboarding-guide"]').click();
+
+    const checklist = page.locator('[data-testid="kb-onboarding"]');
+    await expect(checklist).toBeVisible();
+    // 已有库：库步骤直接算完成，另外两个既有进度原样保留 → 3/5，而不是从头开始。
+    await expect(checklist).toContainText('3/5');
+
+    // 打开引导不得在后台建示例库（对已有内容零副作用）。
+    const res = await fetch(`${DAEMON}/api/knowledge/vaults`);
+    const body = await res.json() as { vaults: Array<{ path: string }> };
+    expect(body.vaults.some((v) => v.path === SAMPLE_PATH)).toBe(false);
   } finally {
     await cleanupTempVault(vault);
   }

@@ -4,8 +4,10 @@
 // 渲染成 `ChatSessionView`。无 DOM 的状态/逻辑（useChatCore / 历史加载 / resumeRun /
 // API 注册）在 `KbChatSessionController.tsx`，由 Provider 常驻挂载 —— 本文件只负责
 // 面板特有的外壳类名、空态/选中预览、以及发送包装所需的 selectedText。
+import { useSyncExternalStore } from 'react';
 import { ChatSessionView } from '../ChatSessionView';
 import { messageSelectionStore } from '../../stores/messageSelectionStore';
+import { onboardingStore } from '../../stores/onboardingStore';
 import { type FileRef } from '../ChatComposer';
 import { useI18n } from '../../i18n';
 import type { ChatSessionTab } from '../../stores/kbChatSessionsStore';
@@ -28,6 +30,14 @@ export function KbChatSession({
   // 状态来自 App 层 Provider 的 controller（同一标签在面板 / `/chat` 共用一份 core）。
   // 首次渲染尚未 publish → null，bridge 的 effect 随后上报并触发重渲染。
   const state = useKbChatSessionState(session.id);
+  // 引导的保存步：问答已完成、回答存回还没做。此时把最后一条回答的保存按钮
+  // 常显 + 加文字标签——工具条默认 hover 才出现且只有图标，首次使用者找不到。
+  const onboarding = useSyncExternalStore(
+    onboardingStore.subscribe,
+    onboardingStore.getState,
+    onboardingStore.getState,
+  );
+  const saveHint = onboarding?.status === 'active' && onboarding.steps.ask && !onboarding.steps.save;
 
   const initialFileRefs: FileRef[] =
     session.mode === 'qa' && session.filePath && session.vaultId
@@ -61,6 +71,7 @@ export function KbChatSession({
           // 「由哪篇文档播种」标记，同一文档（面板 ⇄ 全屏）沿用摘除取舍，换文档重新播种；
           // 草稿则无论怎么切都不吞没发送前的文字。缓存不得比对话界面活得久——否则在 A
           // 摘掉 chip 后关掉对话再回来会永远没有 chip。
+          saveHint={saveHint}
           // 两个 key 与全屏态（HomePage）共用同一真值源（见 kbChatSessionsStore）——R5 要求逐字一致。
           composerMountKey={sessionComposerMountKey(session.id, session.filePath)}
           composerKey={sessionComposerKey(session.id)}

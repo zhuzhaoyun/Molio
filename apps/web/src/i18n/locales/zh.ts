@@ -47,7 +47,7 @@ const zh: Record<string, string> = {
   'nav.resources': '资源',
   'nav.help': '帮助',
   'nav.helpOnline': '在线帮助',
-  'nav.reopenGuide': '重看上手引导',
+  'nav.onboardingGuide': '上手引导',
   'nav.settings': '设置',
   'nav.me': '我的',
   'nav.login': '登录',

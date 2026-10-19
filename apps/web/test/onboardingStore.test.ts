@@ -130,7 +130,7 @@ describe('onboardingStore', () => {
     s.init(1);
     assert.equal(s.getState()?.status, 'done');
     assert.equal(s.getState()?.mapDismissed, true, 'upgrades must stay quiet until Help asks');
-    s.reopen();
+    s.openGuide(true);
     assert.equal(s.getState()?.mapDismissed, false);
   });
 
@@ -162,27 +162,60 @@ describe('onboardingStore', () => {
     assert.equal(s.getState()?.mapDismissed, true);
     const reopened = createOnboardingStore(storage);
     assert.equal(reopened.getState()?.mapDismissed, true, 'dismissal survives reload');
-    reopened.reopen();
+    reopened.openGuide(true);
     assert.equal(reopened.getState()?.mapDismissed, false);
     assert.equal(reopened.getState()?.status, 'done');
   });
 
-  it('reopening a dismissed checklist resumes from the steps already done', () => {
+  it('opening the guide on a dismissed checklist resumes from the steps already done', () => {
     const s = createOnboardingStore(storage);
     s.init(0);
     s.markVault();
     s.markOpenOrImport();
     s.dismiss();
     const reopened = createOnboardingStore(storage);
-    reopened.reopen();
+    reopened.openGuide(true);
     assert.equal(reopened.getState()?.status, 'active');
     assert.equal(reopened.getState()?.steps.vault, true);
     assert.equal(reopened.getState()?.steps.openOrImport, true);
   });
 
-  it('does not resurrect a checklist that never started', () => {
+  it('starts the same fresh flow when the install has no library', () => {
     const s = createOnboardingStore(storage);
-    s.reopen();
+    s.init(2);
+    s.openGuide(false);
+    assert.equal(s.getState()?.status, 'active');
+    assert.deepEqual(s.getState()?.steps, {
+      vault: false,
+      openOrImport: false,
+      import: false,
+      ask: false,
+      save: false,
+    });
+  });
+
+  it('never resets progress when an existing library opens the guide', () => {
+    storage.seed(KEY, JSON.stringify({
+      status: 'dismissed',
+      steps: { vault: false, openOrImport: true, import: true, ask: true, save: false },
+      mapDismissed: true,
+      startedAt: 1,
+    }));
+    const s = createOnboardingStore(storage);
+    s.openGuide(true);
+    assert.equal(s.getState()?.status, 'active', 'resumes instead of restarting');
+    assert.deepEqual(s.getState()?.steps, {
+      vault: true, // having a library is a fact; the guide must not ask to create one
+      openOrImport: true,
+      import: true,
+      ask: true,
+      save: false,
+    });
+  });
+
+  it('does not invent a guide when the library state is unknown and no state exists', () => {
+    const s = createOnboardingStore(storage);
+    s.openGuide(null);
     assert.equal(s.getState(), null);
   });
 

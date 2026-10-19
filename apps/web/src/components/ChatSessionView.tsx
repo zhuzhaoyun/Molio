@@ -67,6 +67,11 @@ export interface ChatSessionViewProps {
    * 默认 true（`/chat` 只有单个视图，行为不变）。
    */
   pruneSelection?: boolean;
+  /**
+   * First-run guide is waiting for "save the answer back": the latest assistant
+   * message keeps its toolbar visible and labels the save action.
+   */
+  saveHint?: boolean;
 }
 
 /**
@@ -99,6 +104,7 @@ export function ChatSessionView({
   onOpenConversation,
   onDeleteConversations,
   pruneSelection = true,
+  saveHint,
 }: ChatSessionViewProps) {
   const { t } = useI18n();
   const logRef = useRef<HTMLDivElement>(null);
@@ -281,6 +287,7 @@ export function ChatSessionView({
                 onRegenerate={msg.id === lastAssistantId ? onRegenerate : undefined}
                 onContinue={msg.id === lastAssistantId ? onContinue : undefined}
                 onRequestDelete={onRequestDelete}
+                highlightSave={saveHint && msg.id === lastAssistantId}
               />
             );
           }

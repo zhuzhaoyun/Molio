@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useI18n } from '../i18n';
+import { api } from '../api/client';
 import { useAuthStatus } from '../stores/authStore';
 import { loginIntentStore } from '../stores/loginIntentStore';
 import { useActiveVaultId } from '../stores/vaultStore';
@@ -211,8 +212,8 @@ export function NavRail() {
           {!auth?.loggedIn && <span className="entry-nav-rail__dot" />}
         </button>
 
-        {/* Help — online docs plus a way back into the first-run guide.
-            重看引导不能只存在于 localStorage 的初始态里：用户收起后必须还能找回。 */}
+        {/* Help — online docs plus the onboarding guide. 引导不能只活在一次性的
+            localStorage 初始态里：首次用户可以主动打开，老用户收起后也能找回。 */}
         <div className="entry-nav-rail__help">
           <button
             type="button"
@@ -253,14 +254,19 @@ export function NavRail() {
                 type="button"
                 role="menuitem"
                 className="entry-nav-rail__menu-item"
-                data-testid="nav-reopen-guide"
+                data-testid="nav-onboarding-guide"
                 onClick={() => {
-                  onboardingStore.reopen();
-                  navigate(DEFAULT_ROUTE);
                   setHelpOpen(false);
+                  navigate(DEFAULT_ROUTE);
+                  // 是否已有知识库决定引导形态：零库 = 全新流程；已有库 = 从当前
+                  // 进度继续 / 展开功能地图，绝不重置进度或碰任何库内容。
+                  // 取不到库列表时传 null（保守：不改无法判断的状态）。
+                  void api.listVaults()
+                    .then((vaults) => onboardingStore.openGuide(vaults.length > 0))
+                    .catch(() => onboardingStore.openGuide(null));
                 }}
               >
-                {t('nav.reopenGuide')}
+                {t('nav.onboardingGuide')}
               </button>
             </div>
           )}

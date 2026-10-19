@@ -35,9 +35,14 @@ interface Props {
   onRequestDelete?: (id: string) => void;
   /** Conversation id — scopes quiz localStorage keys. */
   conversationId?: string | null;
+  /**
+   * First-run guide is on the save step: keep the toolbar visible and label the
+   * save action, so the next step is discoverable without hovering.
+   */
+  highlightSave?: boolean;
 }
 
-export function AssistantMessage({ message, isLast, onAnswerToolUse, onSubmitForm, onRegenerate, onContinue, onRequestDelete, conversationId }: Props) {
+export function AssistantMessage({ message, isLast, onAnswerToolUse, onSubmitForm, onRegenerate, onContinue, onRequestDelete, conversationId, highlightSave }: Props) {
   const { t } = useI18n();
   const selectMode = useSelectMode();
   const selected = useIsSelected(message.id);
@@ -278,7 +283,7 @@ export function AssistantMessage({ message, isLast, onAnswerToolUse, onSubmitFor
           ]}
           extra={
             <>
-              <SaveToKbButton content={answerText} />
+              <SaveToKbButton content={answerText} labeled={highlightSave} />
               <SaveAsSkillButton content={answerText} />
             </>
           }
@@ -286,6 +291,7 @@ export function AssistantMessage({ message, isLast, onAnswerToolUse, onSubmitFor
             key: 'delete', label: '删除', testid: 'overflow-item-delete',
             text: '', onClick: () => onRequestDelete(message.id),
           }] : undefined}
+          highlighted={highlightSave}
         />
       )}
     </div>

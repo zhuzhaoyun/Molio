@@ -1608,6 +1608,13 @@
   opacity: 1;
   pointer-events: auto;
 }
+/* First-run onboarding's save step: the next action lives in this bar, so
+ * hover-revealing it would hide the instruction. Keep it up with a soft accent. */
+.message-toolbar--highlight {
+  opacity: 1;
+  pointer-events: auto;
+  border-color: var(--accent-soft);
+}
 /* Touch devices have no hover — keep toolbar visible. */
 @media (hover: none) {
   .message-toolbar { opacity: 1; pointer-events: auto; }
@@ -1638,6 +1645,19 @@
 .icon-btn:active:not(:disabled) { transform: translateY(0.5px); }
 .icon-btn:disabled { opacity: 0.35; cursor: default; }
 .icon-btn.copied { color: var(--accent); }
+
+/* Icon + visible name. Only the first-run save step uses it: an icon-only
+ * action hidden behind hover cannot teach a new user where to click. */
+.icon-btn--labeled {
+  width: auto;
+  gap: 5px;
+  padding: 0 8px;
+  white-space: nowrap;
+}
+.icon-btn__label {
+  font-size: 12px;
+  line-height: 1;
+}
 
 /* Copied micro-interaction: a brief accent pulse so the checkmark lands. */
 @keyframes icon-copied-pulse {

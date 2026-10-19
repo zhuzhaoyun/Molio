@@ -8,6 +8,12 @@ import { SaveIcon, CheckIcon, FolderIcon } from './icons';
 interface Props {
   /** Raw markdown content of the assistant message to persist. */
   content: string;
+  /**
+   * Show the action's name next to the icon. Used while the onboarding guide is
+   * on the save step: the toolbar is hover-revealed and icon-only, so a first-run
+   * user has no way to find "保存到知识库" (user feedback 2026-10-19).
+   */
+  labeled?: boolean;
 }
 
 /** Pick a readable filename from the reply's first non-empty line. */
@@ -39,7 +45,7 @@ function timestampStamp(): string {
  * Reuses the .icon-btn / .copied styles so it matches the toolbar visually
  * and gets the same accent pulse on success.
  */
-export function SaveToKbButton({ content }: Props) {
+export function SaveToKbButton({ content, labeled }: Props) {
   const vaultId = useActiveVaultId();
   const activeVault = useActiveVault();
   const [saved, setSaved] = useState(false);
@@ -85,11 +91,14 @@ export function SaveToKbButton({ content }: Props) {
     }
   }, [vaultId, content]);
 
+  // 引导态的文字标签刻意不跟 `tip` 走：保存成功后 tip 会带文件名，作为按钮文字太长。
+  const label = !vaultId ? '先选择一个知识库' : saved ? '已保存' : '保存到知识库';
+
   return (
     <>
       <button
         type="button"
-        className={`icon-btn${saved ? ' copied' : ''}`}
+        className={`icon-btn${saved ? ' copied' : ''}${labeled ? ' icon-btn--labeled' : ''}`}
         data-tip={tip}
         data-testid="msg-save-kb-btn"
         onClick={save}
@@ -97,6 +106,7 @@ export function SaveToKbButton({ content }: Props) {
         aria-label={tip}
       >
         {saved ? <CheckIcon size={15} /> : <SaveIcon size={15} />}
+        {labeled && <span className="icon-btn__label">{label}</span>}
       </button>
       {saved && canReveal && savedPath && (
         <button

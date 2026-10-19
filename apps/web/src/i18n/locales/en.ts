@@ -47,7 +47,7 @@ const en: Record<string, string> = {
   'nav.resources': 'Resources',
   'nav.help': 'Help',
   'nav.helpOnline': 'Online help',
-  'nav.reopenGuide': 'Replay the guide',
+  'nav.onboardingGuide': 'Getting-started guide',
   'nav.settings': 'Settings',
   'nav.me': 'Me',
   'nav.login': 'Sign in',

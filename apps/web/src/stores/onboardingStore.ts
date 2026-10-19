@@ -151,18 +151,39 @@ export function createOnboardingStore(storage: StorageLike, now: () => number = 
     },
 
     /**
-     * Bring the guide back from Help: resumes a dismissed checklist at its
-     * current progress, or re-expands the completion map.
+     * Help → onboarding guide.
+     *
+     * - `false` (no library yet): restart exactly like a fresh install. The
+     *   zero-vault welcome screen is the first step, so there is no existing
+     *   content for stale progress to refer to.
+     * - `true` (already has a library): never reset progress and never touch
+     *   vault data. Resume the checklist where it is, or re-expand the
+     *   completion map for a finished install. The library step reads as done
+     *   because having a vault is already a fact — the guide must not tell an
+     *   existing user to create one.
+     * - `null` (library count unavailable): change nothing we cannot justify;
+     *   a state that exists is resumed as if it had a library, and a missing
+     *   state stays missing.
      */
-    reopen() {
-      const current = state;
-      if (!current) return;
-      if (current.status === 'done') {
-        if (current.mapDismissed) persist({ ...current, mapDismissed: false });
+    openGuide(hasVaults: boolean | null) {
+      if (hasVaults === false) {
+        persist(freshState('active', now));
         return;
       }
-      const complete = ONBOARDING_STEP_KEYS.every((key) => current.steps[key]);
-      persist({ ...current, status: complete ? 'done' : 'active', mapDismissed: false });
+      const current = state;
+      if (!current) {
+        if (hasVaults === null) return;
+        persist({ ...freshState('done', now), mapDismissed: false });
+        return;
+      }
+      const steps = hasVaults ? { ...current.steps, vault: true } : current.steps;
+      const complete = ONBOARDING_STEP_KEYS.every((key) => steps[key]);
+      persist({
+        ...current,
+        steps,
+        status: complete ? 'done' : 'active',
+        mapDismissed: false,
+      });
     },
   };
 }
