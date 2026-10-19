@@ -79,12 +79,21 @@ export function effectiveBackground(node: HTMLElement | null): string {
  *     （`--foreground` 从未定义，实时页面的颜色是继承来的；SVG 是隔离文档，
  *      继承不到，必须显式写死，否则深色模式导出全是黑字）
  *   - wiki 链接样式（它们住在 knowledge.css，不在 #md-theme 里）
- *   - `#md-theme` 全部主题 CSS + `#output` 顶层 style 块，统一改写作用域
+ *   - `#md-theme` 全部主题 CSS + `#output` 顶层/容器内嵌 style 块，统一改写作用域
  */
 export function collectExportCss(output: HTMLElement): string {
+  // doocs 会把一部分规则（代码块 mac 圆点显隐、`h2 strong` 等）以 `<style>`
+  // 直接嵌在 `section.container` 末尾；它们不在 `#md-theme`，也不在 `#output`
+  // 顶层，只查 `:scope > style` 会让这些规则漏出导出 SVG。Set 按元素去重：
+  // 当前两个选择器（直接子元素 vs 孙元素）不可能重叠，去重是为将来扩选择器
+  // 列表时兜底，避免同一个 style 元素被收两次、规则重复膨胀。
+  const inlineStyles = new Set<HTMLStyleElement>([
+    ...output.querySelectorAll<HTMLStyleElement>(':scope > style'),
+    ...output.querySelectorAll<HTMLStyleElement>(':scope > section.container > style'),
+  ]);
   return composeExportCss({
     theme: document.getElementById('md-theme')?.textContent ?? '',
-    inline: Array.from(output.querySelectorAll(':scope > style'))
+    inline: Array.from(inlineStyles)
       .map((el) => el.textContent ?? '')
       .join('\n'),
     color: getComputedStyle(output).color,
