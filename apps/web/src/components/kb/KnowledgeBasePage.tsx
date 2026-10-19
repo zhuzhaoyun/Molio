@@ -311,6 +311,25 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
     saveToastTimer.current = setTimeout(() => setSaveToast(null), 2000);
   }, []);
 
+  const [creatingSampleVault, setCreatingSampleVault] = useState(false);
+
+  const handleCreateSampleVault = useCallback(async () => {
+    if (creatingSampleVault) return;
+    setCreatingSampleVault(true);
+    try {
+      const result = await api.createSampleVault();
+      await kb.refreshVaults();
+      vaultStore.setActiveVaultId(result.vault.id);
+      navigate(
+        `/knowledge?vault=${encodeURIComponent(result.vault.id)}&file=${encodeURIComponent(result.entryFile)}`,
+      );
+    } catch (err) {
+      showToast(`创建示例知识库失败：${err instanceof Error ? err.message : '无法连接到服务'}`);
+    } finally {
+      setCreatingSampleVault(false);
+    }
+  }, [creatingSampleVault, kb.refreshVaults, navigate, showToast]);
+
   // ─── Tab-aware file selection ───
 
   /**
@@ -1471,6 +1490,8 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
               onBuildWiki={handleBuildWiki}
               onImport={() => kb.setShowImport(true)}
               onOpenVaultManager={() => kb.setShowVaultSwitcher(true)}
+              onCreateSampleVault={() => { void handleCreateSampleVault(); }}
+              creatingSampleVault={creatingSampleVault}
               hasFiles={kb.tree.length > 0}
               onAskAboutSelection={handleAskAboutSelection}
               onOpenOutline={() => setShowOutline(true)}

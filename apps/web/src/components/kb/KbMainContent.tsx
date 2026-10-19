@@ -147,6 +147,10 @@ interface KbMainContentProps {
   onImport?: () => void;
   /** 打开知识库管理器（建库/打开已有库）。用于「一个库都没有」的空态。 */
   onOpenVaultManager?: () => void;
+  /** 创建内置示例知识库（仅零库空态）。 */
+  onCreateSampleVault?: () => void;
+  /** 示例库创建中（按钮 loading + 禁用）。 */
+  creatingSampleVault?: boolean;
   /** vault 里有没有文件。false 时空库主 CTA 换成「导入文件」——
    *  空库推「构建 Wiki」是错的：没有素材，AI 无从扫起。 */
   hasFiles?: boolean;
@@ -200,6 +204,8 @@ export function KbMainContent({
   onBuildWiki,
   onImport,
   onOpenVaultManager,
+  onCreateSampleVault,
+  creatingSampleVault,
   hasFiles,
   showFileName = true,
   isEditMode = false,
@@ -1198,22 +1204,41 @@ export function KbMainContent({
       {/* ── Body: empty states / error / content ── */}
       {!selectedFile ? (
         !vaultId ? (
-          <div className="kb-empty-state">
+          <div className="kb-empty-state kb-empty-state--welcome">
             <div className="kb-empty-icon">📚</div>
             <h3>{t('kb.welcomeTitle')}</h3>
             <p>{t('kb.welcomeBody')}</p>
-            <p className="kb-empty-hint">{t('kb.welcomeHint')}</p>
-            {/* 原来这段只有说明没按钮——从导航点进来的人到此为止，无路可走 */}
-            {onOpenVaultManager && (
-              <button
-                type="button"
-                className="wiki-cta-btn"
-                data-testid="kb-empty-create-vault-cta"
-                onClick={onOpenVaultManager}
-              >
-                {t('kb.createVaultCta')}
-              </button>
-            )}
+
+            <div className="kb-empty-actions kb-empty-actions--cards">
+              <div className="kb-empty-card">
+                <div className="kb-empty-card__title">{t('kb.sampleVaultTitle')}</div>
+                <p className="kb-empty-card__body">{t('kb.sampleVaultBody')}</p>
+                <button
+                  type="button"
+                  className="wiki-cta-btn"
+                  data-testid="kb-empty-sample-vault-cta"
+                  disabled={creatingSampleVault || !onCreateSampleVault}
+                  onClick={onCreateSampleVault}
+                >
+                  {creatingSampleVault ? t('kb.sampleVaultCreating') : t('kb.sampleVaultCta')}
+                </button>
+              </div>
+
+              <div className="kb-empty-card">
+                <div className="kb-empty-card__title">{t('kb.ownVaultTitle')}</div>
+                <p className="kb-empty-card__body">{t('kb.ownVaultBody')}</p>
+                {onOpenVaultManager && (
+                  <button
+                    type="button"
+                    className="wiki-cta-btn wiki-cta-btn--ghost"
+                    data-testid="kb-empty-create-vault-cta"
+                    onClick={onOpenVaultManager}
+                  >
+                    {t('kb.createVaultCta')}
+                  </button>
+                )}
+              </div>
+            </div>
           </div>
         ) : !wikiInitialized ? (
           /* 未建 Wiki 的两个状态合成一处：同一套结构、同一组按钮，只对调主次。

@@ -63,7 +63,7 @@ test.describe('默认落点：打开即进知识库', () => {
     // 限定 .kb-main：文件面板的「Empty vault」也用 .kb-empty-state，
     // 不限定会 strict 冲突（见 kb-chat-entry.spec.ts 同款注释）
     const empty = page.locator('.kb-main .kb-empty-state');
-    await expect(empty).toContainText('欢迎使用知识库', { timeout: 5_000 });
+    await expect(empty).toContainText('欢迎使用 Molio', { timeout: 5_000 });
 
     const cta = page.locator('[data-testid="kb-empty-create-vault-cta"]');
     await expect(cta).toBeVisible();

@@ -3650,3 +3650,45 @@
 
 .kb-export-item:hover { background: var(--bg-subtle); }
 .kb-export-item:disabled { opacity: 0.5; cursor: not-allowed; }
+/* ── Zero-vault welcome: two equal starting actions ── */
+.kb-empty-state--welcome {
+  max-width: 720px;
+}
+
+.kb-empty-actions--cards {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  width: 100%;
+  max-width: 640px;
+  margin-top: 8px;
+}
+
+.kb-empty-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 20px 18px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-subtle);
+  text-align: center;
+}
+
+.kb-empty-card__title {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.kb-empty-card__body {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+@media (max-width: 640px) {
+  .kb-empty-actions--cards {
+    grid-template-columns: 1fr;
+  }
+}

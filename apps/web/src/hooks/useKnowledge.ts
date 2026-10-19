@@ -194,6 +194,7 @@ interface UseKnowledgeReturn {
   // Actions
   selectVault: (id: string) => void;
   createVault: (name: string, path: string, description?: string) => Promise<void>;
+  refreshVaults: () => Promise<void>;
   openVault: (path: string) => Promise<void>;
   deleteVault: (id: string) => Promise<void>;
   selectFile: (path: string | null) => void;
@@ -317,6 +318,13 @@ export function useKnowledge(): UseKnowledgeReturn {
     })();
     return () => { cancelled = true; };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /** Re-fetch the vault list into both local state and the shared store. */
+  const refreshVaults = useCallback(async () => {
+    const list = await api.listVaults();
+    setVaults(list);
+    vaultStore.setVaults(list);
+  }, []);
 
   /**
    * ?manage=1 —— 主页「首次运行引导卡」的建库入口：到知识库页直接把知识库管理器
@@ -730,6 +738,7 @@ export function useKnowledge(): UseKnowledgeReturn {
     showCoseInstallPrompt,
     selectVault,
     createVault,
+    refreshVaults,
     deleteVault,
     selectFile,
     refreshTree,

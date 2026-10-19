@@ -177,10 +177,21 @@
       "specs": [
         "bootstrap",
         "navigation",
-        "home-onboarding",
+        "onboarding",
         "default-landing",
         "auth",
         "market-community"
+      ]
+    },
+    "onboarding": {
+      "paths": [
+        "apps/web/src/stores/onboardingStore.ts",
+        "apps/web/src/components/kb/OnboardingChecklist*",
+        "apps/web/src/components/kb/KbMainContent*",
+        "apps/web/src/api/client.ts"
+      ],
+      "specs": [
+        "onboarding"
       ]
     },
     "settings": {
@@ -460,9 +471,9 @@
       "priority": "P0",
       "file": "kb-large-file.spec.ts"
     },
-    "home-onboarding": {
-      "priority": "P1",
-      "file": "home-onboarding.spec.ts"
+    "onboarding": {
+      "priority": "P0",
+      "file": "onboarding.spec.ts"
     },
     "kb-large-file-gbk": {
       "priority": "P0",
