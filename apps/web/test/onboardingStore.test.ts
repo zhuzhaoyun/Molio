@@ -125,13 +125,34 @@ describe('onboardingStore', () => {
     });
   });
 
-  it('keeps the completion map hidden for installs that never ran the guide', () => {
+  it('replays the checklist instead of the map when an existing library opens the guide', () => {
+    const s = createOnboardingStore(storage);
+    s.init(1); // an install that never ran the guide still has a library
+    assert.equal(s.getState()?.status, 'done');
+    assert.equal(s.getState()?.mapDismissed, true, 'upgrades must stay quiet until asked');
+
+    s.openGuide(true);
+
+    // 「上手引导」是来学的，不是来被告知已经学完的：从第 2 步开始重走，
+    // 库步骤沿用既成事实，其余进度清零（只动引导状态，不碰库内容）。
+    assert.equal(s.getState()?.status, 'active');
+    assert.deepEqual(s.getState()?.steps, {
+      vault: true,
+      openOrImport: false,
+      import: false,
+      ask: false,
+      save: false,
+    });
+    assert.equal(s.getState()?.mapDismissed, true);
+  });
+
+  it('reopens the completion map without touching guide progress', () => {
     const s = createOnboardingStore(storage);
     s.init(1);
+    s.showMap();
     assert.equal(s.getState()?.status, 'done');
-    assert.equal(s.getState()?.mapDismissed, true, 'upgrades must stay quiet until Help asks');
-    s.openGuide(true);
     assert.equal(s.getState()?.mapDismissed, false);
+    assert.equal(s.getState()?.steps.save, true, 'showing the map must not reset anything');
   });
 
   it('reveals the map to an in-progress guide migrated from the old shape', () => {
@@ -162,7 +183,7 @@ describe('onboardingStore', () => {
     assert.equal(s.getState()?.mapDismissed, true);
     const reopened = createOnboardingStore(storage);
     assert.equal(reopened.getState()?.mapDismissed, true, 'dismissal survives reload');
-    reopened.openGuide(true);
+    reopened.showMap();
     assert.equal(reopened.getState()?.mapDismissed, false);
     assert.equal(reopened.getState()?.status, 'done');
   });
@@ -217,6 +238,28 @@ describe('onboardingStore', () => {
     const s = createOnboardingStore(storage);
     s.openGuide(null);
     assert.equal(s.getState(), null);
+  });
+
+  it('starts a replay, not a completion map, when a library exists but the key is missing', () => {
+    const s = createOnboardingStore(storage);
+    s.openGuide(true);
+    assert.equal(s.getState()?.status, 'active');
+    assert.deepEqual(s.getState()?.steps, {
+      vault: true,
+      openOrImport: false,
+      import: false,
+      ask: false,
+      save: false,
+    });
+  });
+
+  it('ignores showMap while the guide is still in progress', () => {
+    const s = createOnboardingStore(storage);
+    s.init(0);
+    s.markVault();
+    s.showMap();
+    assert.equal(s.getState()?.status, 'active');
+    assert.equal(s.getState()?.mapDismissed, false, 'no map exists before completion');
   });
 
   it('ignores step marks once done or dismissed', () => {

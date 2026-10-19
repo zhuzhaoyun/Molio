@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useI18n } from '../i18n';
 import { api } from '../api/client';
@@ -17,6 +17,11 @@ export function NavRail() {
   const activeVaultId = useActiveVaultId();
   const graphActive = useGraphViewActive();
   const auth = useAuthStatus();
+  const onboarding = useSyncExternalStore(
+    onboardingStore.subscribe,
+    onboardingStore.getState,
+    onboardingStore.getState,
+  );
   const [accountOpen, setAccountOpen] = useState(false);
   /** 账号面板是否由登录意图打开（提层盖过 z-200 的仓库管理器，保证登录视图可见可操作） */
   const [intentOpen, setIntentOpen] = useState(false);
@@ -268,6 +273,21 @@ export function NavRail() {
               >
                 {t('nav.onboardingGuide')}
               </button>
+              {onboarding?.status === 'done' && (
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="entry-nav-rail__menu-item"
+                  data-testid="nav-feature-map"
+                  onClick={() => {
+                    setHelpOpen(false);
+                    navigate(DEFAULT_ROUTE);
+                    onboardingStore.showMap();
+                  }}
+                >
+                  {t('nav.featureMap')}
+                </button>
+              )}
             </div>
           )}
         </div>

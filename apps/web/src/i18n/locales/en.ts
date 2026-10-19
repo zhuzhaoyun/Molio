@@ -48,6 +48,7 @@ const en: Record<string, string> = {
   'nav.help': 'Help',
   'nav.helpOnline': 'Online help',
   'nav.onboardingGuide': 'Getting-started guide',
+  'nav.featureMap': 'Feature map',
   'nav.settings': 'Settings',
   'nav.me': 'Me',
   'nav.login': 'Sign in',

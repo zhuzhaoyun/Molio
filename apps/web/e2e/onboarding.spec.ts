@@ -188,7 +188,7 @@ test('checklist 1/5 → 5/5：打开、导入、提问、存回都走通', async
   }
 });
 
-test('完成地图收起后，可从帮助菜单重新打开', async ({ page }) => {
+test('完成地图收起后，可从帮助的功能地图重新打开', async ({ page }) => {
   const vault = await createTempVault('e2e-onboarding-map');
   try {
     await page.addInitScript((state) => {
@@ -209,8 +209,33 @@ test('完成地图收起后，可从帮助菜单重新打开', async ({ page }) 
     // 帮助菜单必须是找回引导的入口：收起不等于永久消失。
     await page.locator('[data-testid="nav-help-btn"]').click();
     await expect(page.locator('[data-testid="nav-help-menu"]')).toBeVisible();
-    await page.locator('[data-testid="nav-onboarding-guide"]').click();
+    await page.locator('[data-testid="nav-feature-map"]').click();
     await expect(map).toBeVisible();
+  } finally {
+    await cleanupTempVault(vault);
+  }
+});
+
+test('已完成引导时点上手引导：重播清单，而不是显示已跑通', async ({ page }) => {
+  const vault = await createTempVault('e2e-onboarding-guide-replay');
+  try {
+    await page.addInitScript((state) => {
+      if (!localStorage.getItem('molio.onboarding.v1')) {
+        localStorage.setItem('molio.onboarding.v1', JSON.stringify(state));
+      }
+    }, DONE_STATE);
+    await page.goto(`/knowledge?vault=${vault.id}`);
+    await expect(page.locator('[data-testid="kb-onboarding-done"]')).toBeVisible();
+
+    await page.locator('[data-testid="nav-help-btn"]').click();
+    await page.locator('[data-testid="nav-onboarding-guide"]').click();
+
+    const checklist = page.locator('[data-testid="kb-onboarding"]');
+    await expect(checklist).toBeVisible();
+    // 库步骤沿用既成事实，从第 2 步开始重走 → 1/5。
+    await expect(checklist).toContainText('1/5');
+    // 用户报的问题：点「上手引导」却看到「主流程已跑通」。
+    await expect(page.locator('[data-testid="kb-onboarding-done"]')).toHaveCount(0);
   } finally {
     await cleanupTempVault(vault);
   }

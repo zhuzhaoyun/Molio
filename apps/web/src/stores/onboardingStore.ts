@@ -45,6 +45,21 @@ function freshState(status: OnboardingState['status'], now: () => number): Onboa
   };
 }
 
+/**
+ * Replay from step 2 for a user who already has a library: having a vault is a
+ * fact, so it stays done; the rest resets so the guide actually teaches the
+ * loop instead of showing "you already finished". Only guide state changes —
+ * no library content is touched.
+ */
+function replayState(now: () => number): OnboardingState {
+  return {
+    status: 'active',
+    steps: { vault: true, openOrImport: false, import: false, ask: false, save: false },
+    mapDismissed: true,
+    startedAt: now(),
+  };
+}
+
 function parseState(raw: string | null, now: () => number): OnboardingState | null {
   if (!raw) return null;
   try {
@@ -151,16 +166,16 @@ export function createOnboardingStore(storage: StorageLike, now: () => number = 
     },
 
     /**
-     * Help → onboarding guide.
+     * Help → onboarding guide ("上手引导").
      *
      * - `false` (no library yet): restart exactly like a fresh install. The
      *   zero-vault welcome screen is the first step, so there is no existing
      *   content for stale progress to refer to.
-     * - `true` (already has a library): never reset progress and never touch
-     *   vault data. Resume the checklist where it is, or re-expand the
-     *   completion map for a finished install. The library step reads as done
-     *   because having a vault is already a fact — the guide must not tell an
-     *   existing user to create one.
+     * - `true` (already has a library): open the checklist, never the
+     *   completion map — the user clicked the guide to learn. A finished
+     *   install replays from step 2; an in-progress install resumes where it
+     *   was. The library step stays done because having a vault is a fact.
+     *   Only guide state changes: no vault reads/writes, no sample vault.
      * - `null` (library count unavailable): change nothing we cannot justify;
      *   a state that exists is resumed as if it had a library, and a missing
      *   state stays missing.
@@ -171,19 +186,25 @@ export function createOnboardingStore(storage: StorageLike, now: () => number = 
         return;
       }
       const current = state;
-      if (!current) {
-        if (hasVaults === null) return;
-        persist({ ...freshState('done', now), mapDismissed: false });
+      if (hasVaults === true && (!current || current.status === 'done')) {
+        persist(replayState(now));
         return;
       }
+      if (!current) return;
       const steps = hasVaults ? { ...current.steps, vault: true } : current.steps;
       const complete = ONBOARDING_STEP_KEYS.every((key) => steps[key]);
       persist({
         ...current,
         steps,
         status: complete ? 'done' : 'active',
-        mapDismissed: false,
+        mapDismissed: complete ? false : current.mapDismissed,
       });
+    },
+
+    /** Help → feature map. Only meaningful after the guide is complete. */
+    showMap() {
+      if (!state || state.status !== 'done' || !state.mapDismissed) return;
+      persist({ ...state, mapDismissed: false });
     },
   };
 }

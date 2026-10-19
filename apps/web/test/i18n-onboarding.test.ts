@@ -43,7 +43,7 @@ describe('onboarding failure copy', () => {
   });
 
   it('localises the help menu entries in both languages', () => {
-    for (const key of ['nav.helpOnline', 'nav.onboardingGuide']) {
+    for (const key of ['nav.helpOnline', 'nav.onboardingGuide', 'nav.featureMap']) {
       assert.ok(zh[key], `zh is missing ${key}`);
       assert.ok(en[key], `en is missing ${key}`);
       assert.doesNotMatch(en[key], /[一-鿿]/, `${key} must not fall back to zh`);
