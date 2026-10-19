@@ -130,6 +130,9 @@ const zh: Record<string, string> = {
   'quiz.redo': '重做',
   'quiz.save': '存为题库',
   'quiz.saveNoVault': '先选择一个知识库',
+  'quiz.saving': '正在保存…',
+  'quiz.saved': '已存为 {path}',
+  'quiz.saveFailed': '保存失败，请重试',
   'quiz.answeredProgress': '已作答 {done}/{total}',
 
   // ── AssistantMessage ──

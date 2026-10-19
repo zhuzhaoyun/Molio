@@ -319,4 +319,78 @@ test.describe('Quiz interaction block', () => {
     expect(stored!.key).toMatch(/^molio\.quiz\.conv-1\.[0-9a-f]{64}$/);
     expect(JSON.parse(stored!.value!)).toMatchObject({ submitted: true, selections: { q1: ['B'] } });
   });
+
+  test('saves the quiz as a markdown file inside 题库/', async ({ page }) => {
+    let savedUrl: string | null = null;
+    let savedBody: { content?: string } | null = null;
+
+    await page.route('**/api/knowledge/vaults/vault-1/files/**', async (route) => {
+      const request = route.request();
+      if (request.method() === 'GET') {
+        await route.fulfill({
+          status: 404,
+          contentType: 'application/json',
+          body: JSON.stringify({ error: { code: 'NOT_FOUND', message: 'not found' } }),
+        });
+        return;
+      }
+      if (request.method() === 'POST') {
+        savedUrl = decodeURIComponent(request.url());
+        savedBody = JSON.parse(request.postData() || '{}');
+      }
+      await route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
+    });
+
+    await mockChatRun(page, { runId: 'run-1', conversationId: 'conv-1', script: SCRIPT });
+    await gotoHome(page);
+    await sendMessage(page, '出几道题');
+
+    const card = page.locator('[data-testid="quiz-card"]');
+    await expect(card).toBeVisible({ timeout: 10_000 });
+    await card.locator('[data-testid="quiz-save-kb"]').click();
+
+    await expect(card.locator('[data-testid="quiz-saved-path"]')).toBeVisible();
+    await expect.poll(() => savedUrl).not.toBeNull();
+    expect(savedUrl!).toContain('/题库/');
+    expect(savedUrl!.endsWith('.md')).toBe(true);
+    expect(savedBody?.content).toContain('```quiz');
+    expect(savedBody?.content).toContain('番茄工作法 · 3 题');
+
+    await page.unroute('**/api/knowledge/vaults/vault-1/files/**');
+  });
+
+  test('appends a sequence number when the quiz filename already exists', async ({ page }) => {
+    let savedUrl: string | null = null;
+
+    await page.route('**/api/knowledge/vaults/vault-1/files/**', async (route) => {
+      const request = route.request();
+      const url = decodeURIComponent(request.url());
+      if (request.method() === 'GET') {
+        const exists = !url.includes('-2.md');
+        await route.fulfill({
+          status: exists ? 200 : 404,
+          contentType: 'application/json',
+          body: exists
+            ? JSON.stringify({ content: 'existing' })
+            : JSON.stringify({ error: { code: 'NOT_FOUND', message: 'not found' } }),
+        });
+        return;
+      }
+      if (request.method() === 'POST') savedUrl = url;
+      await route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
+    });
+
+    await mockChatRun(page, { runId: 'run-1', conversationId: 'conv-1', script: SCRIPT });
+    await gotoHome(page);
+    await sendMessage(page, '出几道题');
+
+    const card = page.locator('[data-testid="quiz-card"]');
+    await expect(card).toBeVisible({ timeout: 10_000 });
+    await card.locator('[data-testid="quiz-save-kb"]').click();
+
+    await expect.poll(() => savedUrl).not.toBeNull();
+    expect(decodeURIComponent(savedUrl!)).toContain('-2.md');
+
+    await page.unroute('**/api/knowledge/vaults/vault-1/files/**');
+  });
 });

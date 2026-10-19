@@ -131,6 +131,9 @@ const en: Record<string, string> = {
   'quiz.redo': 'Redo',
   'quiz.save': 'Save as question bank',
   'quiz.saveNoVault': 'Select a knowledge base first',
+  'quiz.saving': 'Saving…',
+  'quiz.saved': 'Saved to {path}',
+  'quiz.saveFailed': 'Save failed. Try again.',
   'quiz.answeredProgress': 'Answered {done}/{total}',
 
   // ── AssistantMessage ──

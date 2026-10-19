@@ -5,6 +5,7 @@ import { useActiveVaultId } from '../stores/vaultStore';
 import { useWikiLinkClick } from '../hooks/useWikiLinkClick';
 import { CodeBlock } from './CodeBlock';
 import { renderMarkdown } from '../utils/markdown';
+import { saveQuizToVault } from '../utils/quizFile';
 import {
   parseQuizBlock,
   gradeQuiz,
@@ -82,6 +83,9 @@ function QuizBody({
   const [fingerprint, setFingerprint] = useState<string | null>(null);
   const [selections, setSelections] = useState<QuizSelections>({});
   const [submitted, setSubmitted] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [savedPath, setSavedPath] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const restoredKeyRef = useRef<string | null>(null);
 
   const grades = useMemo(
@@ -194,6 +198,20 @@ function QuizBody({
       }
     }
   }, [storageKey]);
+
+  const handleSave = useCallback(async () => {
+    if (!vaultId || saving) return;
+    setSaving(true);
+    setSaveError(null);
+    try {
+      const path = await saveQuizToVault(vaultId, quiz, api);
+      setSavedPath(path);
+    } catch {
+      setSaveError(t('quiz.saveFailed'));
+    } finally {
+      setSaving(false);
+    }
+  }, [vaultId, saving, quiz, t]);
 
   return (
     <div className="quiz-card" data-testid="quiz-card">
@@ -326,12 +344,18 @@ function QuizBody({
           type="button"
           className="quiz-btn"
           data-testid="quiz-save-kb"
-          disabled={!vaultId}
+          disabled={!vaultId || saving}
           title={!vaultId ? t('quiz.saveNoVault') : undefined}
+          onClick={handleSave}
         >
-          {t('quiz.save')}
+          {saving ? t('quiz.saving') : t('quiz.save')}
         </button>
-        {!vaultId && <span className="quiz-error">{t('quiz.saveNoVault')}</span>}
+        {savedPath && (
+          <span className="quiz-saved" data-testid="quiz-saved-path">
+            {t('quiz.saved', { path: savedPath })}
+          </span>
+        )}
+        {saveError && <span className="quiz-error" role="alert">{saveError}</span>}
       </div>
     </div>
   );
