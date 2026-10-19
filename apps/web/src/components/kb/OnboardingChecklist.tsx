@@ -205,15 +205,14 @@ export function OnboardingChecklist({
         {hintKey && (
           <>
             <span className="kb-onboarding__hint">{t(hintKey)}</span>
-            {/* 换动作时 key 变化 → 重新挂载，重播一次呼吸环
-                （动画只跑 3 次，不常驻跳动）。 */}
+            {/* 换动作时 key 变化 → 重新挂载，让呼吸环从周期起点重播一遍。 */}
             {cta && (
               <button
                 key={next}
                 type="button"
                 // 其余步骤的动画长在真实按钮上（导入 / 问答 / 保存）；
                 // 只有「先配置 AI」没有页内真实按钮，才由这颗中转键承担提示。
-                className={`kb-onboarding__cta${next === 'runtime' ? ' kb-guide-pulse' : ''}`}
+                className={`kb-onboarding__cta${next === 'runtime' ? ' kb-guide-pulse--solid' : ''}`}
                 data-testid="kb-onboarding-cta"
                 onClick={cta.action}
               >

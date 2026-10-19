@@ -3831,16 +3831,44 @@
    就是这些键，动画不该只教会用户点 checklist 上的中转按钮。
 
    持续循环而不是只播 3 次：验收时用户恰好没看向那一块，4 秒后动画已经结束，
-   结果就是「我没看到」。2.4s 一个周期、大半时间停留在静止状态，既有存在感
-   又不至于变成频闪；步骤一完成 class 移除，动画随之消失。 */
+   结果就是「我没看到」。步骤一完成 class 移除，动画随之消失。
+
+   2026-10-19 二轮验收（「还是没看到」）：最初只做扩散环，环淡出后剩下的
+   半个周期完全不可见，26px 的小图标很容易整段错过。改为底色呼吸 + 扩散环，
+   任意时刻都有可见提示；周期缩到 1.8s。
+
+   不要把缩放写进这个动画：持续 transform 会让按钮的包围盒一直变化，
+   Playwright 判定「element is not stable」→ 所有引导用例点不下去。
+   底色与阴影不改变布局盒，既有存在感又保持可点击。 */
 @keyframes kb-guide-pulse {
-  0%   { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 50%, transparent); }
-  55%  { box-shadow: 0 0 0 6px transparent; }
-  100% { box-shadow: 0 0 0 0 transparent; }
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 55%, transparent);
+    background-color: color-mix(in srgb, var(--accent) 20%, transparent);
+  }
+  45% {
+    box-shadow: 0 0 0 6px transparent;
+    background-color: color-mix(in srgb, var(--accent) 7%, transparent);
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+    background-color: color-mix(in srgb, var(--accent) 20%, transparent);
+  }
 }
 
 .kb-guide-pulse {
-  animation: kb-guide-pulse 2.4s ease-out infinite;
+  animation: kb-guide-pulse 1.8s ease-in-out infinite;
+}
+
+/* checklist 的中转按钮是实心 accent 底 + 白字，不能套用上面的底色呼吸
+   （会把实心底冲淡成 7–20% 的浅色，白字直接失去对比度）。只保留扩散环。 */
+@keyframes kb-guide-pulse-solid {
+  0%   { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 55%, transparent); }
+  45%  { box-shadow: 0 0 0 6px transparent; }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+
+.kb-guide-pulse--solid {
+  animation: kb-guide-pulse-solid 1.8s ease-in-out infinite;
 }
 
 .kb-onboarding__cta:hover {
@@ -3850,7 +3878,8 @@
 @media (prefers-reduced-motion: reduce) {
   /* 关闭动画不等于去掉提示：留一圈静态高亮，否则「减弱动态效果」的用户
      会彻底看不到引导目标。 */
-  .kb-guide-pulse {
+  .kb-guide-pulse,
+  .kb-guide-pulse--solid {
     animation: none;
     box-shadow: 0 0 0 2px var(--accent-soft);
   }

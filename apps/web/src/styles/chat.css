@@ -1662,17 +1662,33 @@
 /* First-run save step: a breathing ring matched to the real KB buttons.
  * The text label says what it is; the motion says where it is. Keeps cycling
  * until the file is written — a 3-shot burst is easy to miss if the user
- * looks away for a few seconds (2026-10-19 acceptance feedback). */
+ * looks away for a few seconds (2026-10-19 acceptance feedback).
+ *
+ * 2026-10-19 second-round feedback ("still can't see it"): a fading ring
+ * alone leaves half the cycle completely invisible. Breathe the background
+ * as well so there is a visible signal at every moment.
+ *
+ * No transform/scale here: a continuously moving bounding box makes the
+ * button "not stable" for Playwright and blocks every guided click. */
 @keyframes icon-guide-pulse {
-  0%   { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 45%, transparent); }
-  55%  { box-shadow: 0 0 0 5px transparent; }
-  100% { box-shadow: 0 0 0 0 transparent; }
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 55%, transparent);
+    background-color: color-mix(in srgb, var(--accent) 20%, transparent);
+  }
+  45% {
+    box-shadow: 0 0 0 5px transparent;
+    background-color: color-mix(in srgb, var(--accent) 7%, transparent);
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+    background-color: color-mix(in srgb, var(--accent) 20%, transparent);
+  }
 }
 .icon-btn--guide {
   color: var(--accent);
   border-color: var(--accent-soft);
   background: color-mix(in srgb, var(--accent) 8%, transparent);
-  animation: icon-guide-pulse 2.4s ease-out infinite;
+  animation: icon-guide-pulse 1.8s ease-in-out infinite;
 }
 @media (prefers-reduced-motion: reduce) {
   .icon-btn--guide {

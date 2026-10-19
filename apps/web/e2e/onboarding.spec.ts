@@ -330,8 +330,8 @@ test('没有可用运行时时，提问步先引导配置 AI', async ({ page }) 
     const cta = page.locator('[data-testid="kb-onboarding-cta"]');
     await expect(cta).toContainText('先配置 AI');
     // 没有运行时是唯一一个「真实目标不在本页」的步骤：此时中转按钮就是
-    // 用户真正该点的东西，呼吸环留在它身上。
-    await expect(cta).toHaveCSS('animation-name', 'kb-guide-pulse');
+    // 用户真正该点的东西，呼吸环留在它身上（实心底只用扩散环）。
+    await expect(cta).toHaveCSS('animation-name', 'kb-guide-pulse-solid');
     await cta.click();
     await expect(page).toHaveURL(/\/settings\?tab=runtimes/);
   } finally {
