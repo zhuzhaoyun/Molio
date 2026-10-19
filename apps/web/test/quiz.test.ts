@@ -126,6 +126,28 @@ describe('parseQuizBlock', () => {
     assert.equal(res.ok, false);
   });
 
+  it('rejects option keys longer than 64 chars and ids longer than 200', () => {
+    // 与 daemon /api/quiz/attempts 的 chosen key / questionId 上限保持一致：
+    // 渲染层放行、落库层整批拒绝 = 答题记录静默丢失。
+    const longKey = { ...SINGLE, id: 'bad-key', options: [{ key: 'k'.repeat(65), text: 'x' }, { key: 'B', text: 'y' }], answer: ['B'] };
+    const res = parseQuizBlock(JSON.stringify({ ...VALID, questions: [SINGLE, longKey] }));
+    assert.equal(res.ok, true);
+    if (!res.ok) throw new Error(res.error);
+    assert.equal(res.quiz.questions.length, 1);
+    assert.equal(res.invalidQuestions.length, 1);
+    assert.match(res.invalidQuestions[0]!.reason, /64/);
+
+    const longId = parseQuizBlock(JSON.stringify({
+      ...VALID,
+      questions: [SINGLE, { ...SINGLE, id: 'q'.repeat(201) }],
+    }));
+    assert.equal(longId.ok, true);
+    if (!longId.ok) throw new Error(longId.error);
+    assert.equal(longId.quiz.questions.length, 1);
+    assert.equal(longId.invalidQuestions.length, 1);
+    assert.match(longId.invalidQuestions[0]!.reason, /200/);
+  });
+
   it('rejects more than 100 questions', () => {
     const questions = Array.from({ length: 101 }, (_, i) => ({ ...SINGLE, id: `q${i}` }));
     const res = parseQuizBlock(JSON.stringify({ ...VALID, questions }));

@@ -320,6 +320,32 @@ test.describe('Quiz interaction block', () => {
     expect(JSON.parse(stored!.value!)).toMatchObject({ submitted: true, selections: { q1: ['B'] } });
   });
 
+  test('renders the quiz card even when the fence precedes the last tool call', async ({ page }) => {
+    // 回归：splitMessageParts 把最后一个工具之前的文本归入过程叙事，WorkBlock
+    // 会剥掉闭合 quiz 围栏 —— 若 Fence 后还有工具调用，题卡在活动会话里消失，
+    // 直到整页刷新（历史重载）才回来。
+    await mockChatRun(page, {
+      runId: 'run-1',
+      conversationId: 'conv-1',
+      script: [
+        { type: 'status', label: 'running' },
+        { type: 'text_delta', delta: QUIZ_MARKDOWN },
+        { type: 'tool_use', id: 't1', name: 'Read', input: { file_path: 'notes/番茄工作法.md' } },
+        { type: 'tool_result', toolUseId: 't1', content: 'ok', isError: false },
+        { type: 'text_delta', delta: '以上就是题目。' },
+        { type: 'turn_end', stopReason: 'end_turn' },
+        { type: 'usage', usage: { input_tokens: 100, output_tokens: 80 }, costUsd: 0.01 },
+      ],
+    });
+    await gotoHome(page);
+    await sendMessage(page, '出几道题');
+
+    const cards = page.locator('[data-testid="quiz-card"]');
+    await expect(cards).toHaveCount(1, { timeout: 10_000 });
+    await expect(cards.locator('[data-testid="quiz-title"]')).toHaveText('番茄工作法 · 3 题');
+    await expect(page.locator('[data-testid="quiz-generating"]')).toHaveCount(0);
+  });
+
   test('saves the quiz as a markdown file inside 题库/', async ({ page }) => {
     let savedUrl: string | null = null;
     let savedBody: { content?: string } | null = null;

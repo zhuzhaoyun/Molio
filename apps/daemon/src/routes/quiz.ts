@@ -65,7 +65,9 @@ function parseBody(body: unknown): ParsedBody {
     if (!Array.isArray(chosen) || chosen.length === 0 || chosen.length > 8) {
       return { ok: false, error: `attempts[${index}].chosen must contain 1-8 keys` };
     }
-    if (!chosen.every((key) => typeof key === 'string' && key.length > 0 && key.length <= 8)) {
+    // key 上限 64 与 web 端 parseQuizBlock 的 MAX_QUIZ_KEY_CHARS 一致——
+    // 两层不一致会让「渲染得了、落不了库」的批次整批静默丢失。
+    if (!chosen.every((key) => typeof key === 'string' && key.length > 0 && key.length <= 64)) {
       return { ok: false, error: `attempts[${index}].chosen is invalid` };
     }
     if (typeof attempt.correct !== 'boolean') {

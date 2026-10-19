@@ -54,6 +54,19 @@ export function AssistantMessage({ message, isLast, onAnswerToolUse, onSubmitFor
   const displayProcessSegs = hasAskUserQuestion ? undefined : processSegs;
 
   const segments = useMemo(() => splitContent(displayAnswer), [displayAnswer]);
+  // quiz 围栏可能出现在最后一个工具之前（模型出题后又读了一次文件）：
+  // splitMessageParts 会把这段归入过程叙事，WorkBlock 又把闭合围栏剥掉 —— 不在
+  // 这里捞出来，题卡就从活动会话里消失，直到整页刷新才回来。运行中不捞（此围栏
+  // 还在流式增长，WorkBlock 显示占位），结束后一次性提升为消息级 QuizCard。
+  const processQuizSegments = useMemo(
+    () => (message.streaming
+      ? []
+      : splitContent(displayProcess).filter(
+        (seg): seg is Extract<ReturnType<typeof splitContent>[number], { type: 'quiz' }> =>
+          seg.type === 'quiz' && seg.complete,
+      )),
+    [message.streaming, displayProcess],
+  );
   const toolItems = useMemo(
     () => groupTools(message.tools || []),
     [message.tools]
@@ -90,6 +103,16 @@ export function AssistantMessage({ message, isLast, onAnswerToolUse, onSubmitFor
           onSubmitForm={onSubmitForm}
         />
       )}
+
+      {processQuizSegments.map((seg, i) => (
+        <QuizCard
+          key={`process-quiz-${i}`}
+          raw={seg.raw}
+          complete
+          streaming={false}
+          conversationId={conversationId}
+        />
+      ))}
 
       {selectMode && !message.streaming && (
         <MessageCheckbox id={message.id} />

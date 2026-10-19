@@ -9,6 +9,9 @@ export const QUIZ_PROTOCOL_VERSION = 1;
 export const MAX_QUIZ_RAW_CHARS = 512_000;
 export const MAX_QUIZ_QUESTIONS = 100;
 export const MAX_QUIZ_OPTIONS = 8;
+/** 与 daemon /api/quiz/attempts 的上限保持一致：渲染放行、落库拒绝 = 答题记录静默丢失。 */
+export const MAX_QUIZ_KEY_CHARS = 64;
+export const MAX_QUIZ_ID_CHARS = 200;
 
 export type QuizQuestionType = 'single' | 'multiple' | 'judge';
 
@@ -132,6 +135,9 @@ function parseQuestion(raw: unknown):
   | { ok: false; error: string } {
   if (!isRecord(raw)) return { ok: false, error: '题目必须是对象' };
   if (!nonEmptyString(raw.id)) return { ok: false, error: '缺少题目 id' };
+  if (raw.id.trim().length > MAX_QUIZ_ID_CHARS) {
+    return { ok: false, error: `题目 id 超过 ${MAX_QUIZ_ID_CHARS} 字符上限` };
+  }
   if (raw.type !== 'single' && raw.type !== 'multiple' && raw.type !== 'judge') {
     return { ok: false, error: '不支持的题型' };
   }
@@ -151,6 +157,9 @@ function parseQuestion(raw: unknown):
         return { ok: false, error: '选项格式有误' };
       }
       const key = rawOption.key.trim();
+      if (key.length > MAX_QUIZ_KEY_CHARS) {
+        return { ok: false, error: `选项 key 超过 ${MAX_QUIZ_KEY_CHARS} 字符上限` };
+      }
       if (keys.has(key)) return { ok: false, error: '选项 key 重复' };
       keys.add(key);
       options.push({ key, text: rawOption.text.trim() });
