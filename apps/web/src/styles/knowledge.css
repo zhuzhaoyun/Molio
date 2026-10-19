@@ -3652,7 +3652,11 @@
 .kb-export-item:disabled { opacity: 0.5; cursor: not-allowed; }
 /* ── Zero-vault welcome: two equal starting actions ── */
 .kb-empty-state--welcome {
+  /* flex 列的子项默认 stretch，max-width 会把盒子钉在交叉轴起点（左边缘）；
+     auto 外边距把剩余空间均分到两侧，欢迎区才落在主内容区的中线上。 */
+  width: 100%;
   max-width: 720px;
+  margin: 0 auto;
 }
 
 .kb-empty-actions--cards {

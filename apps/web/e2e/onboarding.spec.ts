@@ -50,6 +50,14 @@ test('零库首启展示两个对等动作', async ({ page }) => {
 
   await expect(page.locator('[data-testid="kb-empty-sample-vault-cta"]')).toBeVisible();
   await expect(page.locator('[data-testid="kb-empty-create-vault-cta"]')).toBeVisible();
+
+  // 欢迎区必须落在主内容区的水平中线上：它是 flex 列里的一个 max-width 块，
+  // 少了 auto 外边距会被钉在左边缘（用户 2026-10-19 验收截图即此）。
+  const main = await page.locator('.kb-main').boundingBox();
+  const welcome = await page.locator('.kb-empty-state--welcome').boundingBox();
+  expect(main).not.toBeNull();
+  expect(welcome).not.toBeNull();
+  expect(Math.abs((main!.x + main!.width / 2) - (welcome!.x + welcome!.width / 2))).toBeLessThan(2);
 });
 
 const ACTIVE_STATE = {
@@ -79,6 +87,21 @@ test('点示例库 → 入口文档自动打开', async ({ page }) => {
   await expect(page.locator('.kb-workspace-tabs')).toContainText('开始使用');
   // 文件真的从磁盘读出来了（不是空标签）
   await expect(page.locator('body')).toContainText('三个动作，跑通一次闭环');
+});
+
+test('全新安装点示例库后 checklist 紧接着出现', async ({ page }) => {
+  // 这是最短激活路径：零库首启 → 点「立即试用」→ 入口文档打开。checklist 必须
+  // 与文档同一时刻出现，而不是等用户再打开一次文件（首屏的引导价值全在这一步）。
+  await page.addInitScript(() => localStorage.removeItem('molio.onboarding.v1'));
+  await mockZeroVaultsUntilSampleCreated(page);
+  await page.goto('/knowledge');
+
+  await page.locator('[data-testid="kb-empty-sample-vault-cta"]').click();
+
+  await expect(page.locator('.kb-wtab-title').filter({ hasText: '开始使用' })).toBeVisible();
+  await expect(page.locator('[data-testid="kb-onboarding"]')).toBeVisible();
+  // 建库 + 自动打开入口文档至少完成两步，不可能是 0/3。
+  await expect(page.locator('[data-testid="kb-onboarding"]')).toContainText(/[12]\/3/);
 });
 
 test('checklist 1/3 → 2/3 → 3/3，完成后显示完成态', async ({ page }) => {
