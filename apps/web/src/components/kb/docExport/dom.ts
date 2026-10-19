@@ -173,6 +173,20 @@ export async function inlineImages(root: HTMLElement): Promise<void> {
   );
 }
 
+/** 不占版面的元素：元数据标签永不渲染；display:none 节点同样如此。 */
+const NON_VISUAL_TAGS = new Set(['STYLE', 'SCRIPT', 'LINK', 'TEMPLATE']);
+
+/**
+ * 这类元素一旦混进块列表，度量就报废：它们的 getBoundingClientRect 是
+ * 视口原点的 (0,0) 零矩形，相对容器顶边量出来是负的 top——排最后的
+ * 话 `rangeHeight` 直接算出负高度，整页被压成一张空图（真实案例：doocs
+ * 把代码块语言标签样式以 `<style>` 内嵌在 section.container 末尾）。
+ */
+function occupiesLayout(el: Element): boolean {
+  if (NON_VISUAL_TAGS.has(el.tagName)) return false;
+  return getComputedStyle(el).display !== 'none';
+}
+
 /**
  * 分页单位是内容容器的直接子元素——doocs 把全文包在
  * `<section class="container">` 里，直接取 `#output` 子元素只会得到 1 个块。
@@ -183,7 +197,10 @@ export function collectBlocks(host: HTMLElement): {
 } {
   const container = host.querySelector(':scope > section.container') as HTMLElement | null;
   if (!container) throw new ExportError('no-output', '找不到文档内容容器');
-  return { container, blocks: Array.from(container.children) as HTMLElement[] };
+  return {
+    container,
+    blocks: Array.from(container.children).filter(occupiesLayout) as HTMLElement[],
+  };
 }
 
 /** 块坐标相对容器顶边（容器本身已经是正文的起点）。 */

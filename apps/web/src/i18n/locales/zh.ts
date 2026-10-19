@@ -715,6 +715,14 @@ const zh: Record<string, string> = {
   'kb.chatMenu.show': '唤回按钮',
   'kb.chatMenu.resetPos': '恢复默认位置',
 
+  // ── 文档出图 ──
+  'kb.exportImage': '导出图片',
+  'kb.exporting': '正在导出…',
+  'kb.exportProgress': '正在生成第 {done}/{total} 张…',
+  'kb.exportDone': '已导出图片',
+  'kb.exportPages': '已导出 {pages} 张图片',
+  'kb.exportFailed': '导出失败，请重试',
+
   // ── FilePicker ──
   'filePicker.justNow': '刚刚',
   'filePicker.mAgo': '{n}分钟前',

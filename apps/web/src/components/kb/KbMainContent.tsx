@@ -18,6 +18,7 @@ import { TooLargeCard } from './TooLargeCard';
 import { ViewerErrorBoundary } from './ViewerErrorBoundary';
 import type { KbCodeMirrorViewerHandle } from './KbCodeMirrorViewer';
 import { KbFrontmatterCard } from './KbFrontmatterCard';
+import { exportDocument } from './docExport';
 import { formatFileSize } from '../../utils/format';
 import { preprocessKbMarkdown } from '../../hooks/useKnowledge';
 import { useScrollMemory, type ScrollIntent } from '../../hooks/useScrollMemory';
@@ -205,6 +206,8 @@ export function KbMainContent({
   const [ctxMenu, setCtxMenu] = useState<
     { x: number; y: number; source: 'doocs' | 'codemirror' | 'pdf'; selectedText?: string } | null
   >(null);
+  const [exporting, setExporting] = useState(false);
+  const [exportNotice, setExportNotice] = useState<string | null>(null);
 
   // Routing flags — computed from extension + size + tooLarge.
   const fileName = selectedFile ? (selectedFile.split('/').pop() ?? selectedFile) : '';
@@ -410,6 +413,42 @@ export function KbMainContent({
   }, []);
 
   const closeContextMenu = useCallback(() => setCtxMenu(null), []);
+
+  // 文档出图：把当前渲染出来的 #output 导出成 1080px 宽的长图。
+  // 排版模式的目标在 MdTypesetEditor 的预览里（两条路径互斥，同屏只有一个 #output）。
+  const handleExportImage = useCallback(async () => {
+    const target = (
+      isTypesetMode
+        ? document.querySelector('.kb-typeset-preview-body #output')
+        : contentRef.current?.querySelector('#output')
+    ) as HTMLElement | null;
+
+    if (!target) {
+      setExportNotice(t('kb.exportFailed'));
+      window.setTimeout(() => setExportNotice(null), 4_000);
+      return;
+    }
+
+    setExporting(true);
+    setExportNotice(t('kb.exporting'));
+    try {
+      const stem = fileName.replace(/\.[^.]+$/, '');
+      const result = await exportDocument(target, {
+        title: stem,
+        onProgress: (done, total) =>
+          setExportNotice(t('kb.exportProgress', { done, total })),
+      });
+      setExportNotice(
+        result.pages > 1 ? t('kb.exportPages', { pages: result.pages }) : t('kb.exportDone'),
+      );
+    } catch (error) {
+      console.warn('Document export failed:', error);
+      setExportNotice(t('kb.exportFailed'));
+    } finally {
+      setExporting(false);
+      window.setTimeout(() => setExportNotice(null), 4_000);
+    }
+  }, [contentRef, fileName, isTypesetMode, t]);
 
   const selectionText = useCallback(() => {
     const sel = window.getSelection();
@@ -652,6 +691,24 @@ export function KbMainContent({
                     </svg>
                   </button>
                 </>
+              )}
+
+              {/* 导出图片 —— 阅读与排版模式都可用；排版模式导出的就是右侧预览 */}
+              {(isReadingPath || isTypesetMode) && (
+                <button
+                  type="button"
+                  className="kb-btn kb-btn-ghost"
+                  onClick={handleExportImage}
+                  disabled={exporting}
+                  title={t('kb.exportImage')}
+                  data-testid="kb-btn-export-image"
+                >
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="14" height="14">
+                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                    <circle cx="8.5" cy="8.5" r="1.5" />
+                    <polyline points="21 15 16 10 5 21" />
+                  </svg>
+                </button>
               )}
 
               {/* Typeset toggle — signature action. Read mode: T icon + "排版"
@@ -1325,6 +1382,12 @@ export function KbMainContent({
               </>
             );
           })()}
+        </div>
+      )}
+
+      {exportNotice && (
+        <div className="kb-save-toast" data-testid="kb-export-notice" role="status">
+          {exportNotice}
         </div>
       )}
     </main>
