@@ -382,3 +382,33 @@ export function evaluateRuleSandbox(
   }
   return sandbox.defaultVerdict;
 }
+
+/**
+ * 从流式文本里剥掉 rule-sandbox 围栏。
+ *
+ * 与 `stripQuizForStreaming` 同构：围栏未闭合 → 剥掉围栏尾并报 `generating`
+ * （调用方显示「正在生成…」占位）；围栏已闭合 → 整块移除。
+ */
+export function stripSandboxesForStreaming(text: string): { text: string; generating: boolean } {
+  let output = '';
+  let index = 0;
+  let generating = false;
+
+  while (index < text.length) {
+    const start = text.indexOf('```rule-sandbox', index);
+    if (start === -1) {
+      output += text.slice(index);
+      break;
+    }
+    output += text.slice(index, start);
+    const bodyStart = start + '```rule-sandbox'.length;
+    const close = text.indexOf('```', bodyStart);
+    if (close === -1) {
+      generating = true;
+      break;
+    }
+    index = close + 3;
+  }
+
+  return { text: output.trim(), generating };
+}

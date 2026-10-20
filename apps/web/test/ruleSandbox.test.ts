@@ -120,7 +120,7 @@ describe('parseRuleSandbox', () => {
   });
 });
 
-const { evaluateRuleSandbox, clampSandboxValue } = await import('../src/utils/ruleSandbox.ts');
+const { evaluateRuleSandbox, clampSandboxValue, stripSandboxesForStreaming } = await import('../src/utils/ruleSandbox.ts');
 
 const TWO_VERDICTS = {
   ...VALID,
@@ -163,5 +163,27 @@ describe('evaluateRuleSandbox', () => {
     assert.equal(clampSandboxValue(120, 0, 100), 100);
     assert.equal(clampSandboxValue(-5, 0, 100), 0);
     assert.equal(clampSandboxValue(NaN, 0, 100), 0);
+  });
+});
+
+describe('stripSandboxesForStreaming', () => {
+  it('leaves plain text untouched', () => {
+    assert.deepEqual(stripSandboxesForStreaming('hello'), { text: 'hello', generating: false });
+  });
+
+  it('reports generating for an unclosed fence and hides the JSON tail', () => {
+    assert.deepEqual(stripSandboxesForStreaming('前言\n```rule-sandbox\n{"version":1,'), {
+      text: '前言', generating: true,
+    });
+  });
+
+  it('removes a complete sandbox block from process text', () => {
+    assert.deepEqual(stripSandboxesForStreaming('前言\n```rule-sandbox\n{}\n```\n后记'), {
+      text: '前言\n\n后记', generating: false,
+    });
+  });
+
+  it('handles a fence at the very start', () => {
+    assert.deepEqual(stripSandboxesForStreaming('```rule-sandbox\n{}'), { text: '', generating: true });
   });
 });
