@@ -196,4 +196,55 @@ test.describe('Rule sandbox interaction block', () => {
     await expect(first).toHaveAttribute('aria-valuenow', '85');
     await expect(cards.nth(1).locator('[data-testid="sandbox-handle"]')).toHaveAttribute('aria-valuenow', '20');
   });
+
+  test('shows a generating placeholder while the fence is still streaming', async ({ page }) => {
+    // 流式期间围栏未闭合 → 显示「正在生成演示…」占位，而不是把 JSON 一行行糊出来。
+    // 每帧 800ms：未闭合围栏从第一帧持续到最后一帧，窗口约 2.4s。
+    const json = JSON.stringify(SANDBOX_JSON);
+    const cut = Math.floor(json.length / 2);
+    await mockChatRun(page, {
+      frameDelay: 800,
+      script: [
+        { type: 'status', label: 'running' },
+        { type: 'text_delta', delta: '我给你演示一下。\n```rule-sandbox\n' + json.slice(0, cut) },
+        { type: 'text_delta', delta: json.slice(cut) + '\n```' },
+        { type: 'turn_end', stopReason: 'end_turn' },
+      ],
+    });
+    await gotoHome(page);
+    await sendMessage(page, '给我演示一下负载预警');
+
+    await expect(page.locator('[data-testid="sandbox-generating"]')).toBeVisible({ timeout: 10_000 });
+    await expect(page.locator('[data-testid="sandbox-card"]')).toHaveCount(0);
+
+    // 流结束、围栏闭合后，占位消失，卡片出现。
+    await expect(page.locator('[data-testid="sandbox-generating"]')).toHaveCount(0, { timeout: 15_000 });
+    await expect(page.locator('[data-testid="sandbox-card"]')).toHaveCount(1);
+  });
+
+  test('renders the sandbox card even when the fence precedes the last tool call', async ({ page }) => {
+    // 回归（quiz 同款）：splitMessageParts 把最后一个工具之前的文本归入过程叙事，
+    // WorkBlock 会剥掉闭合围栏 —— 若围栏后还有工具调用，卡片在活动会话里消失，
+    // 直到整页刷新才回来。
+    await mockChatRun(page, {
+      runId: 'run-1',
+      conversationId: 'conv-1',
+      script: [
+        { type: 'status', label: 'running' },
+        { type: 'text_delta', delta: SANDBOX_MARKDOWN },
+        { type: 'tool_use', id: 't1', name: 'Read', input: { file_path: 'notes/运维手册.md' } },
+        { type: 'tool_result', toolUseId: 't1', content: 'ok', isError: false },
+        { type: 'text_delta', delta: '以上就是演示。' },
+        { type: 'turn_end', stopReason: 'end_turn' },
+        { type: 'usage', usage: { input_tokens: 100, output_tokens: 80 }, costUsd: 0.01 },
+      ],
+    });
+    await gotoHome(page);
+    await sendMessage(page, '给我演示一下负载预警');
+
+    const cards = page.locator('[data-testid="sandbox-card"]');
+    await expect(cards).toHaveCount(1, { timeout: 10_000 });
+    await expect(cards.locator('[data-testid="sandbox-title"]')).toHaveText('负载预警');
+    await expect(page.locator('[data-testid="sandbox-generating"]')).toHaveCount(0);
+  });
 });

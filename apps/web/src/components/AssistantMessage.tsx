@@ -55,16 +55,26 @@ export function AssistantMessage({ message, isLast, onAnswerToolUse, onSubmitFor
   const displayProcessSegs = hasAskUserQuestion ? undefined : processSegs;
 
   const segments = useMemo(() => splitContent(displayAnswer), [displayAnswer]);
-  // quiz 围栏可能出现在最后一个工具之前（模型出题后又读了一次文件）：
-  // splitMessageParts 会把这段归入过程叙事，WorkBlock 又把闭合围栏剥掉 —— 不在
-  // 这里捞出来，题卡就从活动会话里消失，直到整页刷新才回来。运行中不捞（此围栏
-  // 还在流式增长，WorkBlock 显示占位），结束后一次性提升为消息级 QuizCard。
+  // quiz / rule-sandbox 围栏可能出现在最后一个工具之前（模型出题/演示后又读了
+  // 一次文件）：splitMessageParts 会把这段归入过程叙事，WorkBlock 又把闭合围栏
+  // 剥掉 —— 不在这里捞出来，卡片就从活动会话里消失，直到整页刷新才回来。
+  // 运行中不捞（此围栏还在流式增长，WorkBlock 显示占位），结束后一次性提升为
+  // 消息级卡片。
   const processQuizSegments = useMemo(
     () => (message.streaming
       ? []
       : splitContent(displayProcess).filter(
         (seg): seg is Extract<ReturnType<typeof splitContent>[number], { type: 'quiz' }> =>
           seg.type === 'quiz' && seg.complete,
+      )),
+    [message.streaming, displayProcess],
+  );
+  const processSandboxSegments = useMemo(
+    () => (message.streaming
+      ? []
+      : splitContent(displayProcess).filter(
+        (seg): seg is Extract<ReturnType<typeof splitContent>[number], { type: 'sandbox' }> =>
+          seg.type === 'sandbox' && seg.complete,
       )),
     [message.streaming, displayProcess],
   );
@@ -112,6 +122,15 @@ export function AssistantMessage({ message, isLast, onAnswerToolUse, onSubmitFor
           complete
           streaming={false}
           conversationId={conversationId}
+        />
+      ))}
+
+      {processSandboxSegments.map((seg, i) => (
+        <SandboxCard
+          key={`process-sandbox-${i}`}
+          raw={seg.raw}
+          complete
+          streaming={false}
         />
       ))}
 
