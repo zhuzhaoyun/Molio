@@ -3553,3 +3553,50 @@
 .file-chat-session { display: flex; flex-direction: column; flex: 1; min-height: 0; }
 .file-chat-session-stack { display: flex; flex-direction: column; flex: 1; min-height: 0; }
 
+
+/* ── 文档出图：版式菜单（长图 / 3:4 竖卡 + 头卡开关） ──
+   贴着导出按钮右侧的小箭头，展开的是轻量浮层——不抢主按钮的注意力，
+   也不阻断导出主流程。颜色全部走 tokens 变量，深色模式自动跟随。 */
+.kb-export-menu-wrap { position: relative; display: inline-flex; align-items: center; }
+
+.kb-export-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 30;
+  min-width: 180px;
+  padding: 4px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-lg);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.kb-export-menu > button,
+.kb-export-menu__toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 12px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  text-align: left;
+  font-size: 13px;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.kb-export-menu > button:hover,
+.kb-export-menu__toggle:hover { background: var(--bg-subtle); }
+
+.kb-export-menu > button[aria-checked='true'] {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.kb-export-menu__toggle input { margin: 0; cursor: pointer; }

@@ -70,6 +70,15 @@ const LONG_MD = [
   ),
 ].join('\n\n');
 
+// 3:4 竖卡专用：内容足够撑出 2–3 张卡，又不至于让导出把测试拖到超时
+// （竖卡每页只有 1288px 预算，长图一篇只出 2 页，竖卡会出 4 倍的页数）。
+const CARD_MD = [
+  '# 竖卡分页',
+  ...Array.from({ length: 24 }, (_, i) =>
+    [`## 第 ${i + 1} 节`, '', `第 ${i + 1} 节的正文。`.repeat(12)].join('\n'),
+  ),
+].join('\n\n');
+
 const RICH_MD = `# 富内容导出
 
 行内公式 $E = mc^2$。
@@ -173,6 +182,23 @@ interface ParsedPageSvg {
   foreignObjectHeight: number;
   page: number;
   total: number;
+}
+
+/**
+ * 按页码去重后的导出 SVG，保持页序。
+ *
+ * 栅格化在 2 倍失败时会降到 1 倍重试，同一页因此可能被捕获两次；不按页码去重
+ * 的话「第 2 页没有头卡」这类断言会撞上重试出来的第 1 页副本。
+ */
+function uniquePageSvgs(svgs: string[]): string[] {
+  const byPage = new Map<number, string>();
+  for (const svg of svgs) {
+    const m = /(\d+) \/ (\d+)<\/text>/.exec(svg);
+    if (!m) continue;
+    const page = Number(m[1]);
+    if (!byPage.has(page)) byPage.set(page, svg);
+  }
+  return [...byPage.entries()].sort((a, b) => a[0] - b[0]).map(([, svg]) => svg);
 }
 
 function parsePageSvg(svg: string): ParsedPageSvg {
@@ -291,6 +317,7 @@ test.describe('Document image export', () => {
     vaultPath = mkdtempSync(join(tmpdir(), 'molio-e2e-export-'));
     writeFileSync(join(vaultPath, 'short.md'), SHORT_MD);
     writeFileSync(join(vaultPath, 'long.md'), LONG_MD);
+    writeFileSync(join(vaultPath, 'card.md'), CARD_MD);
     writeFileSync(join(vaultPath, 'rich.md'), RICH_MD);
     writeFileSync(join(vaultPath, 'giant.md'), GIANT_MD);
     writeFileSync(join(vaultPath, 'formula.md'), FORMULA_MD);
@@ -520,6 +547,11 @@ test.describe('Document image export', () => {
 
   test('rasterizes the formula instead of a blank page', async ({ page }) => {
     test.setTimeout(90_000);
+    // 头卡默认开：它自己的标题与元信息也是墨迹，会稀释「公式有没有被栅格化」的
+    // 判别力。这里关掉头卡，让墨迹计数只反映公式本身。
+    await page.addInitScript(() => {
+      localStorage.setItem('molio.docExport.header', 'off');
+    });
     await installSvgCapture(page);
     await openExportFile(page, 'formula.md');
 
@@ -605,5 +637,118 @@ test.describe('Document image export', () => {
     // 给下载事件一个可能到达的窗口：空文档绝不能产出空白图片。
     await page.waitForTimeout(1_500);
     expect(downloaded).toBe(false);
+  });
+
+  // ── 二期：头卡 + 版式预设 ──────────────────────────────────────────────
+
+  test('头卡默认开：第 1 页有库名等元信息，第 2 页没有', async ({ page }) => {
+    test.setTimeout(120_000);
+    await installSvgCapture(page);
+    await openExportFile(page, 'long.md');
+
+    const downloads: Download[] = [];
+    page.on('download', (download) => downloads.push(download));
+    await page.locator('[data-testid="kb-btn-export-image"]').click();
+    await expect(page.locator('[data-testid="kb-export-notice"]')).toContainText('张图片', {
+      timeout: 90_000,
+    });
+    await expect.poll(() => downloads.length, { timeout: 90_000 }).toBeGreaterThanOrEqual(2);
+
+    const svgs = uniquePageSvgs(await readCapturedSvgs(page));
+    expect(svgs.length).toBeGreaterThanOrEqual(2);
+    // 判别标记必须用**元素**而不是 CSS 规则：头卡规则每页都在（composeExportCss
+    // 无条件输出），拿规则名当标记会让「第 2 页没有头卡」永远为真。
+    expect(svgs[0]).toContain('class="molio-export-head"');
+    // 库名只出现在头卡里（正文没有），是最强的判别标记。
+    expect(svgs[0]).toContain(VAULT_NAME);
+    expect(svgs[1]).not.toContain('class="molio-export-head"');
+    expect(svgs[1]).not.toContain(VAULT_NAME);
+  });
+
+  test('关闭头卡：导出回到纯正文，选择跨整页重载持久化', async ({ page }) => {
+    test.setTimeout(90_000);
+    await installSvgCapture(page);
+    await openExportFile(page, 'short.md');
+
+    await page.locator('[data-testid="kb-export-preset"]').click();
+    await expect(page.locator('[data-testid="kb-export-header-toggle"]')).toBeVisible();
+    await page.locator('[data-testid="kb-export-header-toggle"] input').click();
+    await expect(page.locator('[data-testid="kb-export-header-toggle"]')).toHaveAttribute(
+      'aria-checked',
+      'false',
+    );
+
+    const downloadPromise = page.waitForEvent('download', { timeout: 60_000 });
+    await page.locator('[data-testid="kb-btn-export-image"]').click();
+    await downloadPromise;
+
+    const svgs = await readCapturedSvgs(page);
+    expect(svgs.length).toBeGreaterThanOrEqual(1);
+    expect(svgs[0]).not.toContain('class="molio-export-head"');
+    expect(svgs[0]).not.toContain(VAULT_NAME);
+
+    // openExportFile 走整页导航（page.goto）——等价于重载应用。
+    await openExportFile(page, 'short.md');
+    await page.locator('[data-testid="kb-export-preset"]').click();
+    await expect(page.locator('[data-testid="kb-export-header-toggle"]')).toHaveAttribute(
+      'aria-checked',
+      'false',
+    );
+  });
+
+  test('3:4 竖卡：每页都是 1080×1440，头卡只出现在第 1 页', async ({ page }) => {
+    test.setTimeout(120_000);
+    await installSvgCapture(page);
+    await openExportFile(page, 'card.md');
+
+    await page.locator('[data-testid="kb-export-preset"]').click();
+    await page.locator('[data-testid="kb-export-preset-card34"]').click();
+
+    const downloads: Download[] = [];
+    page.on('download', (download) => downloads.push(download));
+    await page.locator('[data-testid="kb-btn-export-image"]').click();
+    await expect(page.locator('[data-testid="kb-export-notice"]')).toContainText('张图片', {
+      timeout: 90_000,
+    });
+    await expect.poll(() => downloads.length, { timeout: 90_000 }).toBeGreaterThanOrEqual(2);
+
+    const svgs = uniquePageSvgs(await readCapturedSvgs(page));
+    expect(svgs.length).toBeGreaterThanOrEqual(2);
+    for (const svg of svgs) {
+      // 固定页高：普通页 viewBox 从 0 起，切片页从切片起点起，页高恒为 1440。
+      expect(svg, `页高不是 1440：${svg.slice(0, 200)}`).toMatch(/viewBox="0 [\d.]+ 1080 1440"/);
+    }
+    // 栅格化出来的 PNG 也必须是 3:4（1080×1440 @2x = 2160×2880）。
+    const filePath = await downloads[0]!.path();
+    const { width, height } = pngSize(readFileSync(filePath!));
+    expect(width).toBe(2160);
+    expect(height).toBe(2880);
+
+    // 头卡 + card34 叠加：头卡吃第 1 页预算，第 2 页起不重复出现。
+    expect(svgs[0]).toContain('class="molio-export-head"');
+    expect(svgs[1]).not.toContain('class="molio-export-head"');
+  });
+
+  test('版式选择持久化：选 card34 后重载仍选中', async ({ page }) => {
+    await openExportFile(page, 'short.md');
+    await page.locator('[data-testid="kb-export-preset"]').click();
+    await page.locator('[data-testid="kb-export-preset-card34"]').click();
+    // 选完菜单收起，重新打开确认选中态。
+    await page.locator('[data-testid="kb-export-preset"]').click();
+    await expect(page.locator('[data-testid="kb-export-preset-card34"]')).toHaveAttribute(
+      'aria-checked',
+      'true',
+    );
+
+    await openExportFile(page, 'short.md');
+    await page.locator('[data-testid="kb-export-preset"]').click();
+    await expect(page.locator('[data-testid="kb-export-preset-card34"]')).toHaveAttribute(
+      'aria-checked',
+      'true',
+    );
+    await expect(page.locator('[data-testid="kb-export-preset-long"]')).toHaveAttribute(
+      'aria-checked',
+      'false',
+    );
   });
 });

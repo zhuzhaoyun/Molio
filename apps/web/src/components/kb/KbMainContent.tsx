@@ -19,11 +19,19 @@ import { ViewerErrorBoundary } from './ViewerErrorBoundary';
 import type { KbCodeMirrorViewerHandle } from './KbCodeMirrorViewer';
 import { KbFrontmatterCard } from './KbFrontmatterCard';
 import { exportDocument, ExportError } from './docExport';
+import {
+  countDocWords,
+  formatHeaderDate,
+  readingMinutes,
+  type ExportHeaderData,
+} from './docExport/header.ts';
+import type { ExportPreset } from './docExport/layout.ts';
 import { formatFileSize } from '../../utils/format';
 import { preprocessKbMarkdown } from '../../hooks/useKnowledge';
 import { useScrollMemory, type ScrollIntent } from '../../hooks/useScrollMemory';
 import { api } from '../../api/client';
 import { useI18n } from '../../i18n';
+import { useActiveVault } from '../../stores/vaultStore';
 import { useNavigationHistory, navigationHistoryStore } from '../../stores/navigationHistoryStore';
 import TurndownService from 'turndown';
 import { gfm } from 'turndown-plugin-gfm';
@@ -92,6 +100,28 @@ function countWords(text: string): number {
 function formatReadTime(words: number, suffix: string): string {
   const mins = Math.max(1, Math.ceil(words / 300));
   return `~${mins} ${suffix}`;
+}
+
+// ── 文档出图的版式选择（长图 / 3:4 竖卡）与头卡开关 ──
+// 存储读取只做全等比较 + try/catch：隐私模式、损坏字符串、localStorage 整个
+// 不可用时一律回退默认，绝不抛错把页面炸白。
+const DOC_EXPORT_PRESET_KEY = 'molio.docExport.preset';
+const DOC_EXPORT_HEADER_KEY = 'molio.docExport.header';
+
+function readStoredPreset(): ExportPreset {
+  try {
+    return localStorage.getItem(DOC_EXPORT_PRESET_KEY) === 'card34' ? 'card34' : 'long';
+  } catch {
+    return 'long';
+  }
+}
+
+function readStoredHeaderOn(): boolean {
+  try {
+    return localStorage.getItem(DOC_EXPORT_HEADER_KEY) !== 'off';
+  } catch {
+    return true;
+  }
 }
 
 interface KbMainContentProps {
@@ -185,7 +215,7 @@ export function KbMainContent({
   onCloseCompanion,
   scrollIntentRef,
 }: KbMainContentProps) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const { canGoBack, canGoForward } = useNavigationHistory();
   const contentRef = useRef<HTMLDivElement>(null);
   const cmRef = useRef<KbCodeMirrorViewerHandle>(null);
@@ -208,6 +238,11 @@ export function KbMainContent({
   >(null);
   const [exporting, setExporting] = useState(false);
   const [exportNotice, setExportNotice] = useState<string | null>(null);
+  // 版式与头卡开关：显式选择立即持久化（localStorage），未配置过时用默认值。
+  const [exportPreset, setExportPreset] = useState<ExportPreset>(readStoredPreset);
+  const [exportHeaderOn, setExportHeaderOn] = useState(readStoredHeaderOn);
+  const [exportMenuOpen, setExportMenuOpen] = useState(false);
+  const activeVault = useActiveVault();
 
   // Routing flags — computed from extension + size + tooLarge.
   const fileName = selectedFile ? (selectedFile.split('/').pop() ?? selectedFile) : '';
@@ -416,6 +451,30 @@ export function KbMainContent({
 
   // 文档出图：把当前渲染出来的 #output 导出成 1080px 宽的长图。
   // 排版模式的目标在 MdTypesetEditor 的预览里（两条路径互斥，同屏只有一个 #output）。
+  // 头卡数据：标题 + 元信息行（库名 · 日期 · 字数 · 阅读时长）+ 标签。
+  // meta 串在这里拼——i18n 留在 React 层，docExport 层不碰本地化。
+  const buildExportHeader = useCallback(
+    (target: HTMLElement, title: string): ExportHeaderData => {
+      const words = countDocWords(target.innerText ?? '');
+      const rawTags = frontmatterData.tags;
+      const tags = Array.isArray(rawTags)
+        ? rawTags.map((tag) => String(tag)).filter(Boolean)
+        : typeof rawTags === 'string'
+          ? rawTags.split(/,\s*/).filter(Boolean)
+          : [];
+      const meta = [
+        activeVault?.name,
+        formatHeaderDate(new Date(), locale),
+        words > 0 ? t('kb.exportWords', { words }) : '',
+        t('kb.exportMinutes', { minutes: readingMinutes(words) }),
+      ]
+        .filter(Boolean)
+        .join(' · ');
+      return { title, meta, tags };
+    },
+    [activeVault?.name, frontmatterData.tags, locale, t],
+  );
+
   const handleExportImage = useCallback(async () => {
     const target = (
       isTypesetMode
@@ -430,14 +489,20 @@ export function KbMainContent({
     }
 
     setExporting(true);
+    setExportMenuOpen(false);
     setExportNotice(t('kb.exporting'));
     try {
       // 文件名优先用渲染后的 H1（读者认得的标题），没有 H1 才退回文件 stem。
       const h1 = target.querySelector('h1')?.textContent?.trim();
       const stem = fileName.replace(/\.[^.]+$/, '');
       const title = h1 || stem;
+      // 头卡：图上第一次出现「截图拿不到」的信息——库名、日期、字数/阅读时长、标签。
+      // meta 串在这里拼（i18n 留 React 层，docExport 层不碰本地化）。
+      const header = exportHeaderOn ? buildExportHeader(target, title) : undefined;
       const result = await exportDocument(target, {
         title,
+        preset: exportPreset,
+        header,
         onProgress: (done, total) =>
           setExportNotice(t('kb.exportProgress', { done, total })),
       });
@@ -456,7 +521,29 @@ export function KbMainContent({
       setExporting(false);
       window.setTimeout(() => setExportNotice(null), 4_000);
     }
-  }, [contentRef, fileName, isTypesetMode, t]);
+  }, [contentRef, fileName, isTypesetMode, t, exportHeaderOn, exportPreset, buildExportHeader]);
+
+  const chooseExportPreset = useCallback((preset: ExportPreset) => {
+    setExportPreset(preset);
+    try {
+      localStorage.setItem(DOC_EXPORT_PRESET_KEY, preset);
+    } catch {
+      // 隐私模式 / 存储不可用：本次会话内仍然生效，只是下次不记得。
+    }
+    setExportMenuOpen(false);
+  }, []);
+
+  const toggleExportHeader = useCallback(() => {
+    setExportHeaderOn((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem(DOC_EXPORT_HEADER_KEY, next ? 'on' : 'off');
+      } catch {
+        // 同上。
+      }
+      return next;
+    });
+  }, []);
 
   const selectionText = useCallback(() => {
     const sel = window.getSelection();
@@ -701,22 +788,74 @@ export function KbMainContent({
                 </>
               )}
 
-              {/* 导出图片 —— 阅读与排版模式都可用；排版模式导出的就是右侧预览 */}
+              {/* 导出图片 —— 阅读与排版模式都可用；排版模式导出的就是右侧预览。
+                  右侧小箭头开版式菜单：长图 / 3:4 竖卡 + 头卡开关。 */}
               {(isReadingPath || isTypesetMode) && (
-                <button
-                  type="button"
-                  className="kb-btn kb-btn-ghost"
-                  onClick={handleExportImage}
-                  disabled={exporting}
-                  title={t('kb.exportImage')}
-                  data-testid="kb-btn-export-image"
-                >
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="14" height="14">
-                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
-                    <circle cx="8.5" cy="8.5" r="1.5" />
-                    <polyline points="21 15 16 10 5 21" />
-                  </svg>
-                </button>
+                <div className="kb-export-menu-wrap">
+                  <button
+                    type="button"
+                    className="kb-btn kb-btn-ghost"
+                    onClick={handleExportImage}
+                    disabled={exporting}
+                    title={t('kb.exportImage')}
+                    data-testid="kb-btn-export-image"
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="14" height="14">
+                      <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                      <circle cx="8.5" cy="8.5" r="1.5" />
+                      <polyline points="21 15 16 10 5 21" />
+                    </svg>
+                  </button>
+                  <button
+                    type="button"
+                    className="kb-btn kb-btn-ghost"
+                    onClick={() => setExportMenuOpen((open) => !open)}
+                    disabled={exporting}
+                    title={t('kb.exportPreset')}
+                    aria-label={t('kb.exportPreset')}
+                    aria-expanded={exportMenuOpen}
+                    data-testid="kb-export-preset"
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="10" height="10">
+                      <polyline points="6 9 12 15 18 9" />
+                    </svg>
+                  </button>
+                  {exportMenuOpen && (
+                    <div className="kb-export-menu" role="menu">
+                      <button
+                        type="button"
+                        role="menuitemradio"
+                        aria-checked={exportPreset === 'long'}
+                        data-testid="kb-export-preset-long"
+                        onClick={() => chooseExportPreset('long')}
+                      >
+                        {t('kb.exportPresetLong')}
+                      </button>
+                      <button
+                        type="button"
+                        role="menuitemradio"
+                        aria-checked={exportPreset === 'card34'}
+                        data-testid="kb-export-preset-card34"
+                        onClick={() => chooseExportPreset('card34')}
+                      >
+                        {t('kb.exportPresetCard34')}
+                      </button>
+                      <label
+                        className="kb-export-menu__toggle"
+                        role="menuitemcheckbox"
+                        aria-checked={exportHeaderOn}
+                        data-testid="kb-export-header-toggle"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={exportHeaderOn}
+                          onChange={toggleExportHeader}
+                        />
+                        {t('kb.exportHeader')}
+                      </label>
+                    </div>
+                  )}
+                </div>
               )}
 
               {/* Typeset toggle — signature action. Read mode: T icon + "排版"

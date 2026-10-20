@@ -756,6 +756,12 @@ const zh: Record<string, string> = {
   'kb.exportPages': '已导出 {pages} 张图片',
   'kb.exportFailed': '导出失败，请重试',
   'kb.exportUnsupported': '没有可导出的内容',
+  'kb.exportPreset': '导出版式',
+  'kb.exportPresetLong': '长图',
+  'kb.exportPresetCard34': '3:4 竖卡',
+  'kb.exportHeader': '头卡（标题与元信息）',
+  'kb.exportWords': '{words} 字',
+  'kb.exportMinutes': '约 {minutes} 分钟',
 
   // ── FilePicker ──
   'filePicker.justNow': '刚刚',
