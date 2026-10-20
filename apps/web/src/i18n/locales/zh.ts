@@ -112,6 +112,29 @@ const zh: Record<string, string> = {
   'composer.noSearchResults': '没有匹配的会话',
   'composer.untitled': '未命名对话',
 
+  // ── QuizCard ──
+  'quiz.generating': '正在出题…',
+  'quiz.incomplete': '题目没有生成完整，可以重新生成一次',
+  'quiz.invalid': '题目数据格式有误，已按原样显示',
+  'quiz.questionInvalid': '该题格式有误',
+  'quiz.question': '第 {n} 题',
+  'quiz.type.single': '单选',
+  'quiz.type.multiple': '多选',
+  'quiz.type.judge': '判断',
+  'quiz.correct': '回答正确',
+  'quiz.wrong': '回答错误',
+  'quiz.answer': '正确答案：{answer}',
+  'quiz.explanation': '解析',
+  'quiz.sources': '出处',
+  'quiz.submit': '提交答案',
+  'quiz.redo': '重做',
+  'quiz.save': '存为题库',
+  'quiz.saveNoVault': '先选择一个知识库',
+  'quiz.saving': '正在保存…',
+  'quiz.saved': '已存为 {path}',
+  'quiz.saveFailed': '保存失败，请重试',
+  'quiz.answeredProgress': '已作答 {done}/{total}',
+
   // ── AssistantMessage ──
   'assistant.label': 'Molio',
 

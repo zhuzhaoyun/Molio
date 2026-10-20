@@ -310,6 +310,24 @@ function migrate(db: SqliteDb): void {
     setKv(db, 'vault_fts_rowid_paired', '1');
   }
 
+  // 答题记录：一期只写不读（错题本/统计留到二期）。按 vault + 内容指纹索引，
+  // 即使题目还没存成题库文件也能把同一份题关联起来。
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS quiz_attempts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      vault_id TEXT,
+      quiz_fingerprint TEXT NOT NULL,
+      question_id TEXT NOT NULL,
+      chosen TEXT NOT NULL,
+      correct INTEGER NOT NULL,
+      conversation_id TEXT,
+      answered_at INTEGER NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_quiz_attempts_fp
+      ON quiz_attempts(vault_id, quiz_fingerprint);
+  `);
+
   // One-time backfill of pre-existing messages. Guarded by kv flag so repeated
   // openDatabase calls stay O(1). Disaster recovery uses POST /api/maintenance/rebuild-fts.
   if (!getKv(db, 'fts_seeded')) {

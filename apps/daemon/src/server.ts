@@ -20,6 +20,7 @@ import { graphRoutes } from './routes/graph.js';
 import { weixinRoutes } from './routes/weixin.js';
 import { feishuRoutes } from './routes/feishu.js';
 import { maintenanceRoutes } from './routes/maintenance.js';
+import { quizRoutes } from './routes/quiz.js';
 import { authRoutes } from './routes/auth.js';
 import { marketRoutes } from './routes/market.js';
 import { AuthClient } from './core/auth/auth-client.js';
@@ -121,6 +122,7 @@ app.route('/api/weixin', weixinRoutes(weixinService));
 app.route('/api/feishu', feishuRoutes(feishuService));
 app.route('/api/preload', preloadRoutes(preloadManager));
 app.route('/api/maintenance', maintenanceRoutes(db));
+app.route('/api/quiz', quizRoutes(db));
 app.route('/api/auth', authRoutes(authClient));
 app.route('/api/market', marketRoutes(db, authClient));
 

@@ -7,6 +7,7 @@ import type { ChatMessage } from '../hooks/useChatCore';
 import { deriveStepsForMessage } from '../utils/workSteps';
 import { isWorkBlockFailed } from '../utils/workOutcome';
 import { bucketSegmentsByDone, type MessageSegment } from '../utils/messageText';
+import { stripQuizForStreaming } from '../utils/quiz';
 import { UNGROUPABLE, type ToolItem } from '../utils/toolGroups';
 import { useI18n } from '../i18n';
 import { ThinkingBlock } from './ThinkingBlock';
@@ -148,12 +149,23 @@ export function WorkBlock({ message, toolItems, processText, processSegments, is
     return bucketSegmentsByDone(processSegments, anchors);
   }, [processSegments, doneItems, fullIndexById]);
 
-  // 过程叙事块：live = 正在打字（仅流式视图最后一块；其余静态，避免多光标闪烁）
-  const renderProcessBlock = (text: string, live: boolean, key: string) => (
-    <div className="work-block-process" data-testid="work-block-process" data-typing={live} key={key}>
-      <TypingText text={text} active={live} />
-    </div>
-  );
+  // 过程叙事块：live = 正在打字（仅流式视图最后一块；其余静态，避免多光标闪烁）。
+  // 过程叙事里剥掉 quiz 围栏：闭合块不在这里渲染（结束后进正文 QuizCard）；
+  // 未闭合块显示「正在出题…」，避免把原始 JSON 一行行糊出来。
+  const renderProcessBlock = (text: string, live: boolean, key: string) => {
+    const { text: visible, generating } = stripQuizForStreaming(text);
+    if (!visible && !generating) return null;
+    return (
+      <div className="work-block-process" data-testid="work-block-process" data-typing={live} key={key}>
+        {visible && <TypingText text={visible} active={live && !generating} />}
+        {generating && (
+          <div className="quiz-generating" data-testid="quiz-generating">
+            {t('quiz.generating')}
+          </div>
+        )}
+      </div>
+    );
+  };
 
   // 没有任何工作痕迹时整块不渲染（纯问答、无工具无思考）。
   if (!isRunning && !hasThinking && !hasTools) return null;

@@ -186,3 +186,19 @@ export interface SearchResponse {
   results: SearchResult[];
   truncated: boolean; // 是否因 limit 截断
 }
+
+/** 一次提交里单题的作答记录。 */
+export interface QuizAttemptInput {
+  questionId: string;
+  chosen: string[];
+  correct: boolean;
+}
+
+/** POST /api/quiz/attempts 的请求体。 */
+export interface SaveQuizAttemptsRequest {
+  vaultId?: string | null;
+  /** 题目内容指纹（SHA-256 hex，不含 title/引导语）。 */
+  quizFingerprint: string;
+  conversationId?: string | null;
+  attempts: QuizAttemptInput[];
+}

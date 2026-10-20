@@ -113,6 +113,29 @@ const en: Record<string, string> = {
   'composer.noSearchResults': 'No matching conversations',
   'composer.untitled': 'Untitled',
 
+  // ── QuizCard ──
+  'quiz.generating': 'Generating questions…',
+  'quiz.incomplete': 'The quiz did not finish generating. Try regenerating it.',
+  'quiz.invalid': 'The quiz data is malformed; showing it as-is.',
+  'quiz.questionInvalid': 'This question is malformed',
+  'quiz.question': 'Question {n}',
+  'quiz.type.single': 'Single choice',
+  'quiz.type.multiple': 'Multiple choice',
+  'quiz.type.judge': 'True / false',
+  'quiz.correct': 'Correct',
+  'quiz.wrong': 'Incorrect',
+  'quiz.answer': 'Answer: {answer}',
+  'quiz.explanation': 'Explanation',
+  'quiz.sources': 'Sources',
+  'quiz.submit': 'Submit answers',
+  'quiz.redo': 'Redo',
+  'quiz.save': 'Save as question bank',
+  'quiz.saveNoVault': 'Select a knowledge base first',
+  'quiz.saving': 'Saving…',
+  'quiz.saved': 'Saved to {path}',
+  'quiz.saveFailed': 'Save failed. Try again.',
+  'quiz.answeredProgress': 'Answered {done}/{total}',
+
   // ── AssistantMessage ──
   'assistant.label': 'Molio',
 
