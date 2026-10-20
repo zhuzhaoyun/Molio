@@ -449,8 +449,6 @@ export function KbMainContent({
 
   const closeContextMenu = useCallback(() => setCtxMenu(null), []);
 
-  // 文档出图：把当前渲染出来的 #output 导出成 1080px 宽的长图。
-  // 排版模式的目标在 MdTypesetEditor 的预览里（两条路径互斥，同屏只有一个 #output）。
   // 头卡数据：标题 + 元信息行（库名 · 日期 · 字数 · 阅读时长）+ 标签。
   // meta 串在这里拼——i18n 留在 React 层，docExport 层不碰本地化。
   const buildExportHeader = useCallback(
@@ -476,6 +474,8 @@ export function KbMainContent({
   );
 
   const handleExportImage = useCallback(async () => {
+    // 文档出图：把当前渲染出来的 #output 导出成 1080px 宽的长图。
+    // 排版模式的目标在 MdTypesetEditor 的预览里（两条路径互斥，同屏只有一个 #output）。
     const target = (
       isTypesetMode
         ? document.querySelector('.kb-typeset-preview-body #output')
