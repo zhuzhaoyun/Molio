@@ -4,8 +4,14 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 const isCI = !!process.env.CI;
-/** 云端认证服务（apps/cloud）dev 地址——webServer 健康检查与 daemon env 单点共用。 */
-const CLOUD_BASE_URL = 'http://localhost:3200';
+/**
+ * 云端认证服务（apps/cloud）dev 地址——webServer 健康检查与 daemon env 单点共用。
+ * 端口可平移（cloud 读 PORT env）：3200 常被另一个 worktree 的 dev server 占用。
+ * cloud 只提供验证码，与被测代码版本无关，但为了不干扰别人的会话，
+ * 默认仍平移到独立端口。
+ */
+const CLOUD_PORT = Number(process.env.MOLIO_E2E_CLOUD_PORT ?? 3201);
+const CLOUD_BASE_URL = `http://localhost:${CLOUD_PORT}`;
 /**
  * E2E daemon 端口：默认 3100（现状不变）。当 3100 被另一个 Molio 实例占用
  * （如已安装的桌面端在跑，其旧版路由无法支撑 devCode/市场 E2E，又不可杀掉），
@@ -13,6 +19,15 @@ const CLOUD_BASE_URL = 'http://localhost:3200';
  * 整体平移：daemon（MOLIO_PORT）+ vite 代理（MOLIO_DAEMON）+ spec 直连同一端口。
  */
 const DAEMON_PORT = Number(process.env.MOLIO_E2E_DAEMON_PORT ?? 3100);
+/**
+ * E2E web（vite）端口：默认 5173。当 5173 被另一个 worktree 的 dev server
+ * 占用时，**复用它会跑到别人的旧代码上**（页面看起来正常、断言全红）——
+ * 必须平移端口起自己的 vite。用 `MOLIO_E2E_WEB_PORT=5199` 整体平移。
+ */
+const WEB_PORT = Number(process.env.MOLIO_E2E_WEB_PORT ?? 5173);
+const WEB_BASE_URL = `http://localhost:${WEB_PORT}`;
+/** mock OSS 替身端口（可平移：3199 常被其他 worktree 占用）。 */
+const MOCK_OSS_PORT = Number(process.env.MOLIO_E2E_MOCK_OSS_PORT ?? 3199);
 /**
  * E2E daemon 数据目录（MOLIO_DATA_DIR，db.ts 环境钩子）：每次运行 mkdtemp
  * 新建随机目录，天然干净，不需要先删旧目录——消除 Windows 下「测试 worker
@@ -44,7 +59,7 @@ export default defineConfig({
   retries: 0,
   timeout: 30_000,
   use: {
-    baseURL: 'http://localhost:5173',
+    baseURL: WEB_BASE_URL,
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
   },
@@ -78,10 +93,11 @@ export default defineConfig({
       timeout: 60_000,
       env: {
         MOLIO_ENV: 'local',
+        PORT: String(CLOUD_PORT),
         MOLIO_OSS_AK: 'test-ak',
         MOLIO_OSS_SK: 'test-sk',
         MOLIO_OSS_BUCKET: 'molio-pay',
-        MOLIO_MARKET_OSS_ENDPOINT: 'http://localhost:3199',
+        MOLIO_MARKET_OSS_ENDPOINT: `http://localhost:${MOCK_OSS_PORT}`,
         /* 两个管理员邮箱：market-community 用例 1/3 各用一个，避免同邮箱撞
            send-code 60s 重发限频（429 → 无 devCode → 用例 skip） */
         MOLIO_MARKET_ADMIN_EMAILS: 'admin@test.local,admin2@test.local',
@@ -103,17 +119,21 @@ export default defineConfig({
     },
     {
       command: 'pnpm --filter @molio/web dev',
-      url: 'http://localhost:5173',
+      url: WEB_BASE_URL,
       reuseExistingServer: reuseServers,
       timeout: 60_000,
-      env: { MOLIO_DAEMON: `http://localhost:${DAEMON_PORT}` },
+      env: {
+        MOLIO_DAEMON: `http://localhost:${DAEMON_PORT}`,
+        PORT: String(WEB_PORT),
+      },
     },
     /* mock OSS（Task 13）— 预签名 PUT/HEAD/GET 最小替身 + 服务端 copyObject
        （x-oss-copy-source 复制分支，见 fixtures/mock-oss.mjs 头注）。 */
     {
       command: 'node e2e/fixtures/mock-oss.mjs',
-      port: 3199,
+      port: MOCK_OSS_PORT,
       reuseExistingServer: reuseServers,
+      env: { MOLIO_E2E_MOCK_OSS_PORT: String(MOCK_OSS_PORT) },
     },
   ],
 });

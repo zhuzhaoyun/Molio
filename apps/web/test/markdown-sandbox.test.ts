@@ -43,6 +43,15 @@ describe('splitContent — sandbox segments', () => {
     assert.equal(segs[0].code, 'int main(){}\n');
   });
 
+  it('does not eat a leading hyphen of a bare fence whose first line starts with one', () => {
+    // 正则若允许语言名以 - 开头，「```- 项目说明」的 `-` 会被吃成语言名。
+    const segs = splitContent('```- 项目说明\n内容\n```');
+    assert.equal(segs[0].type, 'code');
+    if (segs[0].type !== 'code') throw new Error('expected code segment');
+    assert.equal(segs[0].lang, '');
+    assert.equal(segs[0].code, '- 项目说明\n内容\n');
+  });
+
   it('keeps quiz and sandbox fences independent', () => {
     const segs = splitContent(
       '```quiz\n{"version":1}\n```\n中间\n```rule-sandbox\n{"version":1}\n```',

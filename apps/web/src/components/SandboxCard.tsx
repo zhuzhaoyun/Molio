@@ -6,6 +6,7 @@ import {
   clampSandboxValue,
   evaluateRuleSandbox,
   parseRuleSandbox,
+  type InvalidSandboxVerdict,
   type RuleSandbox,
 } from '../utils/ruleSandbox';
 
@@ -37,19 +38,49 @@ export function SandboxCard({ raw, complete, streaming }: Props) {
     );
   }
 
+  // 围栏没闭合且流已结束：给一句可操作的提示，而不是把半截 JSON 糊在聊天里
+  // （quiz 侧对应 quiz.incomplete）。
+  if (!complete) {
+    return (
+      <div className="sandbox-generating" data-testid="sandbox-incomplete">
+        {t('sandbox.incomplete')}
+      </div>
+    );
+  }
+
   // 围栏闭合但内容不合协议：降级为代码块（模型输出不可信，不能吞掉）。
   if (!parsed.ok) {
     return <CodeBlock lang="rule-sandbox" code={raw} streaming={false} />;
   }
 
-  return <SandboxBody sandbox={parsed.sandbox} />;
+  // 内容身份变了（同一位置被重新生成）就整体重挂载，滑杆回到新块的初值，
+  // 不会把上一块的取值残留过来。
+  const param = parsed.sandbox.params[0]!;
+  const blockKey = [
+    parsed.sandbox.title,
+    param.id, param.min, param.max, param.value,
+    parsed.sandbox.fixed.map((f) => `${f.id}:${f.value}`).join(','),
+  ].join('|');
+
+  return (
+    <SandboxBody
+      key={blockKey}
+      sandbox={parsed.sandbox}
+      invalidVerdicts={parsed.invalidVerdicts}
+    />
+  );
 }
 
-function SandboxBody({ sandbox }: { sandbox: RuleSandbox }) {
+function SandboxBody({
+  sandbox,
+  invalidVerdicts,
+}: {
+  sandbox: RuleSandbox;
+  invalidVerdicts: InvalidSandboxVerdict[];
+}) {
   const { t } = useI18n();
-  // parseRuleSandbox 保证 params 恰好 1 个（单轴模板）。
-  const param = sandbox.params[0];
-  if (!param) return null;
+  // parseRuleSandbox 保证 params 恰好 1 个（单轴模板），故此处必存在。
+  const param = sandbox.params[0]!;
   const [value, setValue] = useState(param.value);
   const axisRef = useRef<HTMLDivElement | null>(null);
   const draggingRef = useRef(false);
@@ -95,6 +126,12 @@ function SandboxBody({ sandbox }: { sandbox: RuleSandbox }) {
     }
   };
 
+  // 窗口失焦 / 系统弹窗会让 pointerup 不送达 —— 捕获丢失时必须停止拖动，
+  // 否则之后鼠标掠过卡片（不按键）也会一直改值。
+  const onLostPointerCapture = () => {
+    draggingRef.current = false;
+  };
+
   const onKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
     let next: number | null = null;
     if (event.key === 'ArrowRight' || event.key === 'ArrowUp') next = value + step;
@@ -123,6 +160,7 @@ function SandboxBody({ sandbox }: { sandbox: RuleSandbox }) {
           onPointerMove={onPointerMove}
           onPointerUp={endDrag}
           onPointerCancel={endDrag}
+          onLostPointerCapture={onLostPointerCapture}
         >
           {sandbox.fixed.map((marker) => (
             <div
@@ -145,6 +183,7 @@ function SandboxBody({ sandbox }: { sandbox: RuleSandbox }) {
             aria-valuemin={param.min}
             aria-valuemax={param.max}
             aria-valuenow={Math.round(value * 100) / 100}
+            aria-valuetext={formatValue(value)}
             style={{ left: `${percent(value)}%` }}
             onKeyDown={onKeyDown}
           />
@@ -157,7 +196,11 @@ function SandboxBody({ sandbox }: { sandbox: RuleSandbox }) {
       </div>
 
       <div className="sandbox-verdict" data-testid="sandbox-verdict" data-tone={verdict.tone}>
-        <div className="sandbox-verdict-title" data-testid="sandbox-verdict-title">
+        <div
+          className="sandbox-verdict-title"
+          data-testid="sandbox-verdict-title"
+          aria-live="polite"
+        >
           {verdict.title}
         </div>
         <div className="sandbox-verdict-detail" data-testid="sandbox-verdict-detail">
@@ -167,6 +210,21 @@ function SandboxBody({ sandbox }: { sandbox: RuleSandbox }) {
           {param.label}：{formatValue(value)}
         </div>
       </div>
+
+      {invalidVerdicts.length > 0 && (
+        <div className="sandbox-invalid" data-testid="sandbox-invalid">
+          <div className="sandbox-invalid-hint">{t('sandbox.invalidVerdict')}</div>
+          {invalidVerdicts.map((invalid) => (
+            <div
+              className="sandbox-invalid-item"
+              data-testid="sandbox-invalid-verdict"
+              key={invalid.index}
+            >
+              {invalid.reason}
+            </div>
+          ))}
+        </div>
+      )}
 
       {verdict.sources && verdict.sources.length > 0 && (
         <div className="sandbox-sources" data-testid="sandbox-sources" onClick={handleProseClick}>

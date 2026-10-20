@@ -9,6 +9,11 @@
 
 export const SANDBOX_PROTOCOL_VERSION = 1;
 
+import {
+  intersect, isSubsetOf, measure, union,
+  type Interval, type IntervalSet,
+} from './intervals.ts';
+
 /** 原始 JSON 长度上限 —— 与 quiz 协议同量级，防止超大块拖垮渲染。 */
 export const MAX_SANDBOX_RAW_CHARS = 512_000;
 /** 判定条数上限。 */
@@ -17,10 +22,27 @@ export const MAX_SANDBOX_VERDICTS = 20;
 export const MAX_SANDBOX_ID_CHARS = 64;
 /** 标题长度上限。 */
 export const MAX_SANDBOX_TITLE_CHARS = 120;
+/** 详情（detail）长度上限 —— 防止一个巨型文本节点。 */
+export const MAX_SANDBOX_DETAIL_CHARS = 2_000;
+/** 标签（label）长度上限。 */
+export const MAX_SANDBOX_LABEL_CHARS = 120;
+/** 出处 path 长度上限。 */
+export const MAX_SANDBOX_PATH_CHARS = 500;
+/** 出处 quote 长度上限。 */
+export const MAX_SANDBOX_QUOTE_CHARS = 1_000;
 /** 单条判定里的条件条数上限。 */
 export const MAX_SANDBOX_CONDITIONS = 12;
 /** fixed 刻度数量上限。 */
 export const MAX_SANDBOX_FIXED = 4;
+/** 单条判定的出处条数上限 —— 与 quiz 的每题出处数量级一致。 */
+export const MAX_SANDBOX_SOURCES = 8;
+/**
+ * 参数区间宽度上限。
+ *
+ * 百分比定位是 (v - min) / (max - min)。区间宽到 1e308 量级时这个除法会
+ * 溢出成 Infinity，渲染出 `left: NaN%` —— 滑块直接跑到错误位置。
+ */
+export const MAX_SANDBOX_RANGE = 1e12;
 
 export type SandboxTone = 'ok' | 'warn' | 'error' | 'neutral';
 export type SandboxOp = '>' | '>=' | '<' | '<=' | '==' | '!=';
@@ -109,11 +131,16 @@ function validId(value: unknown): value is string {
 
 function parseSources(value: unknown): SandboxSource[] | null {
   if (!Array.isArray(value) || value.length === 0) return null;
+  if (value.length > MAX_SANDBOX_SOURCES) return null;
   const out: SandboxSource[] = [];
   for (const item of value) {
     if (!isRecord(item) || !nonEmptyString(item.path)) return null;
+    if (item.path.trim().length > MAX_SANDBOX_PATH_CHARS) return null;
     const source: SandboxSource = { path: item.path.trim() };
-    if (nonEmptyString(item.quote)) source.quote = item.quote;
+    if (nonEmptyString(item.quote)) {
+      if (item.quote.trim().length > MAX_SANDBOX_QUOTE_CHARS) return null;
+      source.quote = item.quote.trim();
+    }
     out.push(source);
   }
   return out;
@@ -122,9 +149,10 @@ function parseSources(value: unknown): SandboxSource[] | null {
 function parseParam(value: unknown): SandboxParam | null {
   if (!isRecord(value)) return null;
   if (!validId(value.id)) return null;
-  if (!nonEmptyString(value.label)) return null;
+  if (!nonEmptyString(value.label) || value.label.trim().length > MAX_SANDBOX_LABEL_CHARS) return null;
   if (!isFiniteNumber(value.min) || !isFiniteNumber(value.max) || !isFiniteNumber(value.value)) return null;
   if (value.min >= value.max) return null;
+  if (value.max - value.min > MAX_SANDBOX_RANGE) return null; // 百分比定位会溢出
   if (value.value < value.min || value.value > value.max) return null;
   const param: SandboxParam = {
     id: value.id.trim(),
@@ -145,7 +173,7 @@ function parseFixed(value: unknown, param: SandboxParam): SandboxFixed | null {
   if (!isRecord(value)) return null;
   if (!validId(value.id)) return null;
   if (value.id.trim() === param.id) return null; // 与 param 同名 → 无法区分引用
-  if (!nonEmptyString(value.label)) return null;
+  if (!nonEmptyString(value.label) || value.label.trim().length > MAX_SANDBOX_LABEL_CHARS) return null;
   if (!isFiniteNumber(value.value)) return null;
   if (value.value < param.min || value.value > param.max) return null; // 画在同一轨道上，越界无法绘制
   return { id: value.id.trim(), label: value.label.trim(), value: value.value };
@@ -153,10 +181,12 @@ function parseFixed(value: unknown, param: SandboxParam): SandboxFixed | null {
 
 /**
  * 解析一条判定。返回 null 表示该条不合格（调用方负责丢弃并记录原因）。
- * `knownIds` 是 param + fixed 的 id 集合。
+ * `paramId` 是可拖参数的 id（条件的左边只能是它）；`knownIds` 是
+ * param + fixed 的 id 集合（条件的右边可以引用其中任意一个）。
  */
 function parseVerdict(
   value: unknown,
+  paramId: string,
   knownIds: Set<string>,
 ): { verdict: SandboxVerdict } | { reason: string } {
   if (!isRecord(value)) return { reason: 'verdict is not an object' };
@@ -165,8 +195,12 @@ function parseVerdict(
   if (typeof tone !== 'string' || !SANDBOX_TONES.includes(tone as SandboxTone)) {
     return { reason: 'tone is not supported' };
   }
-  if (!nonEmptyString(value.title)) return { reason: 'title is missing' };
-  if (!nonEmptyString(value.detail)) return { reason: 'detail is missing' };
+  if (!nonEmptyString(value.title) || value.title.trim().length > MAX_SANDBOX_TITLE_CHARS) {
+    return { reason: 'title is missing or too long' };
+  }
+  if (!nonEmptyString(value.detail) || value.detail.trim().length > MAX_SANDBOX_DETAIL_CHARS) {
+    return { reason: 'detail is missing or too long' };
+  }
 
   const sources = parseSources(value.sources);
   if (!sources) return { reason: 'sources are missing' };
@@ -185,8 +219,12 @@ function parseVerdict(
   for (const raw of rawConditions) {
     if (!isRecord(raw)) return { reason: 'condition is not an object' };
     if (!validId(raw.param)) return { reason: 'condition param id is invalid' };
-    const paramId = raw.param.trim();
-    if (!knownIds.has(paramId)) return { reason: `condition references unknown id: ${paramId}` };
+    const subject = raw.param.trim();
+    // 条件的左边必须是被拖动的参数。若左边写固定刻度（fixed），条件会恒真，
+    // 吞掉后面所有判定 —— 拖动时界面毫无反应。
+    if (subject !== paramId) {
+      return { reason: 'condition must compare the draggable parameter' };
+    }
     if (typeof raw.op !== 'string' || !SANDBOX_OPS.includes(raw.op as SandboxOp)) {
       return { reason: 'condition op is not supported' };
     }
@@ -202,7 +240,7 @@ function parseVerdict(
     } else {
       return { reason: 'condition value is neither a number nor a known id' };
     }
-    conditions.push({ param: paramId, op: raw.op as SandboxOp, value: condValue });
+    conditions.push({ param: subject, op: raw.op as SandboxOp, value: condValue });
   }
 
   const verdict: SandboxVerdict = {
@@ -219,8 +257,8 @@ function parseDefaultVerdict(value: unknown): SandboxDefaultVerdict | null {
   if (!isRecord(value)) return null;
   const tone = value.tone;
   if (typeof tone !== 'string' || !SANDBOX_TONES.includes(tone as SandboxTone)) return null;
-  if (!nonEmptyString(value.title)) return null;
-  if (!nonEmptyString(value.detail)) return null;
+  if (!nonEmptyString(value.title) || value.title.trim().length > MAX_SANDBOX_TITLE_CHARS) return null;
+  if (!nonEmptyString(value.detail) || value.detail.trim().length > MAX_SANDBOX_DETAIL_CHARS) return null;
   // 出处是硬门槛：defaultVerdict 也是一种判定，缺出处就整块不合格。
   const sources = parseSources(value.sources);
   if (!sources) return null;
@@ -276,9 +314,15 @@ export function parseRuleSandbox(raw: string): ParseRuleSandboxResult {
     if (!Array.isArray(data.fixed) || data.fixed.length > MAX_SANDBOX_FIXED) {
       return { ok: false, error: 'sandbox fixed list is invalid' };
     }
+    const seenFixedIds = new Set<string>();
     for (const rawFixed of data.fixed) {
       const parsed = parseFixed(rawFixed, param);
       if (!parsed) return { ok: false, error: 'sandbox fixed entry is invalid' };
+      // 重复 id → 渲染出重复 React key，条件引用也会指向不确定的那条。
+      if (seenFixedIds.has(parsed.id)) {
+        return { ok: false, error: 'sandbox fixed ids must be unique' };
+      }
+      seenFixedIds.add(parsed.id);
       fixed.push(parsed);
     }
   }
@@ -295,7 +339,7 @@ export function parseRuleSandbox(raw: string): ParseRuleSandboxResult {
   const verdicts: SandboxVerdict[] = [];
   const invalidVerdicts: InvalidSandboxVerdict[] = [];
   for (const [index, rawVerdict] of data.verdicts.entries()) {
-    const parsed = parseVerdict(rawVerdict, knownIds);
+    const parsed = parseVerdict(rawVerdict, param.id, knownIds);
     if ('verdict' in parsed) {
       verdicts.push(parsed.verdict);
     } else {
@@ -347,7 +391,11 @@ function compare(left: number, op: SandboxOp, right: number): boolean {
  * - `values` 是 param id → 当前值。
  * - 条件里的字符串 value 解析为另一个 param/fixed 的当前值；解析不到 → 该条件
  *   判为 false（不抛错、不中断）。
- * - 判定按数组顺序，首个命中者生效；全不命中 → `defaultVerdict`。
+ * - **多条判定同时命中时，取区间最窄的那条**（最具体者胜），而不是数组里
+ *   第一个命中的。模型最自然的写法是阈值升序（60 档 → 80 档），按数组顺序
+ *   取首个命中会让低档恒真、把高档判定吞掉 —— 用户拖过危险线仍看到低档结论。
+ *   区间只用于比较具体程度；命中本身仍由原始条件精确求值，边界不被近似吃掉。
+ * - 全不命中 → `defaultVerdict`。
  */
 export function evaluateRuleSandbox(
   sandbox: RuleSandbox,
@@ -370,15 +418,78 @@ export function evaluateRuleSandbox(
     return compare(left, condition.op, right);
   };
 
+  const matched: { verdict: SandboxVerdict; region: IntervalSet }[] = [];
   for (const verdict of sandbox.verdicts) {
     const conditions = verdict.when.all ?? verdict.when.any ?? [];
     if (conditions.length === 0) continue;
     const holds = verdict.when.all
       ? conditions.every(conditionHolds)
       : conditions.some(conditionHolds);
-    if (holds) return verdict;
+    if (!holds) continue;
+    matched.push({ verdict, region: verdictRegion(verdict, resolve) });
+  }
+
+  if (matched.length === 1) return matched[0]!.verdict;
+  if (matched.length > 1) {
+    // 取最具体的一条：区间更窄的优先。无法比较（区间相同或互不包含）时
+    // 退回到数组顺序 —— 至少是确定的。
+    let best = matched[0]!;
+    for (const candidate of matched.slice(1)) {
+      if (isMoreSpecific(candidate.region, best.region)) best = candidate;
+    }
+    return best.verdict;
   }
   return sandbox.defaultVerdict;
+}
+
+/**
+ * 判定条件在参数轴上覆盖的区间。
+ *
+ * 条件形如 `param OP 常量`，因此每条条件对应一个区间；`all` 取交集，`any`
+ * 取并集。区间的端点按闭区间处理（严格不等号的差异只影响边界一点点，
+ * 而命中判定本身由原始条件精确求值）。
+ */
+function verdictRegion(
+  verdict: SandboxVerdict,
+  resolve: (ref: string) => number | undefined,
+): IntervalSet {
+  const conditions = verdict.when.all ?? verdict.when.any ?? [];
+  const isAll = verdict.when.all !== undefined;
+  // `all` 是求交 → 从全集开始；`any` 是求并 → 从空集开始。
+  let region: IntervalSet = isAll ? [{ lo: -Infinity, hi: Infinity }] : [];
+
+  for (const condition of conditions) {
+    const right = typeof condition.value === 'number' ? condition.value : resolve(condition.value);
+    if (right === undefined) continue;
+    const interval = conditionInterval(condition.op, right);
+    if (!interval) continue;
+    region = isAll ? intersect(region, [interval]) : union(region, [interval]);
+  }
+  return region;
+}
+
+/** 单个比较条件对应的区间。`==` / `!=` 无法用区间表达 → 返回 null。 */
+function conditionInterval(op: SandboxOp, value: number): Interval | null {
+  switch (op) {
+    case '>': return { lo: value, hi: Infinity };
+    case '>=': return { lo: value, hi: Infinity };
+    case '<': return { lo: -Infinity, hi: value };
+    case '<=': return { lo: -Infinity, hi: value };
+    default: return null;
+  }
+}
+
+/**
+ * a 是否比 b 更具体。
+ *
+ * 判据：a 的区间是 b 的子集（更窄），或 a 的区间总长度更小。
+ * 两者都无法判定时返回 false —— 调用方保留先遇到的那条。
+ */
+function isMoreSpecific(a: IntervalSet, b: IntervalSet): boolean {
+  if (a.length === 0 || b.length === 0) return false;
+  if (isSubsetOf(a, b)) return true;
+  if (isSubsetOf(b, a)) return false;
+  return measure(a) < measure(b);
 }
 
 /**
@@ -409,4 +520,49 @@ export function stripSandboxesForStreaming(text: string): { text: string; genera
   }
 
   return { text: output.trim(), generating };
+}
+
+/**
+ * 一次扫描同时剥离 quiz 与 rule-sandbox 两种围栏。
+ *
+ * WorkBlock 的过程叙事两种块都可能出现。若用两个单类型剥离器串联，第一道会
+ * 把「另一种围栏 JSON 里出现的本类型字面量」误认成自己的开栏（例如 sandbox
+ * 的 detail 里写了 ```quiz），把对方的收尾 ``` 吃掉 —— 卡片整个消失。
+ * 这里统一找**最先出现**的开栏，剥到最近的收尾，循环处理，互不越权。
+ */
+export function stripInteractiveFences(
+  text: string,
+): { text: string; quizGenerating: boolean; sandboxGenerating: boolean } {
+  const OPENERS = ['```quiz', '```rule-sandbox'] as const;
+  let output = '';
+  let index = 0;
+  let quizGenerating = false;
+  let sandboxGenerating = false;
+
+  while (index < text.length) {
+    let start = -1;
+    let opener: (typeof OPENERS)[number] | null = null;
+    for (const candidate of OPENERS) {
+      const at = text.indexOf(candidate, index);
+      if (at !== -1 && (start === -1 || at < start)) {
+        start = at;
+        opener = candidate;
+      }
+    }
+    if (start === -1 || !opener) {
+      output += text.slice(index);
+      break;
+    }
+    output += text.slice(index, start);
+    const bodyStart = start + opener.length;
+    const close = text.indexOf('```', bodyStart);
+    if (close === -1) {
+      if (opener === '```quiz') quizGenerating = true;
+      else sandboxGenerating = true;
+      break;
+    }
+    index = close + 3;
+  }
+
+  return { text: output.trim(), quizGenerating, sandboxGenerating };
 }

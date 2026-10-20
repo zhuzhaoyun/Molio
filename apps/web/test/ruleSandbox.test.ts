@@ -12,6 +12,7 @@ const {
   parseRuleSandbox,
   SANDBOX_PROTOCOL_VERSION,
   MAX_SANDBOX_RAW_CHARS,
+  MAX_SANDBOX_SOURCES,
 } = await import('../src/utils/ruleSandbox.ts');
 
 const PARAM = { id: 'load', label: '服务器负载', min: 0, max: 100, value: 60, unit: '%' };
@@ -75,6 +76,34 @@ describe('parseRuleSandbox', () => {
     assert.equal(parseRuleSandbox(JSON.stringify({ ...VALID, params: [] })).ok, false);
   });
 
+  it('rejects a condition whose subject is a fixed marker (恒真条件)', () => {
+    // 条件的左边必须是可拖参数。左边写 fixed id 会得到恒真条件，
+    // 吞掉后面所有判定 —— 拖动毫无反应。
+    const res = parseRuleSandbox(JSON.stringify({
+      ...VALID,
+      verdicts: [{ ...VALID.verdicts[0], when: { all: [{ param: 'threshold', op: '>', value: 0 }] } }],
+    }));
+    assert.equal(res.ok, false);
+  });
+
+  it('rejects duplicate fixed ids (重复 React key)', () => {
+    assert.equal(parseRuleSandbox(JSON.stringify({
+      ...VALID,
+      fixed: [
+        { id: 'threshold', label: '线一', value: 40 },
+        { id: 'threshold', label: '线二', value: 80 },
+      ],
+    })).ok, false);
+  });
+
+  it('rejects a param range so wide that percentages overflow', () => {
+    // (v - min) / (max - min) 在 1e308 量级会溢出成 Infinity → 渲染出 NaN%。
+    assert.equal(parseRuleSandbox(JSON.stringify({
+      ...VALID,
+      params: [{ ...PARAM, min: -1e308, max: 1e308, value: 1e308 }],
+    })).ok, false);
+  });
+
   it('rejects oversized ids', () => {
     const res = expectOk(JSON.stringify({
       ...VALID,
@@ -127,12 +156,25 @@ describe('parseRuleSandbox', () => {
     })).ok, false);
   });
 
+  it('rejects more sources than the per-verdict limit', () => {
+    const many = Array.from({ length: MAX_SANDBOX_SOURCES + 1 }, (_, i) => ({ path: `p${i}.md` }));
+    assert.equal(parseRuleSandbox(JSON.stringify({
+      ...VALID, verdicts: [{ ...VALID.verdicts[0], sources: many }],
+    })).ok, false);
+    // 上限之内仍然接受。
+    const ok = Array.from({ length: MAX_SANDBOX_SOURCES }, (_, i) => ({ path: `p${i}.md` }));
+    const res = expectOk(JSON.stringify({
+      ...VALID, verdicts: [{ ...VALID.verdicts[0], sources: ok }],
+    }));
+    assert.equal(res.sandbox.verdicts[0].sources.length, MAX_SANDBOX_SOURCES);
+  });
+
   it('rejects oversized raw before parsing', () => {
     assert.equal(parseRuleSandbox('x'.repeat(MAX_SANDBOX_RAW_CHARS + 1)).ok, false);
   });
 });
 
-const { evaluateRuleSandbox, clampSandboxValue, stripSandboxesForStreaming } = await import('../src/utils/ruleSandbox.ts');
+const { evaluateRuleSandbox, clampSandboxValue, stripSandboxesForStreaming, stripInteractiveFences } = await import('../src/utils/ruleSandbox.ts');
 
 const TWO_VERDICTS = {
   ...VALID,
@@ -178,6 +220,44 @@ describe('evaluateRuleSandbox', () => {
   });
 });
 
+describe('evaluateRuleSandbox — verdict specificity', () => {
+  // 回归：模型最自然的写法是阈值升序（60 档 → 80 档）。若按数组顺序取首个
+  // 命中，低档恒真会把高档判定吞掉——用户拖过危险线仍看到低档结论。
+  const ascending = {
+    ...VALID,
+    verdicts: [
+      { when: { all: [{ param: 'load', op: '>', value: 'warnLine' }] }, tone: 'warn',
+        title: '负载偏高', detail: 'x', sources: [{ path: 'notes/ops.md' }] },
+      { when: { all: [{ param: 'load', op: '>', value: 'critLine' }] }, tone: 'error',
+        title: '负载过高', detail: 'x', sources: [{ path: 'notes/ops.md' }] },
+    ],
+    fixed: [
+      { id: 'warnLine', label: '警告线', value: 60 },
+      { id: 'critLine', label: '危险线', value: 80 },
+    ],
+  };
+
+  it('prefers the more specific verdict regardless of declaration order', () => {
+    const parsed = parseRuleSandbox(JSON.stringify(ascending));
+    if (!parsed.ok) throw new Error(parsed.error);
+    // 三档：低于警告线 → 默认；警告线以上 → 偏高；危险线以上 → 过高。
+    assert.equal(evaluateRuleSandbox(parsed.sandbox, { load: 30 }).title, '负载正常');
+    assert.equal(evaluateRuleSandbox(parsed.sandbox, { load: 65 }).title, '负载偏高');
+    assert.equal(evaluateRuleSandbox(parsed.sandbox, { load: 85 }).title, '负载过高');
+    assert.equal(evaluateRuleSandbox(parsed.sandbox, { load: 95 }).title, '负载过高');
+  });
+
+  it('keeps the narrow verdict even when the wide one is declared first', () => {
+    const parsed = parseRuleSandbox(JSON.stringify({
+      ...ascending,
+      verdicts: [...ascending.verdicts].reverse(),
+    }));
+    if (!parsed.ok) throw new Error(parsed.error);
+    assert.equal(evaluateRuleSandbox(parsed.sandbox, { load: 85 }).title, '负载过高');
+    assert.equal(evaluateRuleSandbox(parsed.sandbox, { load: 65 }).title, '负载偏高');
+  });
+});
+
 describe('stripSandboxesForStreaming', () => {
   it('leaves plain text untouched', () => {
     assert.deepEqual(stripSandboxesForStreaming('hello'), { text: 'hello', generating: false });
@@ -197,5 +277,37 @@ describe('stripSandboxesForStreaming', () => {
 
   it('handles a fence at the very start', () => {
     assert.deepEqual(stripSandboxesForStreaming('```rule-sandbox\n{}'), { text: '', generating: true });
+  });
+});
+
+describe('stripInteractiveFences', () => {
+  it('strips both fence types in one pass without cross-eating', () => {
+    const text = [
+      '前.quiz',
+      '```quiz',
+      '{}',
+      '```',
+      '中.sandbox',
+      '```rule-sandbox',
+      '{"detail":"提到 ```quiz 围栏"}',
+      '```',
+      '后',
+    ].join('\n');
+    const res = stripInteractiveFences(text);
+    // 两个围栏都被剥掉；sandbox JSON 里的 ```quiz 字符串不再让 quiz 剥离越权。
+    assert.equal(res.quizGenerating, false);
+    assert.equal(res.sandboxGenerating, false);
+    assert.ok(!res.text.includes('```quiz\n{'));
+    assert.ok(!res.text.includes('rule-sandbox'));
+    assert.ok(res.text.includes('前.quiz'));
+    assert.ok(res.text.includes('中.sandbox'));
+    assert.ok(res.text.includes('后'));
+  });
+
+  it('reports generating per type for unclosed fences', () => {
+    const res = stripInteractiveFences('前\n```rule-sandbox\n{"x":');
+    assert.deepEqual(res, { text: '前', quizGenerating: false, sandboxGenerating: true });
+    const res2 = stripInteractiveFences('前\n```quiz\n{');
+    assert.deepEqual(res2, { text: '前', quizGenerating: true, sandboxGenerating: false });
   });
 });

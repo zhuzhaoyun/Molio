@@ -43,7 +43,9 @@ export default defineConfig({
     },
   },
   server: {
-    port: 5173,
+    // 端口可被 MOLIO_E2E_WEB_PORT / PORT 覆盖：5173 常被另一个 worktree 的
+    // dev server 占用，而复用它会跑到别人的旧代码上（页面正常、断言全红）。
+    port: Number(process.env['MOLIO_E2E_WEB_PORT'] ?? process.env['PORT'] ?? 5173),
     strictPort: true,
     proxy: {
       '/api': {

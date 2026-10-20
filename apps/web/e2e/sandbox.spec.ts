@@ -247,4 +247,51 @@ test.describe('Rule sandbox interaction block', () => {
     await expect(cards.locator('[data-testid="sandbox-title"]')).toHaveText('负载预警');
     await expect(page.locator('[data-testid="sandbox-generating"]')).toHaveCount(0);
   });
+
+  test('shows a notice when some verdicts were discarded as malformed', async ({ page }) => {
+    // 回归：解析层会丢弃不合协议的判定（单条坏 → 只废该条），但丢弃信息若不
+    // 呈现，用户在那些区间只会看到 defaultVerdict（通常是「正常」），与事实
+    // 相反且毫无迹象。
+    const malformed = {
+      ...SANDBOX_JSON,
+      verdicts: [
+        SANDBOX_JSON.verdicts[0],
+        // 阈值写成字符串数字 —— 协议按严格类型校验，这条会被丢弃。
+        {
+          when: { all: [{ param: 'load', op: '>', value: '80' }] },
+          tone: 'error',
+          title: '不该出现的判定',
+          detail: 'x',
+          sources: [{ path: 'notes/运维手册.md' }],
+        },
+      ],
+    };
+    await mockChatRun(page, {
+      script: scriptFor(`看这个：\n\n\`\`\`rule-sandbox\n${JSON.stringify(malformed, null, 2)}\n\`\`\``),
+    });
+    await gotoHome(page);
+    await sendMessage(page, '给我演示一下');
+
+    await expect(page.locator('[data-testid="sandbox-card"]')).toBeVisible({ timeout: 10_000 });
+    await expect(page.locator('[data-testid="sandbox-invalid-verdict"]')).toHaveCount(1);
+    // 丢弃原因直接展示原始诊断（quiz 同款），里面带被判错的值 "80"。
+    await expect(page.locator('[data-testid="sandbox-invalid-verdict"]')).toContainText('80');
+  });
+
+  test('shows a friendly message when the fence was never closed', async ({ page }) => {
+    // 围栏没闭合且流已结束：不能把半截 JSON 整段糊在聊天里（quiz 有
+    // 「题目没有生成完整」提示，sandbox 也应有对应文案）。
+    await mockChatRun(page, {
+      script: [
+        { type: 'status', label: 'running' },
+        { type: 'text_delta', delta: '演示如下：\n```rule-sandbox\n{"version":1,"kind":"rule-sandbox"' },
+        { type: 'turn_end', stopReason: 'end_turn' },
+      ],
+    });
+    await gotoHome(page);
+    await sendMessage(page, '给我演示一下');
+
+    await expect(page.locator('[data-testid="sandbox-incomplete"]')).toBeVisible({ timeout: 10_000 });
+    await expect(page.locator('[data-testid="sandbox-card"]')).toHaveCount(0);
+  });
 });
