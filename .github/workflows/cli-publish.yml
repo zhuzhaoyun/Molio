@@ -98,7 +98,9 @@ jobs:
           if [[ "$VERSION" == *-* ]]; then
             DIST_TAG_FLAG="--tag beta"
           fi
-          pnpm --filter @molio/cli publish --no-git-checks $DIST_TAG_FLAG
+          # --registry 显式传 CLI flag：pnpm publish 解析 registry 时项目 .npmrc（npmmirror）
+          # 优先级高于 env 变量，仅靠 npm_config_registry 覆盖不掉（run 39446092169 实测）
+          pnpm --filter @molio/cli publish --no-git-checks --registry=https://registry.npmjs.org $DIST_TAG_FLAG
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           # 根 .npmrc 把 registry 指向 npmmirror（只读镜像，PUT 会 401）——发布必须显式回 npmjs
