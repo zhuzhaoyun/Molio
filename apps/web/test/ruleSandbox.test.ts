@@ -119,3 +119,49 @@ describe('parseRuleSandbox', () => {
     assert.equal(parseRuleSandbox('x'.repeat(MAX_SANDBOX_RAW_CHARS + 1)).ok, false);
   });
 });
+
+const { evaluateRuleSandbox, clampSandboxValue } = await import('../src/utils/ruleSandbox.ts');
+
+const TWO_VERDICTS = {
+  ...VALID,
+  verdicts: [
+    { when: { all: [{ param: 'load', op: '>', value: 'threshold' }] }, tone: 'error',
+      title: '负载过高', detail: '扩容。', sources: [{ path: 'notes/ops.md' }] },
+    { when: { any: [{ param: 'load', op: '>=', value: 60 }, { param: 'load', op: '<=', value: 10 }] },
+      tone: 'warn', title: '负载偏高', detail: '观察。', sources: [{ path: 'notes/ops.md' }] },
+  ],
+};
+
+describe('evaluateRuleSandbox', () => {
+  const parsed = parseRuleSandbox(JSON.stringify(TWO_VERDICTS));
+  if (!parsed.ok) throw new Error(parsed.error);
+  const sandbox = parsed.sandbox;
+
+  it('matches verdicts in order (all-group by reference id)', () => {
+    assert.equal(evaluateRuleSandbox(sandbox, { load: 85 }).title, '负载过高');
+  });
+
+  it('falls through to any-group and defaultVerdict', () => {
+    assert.equal(evaluateRuleSandbox(sandbox, { load: 70 }).title, '负载偏高');
+    assert.equal(evaluateRuleSandbox(sandbox, { load: 30 }).title, '负载正常');
+  });
+
+  it('treats unresolvable string refs as false, never throws', () => {
+    // 解析期就会丢掉引用未知 id 的判定（见 parseRuleSandbox），所以这里直接
+    // 构造对象来测 evaluate 的防御分支：解析不到的引用按 false 处理，不抛错。
+    const broken = {
+      ...sandbox,
+      verdicts: [{
+        when: { all: [{ param: 'load', op: '>', value: 'ghost' }] },
+        tone: 'error' as const, title: '不该命中', detail: 'x', sources: [],
+      }],
+    };
+    assert.equal(evaluateRuleSandbox(broken, { load: 85 }).title, '负载正常');
+  });
+
+  it('clamps dragged values into range (NaN → min)', () => {
+    assert.equal(clampSandboxValue(120, 0, 100), 100);
+    assert.equal(clampSandboxValue(-5, 0, 100), 0);
+    assert.equal(clampSandboxValue(NaN, 0, 100), 0);
+  });
+});

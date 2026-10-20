@@ -323,3 +323,62 @@ export function parseRuleSandbox(raw: string): ParseRuleSandboxResult {
   };
   return { ok: true, sandbox, invalidVerdicts };
 }
+
+/** 把拖动得到的值收窄到 [min, max]。NaN 落到 min（渲染不出 NaN 轨道）。 */
+export function clampSandboxValue(v: number, min: number, max: number): number {
+  if (!Number.isFinite(v)) return min;
+  if (v < min) return min;
+  if (v > max) return max;
+  return v;
+}
+
+function compare(left: number, op: SandboxOp, right: number): boolean {
+  switch (op) {
+    case '>': return left > right;
+    case '>=': return left >= right;
+    case '<': return left < right;
+    case '<=': return left <= right;
+    case '==': return left === right;
+    case '!=': return left !== right;
+  }
+}
+
+/**
+ * 求当前参数值下命中的判定。
+ *
+ * - `values` 是 param id → 当前值。
+ * - 条件里的字符串 value 解析为另一个 param/fixed 的当前值；解析不到 → 该条件
+ *   判为 false（不抛错、不中断）。
+ * - 判定按数组顺序，首个命中者生效；全不命中 → `defaultVerdict`。
+ */
+export function evaluateRuleSandbox(
+  sandbox: RuleSandbox,
+  values: Record<string, number>,
+): SandboxVerdict | SandboxDefaultVerdict {
+  const resolve = (ref: string): number | undefined => {
+    if (Object.prototype.hasOwnProperty.call(values, ref)) {
+      const v = values[ref];
+      return Number.isFinite(v) ? v : undefined;
+    }
+    const fixed = sandbox.fixed.find((f) => f.id === ref);
+    return fixed ? fixed.value : undefined;
+  };
+
+  const conditionHolds = (condition: SandboxCondition): boolean => {
+    const left = resolve(condition.param);
+    if (left === undefined) return false;
+    const right = typeof condition.value === 'number' ? condition.value : resolve(condition.value);
+    if (right === undefined) return false;
+    return compare(left, condition.op, right);
+  };
+
+  for (const verdict of sandbox.verdicts) {
+    const conditions = verdict.when.all ?? verdict.when.any ?? [];
+    if (conditions.length === 0) continue;
+    const holds = verdict.when.all
+      ? conditions.every(conditionHolds)
+      : conditions.some(conditionHolds);
+    if (holds) return verdict;
+  }
+  return sandbox.defaultVerdict;
+}
