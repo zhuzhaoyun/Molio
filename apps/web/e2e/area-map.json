@@ -30,6 +30,7 @@
         "apps/web/src/components/SourceChips.*",
         "apps/web/src/components/FileRef.*",
         "apps/web/src/utils/workSteps.*",
+        "apps/web/src/utils/sessionSources.*",
         "apps/web/src/utils/toolRefs.*",
         "apps/web/src/utils/diff.*",
         "apps/web/src/api/sse.ts",
@@ -81,6 +82,8 @@
     "kb": {
       "paths": [
         "apps/web/src/components/kb/*",
+        "apps/web/src/components/kb/docExport/*",
+        "apps/web/src/utils/exportFileName*",
         "apps/web/src/hooks/useKnowledge*",
         "apps/web/src/utils/kbImage*",
         "apps/web/src/hooks/useKbTabs*",
@@ -122,6 +125,7 @@
         "split-view",
         "kb-terminology",
         "kb-search",
+        "kb-export",
         "market-community"
       ]
     },
@@ -401,6 +405,10 @@
     "kb-search": {
       "priority": "P1",
       "file": "kb-search.spec.ts"
+    },
+    "kb-export": {
+      "priority": "P1",
+      "file": "kb-export.spec.ts"
     },
     "kb-chat-entry": {
       "priority": "P1",

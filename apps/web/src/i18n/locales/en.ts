@@ -209,6 +209,14 @@ const en: Record<string, string> = {
   'output.tabOverview': 'Overview',
   'output.tabChanges': 'Changes',
   'output.changesEmpty': 'No changes to show',
+  'output.tabSources': 'Sources',
+  'output.sourcesEmpty': 'No files referenced yet in this session',
+  'output.sourcesUrls': 'Web links {n}',
+  'output.titleSources': 'Session sources',
+  'output.statsSources': '{files} files referenced · {reads} reads',
+  'output.sourceCount': 'Referenced {n} times in this session',
+  'output.sourcesOmitted': '{n} more not shown',
+  'output.sourcesOmittedHint': 'Files outside the vault, hidden folders and search paths are not listed here — you can still see them in the inline source chips',
   'output.changeKind.create': 'New file',
   'output.changeKind.update': 'Edited',
   'output.changeKind.append': 'Appended',
@@ -738,6 +746,15 @@ const en: Record<string, string> = {
   'kb.chatMenu.hide': 'Hide button',
   'kb.chatMenu.show': 'Show button',
   'kb.chatMenu.resetPos': 'Reset position',
+
+  // ── Document image export ──
+  'kb.exportImage': 'Export image',
+  'kb.exporting': 'Exporting…',
+  'kb.exportProgress': 'Rendering {done}/{total}…',
+  'kb.exportDone': 'Image exported',
+  'kb.exportPages': 'Exported {pages} images',
+  'kb.exportFailed': 'Export failed, please try again',
+  'kb.exportUnsupported': 'Nothing to export',
 
   // ── FilePicker ──
   'filePicker.justNow': 'Just now',

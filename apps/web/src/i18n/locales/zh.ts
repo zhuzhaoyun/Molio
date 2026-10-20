@@ -208,6 +208,14 @@ const zh: Record<string, string> = {
   'output.tabOverview': '概览',
   'output.tabChanges': '变更',
   'output.changesEmpty': '没有可展示的变更',
+  'output.tabSources': '引用',
+  'output.sourcesEmpty': '本次会话还没有引用过文件',
+  'output.sourcesUrls': '网页链接 {n}',
+  'output.titleSources': '会话引用',
+  'output.statsSources': '引用 {files} 个文件 · 共 {reads} 次',
+  'output.sourceCount': '本会话引用 {n} 次',
+  'output.sourcesOmitted': '另有 {n} 条未展示',
+  'output.sourcesOmittedHint': '库外文件、隐藏目录与检索路径不在此列表 —— 消息内联的「引用」标签里能看到它们',
   'output.changeKind.create': '新建文件',
   'output.changeKind.update': '编辑',
   'output.changeKind.append': '追加',
@@ -740,6 +748,15 @@ const zh: Record<string, string> = {
   'kb.chatMenu.hide': '隐藏按钮',
   'kb.chatMenu.show': '唤回按钮',
   'kb.chatMenu.resetPos': '恢复默认位置',
+
+  // ── 文档出图 ──
+  'kb.exportImage': '导出图片',
+  'kb.exporting': '正在导出…',
+  'kb.exportProgress': '正在生成第 {done}/{total} 张…',
+  'kb.exportDone': '已导出图片',
+  'kb.exportPages': '已导出 {pages} 张图片',
+  'kb.exportFailed': '导出失败，请重试',
+  'kb.exportUnsupported': '没有可导出的内容',
 
   // ── FilePicker ──
   'filePicker.justNow': '刚刚',

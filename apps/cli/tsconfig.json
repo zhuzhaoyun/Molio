@@ -1,0 +1,16 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": ".",
+    // Node 20 兼容覆盖（WorkBuddy 托管运行时为 Node 20 系）：
+    // base 是 ES2023；CLI 源码不使用 Node 22+/24-only API（无全局 EventSource 依赖，
+    // SSE 由 sse-parser.ts 手写解析 fetch body ReadableStream）。
+    "target": "ES2022",
+    "lib": ["ES2022"]
+  },
+  "include": ["src/**/*.ts", "test/**/*.ts"],
+  "references": [
+    { "path": "../../packages/contracts" }
+  ]
+}

@@ -396,6 +396,90 @@ body.home-dock-resizing {
   font-variant-numeric: tabular-nums;
 }
 
+/* ─── 引用 tab ─── */
+
+/* URL 折叠组：沿用「其他写入」折叠区的收敛样式（原生 <details> 去掉默认三角） */
+.session-output-sources-urls {
+  margin-top: 4px;
+  border-top: 1px solid var(--border-soft);
+}
+.session-output-sources-urls > summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--text-soft);
+  cursor: pointer;
+  user-select: none;
+  list-style: none;
+}
+.session-output-sources-urls > summary::-webkit-details-marker {
+  display: none;
+}
+.session-output-sources-urls > summary:hover,
+.session-output-sources-urls > summary:focus-visible {
+  color: var(--text-muted);
+}
+/* URL 行是 <a>：去掉 UA 下划线，与文件行视觉一致 */
+a.session-output-item {
+  text-decoration: none;
+}
+/* 引用条目的被读次数徽标：右对齐，与 tab 计数同色系 */
+.session-output-item-count {
+  flex: none;
+  margin-left: auto;
+  min-width: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background-color: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--accent);
+  font-size: 10px;
+  line-height: 15px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── 引用 tab：未展示的引用（库外文件 / 隐藏目录 / 检索路径）──
+   与「网页链接」折叠组同款：默认收起，展开才列条目。
+   存在的理由：消息内联的引用标签照单全收这些项，面板不列就必须说明，
+   否则同一屏里「标签数 > 面板条目数」会被读成面板漏了。 */
+.session-output-sources-omitted {
+  margin-top: 4px;
+  border-top: 1px solid var(--border-soft);
+}
+.session-output-sources-omitted > summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--text-soft);
+  cursor: pointer;
+  user-select: none;
+  list-style: none;
+}
+.session-output-sources-omitted > summary::-webkit-details-marker {
+  display: none;
+}
+.session-output-sources-omitted > summary:hover,
+.session-output-sources-omitted > summary:focus-visible {
+  color: var(--text-muted);
+}
+/* 未展示的条目：不可点（点开必然失败），只作说明 ——
+   hover 不给「可点」的暗示（否则整行泛 accent 色，看着像能点开）。 */
+.session-output-item--omitted,
+.session-output-item--omitted:hover {
+  cursor: default;
+  color: var(--text-soft);
+  background-color: transparent;
+}
+.session-output-item--omitted:hover .session-output-item-icon {
+  color: inherit;
+}
+
 /* 概览顶部的「写入 N · M 轮」仍在 header 里（.session-output-stats）；
    原来压在主列表上方的「新建 / 更新 / 追加」统计条已删 —— 它离清单太近，
    被读成清单的标题（而清单里混着更新）。新建/更新改成分段标题各带计数。 */
