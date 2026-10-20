@@ -9,6 +9,7 @@ import {
   PAGE_BUDGET,
   composeExportCss,
   docExportFileName,
+  exportPresetParams,
   footerInkFor,
   paginateBlocks,
   rangeHeight,
@@ -179,6 +180,23 @@ describe('sliceVerticalRects', () => {
 
   it('always returns at least one slice for empty content', () => {
     assert.deepStrictEqual(sliceVerticalRects(0, 400), [{ top: 0, height: 1 }]);
+  });
+});
+
+describe('exportPresetParams', () => {
+  it('long 是现状默认：页高上限 7400、预算 7248', () => {
+    assert.deepStrictEqual(exportPresetParams('long'), {
+      pageHeight: 7400,
+      pageBudget: 7248,
+    });
+    assert.deepStrictEqual(exportPresetParams(), { pageHeight: 7400, pageBudget: 7248 });
+  });
+
+  it('card34：1080×1440 固定页，预算扣顶边距与页脚带', () => {
+    assert.deepStrictEqual(exportPresetParams('card34'), {
+      pageHeight: 1440,
+      pageBudget: 1288,
+    });
   });
 });
 

@@ -318,8 +318,15 @@ export interface PagePlan {
 /**
  * 把测量好的块坐标规划成页。纯函数：不碰 DOM，分页与切片的坐标错误
  * （例如多算了一次块在原文档中的偏移）必须靠单测守住。
+ *
+ * `fixedPageHeight` 给定时每页都是这个高度（3:4 竖卡），内容不满一页时
+ * 下方由遮罩补底；不传时末页按内容自适应——一期长图的行为。
  */
-export function planPages(rects: BlockRect[], budget: number = PAGE_BUDGET): PagePlan[] {
+export function planPages(
+  rects: BlockRect[],
+  budget: number = PAGE_BUDGET,
+  fixedPageHeight?: number,
+): PagePlan[] {
   const pages: PagePlan[] = [];
   for (const [from, to] of paginateBlocks(rects, budget)) {
     const height = rangeHeight(rects, from, to);
@@ -330,7 +337,8 @@ export function planPages(rects: BlockRect[], budget: number = PAGE_BUDGET): Pag
         to,
         bodyHeight: EXPORT_PADDING_TOP + height,
         viewBoxY: 0,
-        viewBoxHeight: EXPORT_PADDING_TOP + height + EXPORT_FOOTER_HEIGHT,
+        viewBoxHeight:
+          fixedPageHeight ?? EXPORT_PADDING_TOP + height + EXPORT_FOOTER_HEIGHT,
         contentHeight: EXPORT_PADDING_TOP + height,
       });
       continue;
@@ -347,7 +355,7 @@ export function planPages(rects: BlockRect[], budget: number = PAGE_BUDGET): Pag
         bodyHeight: EXPORT_PADDING_TOP + height,
         viewBoxY: EXPORT_PADDING_TOP + slice.top,
         // 切片页同样保留页脚带（署名 + 页码），页脚带上沿刚好是切片底边。
-        viewBoxHeight: slice.height + EXPORT_FOOTER_HEIGHT,
+        viewBoxHeight: fixedPageHeight ?? slice.height + EXPORT_FOOTER_HEIGHT,
         contentHeight: slice.height,
       });
     }

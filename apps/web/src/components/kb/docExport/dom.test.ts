@@ -142,3 +142,38 @@ describe('planPages', () => {
     );
   });
 });
+
+describe('planPages 固定页高（card34）', () => {
+  it('内容不满一页时页高仍固定，遮罩补底量正确', () => {
+    const rects = [
+      { top: 0, height: 600 },
+      { top: 600, height: 600 },
+    ];
+    const pages = planPages(rects, 1288, 1440);
+
+    assert.strictEqual(pages.length, 1);
+    assert.strictEqual(pages[0].viewBoxHeight, 1440);
+    assert.strictEqual(pages[0].contentHeight, EXPORT_PADDING_TOP + 1200);
+  });
+
+  it('超高块切片：每片页高都固定，末片短也补满', () => {
+    const pages = planPages([{ top: 0, height: 3000 }], 1288, 1440);
+
+    assert.strictEqual(pages.length, 3);
+    for (const p of pages) assert.strictEqual(p.viewBoxHeight, 1440);
+    assert.strictEqual(pages[2]?.contentHeight, 424);
+  });
+
+  it('不传固定页高时与一期行为完全一致', () => {
+    const rects = [
+      { top: 0, height: 600 },
+      { top: 600, height: 600 },
+    ];
+    const pages = planPages(rects, 1288);
+
+    assert.strictEqual(
+      pages[0].viewBoxHeight,
+      EXPORT_PADDING_TOP + 1200 + EXPORT_FOOTER_HEIGHT,
+    );
+  });
+});

@@ -20,6 +20,31 @@ export const EXPORT_SCOPE = `.${EXPORT_CLASS}`;
 export const CONTENT_WIDTH = EXPORT_WIDTH - EXPORT_PADDING_X * 2;
 export const PAGE_BUDGET = MAX_PAGE_HEIGHT - EXPORT_PADDING_TOP - EXPORT_FOOTER_HEIGHT;
 
+/** 导出版式预设。`long` = 一期的长图，`card34` = 3:4 竖卡（小红书主流比例）。 */
+export type ExportPreset = 'long' | 'card34';
+
+export interface PresetParams {
+  /** 固定页高；`long` 只有上限（末页按内容自适应），`card34` 每页都填满。 */
+  pageHeight: number;
+  /** 一页能放多少正文（已扣掉顶部内边距与页脚带）。 */
+  pageBudget: number;
+}
+
+/**
+ * 版式参数。`long` 返回一期常量（默认行为永不变）；`card34` 是 3:4 竖卡——
+ * 页高 = 宽 × 4/3，正好吃满一期「遮罩补底 + 页脚带」的切片几何，无需新机制。
+ */
+export function exportPresetParams(preset: ExportPreset = 'long'): PresetParams {
+  if (preset === 'card34') {
+    const pageHeight = Math.round((EXPORT_WIDTH * 4) / 3);
+    return {
+      pageHeight,
+      pageBudget: pageHeight - EXPORT_PADDING_TOP - EXPORT_FOOTER_HEIGHT,
+    };
+  }
+  return { pageHeight: MAX_PAGE_HEIGHT, pageBudget: PAGE_BUDGET };
+}
+
 /** 测量宿主与 SVG 页面根共用的版式。两边必须一字不差，否则量的和画的对不上。 */
 export const EXPORT_ROOT_CSS =
   `${EXPORT_SCOPE} { box-sizing: border-box; width: ${EXPORT_WIDTH}px;` +
