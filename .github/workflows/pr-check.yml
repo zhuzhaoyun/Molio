@@ -65,7 +65,10 @@ jobs:
         run: pnpm typecheck
 
   e2e-affected:
-    runs-on: ubuntu-latest
+    # 钉 24.04：2026-10-20 起 ubuntu-latest 升到 26.04，Playwright 1.60 装不上
+    # chromium（"does not support chromium on ubuntu26.04-x64"），所有 PR 的本 job
+    # 50 秒假红。26.04 支持随 Playwright 升级落地后再解除。
+    runs-on: ubuntu-24.04
     needs: [build-and-test]
     timeout-minutes: 20
 
