@@ -5,6 +5,7 @@ import { groupTools, isInteractive } from '../utils/toolGroups';
 import { splitMessageParts } from '../utils/messageText';
 import { CodeBlock } from './CodeBlock';
 import { QuizCard } from './QuizCard';
+import { SandboxCard } from './SandboxCard';
 import { useWikiLinkClick } from '../hooks/useWikiLinkClick';
 import { useI18n } from '../i18n';
 import { ToolCard } from './ToolCard';
@@ -135,8 +136,8 @@ export function AssistantMessage({ message, isLast, onAnswerToolUse, onSubmitFor
               if (seg.type === 'text') {
                 return <div key={i} dangerouslySetInnerHTML={{ __html: renderMarkdown(seg.content) }} />;
               }
-              const code = seg.type === 'quiz' ? seg.raw : seg.code;
-              const lang = seg.type === 'quiz' ? 'quiz' : seg.lang;
+              const code = seg.type === 'code' ? seg.code : seg.raw;
+              const lang = seg.type === 'code' ? seg.lang : seg.type === 'quiz' ? 'quiz' : 'rule-sandbox';
               return <CodeBlock key={i} lang={lang} code={code} streaming={false} />;
             })}
           </div>
@@ -178,6 +179,16 @@ export function AssistantMessage({ message, isLast, onAnswerToolUse, onSubmitFor
                   complete={seg.complete}
                   streaming={message.streaming}
                   conversationId={conversationId}
+                />
+              );
+            }
+            if (seg.type === 'sandbox') {
+              return (
+                <SandboxCard
+                  key={i}
+                  raw={seg.raw}
+                  complete={seg.complete}
+                  streaming={message.streaming}
                 />
               );
             }

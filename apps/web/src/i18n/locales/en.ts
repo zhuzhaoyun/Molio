@@ -135,6 +135,7 @@ const en: Record<string, string> = {
   'quiz.saved': 'Saved to {path}',
   'quiz.saveFailed': 'Save failed. Try again.',
   'quiz.answeredProgress': 'Answered {done}/{total}',
+  'sandbox.generating': 'Generating demo…',
 
   // ── AssistantMessage ──
   'assistant.label': 'Molio',

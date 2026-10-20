@@ -67,7 +67,7 @@ export interface SandboxDefaultVerdict {
   tone: SandboxTone;
   title: string;
   detail: string;
-  sources?: SandboxSource[];
+  sources: SandboxSource[];
 }
 
 export interface RuleSandbox {
@@ -221,17 +221,15 @@ function parseDefaultVerdict(value: unknown): SandboxDefaultVerdict | null {
   if (typeof tone !== 'string' || !SANDBOX_TONES.includes(tone as SandboxTone)) return null;
   if (!nonEmptyString(value.title)) return null;
   if (!nonEmptyString(value.detail)) return null;
-  const out: SandboxDefaultVerdict = {
+  // 出处是硬门槛：defaultVerdict 也是一种判定，缺出处就整块不合格。
+  const sources = parseSources(value.sources);
+  if (!sources) return null;
+  return {
     tone: tone as SandboxTone,
     title: value.title.trim(),
     detail: value.detail.trim(),
+    sources,
   };
-  if (value.sources !== undefined) {
-    const sources = parseSources(value.sources);
-    if (!sources) return null;
-    out.sources = sources;
-  }
-  return out;
 }
 
 /**

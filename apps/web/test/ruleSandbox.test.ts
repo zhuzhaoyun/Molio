@@ -29,7 +29,10 @@ const VALID = {
     detail: '超过警戒线，应扩容或限流。',
     sources: [{ path: 'notes/运维手册.md', quote: '负载持续高于 80% 需人工介入' }],
   }],
-  defaultVerdict: { tone: 'ok', title: '负载正常', detail: '低于警戒线。' },
+  defaultVerdict: {
+    tone: 'ok', title: '负载正常', detail: '低于警戒线。',
+    sources: [{ path: 'notes/运维手册.md' }],
+  },
 };
 
 function expectOk(raw: string) {
@@ -112,6 +115,15 @@ describe('parseRuleSandbox', () => {
     })).ok, false);
     assert.equal(parseRuleSandbox(JSON.stringify({
       ...VALID, verdicts: [{ ...VALID.verdicts[0], when: {} }],
+    })).ok, false);
+  });
+
+  it('rejects a defaultVerdict without sources (出处是硬门槛)', () => {
+    assert.equal(parseRuleSandbox(JSON.stringify({
+      ...VALID, defaultVerdict: { tone: 'ok', title: '正常', detail: 'x' },
+    })).ok, false);
+    assert.equal(parseRuleSandbox(JSON.stringify({
+      ...VALID, defaultVerdict: { ...VALID.defaultVerdict, sources: [] },
     })).ok, false);
   });
 
