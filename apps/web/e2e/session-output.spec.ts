@@ -139,6 +139,94 @@ test.describe('Home 会话产出面板', () => {
     }
   });
 
+  /**
+   * 计数语义 = 引用次数，不是「有几条消息引用过」。
+   * 回归背景：extractSources 的 chip 口径在单条消息内就按 target 去重，于是同一轮里
+   * 读了 2 次同一文件，面板 badge 却显示 1 —— 一排「1」看着像坏掉的数字。
+   */
+  test('引用 tab：计数 = 引用次数（同一轮读两次同一文件 → 2）', async ({ page }) => {
+    const vault = await createTempVault('e2e-sources-count');
+    try {
+      await page.addInitScript((id) => { localStorage.setItem('molio.activeVaultId', id); }, vault.id);
+      const f = `${vault.path}/wiki/a.md`;
+      await mockChatRun(page, {
+        script: [
+          { type: 'status', label: 'running' },
+          { type: 'tool_use', id: 'r1', name: 'Read', input: { file_path: f } },
+          { type: 'tool_result', toolUseId: 'r1', content: 'x', isError: false },
+          { type: 'tool_use', id: 'r2', name: 'Read', input: { file_path: f } },
+          { type: 'tool_result', toolUseId: 'r2', content: 'x', isError: false },
+          { type: 'text_delta', delta: 'done' },
+          { type: 'turn_end', stopReason: 'end_turn' },
+          { type: 'usage', usage: { input_tokens: 10, output_tokens: 5 }, costUsd: 0 },
+        ],
+      });
+      await gotoHome(page);
+      await sendMessage(page, '读两遍');
+      await expect(page.locator('[data-testid="work-timeline-summary"]')).toBeVisible({ timeout: 15_000 });
+      await page.locator('[data-testid="home-output-toggle"]').click();
+      const panel = page.locator('[data-testid="session-output-panel"]');
+
+      await panel.locator('[data-testid="session-output-tab-sources"]').click();
+      const sources = panel.locator('[data-testid="session-output-source"]');
+      await expect(sources).toHaveCount(1);
+      await expect(sources.first().locator('[data-testid="session-output-source-count"]')).toHaveText('2');
+    } finally {
+      await cleanupTempVault(vault);
+    }
+  });
+
+  /**
+   * 面板必须自己说明「少了什么」：消息内联的引用标签照单全收库外文件、隐藏目录、
+   * 检索目录，面板按「点得开才算数」过滤掉了它们 —— 不说明就会让人以为面板漏了。
+   * 同时标题/统计随 tab 变：引用 tab 里写「会话产出 · 写入 0 · 1 轮」是错的。
+   */
+  test('引用 tab：标题/统计随 tab 变；未展示的引用明说并可展开', async ({ page }) => {
+    const vault = await createTempVault('e2e-sources-omitted');
+    try {
+      await page.addInitScript((id) => { localStorage.setItem('molio.activeVaultId', id); }, vault.id);
+      await mockChatRun(page, {
+        script: [
+          { type: 'status', label: 'running' },
+          { type: 'tool_use', id: 'r1', name: 'Read', input: { file_path: `${vault.path}/wiki/keep.md` } },
+          { type: 'tool_result', toolUseId: 'r1', content: 'x', isError: false },
+          { type: 'tool_use', id: 'o1', name: 'Read', input: { file_path: '/outside/memory/MEMORY.md' } },
+          { type: 'tool_result', toolUseId: 'o1', content: 'x', isError: false },
+          { type: 'tool_use', id: 'h1', name: 'Read', input: { file_path: `${vault.path}/.molio/cache/x.md` } },
+          { type: 'tool_result', toolUseId: 'h1', content: 'x', isError: false },
+          { type: 'tool_use', id: 'g1', name: 'Grep', input: { pattern: '罪', path: `${vault.path}/wiki` } },
+          { type: 'tool_result', toolUseId: 'g1', content: 'x', isError: false },
+          { type: 'text_delta', delta: 'done' },
+          { type: 'turn_end', stopReason: 'end_turn' },
+          { type: 'usage', usage: { input_tokens: 10, output_tokens: 5 }, costUsd: 0 },
+        ],
+      });
+      await gotoHome(page);
+      await sendMessage(page, '问点东西');
+      await expect(page.locator('[data-testid="work-timeline-summary"]')).toBeVisible({ timeout: 15_000 });
+      await page.locator('[data-testid="home-output-toggle"]').click();
+      const panel = page.locator('[data-testid="session-output-panel"]');
+
+      // 概览 tab：标题是「会话产出」
+      await expect(panel.locator('[data-testid="session-output-title"]')).toHaveText('会话产出');
+      await panel.locator('[data-testid="session-output-tab-sources"]').click();
+      // 引用 tab：标题换成「会话引用」，统计不再说「写入 0」
+      await expect(panel.locator('[data-testid="session-output-title"]')).toHaveText('会话引用');
+      await expect(panel.locator('[data-testid="session-output-stats"]')).toContainText('引用 1 个文件');
+      await expect(panel.locator('[data-testid="session-output-stats"]')).not.toContainText('写入');
+
+      // 未展示分组：3 条（库外 MEMORY.md / 隐藏目录 x.md / 检索目录 wiki）
+      const omitted = panel.locator('[data-testid="session-output-sources-omitted"]');
+      await expect(omitted).toBeVisible();
+      await expect(omitted).toContainText('另有 3 条未展示');
+      // 展开能看到是哪几条
+      await omitted.locator('summary').click();
+      await expect(omitted).toContainText('MEMORY.md');
+    } finally {
+      await cleanupTempVault(vault);
+    }
+  });
+
   test('跨消息聚合去重：两轮 Write 同路径 → 只显示一次', async ({ page }) => {
     await mockChatRun(page, { script: outputRun });
     await gotoHome(page);

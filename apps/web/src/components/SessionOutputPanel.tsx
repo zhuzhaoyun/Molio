@@ -161,12 +161,16 @@ export function SessionOutputPanel({ messages }: Props) {
     return groupChangesByPath(cs);
   }, [messages, activeVault?.path]);
   // 会话级「引用」（读入面）—— 与产出（写入面）成对，独立 tab 呈现（不与产出同屏）
-  const sources = useMemo(
+  // refs = 展示清单；omitted = 被过滤掉的引用（库外文件 / 隐藏目录 / 检索目录），
+  // 面板要自己说明「少了什么」，否则同一屏里用户看到的引用标签比面板多、像面板漏了。
+  const { refs: sourceRefs, omitted: omittedSources } = useMemo(
     () => aggregateSessionSources(messages, activeVault?.path),
     [messages, activeVault?.path],
   );
-  const sourceFiles = useMemo(() => sources.filter((s) => s.kind === 'file'), [sources]);
-  const sourceUrls = useMemo(() => sources.filter((s) => s.kind === 'url'), [sources]);
+  const sourceFiles = useMemo(() => sourceRefs.filter((s) => s.kind === 'file'), [sourceRefs]);
+  const sourceUrls = useMemo(() => sourceRefs.filter((s) => s.kind === 'url'), [sourceRefs]);
+  // 引用总次数（= 各文件 count 之和）—— 统计行用
+  const sourceReads = useMemo(() => sourceFiles.reduce((n, s) => n + s.count, 0), [sourceFiles]);
   const [tab, setTab] = useState<PanelTab>('overview');
   // 变更 tab 的手风琴：单开（点开一个收起其它），null = 全部折叠
   const [expandedPath, setExpandedPath] = useState<string | null>(null);
@@ -313,9 +317,14 @@ export function SessionOutputPanel({ messages }: Props) {
       ) : (
         <>
           <header className="session-output-header">
-            <span className="session-output-title">{t('output.title')}</span>
+            {/* 标题/统计随 tab 变：引用 tab 里写「会话产出 · 写入 0 · 1 轮」是错的 */}
+            <span className="session-output-title" data-testid="session-output-title">
+              {tab === 'sources' ? t('output.titleSources') : t('output.title')}
+            </span>
             <span className="session-output-stats" data-testid="session-output-stats">
-              {t('output.stats', { writes: output.writes.length, turns: output.turns })}
+              {tab === 'sources'
+                ? t('output.statsSources', { files: sourceFiles.length, reads: sourceReads })
+                : t('output.stats', { writes: output.writes.length, turns: output.turns })}
             </span>
             {/* 分段控制：概览 / 变更（WorkBuddy 式多投影；280px dock 用分段而非下拉） */}
             <nav className="session-output-tabs" role="tablist" aria-label={t('output.title')}>
@@ -355,7 +364,7 @@ export function SessionOutputPanel({ messages }: Props) {
           </header>
 
           {tab === 'sources' ? (
-            /* ── 引用 tab：本会话读入的文件（count 降序）+ URL 折叠组 ── */
+            /* ── 引用 tab：本会话读入的文件（count 降序）+ URL 折叠组 + 未展示说明 ── */
             <div className="session-output-body" data-testid="session-output-sources">
               {sourceFiles.length === 0 && sourceUrls.length === 0 ? (
                 <p className="session-output-empty">{t('output.sourcesEmpty')}</p>
@@ -373,7 +382,13 @@ export function SessionOutputPanel({ messages }: Props) {
                     >
                       <span className="session-output-item-icon" aria-hidden>📄</span>
                       <span className="session-output-item-label">{s.label}</span>
-                      <span className="session-output-item-count">{s.count}</span>
+                      <span
+                        className="session-output-item-count"
+                        data-testid="session-output-source-count"
+                        title={t('output.sourceCount', { n: s.count })}
+                      >
+                        {s.count}
+                      </span>
                     </button>
                   ))}
                   {sourceUrls.length > 0 && (
@@ -397,6 +412,30 @@ export function SessionOutputPanel({ messages }: Props) {
                     </details>
                   )}
                 </>
+              )}
+              {/* 未展示的引用：库外文件 / 隐藏目录 / 检索路径 —— 消息内联的引用标签里
+                  看得见它们，面板不列就必须说明，否则用户会以为面板漏了。 */}
+              {omittedSources.length > 0 && (
+                <details
+                  className="session-output-sources-omitted"
+                  data-testid="session-output-sources-omitted"
+                >
+                  <summary title={t('output.sourcesOmittedHint')}>
+                    {t('output.sourcesOmitted', { n: omittedSources.length })}
+                  </summary>
+                  {omittedSources.map((s) => (
+                    <div
+                      key={s.target}
+                      className="session-output-item session-output-item--omitted"
+                      data-testid="session-output-omitted-item"
+                      title={s.target}
+                    >
+                      <span className="session-output-item-icon" aria-hidden>🚫</span>
+                      <span className="session-output-item-label">{s.label}</span>
+                      <span className="session-output-item-count">{s.count}</span>
+                    </div>
+                  ))}
+                </details>
               )}
             </div>
           ) : tab === 'changes' ? (
