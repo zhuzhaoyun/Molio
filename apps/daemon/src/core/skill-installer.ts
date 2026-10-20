@@ -51,6 +51,9 @@ export const BUILTIN_SKILLS = [
   // quiz-generate — 从库出客观题。输出纯文本 quiz 围栏，不依赖工具调用，
   // 因此对所有 runtime 可用（Codex/Gemini 等没有 AskUserQuestion）。
   'quiz-generate',
+  // rule-sandbox — 生成可拖动的阈值演示（声明式 JSON，不执行任何代码）。
+  // 与 quiz-generate 分工：出题 → quiz；看懂边界怎么变 → rule-sandbox。
+  'rule-sandbox',
   // NOTE: remotion used to be bundled here. It was retired (see
   // RETIRED_BUNDLED_SKILLS): users who want video creation install the
   // third-party `am-will/remotion` skill from the skill hub instead — a
