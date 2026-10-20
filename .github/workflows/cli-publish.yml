@@ -101,6 +101,8 @@ jobs:
           pnpm --filter @molio/cli publish --no-git-checks $DIST_TAG_FLAG
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          # 根 .npmrc 把 registry 指向 npmmirror（只读镜像，PUT 会 401）——发布必须显式回 npmjs
+          npm_config_registry: https://registry.npmjs.org
 
       - name: Verify on registry
         shell: bash
@@ -108,7 +110,8 @@ jobs:
           set -euo pipefail
           VERSION=$(node -p "require('./apps/cli/package.json').version")
           sleep 10
-          PUBLISHED=$(npm view @molio/cli@"$VERSION" version 2>/dev/null || echo "")
+          # 显式查 npmjs：npmmirror 是同步镜像有延迟，且根 .npmrc 默认指向它
+          PUBLISHED=$(npm view @molio/cli@"$VERSION" version --registry=https://registry.npmjs.org 2>/dev/null || echo "")
           if [[ "$PUBLISHED" != "$VERSION" ]]; then
             echo "❌ registry 上未查到 @molio/cli@$VERSION（发布可能失败或仍在传播）"
             exit 1
