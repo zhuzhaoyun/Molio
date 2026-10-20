@@ -6,6 +6,7 @@
  */
 
 import { slugifyTitle } from '../../../utils/exportFileName.ts';
+import { HEADER_CLASS } from './header.ts';
 
 export const EXPORT_WIDTH = 1080;
 export const EXPORT_PADDING_X = 64;
@@ -113,9 +114,28 @@ export function composeExportCss(parts: ExportCssParts): string {
     '  overflow-wrap: anywhere;',
     '}',
   ].join('\n');
+  // 头卡（标题 + 元信息 + 标签）规则无条件输出：头卡元素只在传入
+  // `options.header` 时才存在，规则空跑无害；这样 composeExportCss 不需要
+  // 知道「头卡开没开」，少一处分支就少一处「开了但没样式」的漏配。
+  // 字号用 em（跟随主题基准字号，跨主题自适应）；分隔线用主题色。
+  const headerCss = [
+    `${EXPORT_SCOPE} .${HEADER_CLASS} { margin: 0 0 1.5em; padding-bottom: 1em;` +
+      ` border-bottom: 2px solid ${parts.accent}; }`,
+    `${EXPORT_SCOPE} .${HEADER_CLASS}__title { font-size: 2em; font-weight: 700;` +
+      ` line-height: 1.35; margin: 0; }`,
+    `${EXPORT_SCOPE} .${HEADER_CLASS}__meta { margin-top: 0.6em; font-size: 0.85em;` +
+      ` color: ${footerInkFor(parts.background)}; }`,
+    `${EXPORT_SCOPE} .${HEADER_CLASS}__tags { margin-top: 0.8em; display: flex;` +
+      ` flex-wrap: wrap; gap: 0.5em; }`,
+    `${EXPORT_SCOPE} .${HEADER_CLASS}__tags span { font-size: 0.8em;` +
+      ` padding: 0.15em 0.8em; border: 1px solid ${parts.accent}; border-radius: 999px; }`,
+    `${EXPORT_SCOPE} .${HEADER_CLASS}__more { color: ${footerInkFor(parts.background)};` +
+      ` border-color: ${footerInkFor(parts.background)}; }`,
+  ].join('\n');
   return [
     EXPORT_ROOT_CSS,
     compat,
+    headerCss,
     rewriteScope(parts.theme),
     rewriteScope(parts.inline),
     deviations,

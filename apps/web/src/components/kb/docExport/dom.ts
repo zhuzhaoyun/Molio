@@ -18,12 +18,15 @@ import {
   WATERMARK,
   composeExportCss,
   docExportFileName,
+  exportPresetParams,
   footerInkFor,
   paginateBlocks,
   rangeHeight,
   sliceVerticalRects,
   type BlockRect,
+  type ExportPreset,
 } from './layout.ts';
+import { buildHeaderEl, type ExportHeaderData } from './header.ts';
 import { buildPageSvg, type PageFooter } from './svg.ts';
 
 export class ExportError extends Error {
@@ -40,6 +43,10 @@ export class ExportError extends Error {
 
 export interface ExportOptions {
   title: string;
+  /** 导出版式；不传 = 长图（一期行为）。 */
+  preset?: ExportPreset;
+  /** 头卡数据；不传 = 不画头卡。 */
+  header?: ExportHeaderData;
   onProgress?: (done: number, total: number) => void;
 }
 
@@ -235,6 +242,16 @@ export function measureBlocks(container: HTMLElement, blocks: HTMLElement[]): Bl
 }
 
 /**
+ * 空文档守卫：头卡本身不算内容。
+ *
+ * 空文档 + 头卡 = 仍然「没有可导出的内容」——否则会产出一张只有头卡的图，
+ * 看着像导出成功，正文其实全丢了。
+ */
+export function isEmptyExport(blockCount: number, hasHeader: boolean): boolean {
+  return blockCount === (hasHeader ? 1 : 0);
+}
+
+/**
  * 序列化一页正文。必须保留外层 `section.container`——主题 CSS 把标题规则
  * 写成了 `#output section h1`，丢了这层包装标题样式整页失效。
  */
@@ -424,15 +441,31 @@ export async function exportDocument(
     await inlineImages(host);
     await waitForAssets(host);
 
-    const { container, blocks } = collectBlocks(host);
-    if (blocks.length === 0) throw new ExportError('no-output', '文档没有可导出的内容');
+    const { container } = collectBlocks(host);
+    // 头卡插成第一个块：与正文同一套级联、同一套分页预算。必须在
+    // collectBlocks 之后、measureBlocks 之前——插早了 collectBlocks 拿不到
+    // 容器，插晚了头卡不参与测量。
+    if (options.header) {
+      container.insertBefore(buildHeaderEl(options.header), container.firstChild);
+    }
+    const blocks = Array.from(container.children).filter(occupiesLayout) as HTMLElement[];
+    // 头卡本身不算内容：空文档 + 头卡 ≠ 可导出，仍然报错。
+    if (isEmptyExport(blocks.length, Boolean(options.header))) {
+      throw new ExportError('no-output', '文档没有可导出的内容');
+    }
     const rects = measureBlocks(container, blocks);
 
     // 先把所有页规划并序列化出来，才能知道总页数、把 `页码 / 总页数` 写进每一页。
     // 超高块会切成多页：同一 `[from, to)` 只序列化一次、切片复用同一份字符串，
     // 否则一张很长的表格/代码块会随切片数成倍放大克隆与内存开销。
+    const presetParams = exportPresetParams(options.preset ?? 'long');
     const bodyHtmlByRange = new Map<string, string>();
-    const pages: RasterPage[] = planPages(rects, PAGE_BUDGET).map((plan) => {
+    const pages: RasterPage[] = planPages(
+      rects,
+      presetParams.pageBudget,
+      // 只有固定页高的版式才传第三个参数；长图保持末页自适应（一期行为）。
+      options.preset === 'card34' ? presetParams.pageHeight : undefined,
+    ).map((plan) => {
       const key = `${plan.from}:${plan.to}`;
       let bodyHtml = bodyHtmlByRange.get(key);
       if (bodyHtml === undefined) {

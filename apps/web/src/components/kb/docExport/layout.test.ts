@@ -113,6 +113,14 @@ describe('composeExportCss', () => {
       css,
     );
   });
+
+  it('composeExportCss 无条件含头卡规则（头卡元素缺席时无害）', () => {
+    // 亮底：meta 文字取 footerInkFor 的半透明黑
+    const css = composeExportCss({ ...parts, background: '#ffffff' });
+    assert.match(css, /\.molio-doc-export \.molio-export-head \{/);
+    assert.match(css, /\.molio-export-head__title/);
+    assert.match(css, /__meta[\s\S]*?rgba\(0, 0, 0, 0\.45\)/);
+  });
 });
 
 describe('paginateBlocks', () => {

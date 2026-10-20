@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
-import { ExportError, planPages, utf8ToBase64 } from './dom.ts';
+import { ExportError, isEmptyExport, planPages, utf8ToBase64 } from './dom.ts';
 import { EXPORT_FOOTER_HEIGHT, EXPORT_PADDING_TOP, rangeHeight } from './layout.ts';
 
 describe('ExportError', () => {
@@ -9,6 +9,21 @@ describe('ExportError', () => {
     assert.strictEqual(err.code, 'no-output');
     assert.strictEqual(err.name, 'ExportError');
     assert.ok(err instanceof Error);
+  });
+});
+
+describe('isEmptyExport', () => {
+  it('没有正文块就是空', () => {
+    assert.strictEqual(isEmptyExport(0, false), true);
+  });
+
+  it('头卡不算内容：只有头卡仍然是空', () => {
+    assert.strictEqual(isEmptyExport(1, true), true);
+  });
+
+  it('有正文就不算空（无论有没有头卡）', () => {
+    assert.strictEqual(isEmptyExport(1, false), false);
+    assert.strictEqual(isEmptyExport(2, true), false);
   });
 });
 
