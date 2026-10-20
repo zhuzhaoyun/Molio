@@ -48,7 +48,9 @@
         "apps/web/src/components/QuizCard.*",
         "apps/web/src/utils/quiz.*",
         "apps/web/src/utils/quizFile.*",
-        "apps/web/src/hooks/useWikiLinkClick.*"
+        "apps/web/src/hooks/useWikiLinkClick.*",
+        "apps/web/src/components/SandboxCard.*",
+        "apps/web/src/utils/ruleSandbox.*"
       ],
       "specs": [
         "chat-single",
@@ -72,7 +74,8 @@
         "chat-markdown",
         "session-output",
         "session-output-history",
-        "quiz"
+        "quiz",
+        "sandbox"
       ]
     },
     "kb": {
@@ -574,6 +577,10 @@
     "kb-vault-list-menu": {
       "priority": "P1",
       "file": "kb-vault-list-menu.spec.ts"
+    },
+    "sandbox": {
+      "priority": "P0",
+      "file": "sandbox.spec.ts"
     }
   }
 }
