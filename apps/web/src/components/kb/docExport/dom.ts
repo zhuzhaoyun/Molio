@@ -447,6 +447,15 @@ export async function exportDocument(
     // 容器，插晚了头卡不参与测量。
     if (options.header) {
       container.insertBefore(buildHeaderEl(options.header), container.firstChild);
+      // 头卡已经把标题画了：正文里与标题同文的第一个 H1 摘掉，别让读者在
+      // 同一张图上连看两遍。头卡标题本就取自这个 H1（无 H1 时取文件名，
+      // 那时这里找不到匹配、什么都不摘），所以这是去重，不是丢内容。
+      const h1 = Array.from(container.children).find(
+        (el) => el.tagName === 'H1' && occupiesLayout(el),
+      );
+      if (h1 && (h1.textContent ?? '').trim() === options.header.title.trim()) {
+        h1.remove();
+      }
     }
     const blocks = Array.from(container.children).filter(occupiesLayout) as HTMLElement[];
     // 头卡本身不算内容：空文档 + 头卡 ≠ 可导出，仍然报错。

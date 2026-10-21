@@ -661,6 +661,9 @@ test.describe('Document image export', () => {
     expect(svgs[0]).toContain('class="molio-export-head"');
     // 库名只出现在头卡里（正文没有），是最强的判别标记。
     expect(svgs[0]).toContain(VAULT_NAME);
+    // 头卡已把标题画了：正文同文 H1 被去重，第 1 页不再有序列化的 <h1> 元素
+    // （长文档只有 `# 长文档分页` 一个 H1，其余都是 H2，`<h1` 子串判得干净）。
+    expect(svgs[0]).not.toContain('<h1');
     expect(svgs[1]).not.toContain('class="molio-export-head"');
     expect(svgs[1]).not.toContain(VAULT_NAME);
   });
@@ -686,6 +689,8 @@ test.describe('Document image export', () => {
     expect(svgs.length).toBeGreaterThanOrEqual(1);
     expect(svgs[0]).not.toContain('class="molio-export-head"');
     expect(svgs[0]).not.toContain(VAULT_NAME);
+    // 头卡关了就没有去重：正文 H1 原样保留（与一期行为一致）。
+    expect(svgs[0]).toContain('<h1');
 
     // openExportFile 走整页导航（page.goto）——等价于重载应用。
     await openExportFile(page, 'short.md');
