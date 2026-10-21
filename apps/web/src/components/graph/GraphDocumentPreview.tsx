@@ -3,13 +3,14 @@ import { api } from '../../api/client';
 import { useI18n } from '../../i18n';
 import type { EngineNode } from './engine/pixiGraphEngine';
 
-export function GraphDocumentPreview({ vaultId, node, onOpen, onClose }: {
-  vaultId: string; node: EngineNode; onOpen(path: string): void; onClose(): void;
+export function GraphDocumentPreview({ vaultId, node, active, revision, onOpen, onClose }: {
+  vaultId: string; node: EngineNode; active: boolean; revision: number; onOpen(path: string): void; onClose(): void;
 }) {
   const { t } = useI18n();
   const [result, setResult] = useState<{ content?: string; error?: boolean; tooLarge?: boolean } | null>(null);
   const [attempt, setAttempt] = useState(0);
   useEffect(() => {
+    if (!active) return;
     let cancelled = false;
     setResult(null);
     if (node.path && !node.dead) {
@@ -18,7 +19,7 @@ export function GraphDocumentPreview({ vaultId, node, onOpen, onClose }: {
       }).catch(() => { if (!cancelled) setResult({ error: true }); });
     }
     return () => { cancelled = true; };
-  }, [vaultId, node.key, node.path, node.dead, attempt]);
+  }, [vaultId, node.key, node.path, node.dead, attempt, active, revision]);
   return <aside className="graph-preview" data-testid="graph-preview" aria-label={t('graph.preview')}>
     <div className="graph-preview__heading"><strong>{node.label}</strong><button type="button" onClick={onClose} aria-label={t('graph.closePreview')}>×</button></div>
     <p className="graph-preview__caption">{t('graph.preview')}</p>

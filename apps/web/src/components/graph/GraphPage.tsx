@@ -422,7 +422,7 @@ export function GraphPage({
     const scope = scopeRef.current;
     const currentScopeKey = scope ? `${scope.type}:${scope.path}` : null;
     const prevScopeKey = prevScopeKeyRef.current;
-    prevScopeKeyRef.current = currentScopeKey;
+
 
     // 空数据必须清引擎：hasData 翻转后 .graph-empty 只是视觉遮罩（不透明背景 + z-index），
     // 不清掉的话旧子图仍在遮罩背后继续仿真耗 CPU；但引擎本身不销毁（tab 切回还要用）。
@@ -430,6 +430,8 @@ export function GraphPage({
       engine.setData([], []);
       return;
     }
+    // Loading clears engineData; retain the previous scope until its replacement arrives.
+    prevScopeKeyRef.current = currentScopeKey;
     if (lastVaultRef.current !== activeVaultId) {
       lastVaultRef.current = activeVaultId;
       engine.resetPositions();
@@ -875,7 +877,7 @@ export function GraphPage({
         {mode === '3d' && <p className="graph-three-help">{t('graph.threeHelp')}</p>}
         {mode === '3d' && selectedNode && activeVaultId && <GraphDocumentPreview
           key={`${activeVaultId}:${scopeKey}:${selectedNode.key}`}
-          vaultId={activeVaultId} node={selectedNode} onClose={() => setSelectedNode(null)}
+          vaultId={activeVaultId} node={selectedNode} active={active} revision={revision} onClose={() => setSelectedNode(null)}
           onOpen={path => {
             navigate('/knowledge', { state: { openFile: path, vaultId: activeVaultId } });
             onNodeOpenRef.current?.();

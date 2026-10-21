@@ -211,3 +211,21 @@ test('document preview retries a transient read failure for the same selected no
   await expect(page.getByTestId('graph-preview')).toContainText('Preview content 0');
   expect(reads).toBeGreaterThan(failedReads);
 });
+
+test('selected preview refreshes after editing the document while graph is hidden', async ({ page }) => {
+  await open(page);
+  await search(page, 'topic-0');
+  await expect(page.getByTestId('graph-preview')).toContainText('Preview content 0');
+  await page.getByTestId('graph-preview-open').click();
+  await expect(page.locator('.kb-wtab.is-active')).toContainText('topic-0.md');
+  const file = join(vault.path, 'topic-0.md');
+  try {
+    writeFileSync(file, '# Topic 0\n\nUpdated preview body\n\n[[topic-1]]\n[[topic-3]]\n[[unresolved]]');
+    await clickNav(page, 'graph');
+    await expect(page.getByTestId('graph-preview')).toContainText('Updated preview body');
+    writeFileSync(file, '# Topic 0\n\nUpdated again while visible\n\n[[topic-1]]\n[[topic-3]]\n[[unresolved]]');
+    await expect(page.getByTestId('graph-preview')).toContainText('Updated again while visible', { timeout: 15_000 });
+  } finally {
+    writeFileSync(file, '# Topic 0\n\nPreview content 0\n\n[[topic-1]]\n[[topic-3]]\n[[unresolved]]');
+  }
+});
