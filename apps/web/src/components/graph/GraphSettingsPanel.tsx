@@ -1,3 +1,4 @@
+import { useI18n } from '../../i18n';
 import { useState, useRef, useEffect } from 'react';
 import type { GraphSettings, ForceParams, ThemeMode } from './types';
 import { NODE_TYPE_LABELS, NODE_TYPE_COLORS } from './types';
@@ -5,6 +6,7 @@ import { NODE_TYPE_LABELS, NODE_TYPE_COLORS } from './types';
 type Tab = 'filter' | 'appearance' | 'forces' | 'legend';
 
 interface Props {
+  mode?: '2d' | '3d';
   settings: GraphSettings;
   onUpdateSettings: (patch: Partial<GraphSettings>) => void;
   onUpdateForce: (patch: Partial<ForceParams>) => void;
@@ -35,6 +37,7 @@ function getTypeOptions(availableTypes: string[]): { key: string; label: string 
 }
 
 export function GraphSettingsPanel({
+  mode = '2d',
   settings,
   onUpdateSettings,
   onUpdateForce,
@@ -42,6 +45,7 @@ export function GraphSettingsPanel({
   onClose,
   availableTypes,
 }: Props) {
+  const { t } = useI18n();
   const [tab, setTab] = useState<Tab>('filter');
   const panelRef = useRef<HTMLDivElement>(null);
 
@@ -94,7 +98,7 @@ export function GraphSettingsPanel({
     <div className="graph-settings-panel" ref={panelRef}>
       {/* Tab bar */}
       <div className="graph-settings__tabs">
-        {TABS.map(({ key, label }) => (
+        {TABS.filter(item => mode === '2d' || item.key !== 'forces').map(({ key, label }) => (
           <button
             key={key}
             className={`graph-settings__tab ${tab === key ? 'is-active' : ''}`}
@@ -254,10 +258,11 @@ export function GraphSettingsPanel({
             </div>
             <div className="graph-settings__group">
               <div className="graph-settings__group-title">操作</div>
-              <div className="graph-info__hints">
+              <div className="graph-info__hints" data-testid="graph-operation-hints">
+                {mode === '3d' ? <div className="graph-hint">{t('graph.threeHelp')}</div> : <>
                 <div className="graph-hint">拖拽节点 · 邻居联动</div>
                 <div className="graph-hint">悬停节点 · 高亮关联</div>
-                <div className="graph-hint">单击节点 · 打开文章</div>
+                <div className="graph-hint">单击节点 · 打开文章</div></>}
               </div>
             </div>
           </div>

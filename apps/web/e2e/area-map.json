@@ -156,6 +156,7 @@
       "specs": [
         "graph",
         "graph-settings",
+        "graph-3d",
         "graph-local",
         "split-view",
         "graph-camera",
@@ -358,6 +359,10 @@
     "graph": {
       "priority": "P1",
       "file": "graph.spec.ts"
+    },
+    "graph-3d": {
+      "priority": "P1",
+      "file": "graph-3d.spec.ts"
     },
     "graph-settings": {
       "priority": "P2",
