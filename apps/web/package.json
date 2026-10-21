@@ -11,6 +11,7 @@
     "test:e2e": "npx playwright test"
   },
   "dependencies": {
+    "3d-force-graph": "^1.80.1",
     "@codemirror/commands": "^6.10.4",
     "@codemirror/lang-html": "^6.4.11",
     "@codemirror/lang-json": "^6.0.2",

@@ -1092,3 +1092,21 @@
 .graph-settings-btn[data-tooltip]:hover::after {
   opacity: 1;
 }
+
+/* 3D stays within the existing graph palette and floating chrome. */
+.graph-mode { display: flex; padding: 2px; gap: 2px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); pointer-events: auto; }
+.graph-mode button { border: 0; border-radius: 5px; background: transparent; color: var(--text-muted); padding: 5px 9px; font-size: 12px; cursor: pointer; }
+.graph-mode button[aria-pressed="true"] { background: var(--bg-subtle); color: var(--text); font-weight: 600; }
+.graph-mode button:focus-visible, .graph-preview button:focus-visible { outline: 2px solid #8B5CF6; outline-offset: 2px; }
+.graph-three-layer, .graph-three { position: absolute; inset: 0; }
+.graph-three { overflow: hidden; }
+.graph-three-help { position: absolute; left: 16px; bottom: 12px; max-width: calc(100% - 32px); z-index: 2; margin: 0; font-size: 11px; line-height: 1.6; color: var(--text-muted); pointer-events: none; }
+.graph-three-error { position: absolute; z-index: 11; inset: 0; display: flex; align-items: center; justify-content: center; flex-direction: column; padding: 24px; text-align: center; background: var(--bg); color: var(--text); }
+.graph-three-error button, .graph-preview__open { border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; background: var(--bg-subtle); color: var(--text); cursor: pointer; }
+.graph-preview { position: absolute; top: 58px; right: 16px; bottom: 54px; width: min(320px, calc(100% - 32px)); height: fit-content; max-height: calc(100% - 120px); z-index: 20; display: flex; flex-direction: column; padding: 16px; gap: 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg); color: var(--text); box-shadow: 0 8px 28px #0001; overflow: auto; }
+.graph-preview__heading { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; overflow-wrap: anywhere; }
+.graph-preview__heading button { border: 0; background: transparent; color: var(--text-muted); font-size: 20px; cursor: pointer; }
+.graph-preview p { margin: 0; font-size: 12px; line-height: 1.6; }
+.graph-preview__caption { color: var(--text-muted); }
+.graph-preview pre { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; font-size: 12px; line-height: 1.7; margin: 0; overflow: auto; }
+.graph-preview__open { align-self: flex-start; }

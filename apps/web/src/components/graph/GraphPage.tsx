@@ -6,7 +6,11 @@
  * 坐标计算和渲染帧循环在引擎内部闭环，零 React re-render。
  */
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import type { ThreeGraphHandle } from './ThreeGraphView';
+import { GraphDocumentPreview } from './GraphDocumentPreview';
+const ThreeGraphView = lazy(() => import('./ThreeGraphView').then(module => ({ default: module.ThreeGraphView })));
+const GRAPH_MODE_KEY = 'molio.graph.mode';
 import { useNavigate } from 'react-router-dom';
 import type { GraphData, GraphNode, GraphScope } from '@molio/contracts';
 import { api } from '../../api/client';
@@ -86,7 +90,20 @@ export function GraphPage({
   const [graphData, setGraphData] = useState<GraphData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [pixiError, setPixiError] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
+  const [mode, setMode] = useState<'2d' | '3d'>(() => {
+    try { return localStorage.getItem(GRAPH_MODE_KEY) === '3d' ? '3d' : '2d'; } catch { return '2d'; }
+  });
+  const [threeMounted, setThreeMounted] = useState(mode === '3d');
+  const threeRef = useRef<ThreeGraphHandle>(null);
+  const [selectedNode, setSelectedNode] = useState<EngineNode | null>(null);
+  const changeMode = (next: '2d' | '3d') => {
+    setMode(next);
+    if (next === '3d') setThreeMounted(true);
+    setShowExport(false);
+    try { localStorage.setItem(GRAPH_MODE_KEY, next); } catch { /* Storage may be disabled. */ }
+  };
   // 搜索折叠态：常驻一个 🔍 图标，点开/按 / 展开输入框；统计收敛进 ℹ（点开显示）。
   const [searchOpen, setSearchOpen] = useState(false);
   const [showStats, setShowStats] = useState(false);
@@ -131,12 +148,14 @@ export function GraphPage({
   onScopeResetRef.current = onScopeReset;
   // scope 的稳定标识：换 file / 换 dir 才重新拉数据
   const scopeKey = graphScope ? `${graphScope.type}:${graphScope.path}` : null;
+  useEffect(() => { setSelectedNode(null); }, [activeVaultId, scopeKey]);
 
   // 供防抖与去重读取的最新值（不进 deps，避免把它们变成 effect 触发器）
   const graphDataRef = useRef<GraphData | null>(null);
   graphDataRef.current = graphData;
   // 上一次「已采纳」数据的指纹：相同就不再 setGraphData（对象不换 → 下游重排不跑）
   const fingerprintRef = useRef<string | null>(null);
+  const dataScopeRef = useRef<string | null>(null);
 
   // ── 库变了 → 防抖后刷新 ──
   // 复用文件树那条 `tree-changed` 信号（useKnowledge 的 treeRevision），不另开 SSE。
@@ -158,6 +177,12 @@ export function GraphPage({
   // Fetch graph data when active vault / scope changes, or the vault content changes
   useEffect(() => {
     if (!activeVaultId) return;
+    const dataScope = `${activeVaultId}:${scopeKey}`;
+    if (dataScopeRef.current !== dataScope) {
+      dataScopeRef.current = dataScope;
+      fingerprintRef.current = null;
+      setGraphData(null);
+    }
 
     // 局部分支：按 scopeRef.current 分派局部图 / 全量图（deps 用 scopeKey，不含 scope 对象）
     const scope = scopeRef.current;
@@ -229,6 +254,12 @@ export function GraphPage({
 
   const hasData = !!engineData && engineData.nodes.length > 0;
 
+  useEffect(() => {
+    if (selectedNode && !engineData?.nodes.some(node => node.key === selectedNode.key)) setSelectedNode(null);
+  }, [engineData, selectedNode]);
+
+  const knownKeys = useMemo(() => graphData?.nodes.map(node => node.key) ?? [], [graphData]);
+
   // ── 出图卡片内容 ──
   // 一律取**筛选后的** engineData：卡片上的统计和核心主题必须跟图面严格对得上，
   // 否则会出现「图里 300 个点、标题写 1284 篇」——比不写更糟。
@@ -263,13 +294,13 @@ export function GraphPage({
       if (e.key !== '/' || e.metaKey || e.ctrlKey || e.altKey) return;
       const t = e.target as HTMLElement | null;
       if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
-      if (!hasData || !engine) return;
+      if (!active || !hasData || (!engine && mode === '2d')) return;
       e.preventDefault();
       setSearchOpen(true);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [hasData, engine]);
+  }, [hasData, engine, mode, active]);
 
   // 搜索开合：外部点击 / Esc 收起（点在搜索框内则保留）。
   useEffect(() => {
@@ -305,7 +336,7 @@ export function GraphPage({
 
   // ── 引擎生命周期：首次有数据时异步创建 ──
   useEffect(() => {
-    if (!hasData || !containerRef.current || engineRef.current) return;
+    if (mode === '3d' || !hasData || !containerRef.current || engineRef.current) return;
 
     let cancelled = false;
     const container = containerRef.current;
@@ -359,20 +390,20 @@ export function GraphPage({
     }).catch((err) => {
       // WebGL 初始化失败（如 GPU 不可用）——降级为错误提示
       console.error('[graph] PixiJS init failed:', err);
-      setError('图谱渲染初始化失败（WebGL 不可用）');
+      if (!cancelled) setPixiError('图谱渲染初始化失败（WebGL 不可用）');
     });
 
     return () => {
       cancelled = true;
     };
-  }, [hasData]);
+  }, [hasData, mode]);
 
   // Keep-alive: when the graph tab is tabbed away (active=false) but stays
   // mounted, pause the engine so a hidden canvas doesn't burn rAF/CPU; resume
   // on return. Node positions and viewport are preserved across the pause.
   useEffect(() => {
-    engine?.setPaused(!active);
-  }, [engine, active]);
+    engine?.setPaused(!active || mode === '3d');
+  }, [engine, active, mode]);
 
   // 组件卸载时销毁引擎
   useEffect(() => {
@@ -391,7 +422,7 @@ export function GraphPage({
     const scope = scopeRef.current;
     const currentScopeKey = scope ? `${scope.type}:${scope.path}` : null;
     const prevScopeKey = prevScopeKeyRef.current;
-    prevScopeKeyRef.current = currentScopeKey;
+
 
     // 空数据必须清引擎：hasData 翻转后 .graph-empty 只是视觉遮罩（不透明背景 + z-index），
     // 不清掉的话旧子图仍在遮罩背后继续仿真耗 CPU；但引擎本身不销毁（tab 切回还要用）。
@@ -399,6 +430,8 @@ export function GraphPage({
       engine.setData([], []);
       return;
     }
+    // Loading clears engineData; retain the previous scope until its replacement arrives.
+    prevScopeKeyRef.current = currentScopeKey;
     if (lastVaultRef.current !== activeVaultId) {
       lastVaultRef.current = activeVaultId;
       engine.resetPositions();
@@ -614,8 +647,13 @@ export function GraphPage({
           </div>
         )}
         <div className="graph-topbar__right">
+          <div className="graph-mode" role="group" aria-label={t('graph.mode')}>
+            <button type="button" data-testid="graph-mode-2d" aria-pressed={mode === '2d'} onClick={() => changeMode('2d')}>2D</button>
+            <button type="button" data-testid="graph-mode-3d" aria-pressed={mode === '3d'} onClick={() => changeMode('3d')}>3D</button>
+          </div>
+          {mode === '3d' && <button type="button" className="graph-icon-btn" data-testid="graph-3d-reset" onClick={() => threeRef.current?.reset()} aria-label={t('graph.resetView')} title={t('graph.resetView')}>↺</button>}
           {/* 搜索：默认 🔍 图标，点开/按 / 展开输入框（从图标向左滑入）；与全局 Ctrl/Cmd+F 区分 */}
-          {hasData && engine && engineData && (
+          {hasData && (engine || mode === '3d') && engineData && (
             <div className="graph-search-ctrl" ref={searchRef}>
               {searchOpen && (
                 <div className="graph-search-expand">
@@ -623,7 +661,11 @@ export function GraphPage({
                     autoFocus
                     nodes={engineData.nodes}
                     onSelect={(key) => {
-                      engineRef.current?.focusNode(key);
+                      if (mode === '3d') {
+                        const node = engineData.nodes.find(node => node.key === key);
+                        if (node) setSelectedNode(node);
+                        threeRef.current?.focusNode(key);
+                      } else engineRef.current?.focusNode(key);
                     }}
                   />
                 </div>
@@ -678,7 +720,7 @@ export function GraphPage({
           )}
           {/* 一键出图（对外分享/获客）：下载 PNG / 复制到剪贴板。
               副视图（分屏对照的小参照面板）不渲染——那里是「看」，出图只属于主格。 */}
-          {hasData && !companion && (
+          {hasData && !companion && mode === '2d' && (
             <div className="graph-export-ctrl" ref={exportRef}>
               {(showExport || exportNote) && (
                 <div className="graph-export-pop">
@@ -813,9 +855,9 @@ export function GraphPage({
           </div>
         )}
 
-        {error && (
+        {(error || (mode === '2d' && pixiError)) && (
           <div className="graph-error">
-            <p>{error}</p>
+            <p>{error || pixiError}</p>
           </div>
         )}
 
@@ -826,14 +868,30 @@ export function GraphPage({
           </div>
         )}
 
-        <div ref={containerRef} className="graph-pixi" data-testid="graph-canvas" />
+        <div ref={containerRef} className="graph-pixi" data-testid="graph-canvas" style={{ visibility: mode === '2d' ? 'visible' : 'hidden' }} />
+        {threeMounted && engineData && <div className="graph-three-layer" style={{ visibility: mode === '3d' ? 'visible' : 'hidden' }}>
+          <Suspense fallback={<div className="graph-loading">{t('graph.loading')}</div>}>
+            <ThreeGraphView key={`${activeVaultId}:${scopeKey}`} ref={threeRef} nodes={engineData.nodes} edges={engineData.edges} knownKeys={knownKeys} settings={settings} active={active && mode === '3d'} selectedKey={selectedNode?.key ?? null} onSelect={setSelectedNode} />
+          </Suspense>
+        </div>}
+        {mode === '3d' && <p className="graph-three-help">{t('graph.threeHelp')}</p>}
+        {mode === '3d' && selectedNode && activeVaultId && <GraphDocumentPreview
+          key={`${activeVaultId}:${scopeKey}:${selectedNode.key}`}
+          vaultId={activeVaultId} node={selectedNode} active={active} revision={revision} onClose={() => setSelectedNode(null)}
+          onOpen={path => {
+            navigate('/knowledge', { state: { openFile: path, vaultId: activeVaultId } });
+            onNodeOpenRef.current?.();
+          }} />}
+
 
         {/* 引擎就绪后才挂载 Minimap，避免空画布占据右下角拦截指针事件 */}
-        {engine && <Minimap engine={engine} dark={resolveTheme(settings.theme) === 'dark'} />}
+        {mode === '2d' && engine && <Minimap engine={engine} dark={resolveTheme(settings.theme) === 'dark'} />}
 
         {/* 图谱设置面板 */}
         {graphData && showSettings && (
           <GraphSettingsPanel
+            key={mode}
+            mode={mode}
             settings={settings}
             onUpdateSettings={updateSettings}
             onUpdateForce={(patch) => {
