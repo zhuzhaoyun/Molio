@@ -97,10 +97,187 @@ test.describe('Home 会话产出面板', () => {
     // 写入 1 项（label=basename 总结.md）
     await expect(panel.locator('[data-testid="session-output-write"]')).toHaveCount(1);
     await expect(panel.locator('[data-testid="session-output-write"]')).toContainText('总结.md');
-    // 外部引用不进面板（来源分区已移除，只在消息内联 SourceChips）
+    // 来源不混入概览：引用在独立 tab（session-output-tab-sources），概览内不得出现引用条目
     await expect(panel.locator('[data-testid="session-output-source"]')).toHaveCount(0);
     // stats 行
     await expect(panel.locator('[data-testid="session-output-stats"]')).toContainText('写入 1 · 1 轮');
+  });
+
+  test('引用 tab：URL 来源单独成组（不与产出同屏）', async ({ page }) => {
+    await mockChatRun(page, { script: outputRun });
+    await gotoHome(page);
+    await sendMessage(page, '整理产出');
+    await expect(page.locator('[data-testid="work-timeline-summary"]')).toBeVisible({ timeout: 15_000 });
+    await page.locator('[data-testid="home-output-toggle"]').click();
+    const panel = page.locator('[data-testid="session-output-panel"]');
+
+    await panel.locator('[data-testid="session-output-tab-sources"]').click();
+    // outputRun 只有 WebSearch 的 2 条 URL → 文件组为空，URL 折叠组出现
+    await expect(panel.locator('[data-testid="session-output-source"]')).toHaveCount(0);
+    const urlGroup = panel.locator('[data-testid="session-output-sources-urls"]');
+    await expect(urlGroup).toBeVisible();
+    await expect(urlGroup).toContainText('网页链接 2');
+  });
+
+  test('引用 tab：显示本会话读入的文件 + 计数', async ({ page }) => {
+    const vault = await createTempVault('e2e-dock-sources');
+    try {
+      await page.addInitScript((id) => { localStorage.setItem('molio.activeVaultId', id); }, vault.id);
+      await mockChatRun(page, { script: buildAbsRun(vault.path) });
+      await gotoHome(page);
+      await sendMessage(page, '归档');
+      await expect(page.locator('[data-testid="work-timeline-summary"]')).toBeVisible({ timeout: 15_000 });
+      await page.locator('[data-testid="home-output-toggle"]').click();
+      const panel = page.locator('[data-testid="session-output-panel"]');
+
+      await panel.locator('[data-testid="session-output-tab-sources"]').click();
+      const sources = panel.locator('[data-testid="session-output-source"]');
+      await expect(sources).toHaveCount(2); // r1 Read 要闻综述 + r2 Read 深度报道
+      await expect(sources.filter({ hasText: '要闻综述' })).toHaveCount(1);
+    } finally {
+      await cleanupTempVault(vault);
+    }
+  });
+
+  /**
+   * 计数语义 = 引用次数，不是「有几条消息引用过」。
+   * 回归背景：extractSources 的 chip 口径在单条消息内就按 target 去重，于是同一轮里
+   * 读了 2 次同一文件，面板 badge 却显示 1 —— 一排「1」看着像坏掉的数字。
+   */
+  test('引用 tab：计数 = 引用次数（同一轮读两次同一文件 → 2）', async ({ page }) => {
+    const vault = await createTempVault('e2e-sources-count');
+    try {
+      await page.addInitScript((id) => { localStorage.setItem('molio.activeVaultId', id); }, vault.id);
+      const f = `${vault.path}/wiki/a.md`;
+      await mockChatRun(page, {
+        script: [
+          { type: 'status', label: 'running' },
+          { type: 'tool_use', id: 'r1', name: 'Read', input: { file_path: f } },
+          { type: 'tool_result', toolUseId: 'r1', content: 'x', isError: false },
+          { type: 'tool_use', id: 'r2', name: 'Read', input: { file_path: f } },
+          { type: 'tool_result', toolUseId: 'r2', content: 'x', isError: false },
+          { type: 'text_delta', delta: 'done' },
+          { type: 'turn_end', stopReason: 'end_turn' },
+          { type: 'usage', usage: { input_tokens: 10, output_tokens: 5 }, costUsd: 0 },
+        ],
+      });
+      await gotoHome(page);
+      await sendMessage(page, '读两遍');
+      await expect(page.locator('[data-testid="work-timeline-summary"]')).toBeVisible({ timeout: 15_000 });
+      await page.locator('[data-testid="home-output-toggle"]').click();
+      const panel = page.locator('[data-testid="session-output-panel"]');
+
+      await panel.locator('[data-testid="session-output-tab-sources"]').click();
+      const sources = panel.locator('[data-testid="session-output-source"]');
+      await expect(sources).toHaveCount(1);
+      await expect(sources.first().locator('[data-testid="session-output-source-count"]')).toHaveText('2');
+    } finally {
+      await cleanupTempVault(vault);
+    }
+  });
+
+  /**
+   * 登记骨架（INDEX/log/hot）是 wiki 技能每次启动必读的导航文件 —— 真机验收里它们
+   * 占主列表 4/15，「乱」有一半是它们贡献的。必须折进「索引·日志」组（与产出面板
+   * 对同名文件的处理对齐），主列表只留真实内容。
+   */
+  test('引用 tab：登记骨架折叠进「索引·日志」组，不占主列表', async ({ page }) => {
+    const vault = await createTempVault('e2e-sources-meta');
+    try {
+      await page.addInitScript((id) => { localStorage.setItem('molio.activeVaultId', id); }, vault.id);
+      await mockChatRun(page, {
+        script: [
+          { type: 'status', label: 'running' },
+          { type: 'tool_use', id: 'r1', name: 'Read', input: { file_path: `${vault.path}/wiki/信用卡诈骗罪.md` } },
+          { type: 'tool_result', toolUseId: 'r1', content: '正文', isError: false },
+          { type: 'tool_use', id: 'm1', name: 'Read', input: { file_path: `${vault.path}/wiki/INDEX.md` } },
+          { type: 'tool_result', toolUseId: 'm1', content: '索引', isError: false },
+          { type: 'tool_use', id: 'm2', name: 'Read', input: { file_path: `${vault.path}/hot.md` } },
+          { type: 'tool_result', toolUseId: 'm2', content: '缓存', isError: false },
+          { type: 'text_delta', delta: 'done' },
+          { type: 'turn_end', stopReason: 'end_turn' },
+          { type: 'usage', usage: { input_tokens: 10, output_tokens: 5 }, costUsd: 0 },
+        ],
+      });
+      await gotoHome(page);
+      await sendMessage(page, '问点东西');
+      await expect(page.locator('[data-testid="work-timeline-summary"]')).toBeVisible({ timeout: 15_000 });
+      await page.locator('[data-testid="home-output-toggle"]').click();
+      const panel = page.locator('[data-testid="session-output-panel"]');
+
+      await panel.locator('[data-testid="session-output-tab-sources"]').click();
+      // 主列表只有真实内容文件
+      const sources = panel.locator('[data-testid="session-output-source"]');
+      await expect(sources).toHaveCount(1);
+      await expect(sources.first()).toContainText('信用卡诈骗罪.md');
+      // 骨架归折叠组：默认收起（details 子元素不渲染为可见），组头带计数。
+      // 注意断言用可见性而非 DOM 计数 —— <details> 收起时子元素仍在 DOM。
+      const metaGroup = panel.locator('[data-testid="session-output-sources-meta"]');
+      await expect(metaGroup).toBeVisible();
+      await expect(metaGroup).toContainText('索引·日志 2');
+      const metaItems = panel.locator('[data-testid="session-output-meta-item"]');
+      await expect(metaItems).toHaveCount(2);
+      await expect(metaItems.first()).toBeHidden(); // 收起时不占视觉
+      // 展开可见是哪几份
+      await metaGroup.locator('summary').click();
+      await expect(metaItems.first()).toBeVisible();
+      await expect(metaGroup).toContainText('INDEX.md');
+      // 统计只数真实内容文件，骨架不冒充「引用 N 个文件」
+      await expect(panel.locator('[data-testid="session-output-stats"]')).toContainText('引用 1 个文件 · 共 1 次');
+    } finally {
+      await cleanupTempVault(vault);
+    }
+  });
+
+  /**
+   * 面板必须自己说明「少了什么」：消息内联的引用标签照单全收库外文件、隐藏目录、
+   * 检索目录，面板按「点得开才算数」过滤掉了它们 —— 不说明就会让人以为面板漏了。
+   * 同时标题/统计随 tab 变：引用 tab 里写「会话产出 · 写入 0 · 1 轮」是错的。
+   */
+  test('引用 tab：标题/统计随 tab 变；未展示的引用明说并可展开', async ({ page }) => {
+    const vault = await createTempVault('e2e-sources-omitted');
+    try {
+      await page.addInitScript((id) => { localStorage.setItem('molio.activeVaultId', id); }, vault.id);
+      await mockChatRun(page, {
+        script: [
+          { type: 'status', label: 'running' },
+          { type: 'tool_use', id: 'r1', name: 'Read', input: { file_path: `${vault.path}/wiki/keep.md` } },
+          { type: 'tool_result', toolUseId: 'r1', content: 'x', isError: false },
+          { type: 'tool_use', id: 'o1', name: 'Read', input: { file_path: '/outside/memory/MEMORY.md' } },
+          { type: 'tool_result', toolUseId: 'o1', content: 'x', isError: false },
+          { type: 'tool_use', id: 'h1', name: 'Read', input: { file_path: `${vault.path}/.molio/cache/x.md` } },
+          { type: 'tool_result', toolUseId: 'h1', content: 'x', isError: false },
+          { type: 'tool_use', id: 'g1', name: 'Grep', input: { pattern: '罪', path: `${vault.path}/wiki` } },
+          { type: 'tool_result', toolUseId: 'g1', content: 'x', isError: false },
+          { type: 'text_delta', delta: 'done' },
+          { type: 'turn_end', stopReason: 'end_turn' },
+          { type: 'usage', usage: { input_tokens: 10, output_tokens: 5 }, costUsd: 0 },
+        ],
+      });
+      await gotoHome(page);
+      await sendMessage(page, '问点东西');
+      await expect(page.locator('[data-testid="work-timeline-summary"]')).toBeVisible({ timeout: 15_000 });
+      await page.locator('[data-testid="home-output-toggle"]').click();
+      const panel = page.locator('[data-testid="session-output-panel"]');
+
+      // 概览 tab：标题是「会话产出」
+      await expect(panel.locator('[data-testid="session-output-title"]')).toHaveText('会话产出');
+      await panel.locator('[data-testid="session-output-tab-sources"]').click();
+      // 引用 tab：标题换成「会话引用」，统计不再说「写入 0」
+      await expect(panel.locator('[data-testid="session-output-title"]')).toHaveText('会话引用');
+      await expect(panel.locator('[data-testid="session-output-stats"]')).toContainText('引用 1 个文件');
+      await expect(panel.locator('[data-testid="session-output-stats"]')).not.toContainText('写入');
+
+      // 未展示分组：3 条（库外 MEMORY.md / 隐藏目录 x.md / 检索目录 wiki）
+      const omitted = panel.locator('[data-testid="session-output-sources-omitted"]');
+      await expect(omitted).toBeVisible();
+      await expect(omitted).toContainText('另有 3 条未展示');
+      // 展开能看到是哪几条
+      await omitted.locator('summary').click();
+      await expect(omitted).toContainText('MEMORY.md');
+    } finally {
+      await cleanupTempVault(vault);
+    }
   });
 
   test('跨消息聚合去重：两轮 Write 同路径 → 只显示一次', async ({ page }) => {
@@ -228,6 +405,7 @@ test.describe('Home 会话产出面板', () => {
       const reviewAbs = `${vault.path}/wiki/2026-08-27-要闻综述.md`;
       const deepAbs = `${vault.path}/wiki/2026-08-27-深度报道.md`;
       const pyAbs = `${vault.path}/scripts/build_report.py`;
+      const hotAbs = `${vault.path}/wiki/hot.md`;
       await page.route('**/knowledge/vaults/*/files/**', (route) => {
         const rawUrl = route.request().url();
         if (rawUrl.includes(encodeURIComponent(newsAbs))) sawEncoded = true;
@@ -259,21 +437,21 @@ test.describe('Home 会话产出面板', () => {
       await expect(panel.locator('[data-testid="session-output-stats"]')).toContainText('写入 3 · 1 轮');
       // kind 判据是「会话里该路径出现过没有」，不是工具名：新建的 Write → create；
       // Read 过的文档再用 Write 覆写 → update（用户报障的核心：一切 Write 都标成了新建）
-      await expect(panel.locator(`[data-path="${newsAbs}"]`)).toHaveAttribute('data-kind', 'create');
-      await expect(panel.locator(`[data-path="${deepAbs}"]`)).toHaveAttribute('data-kind', 'update');
-      await expect(panel.locator(`[data-path="${reviewAbs}"]`)).toHaveAttribute('data-kind', 'update');
+      await expect(panel.locator(`[data-path=${JSON.stringify(newsAbs)}]`)).toHaveAttribute('data-kind', 'create');
+      await expect(panel.locator(`[data-path=${JSON.stringify(deepAbs)}]`)).toHaveAttribute('data-kind', 'update');
+      await expect(panel.locator(`[data-path=${JSON.stringify(reviewAbs)}]`)).toHaveAttribute('data-kind', 'update');
       // 折叠区（登记元文件 INDEX.md·log.md·hot.md + 脚本）默认收起：条目不进 DOM
       await expect(panel.locator('[data-testid="session-output-others-toggle"]')).toContainText('其他写入 4 项');
       await expect(panel.locator('[data-testid="session-output-others-toggle"]')).toContainText('索引·日志·脚本');
       await expect(panel.locator('[data-testid="session-output-other-item"]')).toHaveCount(0);
       // 隐藏目录与库外写入：任何一栏都不得出现
       await expect(panel.locator('[data-path*=".molio"]')).toHaveCount(0);
-      await expect(panel.locator(`[data-path="${OUTSIDE_PATH}"]`)).toHaveCount(0);
+      await expect(panel.locator(`[data-path=${JSON.stringify(OUTSIDE_PATH)}]`)).toHaveCount(0);
       await expect(panel).not.toContainText('MEMORY.md');
       await expect(panel).not.toContainText('plan.md');
 
       // md 预览正常渲染（不是「无法读取」错误）
-      await panel.locator(`[data-path="${newsAbs}"]`).click();
+      await panel.locator(`[data-path=${JSON.stringify(newsAbs)}]`).click();
       await expect(panel.locator('[data-testid="session-output-preview"]')).toContainText('近端上下文正文', { timeout: 5_000 });
       await panel.locator('[data-testid="session-output-preview-back"]').click();
 
@@ -285,11 +463,11 @@ test.describe('Home 会话产出面板', () => {
       await expect(others).toContainText('INDEX.md');
       await expect(others).toContainText('log.md');
       // hot.md 的 ./ 相对形态不产生第二行
-      await expect(panel.locator(`[data-path="${vault.path}/wiki/hot.md"]`)).toHaveCount(1);
+      await expect(panel.locator(`[data-path=${JSON.stringify(hotAbs)}]`)).toHaveCount(1);
       await expect(panel.locator('[data-testid="session-output-write"]').filter({ hasText: 'hot.md' })).toHaveCount(0);
 
       // .py 脚本 → 等宽代码视图原文展示，不被 markdown 吞掉
-      await panel.locator(`[data-path="${pyAbs}"]`).click();
+      await panel.locator(`[data-path=${JSON.stringify(pyAbs)}]`).click();
       const codeView = panel.locator('.session-output-preview-code');
       await expect(codeView).toBeVisible({ timeout: 5_000 });
       await expect(codeView).toContainText('print("build report")');

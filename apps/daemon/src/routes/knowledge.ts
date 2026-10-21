@@ -37,7 +37,7 @@ import {
   listPublishableTopDirs,
   type ImportResult,
 } from '../core/knowledge.js';
-import { searchVaultFiles, indexVaultFile, removeVaultFile, removeVaultDir, reindexVault } from '../core/vault-search.js';
+import { searchVaultFiles, indexVaultFile, removeVaultFile, removeVaultDir, ensureVaultIndexed, hasInflightBuild } from '../core/vault-search.js';
 import { annotateTreeStatus } from '../core/wiki-status.js';
 import { VAULT_TREE_CHANGED_EVENT, type VaultWatcher } from '../core/vault-watcher.js';
 import type { RunManager } from '../core/RunManager.js';
@@ -321,9 +321,15 @@ export function knowledgeRoutes(
       const wasDir = existsSync(oldAbs) && statSync(oldAbs).isDirectory();
       renamePath(vault.path, relPath, body.newPath);
       if (wasDir) {
-        // 目录改名/移动：清旧子树索引 + 重建（新子树路径全变，需重新索引）
+        // 目录改名/移动：清旧子树索引 + 重建（新子树路径全变，需重新索引）。
+        // 构建走单行道（ensureVaultIndexed）而不是裸 reindexVault：同一 vault 同时
+        // 只允许一次 walk。直接并发 walk 的话，先启动的那个构建收尾时会把它没走到的
+        // 路径当「已删除」清掉——包括这次刚索引的新路径（静默漏结果）。
+        // 先等在跑的收工（它可能经过了改名前的位置，未必看得到新树），再由这次
+        // ——起点在改名之后——重建。
         removeVaultDir(db, vault.id, relPath);
-        reindexVault(db, vault.id, vault.path);
+        await hasInflightBuild(db, vault.id);
+        await ensureVaultIndexed(db, vault.id, vault.path);
       } else {
         // 先清旧路径再索引新路径——否则旧路径残留幽灵命中
         removeVaultFile(db, vault.id, relPath);
@@ -355,7 +361,13 @@ export function knowledgeRoutes(
     }
 
     try {
-      const absPath = resolveFilePath(vault.path, relPath);
+      // Match text-file resolution so bare ![[image.png]] embeds can find
+      // nested attachments. The canonical resolver also checks vault bounds.
+      const canonical = resolveCanonicalPath(vault.path, relPath);
+      if (!canonical) {
+        return c.json({ error: { code: 'NOT_FOUND', message: `File not found: ${relPath}` } }, 404);
+      }
+      const absPath = resolveFilePath(vault.path, canonical);
       const ext = path.extname(absPath).toLowerCase();
       const mime = RAW_MIME[ext] ?? 'application/octet-stream';
       const stat = statSync(absPath);
@@ -677,7 +689,7 @@ export function knowledgeRoutes(
   });
 
   // GET /api/knowledge/vaults/:id/search — 全文搜索
-  app.get('/vaults/:id/search', (c) => {
+  app.get('/vaults/:id/search', async (c) => {
     const vault = getVault(db, c.req.param('id'));
     if (!vault) {
       return c.json({ error: { code: 'NOT_FOUND', message: 'Vault not found' } }, 404);
@@ -693,7 +705,7 @@ export function knowledgeRoutes(
       : Math.min(rawLimit, 100);
 
     try {
-      const { results, truncated } = searchVaultFiles(db, vault.id, vault.path, q, limit);
+      const { results, truncated } = await searchVaultFiles(db, vault.id, vault.path, q, limit);
       return c.json({ results, truncated });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to search vault';

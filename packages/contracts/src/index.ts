@@ -111,6 +111,9 @@ export type {
   // Search
   SearchResult,
   SearchResponse,
+  // Quiz attempts
+  QuizAttemptInput,
+  SaveQuizAttemptsRequest,
 } from './knowledge.js';
 
 export type {

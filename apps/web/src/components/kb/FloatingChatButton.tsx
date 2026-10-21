@@ -20,7 +20,14 @@ import { useI18n } from '../../i18n';
  *  右键菜单（2026-10-13 二轮定稿）：**固定动作**，与 KB 页固定按钮同源——
  *  「构建Wiki」走面板 runWikiOp（App 下发，与 KB 页「构建Wiki」按钮同一条
  *  代码路径，复用/三选一互斥全部一致）；「打开会话」只展开面板不创建。
- *  不做动态会话列表（会话标题/内容态是异步易变的，静态动作永不「消失」）。 */
+ *  不做动态会话列表（会话标题/内容态是异步易变的，静态动作永不「消失」）。
+ *
+ *  **唤回的可发现性**（2026-10-15）：12px 小签是通往对话的**唯一入口**（导航栏已无对话项），
+ *  而它静息时是一段没有特征的弧面。两条补充，都不动「静息弧面保持安静」这个实测结论：
+ *  ① 隐藏态的 title/aria-label 换成「唤回」语义 —— 静息态点小签**不开面板**，只把按钮
+ *  滑出来，旧文案「打开 AI 对话」会让用户按错预期；
+ *  ② **首次**藏边弹一次性提示，教一次「点小签或右键可以唤回」。只教一次是有意的：
+ *  每次藏都弹会把安静的收边变成打扰，而重载后仍面对小签的用户由 ① 的 tooltip 接手。 */
 
 const BTN_SIZE = 52;
 const TAB_VISIBLE = 12;   // 隐藏态露出的签宽
@@ -31,6 +38,10 @@ const SNAP_ZONE = 48;     // 拖拽中中心距缘 < 48px → 磁吸（松手即
 const DRAG_THRESHOLD = 6; // 位移超过才算拖（否则是点击）
 const LOGO_URL = `${import.meta.env.BASE_URL}images/main.png`;
 const STORAGE_KEY = 'molio.kb.chatBtnPos';
+/** 首次藏边的一次性教学标记。与位置分开存：**清位置（「恢复默认位置」）不该让教学重来一次**。 */
+const HINT_SEEN_KEY = 'molio.kb.chatBtnHideHintSeen';
+/** 一次性提示的停留时长：够读完一句话，又不至于长时间挡在视线里。 */
+const HINT_MS = 6000;
 
 type BtnEdge = 'left' | 'right' | 'top' | 'bottom' | null;
 type BtnPos = { edge: BtnEdge; x: number | null; y: number | null; hidden: boolean };
@@ -116,6 +127,33 @@ export function FloatingChatButton({ agentId, onBuildWiki, onOpenSession }: Prop
   const [pos, setPos] = useState<BtnPos | null>(readBtnPos);
   // 右键菜单的锚点（光标处）；null = 菜单关着。菜单纯前端，状态随按钮组件走。
   const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(null);
+  // 首次藏边的一次性教学文案。null = 不显示。
+  const [hint, setHint] = useState<string | null>(null);
+  const hintTimerRef = useRef<number | null>(null);
+  const dismissHint = useCallback(() => {
+    if (hintTimerRef.current !== null) {
+      window.clearTimeout(hintTimerRef.current);
+      hintTimerRef.current = null;
+    }
+    setHint(null);
+  }, []);
+  useEffect(() => () => {
+    if (hintTimerRef.current !== null) window.clearTimeout(hintTimerRef.current);
+  }, []);
+  /** 藏边教学：**只在第一次**藏时弹。storage 不可用 → 干脆不弹 —— 宁可少教一次，
+   *  也不能让「每次藏都弹」把安静的收边动作变成打扰（教学退化成噪声就没人读了）。 */
+  const teachHideOnce = useCallback(() => {
+    try {
+      if (localStorage.getItem(HINT_SEEN_KEY)) return;
+      localStorage.setItem(HINT_SEEN_KEY, '1');
+    } catch { return; }
+    setHint(t('kb.chatBtnHideHint'));
+    if (hintTimerRef.current !== null) window.clearTimeout(hintTimerRef.current);
+    hintTimerRef.current = window.setTimeout(() => {
+      hintTimerRef.current = null;
+      setHint(null);
+    }, HINT_MS);
+  }, [t]);
   const posRef = useRef(pos);
   useEffect(() => { posRef.current = pos; }, [pos]);
   // 视口缩放跟随：left/top 都是**渲染期**从 window 尺寸推导的（自由位 clamp、
@@ -174,13 +212,14 @@ export function FloatingChatButton({ agentId, onBuildWiki, onOpenSession }: Prop
         hidden: true,
       };
       glide('floating-chat-btn--hide', 400);
+      teachHideOnce();
     } else {
       // 自由位：原地落定，无滑动
       next = { edge: null, x: clampFreeX(d.x), y: clampY(d.y), hidden: false };
     }
     setPos(next);
     persistBtnPos(next);
-  }, []);
+  }, [glide, teachHideOnce]);
   const settleRef = useRef(settle);
   useEffect(() => { settleRef.current = settle; }, [settle]);
 
@@ -258,6 +297,7 @@ export function FloatingChatButton({ agentId, onBuildWiki, onOpenSession }: Prop
 
   const onClick = useCallback(() => {
     if (swallowClickRef.current) { swallowClickRef.current = false; return; }
+    dismissHint(); // 用户已经在操作按钮了，教学提示让位
     const p = posRef.current;
     if (p?.hidden) {
       // 隐藏态小签点击 = 唤回贴缘可见位（不开面板），用「面板展开」同族曲线弹回
@@ -268,7 +308,7 @@ export function FloatingChatButton({ agentId, onBuildWiki, onOpenSession }: Prop
       return;
     }
     kbChatSessionsStore.setPanelOpen(true);
-  }, []);
+  }, [dismissHint, glide]);
 
   // ── 右键菜单（2026-10-13 二轮定稿）：固定动作，与 KB 页固定按钮同源 ──
   const showButton = useCallback(() => {
@@ -300,7 +340,8 @@ export function FloatingChatButton({ agentId, onBuildWiki, onOpenSession }: Prop
     setPos(next);
     persistBtnPos(next);
     glide('floating-chat-btn--hide', 400);
-  }, [glide]);
+    teachHideOnce();
+  }, [glide, teachHideOnce]);
 
   const resetPosition = useCallback(() => {
     // 逃生门：清持久化 + 回 CSS 默认右下角（可见）。pos=null 本来就是受支持的形态。
@@ -316,6 +357,9 @@ export function FloatingChatButton({ agentId, onBuildWiki, onOpenSession }: Prop
   const buildDisabledReason = !vault
     ? t('kb.cmdNeedsVault')
     : !agentId ? t('home.noAgent') : undefined;
+  // 隐藏态的点击**不打开面板**（只把按钮唤回可见位），所以文案必须跟着状态走：
+  // 静息态写着「打开 AI 对话」而点下去只是滑出来一枚按钮，是明确的预期错位。
+  const btnLabel = pos?.hidden ? t('kb.floatingChatRecall') : t('kb.floatingChat');
   const menuItems: MenuItem[] = [
     {
       label: t('kb.chatMenu.build'),
@@ -358,8 +402,8 @@ export function FloatingChatButton({ agentId, onBuildWiki, onOpenSession }: Prop
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerCancel}
         onContextMenu={onContextMenu}
-        title={t('kb.floatingChat')}
-        aria-label={t('kb.floatingChat')}
+        title={btnLabel}
+        aria-label={btnLabel}
       >
         {/* 白色描边聊天气泡已换为品牌标：圆形裁切后波浪圆环居中留呼吸边（CSS __logo） */}
         <img className="floating-chat-btn__logo" src={LOGO_URL} alt="" draggable={false} />
@@ -367,6 +411,15 @@ export function FloatingChatButton({ agentId, onBuildWiki, onOpenSession }: Prop
       {/* 菜单必须是 button 的兄弟（div 不能嵌进 button）；面板展开 → 按钮卸载 → 菜单随之消失 */}
       {menuPos && (
         <ContextMenu items={menuItems} position={menuPos} onClose={() => setMenuPos(null)} />
+      )}
+      {/* 首次藏边的一次性教学。放**视口底部居中**而不是贴着那 12px 小签：
+          贴边气泡要为四条缘各写一套几何（还要防越界钳制），而这条提示只需要在
+          「刚收进去」的那一秒把话说完 —— 居中的一次性提示足够建立关联，
+          真正的长期线索是小签本身 + 隐藏态的 title。 */}
+      {hint && (
+        <div className="floating-chat-hint" data-testid="floating-chat-hint" role="status">
+          {hint}
+        </div>
       )}
     </>
   );

@@ -54,13 +54,26 @@ function sourceTarget(tool: ToolEvent): { target: string; navigable: boolean } |
   return { target: raw, navigable };
 }
 
+/** extractSources 的口径开关。 */
+export interface ExtractSourcesOptions {
+  /**
+   * false = 不按 target 去重，同一文件被读多次会产出多条（用于统计「引用次数」）。
+   * true（默认）= 单条消息内按 target 去重 —— 消息内联引用标签的 chip 口径。
+   *
+   * 另：dedupe=false 时不再受 MAX_URL_CHIPS 限制（那个上限是给 chip 渲染防爆炸用的，
+   * 计数场景不渲染 chip，截断会让次数失真）。
+   */
+  dedupe?: boolean;
+}
+
 /**
  * 从一条 assistant 消息的 tools 抽取「引用」：Read/Grep/Bash(cat) → 文件，WebFetch → URL，
  * Glob → 搜索 pattern（不可跳转），WebSearch → result 文本内每条 URL 一个 chip。
- * 按 target 去重，仅保留完成（done）的工具 —— running 中的等完成后再显示，
- * error（tool_result isError）的不当作引用。URL 类 chip 上限 MAX_URL_CHIPS，超出静默丢弃。
+ * 仅保留完成（done）的工具 —— running 中的等完成后再显示，
+ * error（tool_result isError）的不当作引用。
  */
-export function extractSources(tools: ToolEvent[]): SourceRef[] {
+export function extractSources(tools: ToolEvent[], opts: ExtractSourcesOptions = {}): SourceRef[] {
+  const dedupe = opts.dedupe !== false;
   const seen = new Set<string>();
   const out: SourceRef[] = [];
   let urlChips = 0;
@@ -71,8 +84,10 @@ export function extractSources(tools: ToolEvent[]): SourceRef[] {
       const result = t.result;
       if (typeof result !== 'string' || result.length === 0) continue;
       for (const url of result.match(URL_RE) ?? []) {
-        if (urlChips >= MAX_URL_CHIPS || seen.has(url)) continue;
-        seen.add(url); urlChips++;
+        if (dedupe) {
+          if (urlChips >= MAX_URL_CHIPS || seen.has(url)) continue;
+          seen.add(url); urlChips++;
+        }
         out.push({
           kind: 'url',
           target: url,
@@ -87,10 +102,12 @@ export function extractSources(tools: ToolEvent[]): SourceRef[] {
     const hit = sourceTarget(t);
     if (!hit) continue;
     const isUrl = /^https?:\/\//.test(hit.target);
-    if (seen.has(hit.target)) continue;
-    if (isUrl && urlChips >= MAX_URL_CHIPS) continue;
-    seen.add(hit.target);
-    if (isUrl) urlChips++;
+    if (dedupe) {
+      if (seen.has(hit.target)) continue;
+      if (isUrl && urlChips >= MAX_URL_CHIPS) continue;
+      seen.add(hit.target);
+      if (isUrl) urlChips++;
+    }
     out.push({
       kind: isUrl ? 'url' : 'file',
       target: hit.target,
@@ -137,6 +154,16 @@ const MARKDOWN_RE = /\.(mdown|markdown|md)$/i;
  * 与图谱保持一致，且「哪个目录算 wiki」本就是猜的。
  */
 const META_BASENAMES = new Set(['index.md', 'log.md', 'hot.md']);
+
+/**
+ * basename 是否登记元文件（INDEX.md / log.md / hot.md，大小写不敏感）。
+ * 产出面板用 classifyWritePath 把它们折进「其他写入」；引用 tab 用本谓词做同款折叠
+ * ——wiki 技能每次启动必读这些骨架，真机验收里它们占引用主列表 4/15。
+ */
+export function isMetaBasename(p: string): boolean {
+  const segments = p.replace(/\\/g, '/').split('/').filter((s) => s !== '');
+  return META_BASENAMES.has((segments[segments.length - 1] ?? '').toLowerCase());
+}
 
 /**
  * 归类一条写入路径（输入为 writeKey 归一化后的形态）：

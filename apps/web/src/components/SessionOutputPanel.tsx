@@ -1,11 +1,12 @@
 // apps/web/src/components/SessionOutputPanel.tsx
 // 会话产出聚合面板（主页 dock）——本次会话 Molio 写入的 KB 文件 rollup。
-// 与逐消息 WorkCompleteBanner/SourceChips 共存：dock = 会话级汇总，消息内 = 单条 provenance
-// （外部引用只在消息内联的 SourceChips 展示，不在此重复）。
+// 与逐消息 WorkCompleteBanner/SourceChips 共存：dock = 会话级汇总（概览/变更/引用三 tab），
+// 消息内 = 单条 provenance。引用（读入）在独立「引用」tab，不与「概览」（产出）同屏。
 // 纯前端聚合（aggregateSessionOutput），零 daemon/contracts。
 import { useMemo, useState, useRef, useCallback, useEffect } from 'react';
 import type { ChatMessage } from '../hooks/useChatCore';
 import { aggregateSessionOutput, extractChanges, disambiguateLabels, type ChangeEntry, type SessionWrite } from '../utils/workSteps';
+import { aggregateSessionSources } from '../utils/sessionSources';
 import type { DiffLine } from '../utils/diff';
 import type { WriteKind } from '../utils/toolRefs';
 import { useActiveVault, useActiveVaultId } from '../stores/vaultStore';
@@ -144,7 +145,7 @@ interface Props {
   messages: ChatMessage[];
 }
 
-type PanelTab = 'overview' | 'changes';
+type PanelTab = 'overview' | 'changes' | 'sources';
 
 export function SessionOutputPanel({ messages }: Props) {
   const { t } = useI18n();
@@ -159,6 +160,18 @@ export function SessionOutputPanel({ messages }: Props) {
     disambiguateLabels(cs);
     return groupChangesByPath(cs);
   }, [messages, activeVault?.path]);
+  // 会话级「引用」（读入面）—— 与产出（写入面）成对，独立 tab 呈现（不与产出同屏）
+  // refs = 展示清单；meta = 登记骨架（INDEX/log/hot，折叠展示）；omitted = 被过滤掉的
+  // 引用（库外文件 / 隐藏目录 / 检索目录），面板要自己说明「少了什么」，否则同一屏里
+  // 用户看到的引用标签比面板多、像面板漏了。
+  const { refs: sourceRefs, meta: sourceMeta, omitted: omittedSources } = useMemo(
+    () => aggregateSessionSources(messages, activeVault?.path),
+    [messages, activeVault?.path],
+  );
+  const sourceFiles = useMemo(() => sourceRefs.filter((s) => s.kind === 'file'), [sourceRefs]);
+  const sourceUrls = useMemo(() => sourceRefs.filter((s) => s.kind === 'url'), [sourceRefs]);
+  // 引用总次数（= 各文件 count 之和）—— 统计行用
+  const sourceReads = useMemo(() => sourceFiles.reduce((n, s) => n + s.count, 0), [sourceFiles]);
   const [tab, setTab] = useState<PanelTab>('overview');
   // 变更 tab 的手风琴：单开（点开一个收起其它），null = 全部折叠
   const [expandedPath, setExpandedPath] = useState<string | null>(null);
@@ -228,7 +241,7 @@ export function SessionOutputPanel({ messages }: Props) {
 
   // 内嵌预览：点击写入项 → 面板切到预览视图（不跳转知识库，保持对话注意力）。
   const [preview, setPreview] = useState<{
-    target: { kind: 'create' | 'update'; path: string; label: string };
+    target: { kind: 'create' | 'update' | 'read'; path: string; label: string };
     content: string;
     loading: boolean;
     error: boolean;
@@ -254,7 +267,7 @@ export function SessionOutputPanel({ messages }: Props) {
     return () => { cancelled = true; };
   }, [preview?.target.path]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const openPreview = useCallback((kind: 'create' | 'update', path: string, label: string) => {
+  const openPreview = useCallback((kind: 'create' | 'update' | 'read', path: string, label: string) => {
     if (!vaultId) return;
     if (width < 420) commitWidth(420); // 预览态自动加宽到 md 渲染舒适宽度；返回不缩回
     setPreview({ target: { kind, path, label }, content: '', loading: false, error: false, tooLarge: false });
@@ -305,9 +318,14 @@ export function SessionOutputPanel({ messages }: Props) {
       ) : (
         <>
           <header className="session-output-header">
-            <span className="session-output-title">{t('output.title')}</span>
+            {/* 标题/统计随 tab 变：引用 tab 里写「会话产出 · 写入 0 · 1 轮」是错的 */}
+            <span className="session-output-title" data-testid="session-output-title">
+              {tab === 'sources' ? t('output.titleSources') : t('output.title')}
+            </span>
             <span className="session-output-stats" data-testid="session-output-stats">
-              {t('output.stats', { writes: output.writes.length, turns: output.turns })}
+              {tab === 'sources'
+                ? t('output.statsSources', { files: sourceFiles.length, reads: sourceReads })
+                : t('output.stats', { writes: output.writes.length, turns: output.turns })}
             </span>
             {/* 分段控制：概览 / 变更（WorkBuddy 式多投影；280px dock 用分段而非下拉） */}
             <nav className="session-output-tabs" role="tablist" aria-label={t('output.title')}>
@@ -332,10 +350,120 @@ export function SessionOutputPanel({ messages }: Props) {
                 {t('output.tabChanges')}
                 {changes.length > 0 && <span className="session-output-tab-count">{changes.length}</span>}
               </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={tab === 'sources'}
+                className={`session-output-tab${tab === 'sources' ? ' is-active' : ''}`}
+                data-testid="session-output-tab-sources"
+                onClick={() => setTab('sources')}
+              >
+                {t('output.tabSources')}
+                {sourceFiles.length > 0 && <span className="session-output-tab-count">{sourceFiles.length}</span>}
+              </button>
             </nav>
           </header>
 
-          {tab === 'changes' ? (
+          {tab === 'sources' ? (
+            /* ── 引用 tab：本会话读入的文件（count 降序）+ URL 折叠组 + 未展示说明 ── */
+            <div className="session-output-body" data-testid="session-output-sources">
+              {sourceFiles.length === 0 && sourceUrls.length === 0 && sourceMeta.length === 0 ? (
+                <p className="session-output-empty">{t('output.sourcesEmpty')}</p>
+              ) : (
+                <>
+                  {sourceFiles.map((s) => (
+                    <button
+                      key={s.target}
+                      type="button"
+                      className="session-output-item"
+                      data-testid="session-output-source"
+                      title={s.target}
+                      disabled={!vaultId}
+                      onClick={() => { if (vaultId) openPreview('read', s.target, s.label); }}
+                    >
+                      <span className="session-output-item-icon" aria-hidden>📄</span>
+                      <span className="session-output-item-label">{s.label}</span>
+                      <span
+                        className="session-output-item-count"
+                        data-testid="session-output-source-count"
+                        title={t('output.sourceCount', { n: s.count })}
+                      >
+                        {s.count}
+                      </span>
+                    </button>
+                  ))}
+                  {/* 登记骨架（INDEX/log/hot）：wiki 技能每次启动必读，用户不关心 ——
+                      与产出面板折叠这三个 basename 同款处理，主列表只留真实内容 */}
+                  {sourceMeta.length > 0 && (
+                    <details className="session-output-sources-meta" data-testid="session-output-sources-meta">
+                      <summary title={t('output.sourcesMetaHint')}>
+                        {t('output.sourcesMeta', { n: sourceMeta.length })}
+                      </summary>
+                      {sourceMeta.map((s) => (
+                        <button
+                          key={s.target}
+                          type="button"
+                          className="session-output-item"
+                          data-testid="session-output-meta-item"
+                          title={s.target}
+                          disabled={!vaultId}
+                          onClick={() => { if (vaultId) openPreview('read', s.target, s.label); }}
+                        >
+                          <span className="session-output-item-icon" aria-hidden>📄</span>
+                          <span className="session-output-item-label">{s.label}</span>
+                          <span className="session-output-item-count">{s.count}</span>
+                        </button>
+                      ))}
+                    </details>
+                  )}
+                  {sourceUrls.length > 0 && (
+                    <details className="session-output-sources-urls" data-testid="session-output-sources-urls">
+                      <summary>{t('output.sourcesUrls', { n: sourceUrls.length })}</summary>
+                      {sourceUrls.map((s) => (
+                        <a
+                          key={s.target}
+                          href={s.target}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="session-output-item"
+                          data-testid="session-output-source-url"
+                          title={s.target}
+                        >
+                          <span className="session-output-item-icon" aria-hidden>🔗</span>
+                          <span className="session-output-item-label">{s.label}</span>
+                          <span className="session-output-item-count">{s.count}</span>
+                        </a>
+                      ))}
+                    </details>
+                  )}
+                </>
+              )}
+              {/* 未展示的引用：库外文件 / 隐藏目录 / 检索路径 —— 消息内联的引用标签里
+                  看得见它们，面板不列就必须说明，否则用户会以为面板漏了。 */}
+              {omittedSources.length > 0 && (
+                <details
+                  className="session-output-sources-omitted"
+                  data-testid="session-output-sources-omitted"
+                >
+                  <summary title={t('output.sourcesOmittedHint')}>
+                    {t('output.sourcesOmitted', { n: omittedSources.length })}
+                  </summary>
+                  {omittedSources.map((s) => (
+                    <div
+                      key={s.target}
+                      className="session-output-item session-output-item--omitted"
+                      data-testid="session-output-omitted-item"
+                      title={s.target}
+                    >
+                      <span className="session-output-item-icon" aria-hidden>🚫</span>
+                      <span className="session-output-item-label">{s.label}</span>
+                      <span className="session-output-item-count">{s.count}</span>
+                    </div>
+                  ))}
+                </details>
+              )}
+            </div>
+          ) : tab === 'changes' ? (
             /* ── 变更 tab：文件级概要行（±行数）→ 点击展开逐条 diff（WorkBuddy 式两级） ── */
             <div className="session-output-body" data-testid="session-output-changes">
               {changes.length === 0 ? (

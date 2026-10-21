@@ -13,6 +13,7 @@ import { startAuthStatusPolling } from './auth-status-watch.js';
 import { CappedBuffer } from './capped-buffer.js';
 import { createVaultRecency } from './vault-recency.js';
 import { createRendererReadiness } from './renderer-readiness.js';
+import { createRevealGate, APP_LOAD_REVEAL_TIMEOUT_MS } from './window-reveal.js';
 
 const errMsg = (err) => (err instanceof Error ? err.message : String(err));
 
@@ -616,6 +617,19 @@ function createWindow({ url = '' } = {}) {
   return win;
 }
 
+/**
+ * Show a window that was created with show:false — with a warning when the
+ * fallback timer beat the page load (the daemon is busy / unresponsive).
+ */
+function revealAppWindow(win, reason) {
+  if (!win || win.isDestroyed()) return;
+  if (reason === 'timeout' && !win.isVisible()) {
+    log('warn', 'main',
+      `app window revealed by ${APP_LOAD_REVEAL_TIMEOUT_MS}ms fallback — page load still in flight (daemon busy?)`);
+  }
+  win.show();
+}
+
 /** Load the real app URL after daemon is ready (production only). */
 function loadAppWindow(win, url = '') {
   if (!win || win.isDestroyed()) return;
@@ -625,9 +639,18 @@ function loadAppWindow(win, url = '') {
   // Show the window once the app has rendered. This is the first (and
   // only) navigation for this webContents in production, so the ARMS
   // Browser SDK injection fires on the real app — not a throwaway splash.
+  //
+  // ...but "once it has rendered" cannot be the ONLY path to visibility: while
+  // the daemon's single thread is busy (a whole-vault cold index blocks it for
+  // seconds — see core/vault-search.ts), even the SPA's own assets are stuck
+  // behind it, so did-finish-load can be many seconds late. A window that stays
+  // show:false until then is invisible AND absent from the taskbar — the user
+  // just sees nothing happen (2026-10-16 Windows report: "切库不弹新窗口").
+  // The gate reveals it on a timeout as well, so slow always beats invisible.
+  const gate = createRevealGate({ onReveal: (reason) => revealAppWindow(win, reason) });
   const onFinish = () => {
     wc.removeListener('did-fail-load', onFail);
-    win.show();
+    gate.loaded();
   };
   // If the load fails — e.g. the daemon crashes between the readiness check
   // and the page actually loading, or a transient network error — Electron
@@ -636,10 +659,14 @@ function loadAppWindow(win, url = '') {
   const onFail = (_event, code, desc) => {
     wc.removeListener('did-finish-load', onFinish);
     log('error', 'main', `app load failed: code=${code} desc=${desc}`);
+    // The error page shows the window itself; we deliberately leave the gate
+    // armed as a second line of defence — if even daemon-error.html fails to
+    // load, the timeout still puts a (blank, but present) window on screen.
     showDaemonErrorPage(win);
   };
   wc.once('did-finish-load', onFinish);
   wc.once('did-fail-load', onFail);
+  win.once('closed', () => gate.cancel());
 }
 
 /**
@@ -662,8 +689,12 @@ function showDaemonErrorPage(win) {
   const errorPage = path.join(__dirname, 'daemon-error.html');
   const query = logPath ? { log: logPath } : undefined;
   win.loadFile(errorPage, query ? { query } : undefined);
+  // Same visibility gate as loadAppWindow: a failed error-page load must not
+  // leave the window hidden (that is precisely the "app looks dead" state this
+  // page exists to prevent).
+  const gate = createRevealGate({ onReveal: (reason) => revealAppWindow(win, reason) });
   win.webContents.once('did-finish-load', () => {
-    win.show();
+    gate.loaded();
   });
 }
 

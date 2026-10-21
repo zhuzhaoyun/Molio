@@ -289,6 +289,43 @@ html {
   transform: translateY(14px);
 }
 
+/* 首次藏边的一次性教学（FloatingChatButton 的 teachHideOnce）：
+   视口底部居中的胶囊。**配色走主题 token + 1px 描边**，与既有的两处瞬时提示
+   （`.kb-save-toast` / `.preload-toast`）同一套语言——它们都靠 border 撑出形状。
+
+   曾经写成固定的近黑底 + 白字「两套主题都不用分支」，实测是错的（2026-10-15）：
+   暗色页面底 #181816 上合成出 #1C1613，**对比度 1.006:1**，整枚胶囊消失、只剩
+   一行白字飘在页面中间（暗色阴影同样不可见）。这正是本文件 378 行那句
+   「近黑底上黑阴影几乎不可见」的同一种坑。`--bg-elevated` 在暗色下对页面底有
+   1.23:1，描边再把边界钉死。
+
+   pointer-events:none —— 它只是说明，绝不能吃掉底下的点击（哪怕是 6 秒）。 */
+.floating-chat-hint {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  z-index: 91;
+  max-width: min(380px, calc(100vw - 48px));
+  padding: 9px 16px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.45;
+  text-align: center;
+  box-shadow: var(--shadow-lg);
+  pointer-events: none;
+  /* 居中靠 translateX(-50%)。**必须写在这里而不是只写在 keyframes 里**：
+     否则 reduced-motion 把 animation 一关，元素就只剩 left:50%，整条提示右移半个身位。 */
+  transform: translateX(-50%);
+  animation: floating-chat-hint-in 200ms ease;
+}
+@keyframes floating-chat-hint-in {
+  from { opacity: 0; transform: translate(-50%, 6px); }
+  to   { opacity: 1; transform: translate(-50%, 0); }
+}
+
 /* 发布面板占住 KB 右侧 pane 时，悬浮按钮让位。
    发布面板（PublishForm variant="page"）的页脚把主动作右对齐在底部，正好压在悬浮按钮
    （fixed right/bottom 24px、52px、z-index 90）底下：按钮会把点击整个吃掉，**真实用户
@@ -413,6 +450,9 @@ body.kb-moving {
   }
   .floating-chat-btn:active {
     transform: none;
+  }
+  .floating-chat-hint {
+    animation: none;
   }
 }
 

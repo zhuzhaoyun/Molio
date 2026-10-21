@@ -43,8 +43,8 @@ describe('Knowledge routes — full-text search', () => {
   // FTS5 索引只在「首搜建库」一次性快照 + 增量更新（写路径挂钩 / tree-changed
   // sweep）。本套件直接 writeFileSync 落盘（不经 API、不触发 watcher），故新增
   // 文件后须显式同步索引，才能被后续搜索看见——替换旧实现的「每次搜索重扫」。
-  function resync(): void {
-    reindexVault(dbRef, vaultId, vaultDir);
+  async function resync(): Promise<void> {
+    await reindexVault(dbRef, vaultId, vaultDir);
   }
 
   after(() => {
@@ -89,7 +89,7 @@ describe('Knowledge routes — full-text search', () => {
     for (let i = 0; i < 5; i++) {
       writeFileSync(join(vaultDir, `f${i}.md`), `内容包含关键词词\n`);
     }
-    resync();
+    await resync();
     const res = await app.request(`/api/knowledge/vaults/${vaultId}/search?q=关键词&limit=2`);
     assert.equal(res.status, 200);
     const body = await json(res);

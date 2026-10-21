@@ -113,6 +113,29 @@ const en: Record<string, string> = {
   'composer.noSearchResults': 'No matching conversations',
   'composer.untitled': 'Untitled',
 
+  // ── QuizCard ──
+  'quiz.generating': 'Generating questions…',
+  'quiz.incomplete': 'The quiz did not finish generating. Try regenerating it.',
+  'quiz.invalid': 'The quiz data is malformed; showing it as-is.',
+  'quiz.questionInvalid': 'This question is malformed',
+  'quiz.question': 'Question {n}',
+  'quiz.type.single': 'Single choice',
+  'quiz.type.multiple': 'Multiple choice',
+  'quiz.type.judge': 'True / false',
+  'quiz.correct': 'Correct',
+  'quiz.wrong': 'Incorrect',
+  'quiz.answer': 'Answer: {answer}',
+  'quiz.explanation': 'Explanation',
+  'quiz.sources': 'Sources',
+  'quiz.submit': 'Submit answers',
+  'quiz.redo': 'Redo',
+  'quiz.save': 'Save as question bank',
+  'quiz.saveNoVault': 'Select a knowledge base first',
+  'quiz.saving': 'Saving…',
+  'quiz.saved': 'Saved to {path}',
+  'quiz.saveFailed': 'Save failed. Try again.',
+  'quiz.answeredProgress': 'Answered {done}/{total}',
+
   // ── AssistantMessage ──
   'assistant.label': 'Molio',
 
@@ -183,6 +206,16 @@ const en: Record<string, string> = {
   'output.tabOverview': 'Overview',
   'output.tabChanges': 'Changes',
   'output.changesEmpty': 'No changes to show',
+  'output.tabSources': 'Sources',
+  'output.sourcesEmpty': 'No files referenced yet in this session',
+  'output.sourcesUrls': 'Web links {n}',
+  'output.titleSources': 'Session sources',
+  'output.statsSources': '{files} files referenced · {reads} reads',
+  'output.sourceCount': 'Referenced {n} times in this session',
+  'output.sourcesOmitted': '{n} more not shown',
+  'output.sourcesOmittedHint': 'Files outside the vault, hidden folders and search paths are not listed here — you can still see them in the inline source chips',
+  'output.sourcesMeta': 'Indexes & logs {n}',
+  'output.sourcesMetaHint': 'Registry files the wiki skill reads on every operation (indexes, logs, cache) — click to preview',
   'output.changeKind.create': 'New file',
   'output.changeKind.update': 'Edited',
   'output.changeKind.append': 'Appended',
@@ -538,6 +571,22 @@ const en: Record<string, string> = {
   'graph.searchPlaceholder': 'Search nodes…',
   'graph.searchNoResult': 'No matching nodes',
   'graph.scopeBack': 'Back to full graph',
+  // One-click image export (sharing / acquisition)
+  'graph.export': 'Export image',
+  'graph.exportDownload': 'Download PNG',
+  'graph.exportCopy': 'Copy to clipboard',
+  'graph.exporting': 'Rendering…',
+  'graph.exportDownloaded': 'Image downloaded',
+  'graph.exportCopied': 'Image copied to clipboard',
+  'graph.exportCopyUnsupported': 'Copying images is unavailable here — use “Download PNG”',
+  'graph.exportFailed': 'Export failed, please try again',
+  'graph.exportAspect': 'Layout',
+  'graph.exportIncludeInfo': 'Include title / stats / legend',
+  'graph.exportAspectNatural': 'Original',
+  'graph.exportAspectSquare': '1:1',
+  'graph.exportAspectPortrait': '4:5',
+  'graph.exportAspectWide': '16:9',
+  'graph.exportCoreTopics': 'Core: ',
 
   // ── FileChatPanel ──
   'fileChat.running': 'Running…',
@@ -685,12 +734,26 @@ const en: Record<string, string> = {
   'kb.frontmatter.collapse': 'Hide properties',
   'kb.frontmatter.properties': 'Properties',
   'kb.floatingChat': 'Open AI chat',
+  // Hidden state (tucked into an edge, only a 12px tab shows): clicking now recalls the
+  // button instead of opening the panel, so the label has to say that.
+  'kb.floatingChatRecall': 'Click to bring the chat button back',
+  // One-off teaching tip on the first hide (see HINT_SEEN_KEY in FloatingChatButton)
+  'kb.chatBtnHideHint': 'Chat button tucked away — click the edge tab or right-click to bring it back',
   // Floating button context menu (fixed actions, same sources as KB fixed buttons)
   'kb.chatMenu.build': 'Build Wiki',
   'kb.chatMenu.openSession': 'Open chat session',
   'kb.chatMenu.hide': 'Hide button',
   'kb.chatMenu.show': 'Show button',
   'kb.chatMenu.resetPos': 'Reset position',
+
+  // ── Document image export ──
+  'kb.exportImage': 'Export image',
+  'kb.exporting': 'Exporting…',
+  'kb.exportProgress': 'Rendering {done}/{total}…',
+  'kb.exportDone': 'Image exported',
+  'kb.exportPages': 'Exported {pages} images',
+  'kb.exportFailed': 'Export failed, please try again',
+  'kb.exportUnsupported': 'Nothing to export',
 
   // ── FilePicker ──
   'filePicker.justNow': 'Just now',

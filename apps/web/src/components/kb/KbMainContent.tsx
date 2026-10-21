@@ -18,6 +18,7 @@ import { TooLargeCard } from './TooLargeCard';
 import { ViewerErrorBoundary } from './ViewerErrorBoundary';
 import type { KbCodeMirrorViewerHandle } from './KbCodeMirrorViewer';
 import { KbFrontmatterCard } from './KbFrontmatterCard';
+import { exportDocument, ExportError } from './docExport';
 import { formatFileSize } from '../../utils/format';
 import { preprocessKbMarkdown } from '../../hooks/useKnowledge';
 import { useScrollMemory, type ScrollIntent } from '../../hooks/useScrollMemory';
@@ -205,6 +206,8 @@ export function KbMainContent({
   const [ctxMenu, setCtxMenu] = useState<
     { x: number; y: number; source: 'doocs' | 'codemirror' | 'pdf'; selectedText?: string } | null
   >(null);
+  const [exporting, setExporting] = useState(false);
+  const [exportNotice, setExportNotice] = useState<string | null>(null);
 
   // Routing flags — computed from extension + size + tooLarge.
   const fileName = selectedFile ? (selectedFile.split('/').pop() ?? selectedFile) : '';
@@ -221,9 +224,16 @@ export function KbMainContent({
   // runs for the small-.md doocs path — never for the CM source view.
   const renderedContent = useMemo(
     () => isSmallMd
-      ? preprocessKbMarkdown(editedContent ?? fileContent?.content ?? '', vaultId ?? undefined)
+      ? preprocessKbMarkdown(
+          editedContent ?? fileContent?.content ?? '',
+          vaultId ?? undefined,
+          // The note's own vault-relative path — needed so `![](图.png)`
+          // resolves against this note's folder (Obsidian's rule) rather than
+          // the SPA origin, which always 404s.
+          selectedFile ?? undefined,
+        )
       : '',
-    [editedContent, fileContent?.content, vaultId, isSmallMd],
+    [editedContent, fileContent?.content, vaultId, isSmallMd, selectedFile],
   );
 
   // Raw text used by the CM viewer — NO doocs preprocessing (those transforms
@@ -404,6 +414,50 @@ export function KbMainContent({
 
   const closeContextMenu = useCallback(() => setCtxMenu(null), []);
 
+  // 文档出图：把当前渲染出来的 #output 导出成 1080px 宽的长图。
+  // 排版模式的目标在 MdTypesetEditor 的预览里（两条路径互斥，同屏只有一个 #output）。
+  const handleExportImage = useCallback(async () => {
+    const target = (
+      isTypesetMode
+        ? document.querySelector('.kb-typeset-preview-body #output')
+        : contentRef.current?.querySelector('#output')
+    ) as HTMLElement | null;
+
+    if (!target) {
+      setExportNotice(t('kb.exportUnsupported'));
+      window.setTimeout(() => setExportNotice(null), 4_000);
+      return;
+    }
+
+    setExporting(true);
+    setExportNotice(t('kb.exporting'));
+    try {
+      // 文件名优先用渲染后的 H1（读者认得的标题），没有 H1 才退回文件 stem。
+      const h1 = target.querySelector('h1')?.textContent?.trim();
+      const stem = fileName.replace(/\.[^.]+$/, '');
+      const title = h1 || stem;
+      const result = await exportDocument(target, {
+        title,
+        onProgress: (done, total) =>
+          setExportNotice(t('kb.exportProgress', { done, total })),
+      });
+      setExportNotice(
+        result.pages > 1 ? t('kb.exportPages', { pages: result.pages }) : t('kb.exportDone'),
+      );
+    } catch (error) {
+      console.warn('Document export failed:', error);
+      // 「文档没有内容可导」和「导出过程失败」是两件事，给用户的下一步不同。
+      setExportNotice(
+        error instanceof ExportError && error.code === 'no-output'
+          ? t('kb.exportUnsupported')
+          : t('kb.exportFailed'),
+      );
+    } finally {
+      setExporting(false);
+      window.setTimeout(() => setExportNotice(null), 4_000);
+    }
+  }, [contentRef, fileName, isTypesetMode, t]);
+
   const selectionText = useCallback(() => {
     const sel = window.getSelection();
     return sel ? sel.toString().trim() : '';
@@ -491,8 +545,11 @@ export function KbMainContent({
    * 可读，这个动作根本不成立。置灰而非隐藏，是因为它顺带说明了「先导文件、再建 Wiki」
    * 这个先后关系——隐藏掉的话，用户永远不会知道这个知识库能产出 Wiki。
    */
+  // key 固定（不随主次对调变化）：这两个按钮在同一 flex 行里互相对调位置，
+  // key 若跟随主次变化会导致对调时 React 卸载/重建按钮而非复用。
   const buildWikiButton = (primary: boolean) => (
     <button
+      key="build-wiki"
       type="button"
       className={primary ? 'wiki-cta-btn' : 'wiki-cta-btn wiki-cta-btn--outline'}
       data-testid="kb-empty-build-cta"
@@ -507,6 +564,7 @@ export function KbMainContent({
   const importButton = (primary: boolean) =>
     onImport ? (
       <button
+        key="import"
         type="button"
         className={primary ? 'wiki-cta-btn' : 'wiki-cta-btn wiki-cta-btn--outline'}
         data-testid="kb-empty-import-cta"
@@ -641,6 +699,24 @@ export function KbMainContent({
                     </svg>
                   </button>
                 </>
+              )}
+
+              {/* 导出图片 —— 阅读与排版模式都可用；排版模式导出的就是右侧预览 */}
+              {(isReadingPath || isTypesetMode) && (
+                <button
+                  type="button"
+                  className="kb-btn kb-btn-ghost"
+                  onClick={handleExportImage}
+                  disabled={exporting}
+                  title={t('kb.exportImage')}
+                  data-testid="kb-btn-export-image"
+                >
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="14" height="14">
+                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                    <circle cx="8.5" cy="8.5" r="1.5" />
+                    <polyline points="21 15 16 10 5 21" />
+                  </svg>
+                </button>
               )}
 
               {/* Typeset toggle — signature action. Read mode: T icon + "排版"
@@ -1314,6 +1390,12 @@ export function KbMainContent({
               </>
             );
           })()}
+        </div>
+      )}
+
+      {exportNotice && (
+        <div className="kb-save-toast" data-testid="kb-export-notice" role="status">
+          {exportNotice}
         </div>
       )}
     </main>

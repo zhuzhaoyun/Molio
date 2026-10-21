@@ -152,6 +152,17 @@ test.describe('Graph camera framing', () => {
     expect(Math.max(...ys)).toBeLessThanOrEqual(view.y + view.h + tol);
   };
 
+  const waitForSettle = async (page: Page) => {
+    // d3's default cooling needs 300 ticks; a fixed 4s is shorter than a
+    // normal 60Hz simulation and even less reliable on busy machines.
+    await page.waitForFunction(() => {
+      const e = (window as unknown as {
+        __graphEngine?: { getSimState(): { alpha: number } };
+      }).__graphEngine;
+      return !!e && e.getSimState().alpha < 0.001;
+    }, undefined, { timeout: 15_000 });
+  };
+
   test('scope switch re-frames the camera after the layout settles (both directions)', async ({ page }) => {
     await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 10_000 });
@@ -164,7 +175,8 @@ test.describe('Graph camera framing', () => {
       undefined,
       { timeout: 15_000 },
     );
-    await page.waitForTimeout(3_500); // 等全量图收敛
+    await waitForSettle(page);
+    await expect(async () => { await expectAllNodesFramed(page); }).toPass({ timeout: 30_000, intervals: [250, 500, 1000] });
 
     // ── 进入局部图（dir scope）：立即落位 → 收敛后重新取景 ──
     const folder = page.locator('.kb-tree-group-label').filter({ hasText: 'notes' }).first();

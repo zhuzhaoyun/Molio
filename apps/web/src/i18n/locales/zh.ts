@@ -112,6 +112,29 @@ const zh: Record<string, string> = {
   'composer.noSearchResults': '没有匹配的会话',
   'composer.untitled': '未命名对话',
 
+  // ── QuizCard ──
+  'quiz.generating': '正在出题…',
+  'quiz.incomplete': '题目没有生成完整，可以重新生成一次',
+  'quiz.invalid': '题目数据格式有误，已按原样显示',
+  'quiz.questionInvalid': '该题格式有误',
+  'quiz.question': '第 {n} 题',
+  'quiz.type.single': '单选',
+  'quiz.type.multiple': '多选',
+  'quiz.type.judge': '判断',
+  'quiz.correct': '回答正确',
+  'quiz.wrong': '回答错误',
+  'quiz.answer': '正确答案：{answer}',
+  'quiz.explanation': '解析',
+  'quiz.sources': '出处',
+  'quiz.submit': '提交答案',
+  'quiz.redo': '重做',
+  'quiz.save': '存为题库',
+  'quiz.saveNoVault': '先选择一个知识库',
+  'quiz.saving': '正在保存…',
+  'quiz.saved': '已存为 {path}',
+  'quiz.saveFailed': '保存失败，请重试',
+  'quiz.answeredProgress': '已作答 {done}/{total}',
+
   // ── AssistantMessage ──
   'assistant.label': 'Molio',
 
@@ -182,6 +205,16 @@ const zh: Record<string, string> = {
   'output.tabOverview': '概览',
   'output.tabChanges': '变更',
   'output.changesEmpty': '没有可展示的变更',
+  'output.tabSources': '引用',
+  'output.sourcesEmpty': '本次会话还没有引用过文件',
+  'output.sourcesUrls': '网页链接 {n}',
+  'output.titleSources': '会话引用',
+  'output.statsSources': '引用 {files} 个文件 · 共 {reads} 次',
+  'output.sourceCount': '本会话引用 {n} 次',
+  'output.sourcesOmitted': '另有 {n} 条未展示',
+  'output.sourcesOmittedHint': '库外文件、隐藏目录与检索路径不在此列表 —— 消息内联的「引用」标签里能看到它们',
+  'output.sourcesMeta': '索引·日志 {n}',
+  'output.sourcesMetaHint': 'wiki 每次操作都会读写的登记文件（目录索引、日志、缓存）——点开可预览',
   'output.changeKind.create': '新建文件',
   'output.changeKind.update': '编辑',
   'output.changeKind.append': '追加',
@@ -537,6 +570,22 @@ const zh: Record<string, string> = {
   'graph.searchPlaceholder': '搜索节点…',
   'graph.searchNoResult': '无匹配节点',
   'graph.scopeBack': '回到全量图',
+  // 一键出图（对外分享/获客）
+  'graph.export': '导出图片',
+  'graph.exportDownload': '下载 PNG',
+  'graph.exportCopy': '复制到剪贴板',
+  'graph.exporting': '正在出图…',
+  'graph.exportDownloaded': '已下载图片',
+  'graph.exportCopied': '图片已复制到剪贴板',
+  'graph.exportCopyUnsupported': '当前环境不支持复制图片，请改用「下载 PNG」',
+  'graph.exportFailed': '出图失败，请重试',
+  'graph.exportAspect': '版式',
+  'graph.exportIncludeInfo': '附带标题 / 统计 / 图例',
+  'graph.exportAspectNatural': '原始',
+  'graph.exportAspectSquare': '1:1',
+  'graph.exportAspectPortrait': '4:5',
+  'graph.exportAspectWide': '16:9',
+  'graph.exportCoreTopics': '核心：',
 
   // ── FileChatPanel ──
   'fileChat.running': '运行中…',
@@ -687,12 +736,26 @@ const zh: Record<string, string> = {
   'kb.frontmatter.collapse': '收起属性',
   'kb.frontmatter.properties': '文档属性',
   'kb.floatingChat': '打开 AI 对话',
+  // 隐藏态（吸进边缘只剩 12px 小签）：此时点击**不打开面板**，只把按钮唤回可见位，
+  // 文案必须说这件事，否则是明确的预期错位。
+  'kb.floatingChatRecall': '点击唤回对话按钮',
+  // 首次藏边的一次性教学（只弹一次；见 FloatingChatButton 的 HINT_SEEN_KEY）
+  'kb.chatBtnHideHint': '对话按钮已收起，点边缘小签或右键即可唤回',
   // 悬浮按钮右键菜单（固定动作：与 KB 页固定按钮同源）
   'kb.chatMenu.build': '构建Wiki',
   'kb.chatMenu.openSession': '打开会话',
   'kb.chatMenu.hide': '隐藏按钮',
   'kb.chatMenu.show': '唤回按钮',
   'kb.chatMenu.resetPos': '恢复默认位置',
+
+  // ── 文档出图 ──
+  'kb.exportImage': '导出图片',
+  'kb.exporting': '正在导出…',
+  'kb.exportProgress': '正在生成第 {done}/{total} 张…',
+  'kb.exportDone': '已导出图片',
+  'kb.exportPages': '已导出 {pages} 张图片',
+  'kb.exportFailed': '导出失败，请重试',
+  'kb.exportUnsupported': '没有可导出的内容',
 
   // ── FilePicker ──
   'filePicker.justNow': '刚刚',

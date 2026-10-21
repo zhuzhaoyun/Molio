@@ -9,6 +9,7 @@ import Database from 'better-sqlite3';
 import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
+import { molioDataDir } from './data-dir.js';
 import { randomUUID } from 'node:crypto';
 import type { ChatMessage, Project, Conversation, ConversationHistoryItem, ConversationHistoryPage, ListHistoryQuery, Vault, KbHistoryEntry } from '@molio/contracts';
 
@@ -46,9 +47,9 @@ export function openDatabase(dataDir?: string): SqliteDb {
   // MOLIO_DATA_DIR：数据目录环境钩子（E2E 用洁净目录，避免与真实 ~/.molio
   // 共库——测试建删 vault 不再读写用户数据，也免去重型真实 vault 的同步扫描）。
   // 显式参数优先级最高。
-  if (!dataDir && !process.env.MOLIO_DATA_DIR) migrateLegacyDir();
+  if (!dataDir && !process.env['MOLIO_DATA_DIR']?.trim()) migrateLegacyDir();
 
-  const dir = dataDir ?? process.env.MOLIO_DATA_DIR ?? path.join(os.homedir(), '.molio');
+  const dir = dataDir ?? molioDataDir();
   const file = path.join(dir, 'app.sqlite');
 
   if (dbInstance && dbFile === file) return dbInstance;
@@ -291,6 +292,40 @@ function migrate(db: SqliteDb): void {
       size INTEGER NOT NULL,
       PRIMARY KEY (vault_id, file_path)
     );
+  `);
+
+  // rowid 配对约定迁移（约定见 core/vault-search.ts 头注释）：旧索引的 fts 行
+  // rowid 与 state 行没有配对关系，直接按 rowid 删会漏删/错删。旧数据不值得
+  // 逐行修复——丢弃旧 fts 表 + 清空 state，下次启动 sweep / 首搜触发全量重建
+  // （构建本身分片让位，期间 daemon 照常服务）。DROP 而非 DELETE：大 FTS 表
+  // 逐行删又是秒级全表扫描风暴，DROP 整表回收页面是管理操作，一次性成本可接受。
+  // 注意放在建表之后：全新库里 DELETE FROM vault_files_state 得表先存在。
+  if (!getKv(db, 'vault_fts_rowid_paired')) {
+    db.exec('DROP TABLE IF EXISTS vault_files_fts');
+    db.exec('DELETE FROM vault_files_state');
+    db.exec(`CREATE VIRTUAL TABLE IF NOT EXISTS vault_files_fts USING fts5(
+      content, vault_id UNINDEXED, file_path UNINDEXED,
+      tokenize = 'trigram'
+    )`);
+    setKv(db, 'vault_fts_rowid_paired', '1');
+  }
+
+  // 答题记录：一期只写不读（错题本/统计留到二期）。按 vault + 内容指纹索引，
+  // 即使题目还没存成题库文件也能把同一份题关联起来。
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS quiz_attempts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      vault_id TEXT,
+      quiz_fingerprint TEXT NOT NULL,
+      question_id TEXT NOT NULL,
+      chosen TEXT NOT NULL,
+      correct INTEGER NOT NULL,
+      conversation_id TEXT,
+      answered_at INTEGER NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_quiz_attempts_fp
+      ON quiz_attempts(vault_id, quiz_fingerprint);
   `);
 
   // One-time backfill of pre-existing messages. Guarded by kv flag so repeated
@@ -874,8 +909,15 @@ export function createVault(db: SqliteDb, name: string, vaultPath: string, descr
 export function deleteVault(db: SqliteDb, id: string): void {
   // 检索 P0 层1：删库必须一并清索引，否则该库全部文件的原文会永久滞留在
   // vault_files_fts 里（rebuildVaultFtsAll 只遍历现存 vault，回收不了）。
-  db.prepare('DELETE FROM vault_files_fts WHERE vault_id = ?').run(id);
-  db.prepare('DELETE FROM vault_files_state WHERE vault_id = ?').run(id);
+  // fts 清理走 rowid 配对约定（vault-search.ts 头注释）：按 UNINDEXED 的
+  // vault_id DELETE 是 fts 全表扫描，大库单条秒级；按 state 圈出的 rowid 删是 O(log n)。
+  const rids = db.prepare('SELECT rowid AS rid FROM vault_files_state WHERE vault_id = ?')
+    .all(id) as Array<{ rid: number }>;
+  db.transaction(() => {
+    const delFts = db.prepare('DELETE FROM vault_files_fts WHERE rowid = ?');
+    for (const { rid } of rids) delFts.run(rid);
+    db.prepare('DELETE FROM vault_files_state WHERE vault_id = ?').run(id);
+  })();
   db.prepare('DELETE FROM vaults WHERE id = ?').run(id);
   // Clear active-vault if it pointed at the deleted vault.
   if (getActiveVaultId(db) === id) {

@@ -43,12 +43,12 @@ describe('VaultIndexSweeper', () => {
     sw.stop();
   });
 
-  test('sweepVaultNow 同步生效；未知 vault 不抛', () => {
+  test('sweepVaultNow 立即生效；未知 vault 不抛', async () => {
     const sw = new VaultIndexSweeper(db, { debounceMs: 20 });
     fs.writeFileSync(path.join(vaultDir, 'now.md'), '立即扫内容标记ASDF', 'utf-8');
-    sw.sweepVaultNow(V);
+    await sw.sweepVaultNow(V);
     assert.equal(hit('立即扫内容标记ASDF'), true);
-    sw.sweepVaultNow('ghost-vault'); // 不抛即可
+    await sw.sweepVaultNow('ghost-vault'); // 不抛即可
     sw.stop();
   });
 

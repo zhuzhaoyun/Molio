@@ -30,6 +30,7 @@
         "apps/web/src/components/SourceChips.*",
         "apps/web/src/components/FileRef.*",
         "apps/web/src/utils/workSteps.*",
+        "apps/web/src/utils/sessionSources.*",
         "apps/web/src/utils/toolRefs.*",
         "apps/web/src/utils/diff.*",
         "apps/web/src/api/sse.ts",
@@ -44,7 +45,11 @@
         "apps/daemon/src/streams/*",
         "apps/web/src/components/RuntimeModelPill.*",
         "apps/web/src/components/runtimeModelOptions.*",
-        "apps/web/src/stores/chatRuntimeStore.*"
+        "apps/web/src/stores/chatRuntimeStore.*",
+        "apps/web/src/components/QuizCard.*",
+        "apps/web/src/utils/quiz.*",
+        "apps/web/src/utils/quizFile.*",
+        "apps/web/src/hooks/useWikiLinkClick.*"
       ],
       "specs": [
         "chat-single",
@@ -67,13 +72,17 @@
         "composer-hints",
         "chat-markdown",
         "session-output",
-        "session-output-history"
+        "session-output-history",
+        "quiz"
       ]
     },
     "kb": {
       "paths": [
         "apps/web/src/components/kb/*",
+        "apps/web/src/components/kb/docExport/*",
+        "apps/web/src/utils/exportFileName*",
         "apps/web/src/hooks/useKnowledge*",
+        "apps/web/src/utils/kbImage*",
         "apps/web/src/hooks/useKbTabs*",
         "apps/web/src/hooks/useScrollMemory*",
         "apps/web/src/stores/kbChatSessionsStore*",
@@ -93,6 +102,7 @@
         "kb-open-vault-error",
         "knowledge",
         "markdown-render",
+        "kb-images",
         "kb-tree-sort-locate",
         "kb-chat-entry",
         "kb-chat-sessions",
@@ -112,6 +122,7 @@
         "split-view",
         "kb-terminology",
         "kb-search",
+        "kb-export",
         "market-community"
       ]
     },
@@ -292,6 +303,10 @@
       "priority": "P0",
       "file": "chat-single.spec.ts"
     },
+    "quiz": {
+      "priority": "P0",
+      "file": "quiz.spec.ts"
+    },
     "chat-multi": {
       "priority": "P0",
       "file": "chat-multi.spec.ts"
@@ -388,6 +403,10 @@
       "priority": "P1",
       "file": "kb-search.spec.ts"
     },
+    "kb-export": {
+      "priority": "P1",
+      "file": "kb-export.spec.ts"
+    },
     "kb-chat-entry": {
       "priority": "P1",
       "file": "kb-chat-entry.spec.ts"
@@ -447,6 +466,10 @@
     "markdown-render": {
       "priority": "P1",
       "file": "markdown-render.spec.ts"
+    },
+    "kb-images": {
+      "priority": "P1",
+      "file": "kb-images.spec.ts"
     },
     "navigation": {
       "priority": "P1",
