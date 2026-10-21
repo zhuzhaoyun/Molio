@@ -138,6 +138,7 @@ const en: Record<string, string> = {
   'sandbox.generating': 'Generating demo…',
   'sandbox.incomplete': 'The demo did not finish generating. Try regenerating it.',
   'sandbox.invalidVerdict': 'Some verdicts were malformed and ignored:',
+  'sandbox.suggest': 'Turn this boundary into an interactive demo →',
 
   // ── AssistantMessage ──
   'assistant.label': 'Molio',

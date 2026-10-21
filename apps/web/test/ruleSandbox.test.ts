@@ -174,7 +174,7 @@ describe('parseRuleSandbox', () => {
   });
 });
 
-const { evaluateRuleSandbox, clampSandboxValue, stripSandboxesForStreaming, stripInteractiveFences } = await import('../src/utils/ruleSandbox.ts');
+const { evaluateRuleSandbox, clampSandboxValue, stripSandboxesForStreaming, stripInteractiveFences, extractSandboxSuggest } = await import('../src/utils/ruleSandbox.ts');
 
 const TWO_VERDICTS = {
   ...VALID,
@@ -309,5 +309,52 @@ describe('stripInteractiveFences', () => {
     assert.deepEqual(res, { text: '前', quizGenerating: false, sandboxGenerating: true });
     const res2 = stripInteractiveFences('前\n```quiz\n{');
     assert.deepEqual(res2, { text: '前', quizGenerating: true, sandboxGenerating: false });
+  });
+});
+
+describe('extractSandboxSuggest', () => {
+  it('strips a trailing marker and returns its title', () => {
+    const res = extractSandboxSuggest('结论如下。\n\n<!-- sandbox-suggest: 诉讼时效 3 年边界 -->');
+    assert.deepEqual(res, { text: '结论如下。', suggest: '诉讼时效 3 年边界' });
+  });
+
+  it('tolerates trailing whitespace after the marker', () => {
+    const res = extractSandboxSuggest('结论。\n<!-- sandbox-suggest: 边界 -->\n\n');
+    assert.equal(res.suggest, '边界');
+    assert.equal(res.text, '结论。');
+  });
+
+  it('leaves text without a marker untouched', () => {
+    const res = extractSandboxSuggest('普通回答。', false);
+    assert.deepEqual(res, { text: '普通回答。', suggest: null });
+  });
+
+  it('strips markers anywhere and surfaces the last one', () => {
+    const res = extractSandboxSuggest(
+      'A<!-- sandbox-suggest: 第一个 -->B\n<!-- sandbox-suggest: 最后一个 -->',
+    );
+    assert.equal(res.suggest, '最后一个');
+    assert.ok(!res.text.includes('sandbox-suggest'));
+    assert.ok(res.text.includes('A'));
+    assert.ok(res.text.includes('B'));
+  });
+
+  it('hides a partially streamed marker and reports no suggestion yet', () => {
+    const res = extractSandboxSuggest('结论。<!-- sandbox-sugg', true);
+    assert.equal(res.suggest, null);
+    assert.ok(!res.text.includes('<!--'));
+  });
+
+  it('hides a complete marker while streaming', () => {
+    const res = extractSandboxSuggest('结论。<!-- sandbox-suggest: 边界 -->', true);
+    assert.equal(res.suggest, '边界');
+    assert.ok(!res.text.includes('<!--'));
+  });
+
+  it('does not hide an unclosed multi-line non-marker comment', () => {
+    const original = '结论。<!-- 说明\n还没写完';
+    const res = extractSandboxSuggest(original, true);
+    assert.equal(res.text, original);
+    assert.equal(res.suggest, null);
   });
 });

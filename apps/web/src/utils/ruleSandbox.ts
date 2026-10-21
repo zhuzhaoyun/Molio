@@ -566,3 +566,41 @@ export function stripInteractiveFences(
 
   return { text: output.trim(), quizGenerating, sandboxGenerating };
 }
+
+/** 完整的 sandbox-suggest 标记（单行，可出现在正文任意位置——按协议应在最末）。 */
+const SANDBOX_SUGGEST_MARKER = /<!--\s*sandbox-suggest:\s*([^\n]*?)\s*-->/g;
+
+/**
+ * 从回答正文里提取「演示建议」标记。
+ *
+ * 常驻规则（vault CLAUDE.md）约定：回答的核心结论依赖某个明确边界、而用户
+ * 没有要求演示时，模型在回答最末追加 `<!-- sandbox-suggest: 标题 -->`。
+ * 标记是协议内容，永远不给用户看：
+ * - 完整标记 → 从正文剥离，取最后一个作为 chip 标题；
+ * - 流式中的半截标记（末尾 `<!--` 且到结尾无换行、无闭合）→ 整段隐藏，
+ *   避免打字过程把原始协议糊出来；跨行未闭合的注释不是本协议的，不动。
+ */
+export function extractSandboxSuggest(
+  text: string,
+  streaming = false,
+): { text: string; suggest: string | null } {
+  let suggest: string | null = null;
+  let output = text.replace(SANDBOX_SUGGEST_MARKER, (_m, title: string) => {
+    const trimmed = title.trim();
+    if (trimmed) suggest = trimmed;
+    return '';
+  });
+
+  if (streaming) {
+    const open = output.lastIndexOf('<!--');
+    if (open !== -1) {
+      const tail = output.slice(open);
+      if (!tail.includes('-->') && !tail.includes('\n')) {
+        output = output.slice(0, open);
+        suggest = null;
+      }
+    }
+  }
+
+  return { text: output.replace(/[ \t]+$/gm, '').replace(/\n{3,}$/g, '\n\n').trimEnd(), suggest };
+}

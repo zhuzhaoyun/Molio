@@ -2065,3 +2065,18 @@
   color: var(--text-muted);
   font-size: 13px;
 }
+.sandbox-suggest-chip {
+  display: inline-flex;
+  align-items: center;
+  margin-top: 8px;
+  padding: 5px 12px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-pill);
+  background: var(--accent-tint);
+  color: var(--accent);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.sandbox-suggest-chip:hover { background: var(--accent); color: var(--bg); }
+.sandbox-suggest-chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }

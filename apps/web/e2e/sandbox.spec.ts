@@ -278,6 +278,46 @@ test.describe('Rule sandbox interaction block', () => {
     await expect(page.locator('[data-testid="sandbox-invalid-verdict"]')).toContainText('80');
   });
 
+  test('turns a sandbox-suggest marker into a one-click chip', async ({ page }) => {
+    // 常驻规则让模型在「结论依赖边界但用户没要求演示」时于回答末尾追加标记。
+    // 标记是协议内容：不给用户看，转成一键生成入口；点击后发预填 prompt。
+    await mockChatRun(page, {
+      script: [
+        { type: 'status', label: 'running' },
+        { type: 'text_delta', delta: '免费额度每月 10GB，超出后按 0.5 元/GB 计费。\n\n<!-- sandbox-suggest: 免费额度与计费边界 -->' },
+        { type: 'turn_end', stopReason: 'end_turn' },
+        { type: 'usage', usage: { input_tokens: 100, output_tokens: 80 }, costUsd: 0.01 },
+      ],
+    });
+    await gotoHome(page);
+    await sendMessage(page, '这个套餐怎么收费');
+
+    const chip = page.locator('[data-testid="sandbox-suggest-chip"]');
+    await expect(chip).toBeVisible({ timeout: 10_000 });
+    // 原始标记绝不给用户看。
+    await expect(page.locator('[data-testid="assistant-prose"]')).not.toContainText('sandbox-suggest');
+
+    await chip.click();
+    await expect(chip).toHaveCount(0);
+    // 点击 = 发预填 prompt（新一条 user 消息）。
+    await expect(page.locator('[data-testid="user-message"]').last()).toContainText('给我演示一下：免费额度与计费边界');
+  });
+
+  test('shows no suggestion chip when the answer has no marker', async ({ page }) => {
+    await mockChatRun(page, {
+      script: [
+        { type: 'status', label: 'running' },
+        { type: 'text_delta', delta: '这是一段没有边界的普通回答。' },
+        { type: 'turn_end', stopReason: 'end_turn' },
+      ],
+    });
+    await gotoHome(page);
+    await sendMessage(page, '随便问点啥');
+
+    await expect(page.locator('[data-testid="assistant-prose"]')).toBeVisible({ timeout: 10_000 });
+    await expect(page.locator('[data-testid="sandbox-suggest-chip"]')).toHaveCount(0);
+  });
+
   test('shows a friendly message when the fence was never closed', async ({ page }) => {
     // 围栏没闭合且流已结束：不能把半截 JSON 整段糊在聊天里（quiz 有
     // 「题目没有生成完整」提示，sandbox 也应有对应文案）。

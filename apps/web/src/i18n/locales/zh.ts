@@ -137,6 +137,7 @@ const zh: Record<string, string> = {
   'sandbox.generating': '正在生成演示…',
   'sandbox.incomplete': '演示没有生成完整，可以重新生成一次',
   'sandbox.invalidVerdict': '部分判定格式有误，已忽略：',
+  'sandbox.suggest': '把这个边界做成可拖动演示 →',
 
   // ── AssistantMessage ──
   'assistant.label': 'Molio',

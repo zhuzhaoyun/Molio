@@ -1,8 +1,9 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import type { ChatMessage } from '../hooks/useChatCore';
 import { renderMarkdown, splitContent } from '../utils/markdown';
 import { groupTools, isInteractive } from '../utils/toolGroups';
 import { splitMessageParts } from '../utils/messageText';
+import { extractSandboxSuggest } from '../utils/ruleSandbox';
 import { CodeBlock } from './CodeBlock';
 import { QuizCard } from './QuizCard';
 import { SandboxCard } from './SandboxCard';
@@ -54,7 +55,15 @@ export function AssistantMessage({ message, isLast, onAnswerToolUse, onSubmitFor
   // AskUserQuestion 场景：fallback 抑制只对拼接文本有效，分段不传（工作块退回整块叙事）。
   const displayProcessSegs = hasAskUserQuestion ? undefined : processSegs;
 
-  const segments = useMemo(() => splitContent(displayAnswer), [displayAnswer]);
+  // sandbox-suggest 标记是协议内容（常驻规则约定模型在回答末尾追加），
+  // 从展示/复制/存库的正文里剥掉，末尾转成「做成可拖动演示」建议 chip。
+  const { text: answerText, suggest: sandboxSuggest } = useMemo(
+    () => extractSandboxSuggest(displayAnswer, !!message.streaming),
+    [displayAnswer, message.streaming],
+  );
+  const [suggestUsed, setSuggestUsed] = useState(false);
+
+  const segments = useMemo(() => splitContent(answerText), [answerText]);
   // quiz / rule-sandbox 围栏可能出现在最后一个工具之前（模型出题/演示后又读了
   // 一次文件）：splitMessageParts 会把这段归入过程叙事，WorkBlock 又把闭合围栏
   // 剥掉 —— 不在这里捞出来，卡片就从活动会话里消失，直到整页刷新才回来。
@@ -179,7 +188,7 @@ export function AssistantMessage({ message, isLast, onAnswerToolUse, onSubmitFor
         </div>
       )}
 
-      {displayAnswer && (
+      {answerText && (
         <div
           className="assistant-prose"
           data-testid="assistant-prose"
@@ -216,6 +225,23 @@ export function AssistantMessage({ message, isLast, onAnswerToolUse, onSubmitFor
         </div>
       )}
 
+      {/* 演示建议 chip：模型判定回答依赖某个明确边界、而用户没有要求演示时，
+          常驻规则让它在回答末尾追加 sandbox-suggest 标记 —— 原始标记不可见，
+          这里转成一键生成入口。点击后消失（后续回复里会出真卡）。 */}
+      {sandboxSuggest && !message.streaming && !selectMode && !suggestUsed && (
+        <button
+          type="button"
+          className="sandbox-suggest-chip"
+          data-testid="sandbox-suggest-chip"
+          onClick={() => {
+            setSuggestUsed(true);
+            onSubmitForm?.(`给我演示一下：${sandboxSuggest}`);
+          }}
+        >
+          {t('sandbox.suggest')}
+        </button>
+      )}
+
       {/* 产物卡：移入消息内，逐消息 provenance */}
       <WorkCompleteBanner tools={message.tools ?? []} />
 
@@ -235,7 +261,7 @@ export function AssistantMessage({ message, isLast, onAnswerToolUse, onSubmitFor
           actions={[
             {
               key: 'copy', label: '复制', testid: 'msg-copy-btn',
-              text: displayAnswer, onClick: () => {},
+              text: answerText, onClick: () => {},
             },
             ...(isLast && onContinue
               ? [{
@@ -252,8 +278,8 @@ export function AssistantMessage({ message, isLast, onAnswerToolUse, onSubmitFor
           ]}
           extra={
             <>
-              <SaveToKbButton content={displayAnswer} />
-              <SaveAsSkillButton content={displayAnswer} />
+              <SaveToKbButton content={answerText} />
+              <SaveAsSkillButton content={answerText} />
             </>
           }
           overflow={onRequestDelete ? [{
