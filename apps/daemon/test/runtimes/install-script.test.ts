@@ -630,12 +630,18 @@ describe('runScriptProcess — real tree kill (orphaned-installer regression)', 
       });
 
       // Wait for the 3rd-level process to exist, then abort mid-run.
+      //
+      // 等「能解析出正数 pid」而不是「文件存在」：PowerShell 的 Out-File 先创建
+      // 文件、后写入内容，繁忙的 runner 上 150ms 轮询会正好落进空窗——读到空
+      // 串 → parseInt = NaN（2026-10-21 windows runner 实测，同代码前一轮绿）。
+      let deepPid = Number.NaN;
       const deadline = Date.now() + 30_000;
-      while (!existsSync(deepPidFile) && Date.now() < deadline) {
+      while (Date.now() < deadline) {
+        const raw = existsSync(deepPidFile) ? readFileSync(deepPidFile, 'utf8').trim() : '';
+        deepPid = parseInt(raw, 10);
+        if (Number.isFinite(deepPid) && deepPid > 0) break;
         await new Promise((r) => setTimeout(r, 150));
       }
-      assert.equal(existsSync(deepPidFile), true, 'deep grandchild must have started before abort');
-      const deepPid = parseInt(readFileSync(deepPidFile, 'utf8').trim(), 10);
       assert.ok(Number.isFinite(deepPid) && deepPid > 0, 'deep grandchild pid recorded');
 
       ac.abort();
