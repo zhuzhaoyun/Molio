@@ -312,6 +312,22 @@ async function openExportFile(page: Page, filename: string, expectOutput = true)
   }
 }
 
+/**
+ * 导出图片现在是一个按钮开气泡（对齐图谱出图）：主按钮只负责开/收气泡，
+ * 「导出图片」动作在气泡底部。等待下载的 promise 必须在调用前注册好。
+ */
+async function runExport(page: Page) {
+  await page.locator('[data-testid="kb-btn-export-image"]').click();
+  await expect(page.locator('[data-testid="kb-export-download"]')).toBeVisible();
+  await page.locator('[data-testid="kb-export-download"]').click();
+}
+
+/** 只开气泡不导出（选版式 / 开关头卡用）。 */
+async function openExportMenu(page: Page) {
+  await page.locator('[data-testid="kb-btn-export-image"]').click();
+  await expect(page.locator('[data-testid="kb-export-download"]')).toBeVisible();
+}
+
 test.describe('Document image export', () => {
   test.beforeAll(async () => {
     vaultPath = mkdtempSync(join(tmpdir(), 'molio-e2e-export-'));
@@ -346,7 +362,7 @@ test.describe('Document image export', () => {
     await openExportFile(page, 'short.md');
 
     const downloadPromise = page.waitForEvent('download', { timeout: 30_000 });
-    await page.locator('[data-testid="kb-btn-export-image"]').click();
+    await runExport(page);
     const download = await downloadPromise;
 
     // 文件名优先用文档 H1（`# 导出短文`），而不是文件 stem `short`。
@@ -376,7 +392,7 @@ test.describe('Document image export', () => {
     const downloads: Download[] = [];
     page.on('download', (download) => downloads.push(download));
 
-    await page.locator('[data-testid="kb-btn-export-image"]').click();
+    await runExport(page);
 
     // 分页数取决于渲染高度，只断言「至少两页」，不锁死具体页数
     await expect(page.locator('[data-testid="kb-export-notice"]')).toContainText('张图片', {
@@ -416,7 +432,7 @@ test.describe('Document image export', () => {
     );
 
     const downloadPromise = page.waitForEvent('download', { timeout: 60_000 });
-    await page.locator('[data-testid="kb-btn-export-image"]').click();
+    await runExport(page);
     const download = await downloadPromise;
 
     const filePath = await download.path();
@@ -459,7 +475,7 @@ test.describe('Document image export', () => {
     const downloads: Download[] = [];
     page.on('download', (download) => downloads.push(download));
 
-    await page.locator('[data-testid="kb-btn-export-image"]').click();
+    await runExport(page);
 
     await expect(page.locator('[data-testid="kb-export-notice"]')).toContainText('张图片', {
       timeout: 120_000,
@@ -559,7 +575,7 @@ test.describe('Document image export', () => {
     await expect(page.locator('#output .katex-block svg')).toHaveCount(1, { timeout: 15_000 });
 
     const downloadPromise = page.waitForEvent('download', { timeout: 60_000 });
-    await page.locator('[data-testid="kb-btn-export-image"]').click();
+    await runExport(page);
     await downloadPromise;
 
     const dataUrls = await readCapturedSvgDataUrls(page);
@@ -607,7 +623,7 @@ test.describe('Document image export', () => {
     await openExportFile(page, 'longline.md');
 
     const downloadPromise = page.waitForEvent('download', { timeout: 60_000 });
-    await page.locator('[data-testid="kb-btn-export-image"]').click();
+    await runExport(page);
     await downloadPromise;
 
     const svgs = await readCapturedSvgs(page);
@@ -629,7 +645,7 @@ test.describe('Document image export', () => {
       downloaded = true;
     });
 
-    await page.locator('[data-testid="kb-btn-export-image"]').click();
+    await runExport(page);
     await expect(page.locator('[data-testid="kb-export-notice"]')).toContainText(
       '没有可导出的内容',
       { timeout: 15_000 },
@@ -648,7 +664,7 @@ test.describe('Document image export', () => {
 
     const downloads: Download[] = [];
     page.on('download', (download) => downloads.push(download));
-    await page.locator('[data-testid="kb-btn-export-image"]').click();
+    await runExport(page);
     await expect(page.locator('[data-testid="kb-export-notice"]')).toContainText('张图片', {
       timeout: 90_000,
     });
@@ -673,16 +689,13 @@ test.describe('Document image export', () => {
     await installSvgCapture(page);
     await openExportFile(page, 'short.md');
 
-    await page.locator('[data-testid="kb-export-preset"]').click();
+    await openExportMenu(page);
     await expect(page.locator('[data-testid="kb-export-header-toggle"]')).toBeVisible();
     await page.locator('[data-testid="kb-export-header-toggle"] input').click();
-    await expect(page.locator('[data-testid="kb-export-header-toggle"]')).toHaveAttribute(
-      'aria-checked',
-      'false',
-    );
+    await expect(page.locator('[data-testid="kb-export-header-toggle"] input')).not.toBeChecked();
 
     const downloadPromise = page.waitForEvent('download', { timeout: 60_000 });
-    await page.locator('[data-testid="kb-btn-export-image"]').click();
+    await page.locator('[data-testid="kb-export-download"]').click();
     await downloadPromise;
 
     const svgs = await readCapturedSvgs(page);
@@ -694,11 +707,8 @@ test.describe('Document image export', () => {
 
     // openExportFile 走整页导航（page.goto）——等价于重载应用。
     await openExportFile(page, 'short.md');
-    await page.locator('[data-testid="kb-export-preset"]').click();
-    await expect(page.locator('[data-testid="kb-export-header-toggle"]')).toHaveAttribute(
-      'aria-checked',
-      'false',
-    );
+    await openExportMenu(page);
+    await expect(page.locator('[data-testid="kb-export-header-toggle"] input')).not.toBeChecked();
   });
 
   test('3:4 竖卡：每页都是 1080×1440，头卡只出现在第 1 页', async ({ page }) => {
@@ -706,12 +716,12 @@ test.describe('Document image export', () => {
     await installSvgCapture(page);
     await openExportFile(page, 'card.md');
 
-    await page.locator('[data-testid="kb-export-preset"]').click();
+    await openExportMenu(page);
     await page.locator('[data-testid="kb-export-preset-card34"]').click();
 
     const downloads: Download[] = [];
     page.on('download', (download) => downloads.push(download));
-    await page.locator('[data-testid="kb-btn-export-image"]').click();
+    await page.locator('[data-testid="kb-export-download"]').click();
     await expect(page.locator('[data-testid="kb-export-notice"]')).toContainText('张图片', {
       timeout: 90_000,
     });
@@ -736,24 +746,23 @@ test.describe('Document image export', () => {
 
   test('版式选择持久化：选 card34 后重载仍选中', async ({ page }) => {
     await openExportFile(page, 'short.md');
-    await page.locator('[data-testid="kb-export-preset"]').click();
+    await openExportMenu(page);
     await page.locator('[data-testid="kb-export-preset-card34"]').click();
-    // 选完菜单收起，重新打开确认选中态。
-    await page.locator('[data-testid="kb-export-preset"]').click();
+    // 分段控件二选一：选中的那头 pressed，另一头不 pressed；气泡保持开着。
     await expect(page.locator('[data-testid="kb-export-preset-card34"]')).toHaveAttribute(
-      'aria-checked',
-      'true',
-    );
-
-    await openExportFile(page, 'short.md');
-    await page.locator('[data-testid="kb-export-preset"]').click();
-    await expect(page.locator('[data-testid="kb-export-preset-card34"]')).toHaveAttribute(
-      'aria-checked',
+      'aria-pressed',
       'true',
     );
     await expect(page.locator('[data-testid="kb-export-preset-long"]')).toHaveAttribute(
-      'aria-checked',
+      'aria-pressed',
       'false',
+    );
+
+    await openExportFile(page, 'short.md');
+    await openExportMenu(page);
+    await expect(page.locator('[data-testid="kb-export-preset-card34"]')).toHaveAttribute(
+      'aria-pressed',
+      'true',
     );
   });
 });

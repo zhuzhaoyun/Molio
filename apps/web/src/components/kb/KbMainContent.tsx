@@ -530,7 +530,7 @@ export function KbMainContent({
     } catch {
       // 隐私模式 / 存储不可用：本次会话内仍然生效，只是下次不记得。
     }
-    setExportMenuOpen(false);
+    // 不收气泡：选完版式人还要点「导出图片」（对齐图谱出图）。
   }, []);
 
   const toggleExportHeader = useCallback(() => {
@@ -808,15 +808,63 @@ export function KbMainContent({
               )}
 
               {/* 导出图片 —— 阅读与排版模式都可用；排版模式导出的就是右侧预览。
-                  右侧小箭头开版式菜单：长图 / 3:4 竖卡 + 头卡开关。 */}
+                  一个按钮开气泡（对齐图谱出图）：版式二选一是分段控件并排可比，
+                  头卡开关一行，底部是导出动作。 */}
               {(isReadingPath || isTypesetMode) && (
-                <div className="kb-export-menu-wrap" ref={exportMenuWrapRef}>
+                <div className="kb-export-ctrl" ref={exportMenuWrapRef}>
+                  {exportMenuOpen && (
+                    <div className="kb-export-menu">
+                      <div
+                        className="kb-export-aspects"
+                        role="group"
+                        aria-label={t('kb.exportPreset')}
+                      >
+                        <button
+                          type="button"
+                          className={`kb-export-aspect${exportPreset === 'long' ? ' is-active' : ''}`}
+                          data-testid="kb-export-preset-long"
+                          aria-pressed={exportPreset === 'long'}
+                          onClick={() => chooseExportPreset('long')}
+                        >
+                          {t('kb.exportPresetLong')}
+                        </button>
+                        <button
+                          type="button"
+                          className={`kb-export-aspect${exportPreset === 'card34' ? ' is-active' : ''}`}
+                          data-testid="kb-export-preset-card34"
+                          aria-pressed={exportPreset === 'card34'}
+                          onClick={() => chooseExportPreset('card34')}
+                        >
+                          {t('kb.exportPresetCard34')}
+                        </button>
+                      </div>
+                      <label className="kb-export-toggle" data-testid="kb-export-header-toggle">
+                        <input
+                          type="checkbox"
+                          checked={exportHeaderOn}
+                          onChange={toggleExportHeader}
+                        />
+                        <span>{t('kb.exportHeader')}</span>
+                      </label>
+                      <button
+                        type="button"
+                        className="kb-export-item"
+                        data-testid="kb-export-download"
+                        onClick={handleExportImage}
+                        disabled={exporting}
+                      >
+                        {t('kb.exportImage')}
+                      </button>
+                    </div>
+                  )}
                   <button
                     type="button"
-                    className="kb-btn kb-btn-ghost"
-                    onClick={handleExportImage}
+                    className={`kb-btn kb-btn-ghost${exportMenuOpen ? ' is-active' : ''}`}
+                    onClick={() => setExportMenuOpen((open) => !open)}
                     disabled={exporting}
                     title={t('kb.exportImage')}
+                    aria-label={t('kb.exportImage')}
+                    aria-expanded={exportMenuOpen}
                     data-testid="kb-btn-export-image"
                   >
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="14" height="14">
@@ -825,55 +873,6 @@ export function KbMainContent({
                       <polyline points="21 15 16 10 5 21" />
                     </svg>
                   </button>
-                  <button
-                    type="button"
-                    className="kb-btn kb-btn-ghost"
-                    onClick={() => setExportMenuOpen((open) => !open)}
-                    disabled={exporting}
-                    title={t('kb.exportPreset')}
-                    aria-label={t('kb.exportPreset')}
-                    aria-expanded={exportMenuOpen}
-                    data-testid="kb-export-preset"
-                  >
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="10" height="10">
-                      <polyline points="6 9 12 15 18 9" />
-                    </svg>
-                  </button>
-                  {exportMenuOpen && (
-                    <div className="kb-export-menu" role="menu">
-                      <button
-                        type="button"
-                        role="menuitemradio"
-                        aria-checked={exportPreset === 'long'}
-                        data-testid="kb-export-preset-long"
-                        onClick={() => chooseExportPreset('long')}
-                      >
-                        {t('kb.exportPresetLong')}
-                      </button>
-                      <button
-                        type="button"
-                        role="menuitemradio"
-                        aria-checked={exportPreset === 'card34'}
-                        data-testid="kb-export-preset-card34"
-                        onClick={() => chooseExportPreset('card34')}
-                      >
-                        {t('kb.exportPresetCard34')}
-                      </button>
-                      <label
-                        className="kb-export-menu__toggle"
-                        role="menuitemcheckbox"
-                        aria-checked={exportHeaderOn}
-                        data-testid="kb-export-header-toggle"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={exportHeaderOn}
-                          onChange={toggleExportHeader}
-                        />
-                        {t('kb.exportHeader')}
-                      </label>
-                    </div>
-                  )}
                 </div>
               )}
 
