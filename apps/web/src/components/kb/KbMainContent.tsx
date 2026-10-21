@@ -545,6 +545,25 @@ export function KbMainContent({
     });
   }, []);
 
+  // 版式菜单开着时：点外面 / Esc 收起（对齐 kb-tab-dropdown 的既有行为）。
+  const exportMenuWrapRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!exportMenuOpen) return;
+    const onPointer = (e: MouseEvent) => {
+      if (exportMenuWrapRef.current?.contains(e.target as Node)) return;
+      setExportMenuOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setExportMenuOpen(false);
+    };
+    document.addEventListener('mousedown', onPointer);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onPointer);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [exportMenuOpen]);
+
   const selectionText = useCallback(() => {
     const sel = window.getSelection();
     return sel ? sel.toString().trim() : '';
@@ -791,7 +810,7 @@ export function KbMainContent({
               {/* 导出图片 —— 阅读与排版模式都可用；排版模式导出的就是右侧预览。
                   右侧小箭头开版式菜单：长图 / 3:4 竖卡 + 头卡开关。 */}
               {(isReadingPath || isTypesetMode) && (
-                <div className="kb-export-menu-wrap">
+                <div className="kb-export-menu-wrap" ref={exportMenuWrapRef}>
                   <button
                     type="button"
                     className="kb-btn kb-btn-ghost"

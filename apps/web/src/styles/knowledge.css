@@ -3563,7 +3563,8 @@
   position: absolute;
   right: 0;
   top: calc(100% + 4px);
-  z-index: 30;
+  /* 与 .kb-sort-dropdown（同为 header 区的下拉）一致 */
+  z-index: 40;
   min-width: 180px;
   padding: 4px;
   background: var(--bg-elevated);

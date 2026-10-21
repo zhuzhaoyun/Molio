@@ -117,10 +117,15 @@ export function composeExportCss(parts: ExportCssParts): string {
   // 头卡（标题 + 元信息 + 标签）规则无条件输出：头卡元素只在传入
   // `options.header` 时才存在，规则空跑无害；这样 composeExportCss 不需要
   // 知道「头卡开没开」，少一处分支就少一处「开了但没样式」的漏配。
-  // 字号用 em（跟随主题基准字号，跨主题自适应）；分隔线用主题色。
+  // 字号用 em（跟随主题基准字号，跨主题自适应）。
+  // 强调色优先用 doocs 主题自己的 --md-primary-color（用户在样式面板选的
+  // 主题色，与正文标题下划线同源），主题没定义时回退应用 accent。var() 在
+  // 计算值阶段解析，不受这条规则先于主题 CSS 输出的影响（变量定义就在
+  // 主题 CSS 的 :root 上，rewriteScope 后落在导出根）。
+  const primary = `var(--md-primary-color, ${parts.accent})`;
   const headerCss = [
     `${EXPORT_SCOPE} .${HEADER_CLASS} { margin: 0 0 1.5em; padding-bottom: 1em;` +
-      ` border-bottom: 2px solid ${parts.accent}; }`,
+      ` border-bottom: 2px solid ${primary}; }`,
     `${EXPORT_SCOPE} .${HEADER_CLASS}__title { font-size: 2em; font-weight: 700;` +
       ` line-height: 1.35; margin: 0; }`,
     `${EXPORT_SCOPE} .${HEADER_CLASS}__meta { margin-top: 0.6em; font-size: 0.85em;` +
@@ -128,7 +133,7 @@ export function composeExportCss(parts: ExportCssParts): string {
     `${EXPORT_SCOPE} .${HEADER_CLASS}__tags { margin-top: 0.8em; display: flex;` +
       ` flex-wrap: wrap; gap: 0.5em; }`,
     `${EXPORT_SCOPE} .${HEADER_CLASS}__tags span { font-size: 0.8em;` +
-      ` padding: 0.15em 0.8em; border: 1px solid ${parts.accent}; border-radius: 999px; }`,
+      ` padding: 0.15em 0.8em; border: 1px solid ${primary}; border-radius: 999px; }`,
     `${EXPORT_SCOPE} .${HEADER_CLASS}__more { color: ${footerInkFor(parts.background)};` +
       ` border-color: ${footerInkFor(parts.background)}; }`,
   ].join('\n');

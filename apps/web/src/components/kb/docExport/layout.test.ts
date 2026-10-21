@@ -120,6 +120,9 @@ describe('composeExportCss', () => {
     assert.match(css, /\.molio-doc-export \.molio-export-head \{/);
     assert.match(css, /\.molio-export-head__title/);
     assert.match(css, /__meta[\s\S]*?rgba\(0, 0, 0, 0\.45\)/);
+    // 强调色走 doocs 主题自己的主色变量（与正文标题下划线同源），应用 accent 只做兜底
+    assert.match(css, /border-bottom: 2px solid var\(--md-primary-color, rgb\(99, 102, 241\)\)/);
+    assert.match(css, /__tags span \{[\s\S]*?border: 1px solid var\(--md-primary-color/);
   });
 });
 
