@@ -161,9 +161,10 @@ export function SessionOutputPanel({ messages }: Props) {
     return groupChangesByPath(cs);
   }, [messages, activeVault?.path]);
   // 会话级「引用」（读入面）—— 与产出（写入面）成对，独立 tab 呈现（不与产出同屏）
-  // refs = 展示清单；omitted = 被过滤掉的引用（库外文件 / 隐藏目录 / 检索目录），
-  // 面板要自己说明「少了什么」，否则同一屏里用户看到的引用标签比面板多、像面板漏了。
-  const { refs: sourceRefs, omitted: omittedSources } = useMemo(
+  // refs = 展示清单；meta = 登记骨架（INDEX/log/hot，折叠展示）；omitted = 被过滤掉的
+  // 引用（库外文件 / 隐藏目录 / 检索目录），面板要自己说明「少了什么」，否则同一屏里
+  // 用户看到的引用标签比面板多、像面板漏了。
+  const { refs: sourceRefs, meta: sourceMeta, omitted: omittedSources } = useMemo(
     () => aggregateSessionSources(messages, activeVault?.path),
     [messages, activeVault?.path],
   );
@@ -366,7 +367,7 @@ export function SessionOutputPanel({ messages }: Props) {
           {tab === 'sources' ? (
             /* ── 引用 tab：本会话读入的文件（count 降序）+ URL 折叠组 + 未展示说明 ── */
             <div className="session-output-body" data-testid="session-output-sources">
-              {sourceFiles.length === 0 && sourceUrls.length === 0 ? (
+              {sourceFiles.length === 0 && sourceUrls.length === 0 && sourceMeta.length === 0 ? (
                 <p className="session-output-empty">{t('output.sourcesEmpty')}</p>
               ) : (
                 <>
@@ -391,6 +392,30 @@ export function SessionOutputPanel({ messages }: Props) {
                       </span>
                     </button>
                   ))}
+                  {/* 登记骨架（INDEX/log/hot）：wiki 技能每次启动必读，用户不关心 ——
+                      与产出面板折叠这三个 basename 同款处理，主列表只留真实内容 */}
+                  {sourceMeta.length > 0 && (
+                    <details className="session-output-sources-meta" data-testid="session-output-sources-meta">
+                      <summary title={t('output.sourcesMetaHint')}>
+                        {t('output.sourcesMeta', { n: sourceMeta.length })}
+                      </summary>
+                      {sourceMeta.map((s) => (
+                        <button
+                          key={s.target}
+                          type="button"
+                          className="session-output-item"
+                          data-testid="session-output-meta-item"
+                          title={s.target}
+                          disabled={!vaultId}
+                          onClick={() => { if (vaultId) openPreview('read', s.target, s.label); }}
+                        >
+                          <span className="session-output-item-icon" aria-hidden>📄</span>
+                          <span className="session-output-item-label">{s.label}</span>
+                          <span className="session-output-item-count">{s.count}</span>
+                        </button>
+                      ))}
+                    </details>
+                  )}
                   {sourceUrls.length > 0 && (
                     <details className="session-output-sources-urls" data-testid="session-output-sources-urls">
                       <summary>{t('output.sourcesUrls', { n: sourceUrls.length })}</summary>

@@ -399,11 +399,13 @@ body.home-dock-resizing {
 /* ─── 引用 tab ─── */
 
 /* URL 折叠组：沿用「其他写入」折叠区的收敛样式（原生 <details> 去掉默认三角） */
-.session-output-sources-urls {
+.session-output-sources-urls,
+.session-output-sources-meta {
   margin-top: 4px;
   border-top: 1px solid var(--border-soft);
 }
-.session-output-sources-urls > summary {
+.session-output-sources-urls > summary,
+.session-output-sources-meta > summary {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -415,11 +417,14 @@ body.home-dock-resizing {
   user-select: none;
   list-style: none;
 }
-.session-output-sources-urls > summary::-webkit-details-marker {
+.session-output-sources-urls > summary::-webkit-details-marker,
+.session-output-sources-meta > summary::-webkit-details-marker {
   display: none;
 }
 .session-output-sources-urls > summary:hover,
-.session-output-sources-urls > summary:focus-visible {
+.session-output-sources-urls > summary:focus-visible,
+.session-output-sources-meta > summary:hover,
+.session-output-sources-meta > summary:focus-visible {
   color: var(--text-muted);
 }
 /* URL 行是 <a>：去掉 UA 下划线，与文件行视觉一致 */

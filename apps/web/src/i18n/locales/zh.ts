@@ -213,6 +213,8 @@ const zh: Record<string, string> = {
   'output.sourceCount': '本会话引用 {n} 次',
   'output.sourcesOmitted': '另有 {n} 条未展示',
   'output.sourcesOmittedHint': '库外文件、隐藏目录与检索路径不在此列表 —— 消息内联的「引用」标签里能看到它们',
+  'output.sourcesMeta': '索引·日志 {n}',
+  'output.sourcesMetaHint': 'wiki 每次操作都会读写的登记文件（目录索引、日志、缓存）——点开可预览',
   'output.changeKind.create': '新建文件',
   'output.changeKind.update': '编辑',
   'output.changeKind.append': '追加',

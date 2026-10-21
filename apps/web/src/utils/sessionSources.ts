@@ -7,7 +7,7 @@
  * （commit ac179411）。此处以独立 tab 呈现，规避该理由。
  */
 import type { ChatMessage } from '../hooks/useChatCore.ts';
-import { extractSources, classifyWritePath, writeKey } from './toolRefs.ts';
+import { extractSources, classifyWritePath, writeKey, isMetaBasename } from './toolRefs.ts';
 import { disambiguateLabels } from './workSteps.ts';
 
 export interface SessionSourceRef {
@@ -22,8 +22,15 @@ export interface SessionSourceRef {
 
 /** 一次会话的引用汇总。 */
 export interface SessionSources {
-  /** 面板展示的引用：库内文件 + 网页链接 */
+  /** 面板展示的引用：库内真实内容文件 + 网页链接 */
   refs: SessionSourceRef[];
+  /**
+   * 登记骨架（INDEX.md / log.md / hot.md，含各级目录下的）—— wiki 技能每次启动
+   * 必读的导航文件，用户从不关心。与产出面板折叠这三个 basename 同款处理：
+   * 归入独立折叠组（「索引·日志 N 项」），主列表只留真实内容。
+   * 真机验收（2026-10-20 法考库）里它们占主列表 4/15，「乱」有一半是它们贡献的。
+   */
+  meta: SessionSourceRef[];
   /**
    * **被过滤掉、面板不展示**的引用（库外文件 / 隐藏目录 / 检索目录 / glob pattern）。
    *
@@ -103,6 +110,8 @@ export function aggregateSessionSources(
 ): SessionSources {
   const map = new Map<string, SessionSourceRef>();
   const order: string[] = [];
+  const metaMap = new Map<string, SessionSourceRef>();
+  const metaOrder: string[] = [];
   const omittedMap = new Map<string, SessionSourceRef>();
   const omittedOrder: string[] = [];
 
@@ -115,14 +124,20 @@ export function aggregateSessionSources(
           bump(omittedMap, omittedOrder, refKey('file', s.target, vaultPath), s.target, s.label, 'file');
           continue;
         }
+        // 登记骨架 → 折叠组（与产出面板的 INDEX/log/hot 处理对齐）
+        if (isMetaBasename(s.target)) {
+          bump(metaMap, metaOrder, refKey('file', s.target, vaultPath), s.target, s.label, 'file');
+          continue;
+        }
       }
       bump(map, order, refKey(s.kind, s.target, vaultPath), s.target, s.label, s.kind);
     }
   }
 
   const refs = sortRefs([...map.values()], order, vaultPath);
+  const meta = sortRefs([...metaMap.values()], metaOrder, vaultPath);
   const omitted = sortRefs([...omittedMap.values()], omittedOrder, vaultPath);
-  return { refs, omitted };
+  return { refs, meta, omitted };
 }
 
 /** count 降序，同 count 按首次出现顺序；同名文件加父目录消歧。 */

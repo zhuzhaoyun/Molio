@@ -214,6 +214,8 @@ const en: Record<string, string> = {
   'output.sourceCount': 'Referenced {n} times in this session',
   'output.sourcesOmitted': '{n} more not shown',
   'output.sourcesOmittedHint': 'Files outside the vault, hidden folders and search paths are not listed here — you can still see them in the inline source chips',
+  'output.sourcesMeta': 'Indexes & logs {n}',
+  'output.sourcesMetaHint': 'Registry files the wiki skill reads on every operation (indexes, logs, cache) — click to preview',
   'output.changeKind.create': 'New file',
   'output.changeKind.update': 'Edited',
   'output.changeKind.append': 'Appended',
