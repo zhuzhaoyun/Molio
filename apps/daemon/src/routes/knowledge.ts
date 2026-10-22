@@ -52,7 +52,7 @@ import {
   type ImportResult,
 } from '../core/knowledge.js';
 import { searchVaultFiles, indexVaultFile, removeVaultFile, removeVaultDir, ensureVaultIndexed, hasInflightBuild } from '../core/vault-search.js';
-import { annotateTreeStatus } from '../core/wiki-status.js';
+import { buildAnnotatedTree } from '../core/tree-build.js';
 import { TreeCache } from '../core/tree-cache.js';
 import { VAULT_TREE_CHANGED_EVENT, type VaultWatcher } from '../core/vault-watcher.js';
 import type { RunManager } from '../core/RunManager.js';
@@ -66,15 +66,6 @@ import { ThrottledWarn } from '../core/throttled-warn.js';
  * 按 vault 限频——扫描失败通常成串出现（同一个坏路径被反复重试）。
  */
 const treeErrorWarn = new ThrottledWarn();
-
-/** 扫描 + wiki 状态标注（annotateTreeStatus 原地改树，两者必须一起重算）。 */
-async function buildAnnotatedTree(vaultPath: string, externalRoots: ExternalRootRef[] = []): Promise<TreeNode[]> {
-  // Mounted folders are part of the tree (external/<label>/...).
-  const tree = scanTree(vaultPath, '', { externalRoots });
-  // Annotate with ingest status (only if the vault has a wiki).
-  await annotateTreeStatus(vaultPath, tree);
-  return tree;
-}
 
 /** Characters a mount label may not contain (Windows-illegal + path separators). */
 const ILLEGAL_LABEL = /[\\/:*?"<>|]/;
