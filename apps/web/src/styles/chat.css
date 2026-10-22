@@ -2065,3 +2065,38 @@
   color: var(--text-muted);
   font-size: 13px;
 }
+
+/* ── 「回到最新消息」浮标（stick-to-bottom 配套）──────────────────────────
+   用户上翻阅读脱离跟随时，贴在消息滚动区底部；点击回到最新内容。
+   必须用 sticky：absolute 在滚动容器内会随内容一起滚走，fixed 会脱离
+   面板（悬浮/停靠态的锚点各不相同）。隐藏走 display:none（内联），
+   故不占位——出现/消失都不会把正在读的内容顶动。 */
+.home-chat-log > .chat-jump-bottom,
+.file-chat-messages > .chat-jump-bottom {
+  position: sticky;
+  bottom: 4px;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  /* 压过 .home-chat-log > * 的 width:100% / max-width:900px */
+  max-width: 32px;
+  flex: 0 0 auto;
+  margin-inline: auto;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background-color: var(--bg-elevated);
+  color: var(--text-muted);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+  cursor: pointer;
+  transition: background-color 0.15s, color 0.15s;
+}
+
+.home-chat-log > .chat-jump-bottom:hover,
+.file-chat-messages > .chat-jump-bottom:hover {
+  background-color: var(--bg);
+  color: var(--text);
+}
