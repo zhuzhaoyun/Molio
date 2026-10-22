@@ -30,6 +30,7 @@ import { ConversationService } from './core/conversations/service.js';
 import { VaultWatcher, VAULT_TREE_CHANGED_EVENT, VAULT_WATCH_STATE_CHANGED_EVENT } from './core/vault-watcher.js';
 import { VaultIndexSweeper } from './core/vault-search.js';
 import { GraphCache } from './core/graph-cache.js';
+import { TreeCache } from './core/tree-cache.js';
 import { createPreloadManager } from './core/preload-manager.js';
 import { preloadRoutes } from './routes/preload.js';
 
@@ -52,6 +53,12 @@ vaultWatcher.on(VAULT_TREE_CHANGED_EVENT, (vaultId: string) => graphCache.invali
 // 监听就绪/失活也要清：watch() 是 fire-and-forget，扫描完成前（以及监听失败后）
 // 落盘的变化根本没有事件——那个空窗里算出来的图不能留在缓存里当真相。
 vaultWatcher.on(VAULT_WATCH_STATE_CHANGED_EVENT, (vaultId: string) => graphCache.invalidate(vaultId));
+// 文件树同病同药：GET /vaults/:id/tree 每次同步重扫整棵目录树（移动盘大库几秒），
+// 打开知识库 / 切库 / 聚焦都在调它。失效与图谱缓存完全同构——tree-changed +
+// 就绪态翻转；API 写路径的就地失效在 routes/knowledge.ts 的各写 handler 里。
+export const treeCache = new TreeCache();
+vaultWatcher.on(VAULT_TREE_CHANGED_EVENT, (vaultId: string) => treeCache.invalidate(vaultId));
+vaultWatcher.on(VAULT_WATCH_STATE_CHANGED_EVENT, (vaultId: string) => treeCache.invalidate(vaultId));
 export const preloadManager = createPreloadManager();
 // 云端认证 client（懒读 MOLIO_AUTH_URL，未设置时回落内置官方地址
 // DEFAULT_AUTH_URL；显式空白才算未配置 → 登录端点回 503）。
@@ -123,7 +130,7 @@ app.route('/api/config', configRoutes({
 app.route('/api/skills', skillsRoutes(db, runManager));
 app.route('/api/conversations', conversationRoutes(db, runManager, conversationService));
 app.route('/api/projects', projectRoutes(db));
-app.route('/api/knowledge', knowledgeRoutes(db, runManager, vaultWatcher));
+app.route('/api/knowledge', knowledgeRoutes(db, runManager, vaultWatcher, treeCache, (vaultId) => vaultWatcher.isReady(vaultId)));
 app.route('/api/publish', publishRoutes());
 app.route('/api/proxy', proxyRoutes());
 app.route('/api/graph', graphRoutes(db, graphCache, (vaultId) => vaultWatcher.isReady(vaultId)));

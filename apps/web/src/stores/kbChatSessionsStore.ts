@@ -220,15 +220,22 @@ export function useKbChatPanelOpen(): boolean {
 }
 
 /**
- * 会话输入框的草稿命名空间 —— 面板态（`KbChatSession`）与全屏态（`/chat` 的 `HomePage`）
- * 必须**逐字一致**：两个视图共享同一份草稿、同一套 @ 上下文播种。这里是唯一真值源，
- * 两处都调它，杜绝格式漂移。放在 store 里是为了让两个组件都能 import 且不产生循环依赖。
+ * 会话输入框的**草稿**命名空间 —— 面板态（`KbChatSession`）与全屏态（`/chat` 的
+ * `HomePage`）必须**逐字一致**：两个视图共享同一份草稿。这里是唯一真值源，两处都调它，
+ * 杜绝格式漂移。放在 store 里是为了让两个组件都能 import 且不产生循环依赖。
+ *
+ * 只带会话 id、不带 filePath：切换所看的文档时，没发出去的草稿留在会话里
+ * （引用 chip 才跟着文档走，见 `sessionComposerMountKey`）。
  */
-export function sessionComposerKey(id: string, filePath?: string | null): string {
-  return `kb:${id}:${filePath ?? ''}`;
+export function sessionComposerKey(id: string): string {
+  return `kb:${id}`;
 }
 
-/** composer 的 React key（按「会话:文件」重挂载，重新播种 @ 上下文）。 */
+/**
+ * composer 的 React key：带 filePath，换文档时重挂载以按新种子播种引用 chip。
+ * 草稿与 chip 缓存都按会话 id（`sessionComposerKey`）分桶，mountKey 只负责触发
+ * 重挂载；chip 缓存自己按「由哪篇文档播种」判断是否沿用。
+ */
 export function sessionComposerMountKey(id: string, filePath?: string | null): string {
   return `${id}:${filePath ?? ''}`;
 }

@@ -782,6 +782,9 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  /* 主按钮不参与收缩：工具条新增内容（引用 chip）时不得把「发送」挤成两行 */
+  flex: 0 0 auto;
+  white-space: nowrap;
   background: var(--accent);
   border-color: var(--accent);
   color: white;
@@ -2080,3 +2083,102 @@
 }
 .sandbox-suggest-chip:hover { background: var(--accent); color: var(--bg); }
 .sandbox-suggest-chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* ── 「回到最新消息」浮标（stick-to-bottom 配套）──────────────────────────
+   用户上翻阅读脱离跟随时，贴在消息滚动区底部；点击回到最新内容。
+   必须用 sticky：absolute 在滚动容器内会随内容一起滚走，fixed 会脱离
+   面板（悬浮/停靠态的锚点各不相同）。隐藏走 display:none（内联），
+   故不占位——出现/消失都不会把正在读的内容顶动。 */
+.home-chat-log > .chat-jump-bottom,
+.file-chat-messages > .chat-jump-bottom {
+  position: sticky;
+  bottom: 4px;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  /* 压过 .home-chat-log > * 的 width:100% / max-width:900px */
+  max-width: 32px;
+  flex: 0 0 auto;
+  margin-inline: auto;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background-color: var(--bg-elevated);
+  color: var(--text-muted);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+  cursor: pointer;
+  transition: background-color 0.15s, color 0.15s;
+}
+
+.home-chat-log > .chat-jump-bottom:hover,
+.file-chat-messages > .chat-jump-bottom:hover {
+  background-color: var(--bg);
+  color: var(--text);
+}
+
+/* ── 文档引用 chip（工具条左端）────────────────────────────────────────
+   从知识库文档进入问答时，文档以可摘除的 chip 呈现，而不是把 `@路径`
+   种进输入框文本。占现有工具条一行内的位置，不新增行高。 */
+.composer-file-refs {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow-x: auto;
+  /* 长文件名时让位给模型 pill / 发送键，不把右簇挤出去。
+     50% 上限 + 内部可收缩：窄面板（停靠分栏）里 chip 自己截断，
+     而不是把「发送」挤成两行。 */
+  flex: 0 1 auto;
+  max-width: 50%;
+}
+
+.composer-file-ref {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  /* 可收缩 + 省略号：容器变窄时由名字让位，× 按钮保持可点 */
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 220px;
+  padding: 3px 4px 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background-color: var(--bg-elevated);
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.composer-file-ref-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+  max-width: 170px;
+  color: var(--text);
+}
+
+.composer-file-ref-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: none;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.composer-file-ref-remove:hover {
+  background-color: var(--border);
+  color: var(--text);
+}

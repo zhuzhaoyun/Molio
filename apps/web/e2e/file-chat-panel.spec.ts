@@ -38,7 +38,7 @@ test.describe('File chat panel', () => {
     await expect(panel).toBeHidden();
   });
 
-  test('empty state shows composer with current file pre-@-mentioned', async ({ page }) => {
+  test('empty state shows composer with current file as a removable chip', async ({ page }) => {
     await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
 
@@ -53,8 +53,12 @@ test.describe('File chat panel', () => {
     const input = panel.locator('[data-testid="composer-input"]');
     await expect(input).toBeVisible();
 
-    // The current file should be pre-filled as an inline @ ref in the composer.
-    await expect(input).toHaveValue(/^@doc\.md/);
+    // 当前文档不再种进输入文本（用户反馈「不想被自动带上」），而是工具条里
+    // 一个可摘除的引用 chip；输入框本身保持为空。
+    await expect(input).toHaveValue('');
+    const chip = panel.locator('[data-testid="composer-file-ref"]');
+    await expect(chip).toHaveCount(1);
+    await expect(chip).toContainText('doc.md');
   });
 
   test('面板里的助手消息带完整工具条（重新生成/继续/删除）', async ({ page }) => {

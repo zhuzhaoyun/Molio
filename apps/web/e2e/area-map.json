@@ -76,7 +76,9 @@
         "session-output",
         "session-output-history",
         "quiz",
-        "sandbox"
+        "sandbox",
+        "chat-autoscroll",
+        "chat-doc-ref-chip"
       ]
     },
     "kb": {
@@ -317,6 +319,14 @@
     "chat-streaming": {
       "priority": "P1",
       "file": "chat-streaming.spec.ts"
+    },
+    "chat-autoscroll": {
+      "priority": "P1",
+      "file": "chat-autoscroll.spec.ts"
+    },
+    "chat-doc-ref-chip": {
+      "priority": "P1",
+      "file": "chat-doc-ref-chip.spec.ts"
     },
     "chat-copy": {
       "priority": "P0",

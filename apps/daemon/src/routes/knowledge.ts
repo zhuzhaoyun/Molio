@@ -7,7 +7,7 @@ import { stream } from 'hono/streaming';
 import { createReadStream, existsSync, mkdirSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import type Database from 'better-sqlite3';
-import type { CreateVaultRequest } from '@molio/contracts';
+import type { CreateVaultRequest, TreeNode } from '@molio/contracts';
 import { MAX_IMPORT_FILE_SIZE, MAX_IMPORT_BATCH_SIZE } from '@molio/contracts';
 import {
   listVaults,
@@ -39,15 +39,32 @@ import {
 } from '../core/knowledge.js';
 import { searchVaultFiles, indexVaultFile, removeVaultFile, removeVaultDir, ensureVaultIndexed, hasInflightBuild } from '../core/vault-search.js';
 import { annotateTreeStatus } from '../core/wiki-status.js';
+import { TreeCache } from '../core/tree-cache.js';
 import { VAULT_TREE_CHANGED_EVENT, type VaultWatcher } from '../core/vault-watcher.js';
 import type { RunManager } from '../core/RunManager.js';
 import { reconcileVault } from '../core/skills/vault-config.js';
 import { FileTooLargeError } from '../core/encoding.js';
 
+/** 扫描 + wiki 状态标注（annotateTreeStatus 原地改树，两者必须一起重算）。 */
+async function buildAnnotatedTree(vaultPath: string): Promise<TreeNode[]> {
+  const tree = scanTree(vaultPath);
+  // Annotate with ingest status (only if the vault has a wiki).
+  await annotateTreeStatus(vaultPath, tree);
+  return tree;
+}
+
 export function knowledgeRoutes(
   db: Database.Database,
   runManager: RunManager,
   vaultWatcher: VaultWatcher,
+  /**
+   * @param treeCache 文件树缓存。默认自建一个（每个 app 实例一份）——server.ts 会
+   *   把 VaultWatcher 的 tree-changed 接到同一个实例上做失效；测试可注入受控实例。
+   * @param isTreeCacheable 该 vault 现在能不能吃树缓存（默认总是可以）。server.ts 传
+   *   VaultWatcher.isReady——watcher 未就绪时没有失效信号，必须每次重扫。
+   */
+  treeCache: TreeCache = new TreeCache(),
+  isTreeCacheable: (vaultId: string) => boolean = () => true,
 ): Hono {
   const app = new Hono();
 
@@ -150,9 +167,11 @@ export function knowledgeRoutes(
     }
 
     try {
-      const tree = scanTree(vault.path);
-      // Annotate with ingest status (only if the vault has a .git repo).
-      await annotateTreeStatus(vault.path, tree);
+      // 树缓存与图谱缓存（#337）同一套规矩：watcher 未就绪 → 没有失效信号 →
+      // 每次重扫（= 无缓存时的行为），绝不让「没有信号」冒充「内容没变」。
+      const tree = isTreeCacheable(vault.id)
+        ? await treeCache.getOrBuild(vault.id, () => buildAnnotatedTree(vault.path))
+        : await buildAnnotatedTree(vault.path);
       return c.json({ tree });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to scan vault';
@@ -255,6 +274,8 @@ export function knowledgeRoutes(
       writeFile(vault.path, relPath, body.content);
       // 检索 P0 层1：经 Molio API 的写入即时更新索引（不等 watcher/sweep）
       indexVaultFile(db, vault.id, vault.path, relPath);
+      // 树缓存就地失效（同上：不等 chokidar 的 ~1s 轮询，否则刚建的文件刷新树看不到）
+      treeCache.invalidate(vault.id);
       addKbHistory(db, vault.id, 'edit', `File "${relPath}" saved`);
       return c.json({ ok: true });
     } catch (err) {
@@ -281,6 +302,7 @@ export function knowledgeRoutes(
     try {
       await deleteFile(vault.path, relPath);
       removeVaultFile(db, vault.id, relPath);
+      treeCache.invalidate(vault.id);
       addKbHistory(db, vault.id, 'edit', `File "${relPath}" deleted`);
       return c.body(null, 204);
     } catch (err) {
@@ -320,6 +342,7 @@ export function knowledgeRoutes(
       const oldAbs = path.resolve(path.join(vault.path, relPath));
       const wasDir = existsSync(oldAbs) && statSync(oldAbs).isDirectory();
       renamePath(vault.path, relPath, body.newPath);
+      treeCache.invalidate(vault.id);
       if (wasDir) {
         // 目录改名/移动：清旧子树索引 + 重建（新子树路径全变，需重新索引）。
         // 构建走单行道（ensureVaultIndexed）而不是裸 reindexVault：同一 vault 同时
@@ -588,6 +611,7 @@ export function knowledgeRoutes(
       }
 
       const result = importFiles(vault.path, fileEntries, targetDir, conflict);
+      treeCache.invalidate(vault.id);
       result.errors = [...perFileErrors, ...result.errors];
       // 导入的每个落盘文件（含改名后的）即时入索引
       for (const p of [...result.imported, ...result.renamed.map((r) => r.to)]) {
@@ -622,6 +646,7 @@ export function knowledgeRoutes(
 
     try {
       createDirectory(vault.path, relPath);
+      treeCache.invalidate(vault.id);
       return c.json({ ok: true });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to create directory';
@@ -646,6 +671,7 @@ export function knowledgeRoutes(
 
     try {
       await deleteDirectory(vault.path, relPath);
+      treeCache.invalidate(vault.id);
       removeVaultDir(db, vault.id, relPath);
       addKbHistory(db, vault.id, 'edit', `Directory "${relPath}" deleted`);
       return c.body(null, 204);

@@ -54,13 +54,29 @@ export function legacyWikiTitleFix(mode: ChatSessionMode | undefined, title: str
 }
 
 /**
+ * 发送时 composer 会前置「文件引用 / 图片附件」标记（`@path` token 被
+ * composerExpand 展开成 `[📄 name](path)`、粘贴图片是 `![image](path)`）。
+ * 这些是上下文、不是用户的问题——标题若照抄会变成
+ * `[📄 doc.md](doc.md) 关于 d`，在标签栏里既占宽又读不懂。
+ * 只剥行首连续出现的前缀（用户正文里出现的链接不动）。
+ */
+const LEADING_REF_RE = /^(?:!?\[[^\]]*\]\([^)]*\)\s*)+/;
+const LEADING_AT_RE = /^(?:@\S+\s*)+/;
+
+/** 剥掉行首的引用/附件前缀；全是前缀时返回空串。 */
+export function stripLeadingRefs(line: string): string {
+  return line.replace(LEADING_REF_RE, '').replace(LEADING_AT_RE, '').trim();
+}
+
+/**
  * 从首条消息派生会话标签标题：取末行非空内容（wiki-query 触发语 / 附件前缀 / 选中上下文
- * 都以换行结尾，实际问题在末行），collapse 内部空白，截断 24。空则回退「新会话」。
+ * 都以换行结尾，实际问题在末行），剥掉行首引用前缀，collapse 内部空白，截断 24。
+ * 空则回退「新会话」。
  */
 function deriveChatTitle(text: string): string {
   const lines = text.split('\n').map((l) => l.trim()).filter(Boolean);
   const last = lines[lines.length - 1] ?? '';
-  const collapsed = last.replace(/\s+/g, ' ').trim();
+  const collapsed = stripLeadingRefs(last).replace(/\s+/g, ' ').trim();
   return collapsed.slice(0, 24) || '新会话';
 }
 
