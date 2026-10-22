@@ -782,6 +782,9 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  /* 主按钮不参与收缩：工具条新增内容（引用 chip）时不得把「发送」挤成两行 */
+  flex: 0 0 auto;
+  white-space: nowrap;
   background: var(--accent);
   border-color: var(--accent);
   color: white;
@@ -2110,14 +2113,20 @@
   gap: 6px;
   min-width: 0;
   overflow-x: auto;
-  /* 长文件名时让位给模型 pill / 发送键，不把右簇挤出去 */
+  /* 长文件名时让位给模型 pill / 发送键，不把右簇挤出去。
+     50% 上限 + 内部可收缩：窄面板（停靠分栏）里 chip 自己截断，
+     而不是把「发送」挤成两行。 */
   flex: 0 1 auto;
+  max-width: 50%;
 }
 
 .composer-file-ref {
   display: inline-flex;
   align-items: center;
   gap: 5px;
+  /* 可收缩 + 省略号：容器变窄时由名字让位，× 按钮保持可点 */
+  flex: 0 1 auto;
+  min-width: 0;
   max-width: 220px;
   padding: 3px 4px 3px 8px;
   border: 1px solid var(--border);
@@ -2132,6 +2141,7 @@
 .composer-file-ref-name {
   overflow: hidden;
   text-overflow: ellipsis;
+  min-width: 0;
   max-width: 170px;
   color: var(--text);
 }
