@@ -2,7 +2,7 @@ import { describe, it, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync, chmodSync } from 'node:fs';
 import { buildGraph, isGraphExcludedFile } from '../../src/routes/graph.js';
 
 /**
@@ -156,5 +156,38 @@ describe('buildGraph code-span handling (与 deadcheck 同口径)', () => {
 
     const deadLabels = g.nodes.filter((n) => n.deadLink).map((n) => n.label).sort();
     assert.deepStrictEqual(deadLabels, ['fm-ghost', 'quote-ghost'], '引文/frontmatter 里的链接照常进图');
+  });
+});
+
+describe('buildGraph unreadable-file resilience', () => {
+  /**
+   * 回归：wikilink 那遍的 readFileSync 曾经没有 try/catch（node-type 那遍有），
+   * 于是单个读不了的文件会把异常冒到路由层 → 整张图 500。
+   * Windows 上文件被占用（EBUSY/EPERM：同步盘、编辑器、杀软扫描）或移动盘休眠掉线
+   * 都会命中；实测用户从移动硬盘加载知识库时图谱整体加载失败即此路径。
+   */
+  it('单个不可读文件不拖垮整张图：它仍是节点，其他文件的链接照常解析', () => {
+    // Windows 的 chmod 不可靠；root 无视 0o000 → 两种环境下都跳过
+    if (process.platform === 'win32' || process.getuid?.() === 0) return;
+
+    const vaultPath = makeVault(
+      ['readable.md', '# R\n\n[[ghost]]\n'],
+      ['locked.md', '# L\n\n[[also-ghost]]\n'],
+    );
+    const locked = join(vaultPath, 'locked.md');
+    chmodSync(locked, 0o000);
+
+    try {
+      const g = buildGraph(vaultPath); // 修复前：这里抛 EACCES
+
+      assert.ok(g.nodes.some((n) => n.key === 'locked.md'), '不可读文件仍作为节点存在（与 node-type 那遍同口径）');
+      assert.ok(g.nodes.some((n) => n.key === 'readable.md'), '可读文件不受影响');
+      assert.ok(
+        g.deadLinks.some((d) => d.targetName === 'ghost'),
+        '可读文件的链接照常解析成死链',
+      );
+    } finally {
+      chmodSync(locked, 0o644); // 还原，否则 after() 的 rmSync 清不掉
+    }
   });
 });

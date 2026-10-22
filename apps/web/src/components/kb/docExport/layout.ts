@@ -6,6 +6,7 @@
  */
 
 import { slugifyTitle } from '../../../utils/exportFileName.ts';
+import { HEADER_CLASS } from './header.ts';
 
 export const EXPORT_WIDTH = 1080;
 export const EXPORT_PADDING_X = 64;
@@ -19,6 +20,31 @@ export const EXPORT_CLASS = 'molio-doc-export';
 export const EXPORT_SCOPE = `.${EXPORT_CLASS}`;
 export const CONTENT_WIDTH = EXPORT_WIDTH - EXPORT_PADDING_X * 2;
 export const PAGE_BUDGET = MAX_PAGE_HEIGHT - EXPORT_PADDING_TOP - EXPORT_FOOTER_HEIGHT;
+
+/** 导出版式预设。`long` = 一期的长图，`card34` = 3:4 竖卡（小红书主流比例）。 */
+export type ExportPreset = 'long' | 'card34';
+
+export interface PresetParams {
+  /** 固定页高；`long` 只有上限（末页按内容自适应），`card34` 每页都填满。 */
+  pageHeight: number;
+  /** 一页能放多少正文（已扣掉顶部内边距与页脚带）。 */
+  pageBudget: number;
+}
+
+/**
+ * 版式参数。`long` 返回一期常量（默认行为永不变）；`card34` 是 3:4 竖卡——
+ * 页高 = 宽 × 4/3，正好吃满一期「遮罩补底 + 页脚带」的切片几何，无需新机制。
+ */
+export function exportPresetParams(preset: ExportPreset = 'long'): PresetParams {
+  if (preset === 'card34') {
+    const pageHeight = Math.round((EXPORT_WIDTH * 4) / 3);
+    return {
+      pageHeight,
+      pageBudget: pageHeight - EXPORT_PADDING_TOP - EXPORT_FOOTER_HEIGHT,
+    };
+  }
+  return { pageHeight: MAX_PAGE_HEIGHT, pageBudget: PAGE_BUDGET };
+}
 
 /** 测量宿主与 SVG 页面根共用的版式。两边必须一字不差，否则量的和画的对不上。 */
 export const EXPORT_ROOT_CSS =
@@ -88,9 +114,33 @@ export function composeExportCss(parts: ExportCssParts): string {
     '  overflow-wrap: anywhere;',
     '}',
   ].join('\n');
+  // 头卡（标题 + 元信息 + 标签）规则无条件输出：头卡元素只在传入
+  // `options.header` 时才存在，规则空跑无害；这样 composeExportCss 不需要
+  // 知道「头卡开没开」，少一处分支就少一处「开了但没样式」的漏配。
+  // 字号用 em（跟随主题基准字号，跨主题自适应）。
+  // 强调色优先用 doocs 主题自己的 --md-primary-color（用户在样式面板选的
+  // 主题色，与正文标题下划线同源），主题没定义时回退应用 accent。var() 在
+  // 计算值阶段解析，不受这条规则先于主题 CSS 输出的影响（变量定义就在
+  // 主题 CSS 的 :root 上，rewriteScope 后落在导出根）。
+  const primary = `var(--md-primary-color, ${parts.accent})`;
+  const headerCss = [
+    `${EXPORT_SCOPE} .${HEADER_CLASS} { margin: 0 0 1.5em; padding-bottom: 1em;` +
+      ` border-bottom: 2px solid ${primary}; }`,
+    `${EXPORT_SCOPE} .${HEADER_CLASS}__title { font-size: 2em; font-weight: 700;` +
+      ` line-height: 1.35; margin: 0; }`,
+    `${EXPORT_SCOPE} .${HEADER_CLASS}__meta { margin-top: 0.6em; font-size: 0.85em;` +
+      ` color: ${footerInkFor(parts.background)}; }`,
+    `${EXPORT_SCOPE} .${HEADER_CLASS}__tags { margin-top: 0.8em; display: flex;` +
+      ` flex-wrap: wrap; gap: 0.5em; }`,
+    `${EXPORT_SCOPE} .${HEADER_CLASS}__tags span { font-size: 0.8em;` +
+      ` padding: 0.15em 0.8em; border: 1px solid ${primary}; border-radius: 999px; }`,
+    `${EXPORT_SCOPE} .${HEADER_CLASS}__more { color: ${footerInkFor(parts.background)};` +
+      ` border-color: ${footerInkFor(parts.background)}; }`,
+  ].join('\n');
   return [
     EXPORT_ROOT_CSS,
     compat,
+    headerCss,
     rewriteScope(parts.theme),
     rewriteScope(parts.inline),
     deviations,

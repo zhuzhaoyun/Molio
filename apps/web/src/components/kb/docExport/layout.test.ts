@@ -9,6 +9,7 @@ import {
   PAGE_BUDGET,
   composeExportCss,
   docExportFileName,
+  exportPresetParams,
   footerInkFor,
   paginateBlocks,
   rangeHeight,
@@ -112,6 +113,17 @@ describe('composeExportCss', () => {
       css,
     );
   });
+
+  it('composeExportCss 无条件含头卡规则（头卡元素缺席时无害）', () => {
+    // 亮底：meta 文字取 footerInkFor 的半透明黑
+    const css = composeExportCss({ ...parts, background: '#ffffff' });
+    assert.match(css, /\.molio-doc-export \.molio-export-head \{/);
+    assert.match(css, /\.molio-export-head__title/);
+    assert.match(css, /__meta[\s\S]*?rgba\(0, 0, 0, 0\.45\)/);
+    // 强调色走 doocs 主题自己的主色变量（与正文标题下划线同源），应用 accent 只做兜底
+    assert.match(css, /border-bottom: 2px solid var\(--md-primary-color, rgb\(99, 102, 241\)\)/);
+    assert.match(css, /__tags span \{[\s\S]*?border: 1px solid var\(--md-primary-color/);
+  });
 });
 
 describe('paginateBlocks', () => {
@@ -179,6 +191,23 @@ describe('sliceVerticalRects', () => {
 
   it('always returns at least one slice for empty content', () => {
     assert.deepStrictEqual(sliceVerticalRects(0, 400), [{ top: 0, height: 1 }]);
+  });
+});
+
+describe('exportPresetParams', () => {
+  it('long 是现状默认：页高上限 7400、预算 7248', () => {
+    assert.deepStrictEqual(exportPresetParams('long'), {
+      pageHeight: 7400,
+      pageBudget: 7248,
+    });
+    assert.deepStrictEqual(exportPresetParams(), { pageHeight: 7400, pageBudget: 7248 });
+  });
+
+  it('card34：1080×1440 固定页，预算扣顶边距与页脚带', () => {
+    assert.deepStrictEqual(exportPresetParams('card34'), {
+      pageHeight: 1440,
+      pageBudget: 1288,
+    });
   });
 });
 

@@ -177,6 +177,59 @@ test.describe('Home 会话产出面板', () => {
   });
 
   /**
+   * 登记骨架（INDEX/log/hot）是 wiki 技能每次启动必读的导航文件 —— 真机验收里它们
+   * 占主列表 4/15，「乱」有一半是它们贡献的。必须折进「索引·日志」组（与产出面板
+   * 对同名文件的处理对齐），主列表只留真实内容。
+   */
+  test('引用 tab：登记骨架折叠进「索引·日志」组，不占主列表', async ({ page }) => {
+    const vault = await createTempVault('e2e-sources-meta');
+    try {
+      await page.addInitScript((id) => { localStorage.setItem('molio.activeVaultId', id); }, vault.id);
+      await mockChatRun(page, {
+        script: [
+          { type: 'status', label: 'running' },
+          { type: 'tool_use', id: 'r1', name: 'Read', input: { file_path: `${vault.path}/wiki/信用卡诈骗罪.md` } },
+          { type: 'tool_result', toolUseId: 'r1', content: '正文', isError: false },
+          { type: 'tool_use', id: 'm1', name: 'Read', input: { file_path: `${vault.path}/wiki/INDEX.md` } },
+          { type: 'tool_result', toolUseId: 'm1', content: '索引', isError: false },
+          { type: 'tool_use', id: 'm2', name: 'Read', input: { file_path: `${vault.path}/hot.md` } },
+          { type: 'tool_result', toolUseId: 'm2', content: '缓存', isError: false },
+          { type: 'text_delta', delta: 'done' },
+          { type: 'turn_end', stopReason: 'end_turn' },
+          { type: 'usage', usage: { input_tokens: 10, output_tokens: 5 }, costUsd: 0 },
+        ],
+      });
+      await gotoHome(page);
+      await sendMessage(page, '问点东西');
+      await expect(page.locator('[data-testid="work-timeline-summary"]')).toBeVisible({ timeout: 15_000 });
+      await page.locator('[data-testid="home-output-toggle"]').click();
+      const panel = page.locator('[data-testid="session-output-panel"]');
+
+      await panel.locator('[data-testid="session-output-tab-sources"]').click();
+      // 主列表只有真实内容文件
+      const sources = panel.locator('[data-testid="session-output-source"]');
+      await expect(sources).toHaveCount(1);
+      await expect(sources.first()).toContainText('信用卡诈骗罪.md');
+      // 骨架归折叠组：默认收起（details 子元素不渲染为可见），组头带计数。
+      // 注意断言用可见性而非 DOM 计数 —— <details> 收起时子元素仍在 DOM。
+      const metaGroup = panel.locator('[data-testid="session-output-sources-meta"]');
+      await expect(metaGroup).toBeVisible();
+      await expect(metaGroup).toContainText('索引·日志 2');
+      const metaItems = panel.locator('[data-testid="session-output-meta-item"]');
+      await expect(metaItems).toHaveCount(2);
+      await expect(metaItems.first()).toBeHidden(); // 收起时不占视觉
+      // 展开可见是哪几份
+      await metaGroup.locator('summary').click();
+      await expect(metaItems.first()).toBeVisible();
+      await expect(metaGroup).toContainText('INDEX.md');
+      // 统计只数真实内容文件，骨架不冒充「引用 N 个文件」
+      await expect(panel.locator('[data-testid="session-output-stats"]')).toContainText('引用 1 个文件 · 共 1 次');
+    } finally {
+      await cleanupTempVault(vault);
+    }
+  });
+
+  /**
    * 面板必须自己说明「少了什么」：消息内联的引用标签照单全收库外文件、隐藏目录、
    * 检索目录，面板按「点得开才算数」过滤掉了它们 —— 不说明就会让人以为面板漏了。
    * 同时标题/统计随 tab 变：引用 tab 里写「会话产出 · 写入 0 · 1 轮」是错的。

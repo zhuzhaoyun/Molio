@@ -10,6 +10,7 @@ import path from 'node:path';
 import type Database from 'better-sqlite3';
 import { getVault } from '../core/db.js';
 import { scanTree, resolveFilePath } from '../core/knowledge.js';
+import { GraphCache } from '../core/graph-cache.js';
 import { codeIntervals, intervalOverlaps } from '../core/wikilink-text.js';
 import type { GraphNode, GraphEdge, GraphData, DeadLinkInfo, GraphScope } from '@molio/contracts';
 
@@ -51,7 +52,32 @@ function inferNodeType(filePath: string, content: string): string | undefined {
   return 'document';
 }
 
-export function graphRoutes(db: Database.Database): Hono {
+/**
+ * 缓存只在「失效信号活着」的 vault 上生效：库内容变了必须有东西来告诉缓存。
+ * VaultWatcher 的 tree-changed 就是那个信号，但它在**监听就绪前、以及监听失败
+ * 后是不存在的**（watch() 是 fire-and-forget，失败只 warn）。没有信号还缓存，
+ * 就等于把「没有信号」当成「内容没变」——图谱会停在旧数据上直到 TTL 到期。
+ */
+function buildGraphCached(
+  cache: GraphCache,
+  vault: { id: string; path: string },
+  isCacheable: (vaultId: string) => boolean,
+): GraphData {
+  if (!isCacheable(vault.id)) return buildGraph(vault.path);
+  return cache.getOrBuild(vault.id, () => buildGraph(vault.path));
+}
+
+/**
+ * @param cache 图谱缓存。默认自建一个（每个 app 实例一份）——server.ts 会把
+ *   VaultWatcher 的 tree-changed 接到同一个实例上做失效；测试可注入受控实例。
+ * @param isCacheable 该 vault 现在能不能吃缓存（默认总是可以）。server.ts 传
+ *   VaultWatcher.isReady；测试可注入受控判定。
+ */
+export function graphRoutes(
+  db: Database.Database,
+  cache: GraphCache = new GraphCache(),
+  isCacheable: (vaultId: string) => boolean = () => true,
+): Hono {
   const app = new Hono();
 
   // GET /api/graph/:vaultId — build graph from vault markdown files
@@ -62,7 +88,7 @@ export function graphRoutes(db: Database.Database): Hono {
     }
 
     try {
-      const graphData = buildGraph(vault.path);
+      const graphData = buildGraphCached(cache, vault, isCacheable);
       return c.json(graphData);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to build graph';
@@ -109,8 +135,9 @@ export function graphRoutes(db: Database.Database): Hono {
     try {
       const scope: GraphScope =
         scopeType === 'file' ? { type: 'file', path: scopePath, depth } : { type: 'dir', path: scopePath };
-      const graphData = buildLocalGraph(vault.path, scope);
-      return c.json(graphData);
+      // 局部图 = 同一张全量图做一次过滤：缓存全量图，切 scope 就不用重扫整库
+      const full = buildGraphCached(cache, vault, isCacheable);
+      return c.json(filterLocalGraph(full, scope));
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to build local graph';
       return c.json({ error: { code: 'INTERNAL', message } }, 500);
@@ -177,7 +204,16 @@ export function buildGraph(vaultPath: string): GraphData {
     const absPath = resolveFilePath(vaultPath, f.path);
     if (!existsSync(absPath)) continue;
 
-    const content = readFileSync(absPath, 'utf-8');
+    // 单个文件读不了不该让整张图 500。existsSync 与 readFileSync 之间文件可能被删（TOCTOU），
+    // Windows 上还可能被别的进程占着（EBUSY/EPERM：同步盘、编辑器、杀软实时扫描），
+    // 移动盘休眠/掉线同理——读失败就跳过它的链接，节点本身仍留在图里。
+    // 与上面 node-type 那遍的 try/catch 同口径（那遍读了整份内容却只用 frontmatter）。
+    let content: string;
+    try {
+      content = readFileSync(absPath, 'utf-8');
+    } catch { /* unreadable / vanished / locked — node stays, links dropped */
+      continue;
+    }
     const sourceKey = pathToKey.get(f.path)!;
 
     // 代码块/行内代码里的 [[...]] 是字面文本，不渲染成链接 —— 不进图、不算死链。
@@ -264,15 +300,14 @@ export function buildGraph(vaultPath: string): GraphData {
 }
 
 /**
- * Build a scoped sub-graph from the full vault graph（设计 docs/2026-09-04-local-graph-scope-design.md §3）.
+ * 从**已算好的**全量图里裁出 scope 子图（纯函数、不读盘；设计 docs/2026-09-04-local-graph-scope-design.md §3）.
  *
  * - file scope：圆心（path 精确匹配）+ 1 跳闭邻域 + 诱导边；圆心不存在/被剔除/孤立（linkCount===0）→ 空图
  * - dir scope：目录前缀下全部 .md 节点 + 它们之间的边；目录内节点引用的目录外死链目标并入；跨目录真实文件边界不含
  * 返回必含 focusNodes：file=圆心单点；dir=子图全部节点；空图=[]（全量图接口不回填该字段）。
  */
 // 返回类型收窄：局部图必含 focusNodes（GraphData 里是可选字段，全量图接口才不回填）
-export function buildLocalGraph(vaultPath: string, scope: GraphScope): GraphData & { focusNodes: string[] } {
-  const full = buildGraph(vaultPath);
+export function filterLocalGraph(full: GraphData, scope: GraphScope): GraphData & { focusNodes: string[] } {
   const inSet = new Set<string>();
   let focus: string[] = [];
 
@@ -313,6 +348,16 @@ export function buildLocalGraph(vaultPath: string, scope: GraphScope): GraphData
   // deadLinks 元数据按「死链节点在子图内」过滤（不按 sourceFile——首见 source 可能不在子图）
   const deadLinks = full.deadLinks.filter((d) => keys.has(`__dead__${d.targetName.toLowerCase()}`));
   return { nodes, edges, deadLinks, focusNodes: focus };
+}
+
+/**
+ * 便利包装：自建全量图再裁剪。
+ *
+ * 路由**不走这里**——它拿 GraphCache 里的全量图直接过滤（切 scope 才不必重扫整库）。
+ * 保留给测试与一次性调用。
+ */
+export function buildLocalGraph(vaultPath: string, scope: GraphScope): GraphData & { focusNodes: string[] } {
+  return filterLocalGraph(buildGraph(vaultPath), scope);
 }
 
 /**

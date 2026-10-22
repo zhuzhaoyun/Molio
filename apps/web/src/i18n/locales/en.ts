@@ -217,6 +217,8 @@ const en: Record<string, string> = {
   'output.sourceCount': 'Referenced {n} times in this session',
   'output.sourcesOmitted': '{n} more not shown',
   'output.sourcesOmittedHint': 'Files outside the vault, hidden folders and search paths are not listed here — you can still see them in the inline source chips',
+  'output.sourcesMeta': 'Indexes & logs {n}',
+  'output.sourcesMetaHint': 'Registry files the wiki skill reads on every operation (indexes, logs, cache) — click to preview',
   'output.changeKind.create': 'New file',
   'output.changeKind.update': 'Edited',
   'output.changeKind.append': 'Appended',
@@ -755,6 +757,12 @@ const en: Record<string, string> = {
   'kb.exportPages': 'Exported {pages} images',
   'kb.exportFailed': 'Export failed, please try again',
   'kb.exportUnsupported': 'Nothing to export',
+  'kb.exportPreset': 'Export layout',
+  'kb.exportPresetLong': 'Long image',
+  'kb.exportPresetCard34': '3:4 cards',
+  'kb.exportHeader': 'Header card (title & meta)',
+  'kb.exportWords': '{words} words',
+  'kb.exportMinutes': '~{minutes} min',
 
   // ── FilePicker ──
   'filePicker.justNow': 'Just now',

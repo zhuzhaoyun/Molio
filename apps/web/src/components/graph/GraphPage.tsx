@@ -50,6 +50,17 @@ const EXPORT_ASPECTS: Array<{ key: CardAspect; label: string }> = [
   { key: 'wide', label: 'graph.exportAspectWide' },
 ];
 
+/**
+ * 「库 + scope」合成键：指纹去重与在途反馈都以它为界。
+ *
+ * 只比内容指纹是不够的——两个不同 scope 的空子图载荷逐字节相同（nodes/edges/
+ * deadLinks/focusNodes 全空），会被误判成「数据没变」而丢弃，界面就停在上一个
+ * scope 上不动。同一库同一 scope 内才谈得上「内容没变」。
+ */
+function graphDataKey(vaultId: string | null | undefined, scopeKey: string | null): string {
+  return `${vaultId ?? ''}|${scopeKey ?? ''}`;
+}
+
 export function GraphPage({
   active = true,
   onCloseCompanion,
@@ -135,8 +146,12 @@ export function GraphPage({
   // 供防抖与去重读取的最新值（不进 deps，避免把它们变成 effect 触发器）
   const graphDataRef = useRef<GraphData | null>(null);
   graphDataRef.current = graphData;
-  // 上一次「已采纳」数据的指纹：相同就不再 setGraphData（对象不换 → 下游重排不跑）
-  const fingerprintRef = useRef<string | null>(null);
+  // 上一次「已采纳」数据的指纹（连同它所属的库+scope 键）：两者都相同才跳过 setGraphData
+  // （对象不换 → 下游重排不跑）
+  const fingerprintRef = useRef<{ key: string; fingerprint: string } | null>(null);
+  // 展示中数据所属的库+scope 键：用来区分「换 scope」（必须有在途反馈）与后台自动刷新（不该闪）
+  const shownKeyRef = useRef<string | null>(null);
+  const [scopeLoading, setScopeLoading] = useState(false);
 
   // ── 库变了 → 防抖后刷新 ──
   // 复用文件树那条 `tree-changed` 信号（useKnowledge 的 treeRevision），不另开 SSE。
@@ -157,7 +172,12 @@ export function GraphPage({
 
   // Fetch graph data when active vault / scope changes, or the vault content changes
   useEffect(() => {
-    if (!activeVaultId) return;
+    // 库被清空时在途请求会被 cleanup 取消，其 finally 不再执行——必须在这里收掉在途反馈，
+    // 否则那枚芯片会永远盖在旧图上（库删除发生在换 scope 请求飞行途中时命中）。
+    if (!activeVaultId) {
+      setScopeLoading(false);
+      return;
+    }
 
     // 局部分支：按 scopeRef.current 分派局部图 / 全量图（deps 用 scopeKey，不含 scope 对象）
     const scope = scopeRef.current;
@@ -166,6 +186,10 @@ export function GraphPage({
     let cancelled = false;
     setLoading(true);
     setError(null);
+    // 换 scope（全量图 ⇄ 局部图、局部图之间）而屏幕上已有旧图时，置在途反馈。
+    // 后台自动刷新（refreshTick 触发）键没变，不置——那里数据没变就该保持原样、不闪加载态。
+    const dedupKey = graphDataKey(activeVaultId, scopeKey);
+    if (shownKeyRef.current !== dedupKey) setScopeLoading(true);
     const req = scope
       ? api.getLocalGraph(activeVaultId, scope)
       : api.getGraph(activeVaultId);
@@ -174,9 +198,13 @@ export function GraphPage({
         if (cancelled) return;
         // 指纹去重：库变了 ≠ 图谱变了。往 raw/ 拷个 PDF、改个错别字同样会推 tree-changed，
         // 而重建一次要重跑整轮力导向仿真；数据没变就保持原对象，下游 setData/重排全不跑。
+        // 但去重只在**同一库 + 同一 scope** 内成立：换 scope 时哪怕内容逐字节相同
+        // （两个不同的空子图正是如此）也必须采纳，否则界面停在上一个 scope 上不动。
         const fingerprint = graphFingerprint(data);
-        if (fingerprint === fingerprintRef.current) return;
-        fingerprintRef.current = fingerprint;
+        const prev = fingerprintRef.current;
+        if (prev && prev.key === dedupKey && prev.fingerprint === fingerprint) return;
+        fingerprintRef.current = { key: dedupKey, fingerprint };
+        shownKeyRef.current = dedupKey;
         setGraphData(data);
       })
       .catch((err) => {
@@ -198,6 +226,7 @@ export function GraphPage({
       .finally(() => {
         if (cancelled) return;
         setLoading(false);
+        setScopeLoading(false);
       });
     return () => {
       cancelled = true;
@@ -810,6 +839,16 @@ export function GraphPage({
           <div className="graph-loading">
             <div className="graph-loading__spinner" />
             <p>{t('graph.loading')}</p>
+          </div>
+        )}
+
+        {/* 换 scope 的在途反馈（旧图仍在屏上，故不能盖全屏）：daemon 每次都要整库重建，
+            慢机器 / 移动盘上可达数十秒，此前这段时间毫无反馈，表现为「旧图纹丝不动」。
+            后台自动刷新不置 scopeLoading，所以不会无谓闪烁。 */}
+        {scopeLoading && graphData && (
+          <div className="graph-scope-loading" data-testid="graph-scope-loading" role="status">
+            <span className="graph-scope-loading__spinner" />
+            <span>{t('graph.loading')}</span>
           </div>
         )}
 

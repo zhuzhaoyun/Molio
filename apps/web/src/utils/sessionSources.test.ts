@@ -21,8 +21,54 @@ function msg(id: string, tools: Array<{ name: string; input: unknown }>): ChatMe
 
 describe('aggregateSessionSources', () => {
   test('空输入 → 空结果', () => {
-    assert.deepEqual(aggregateSessionSources([]), { refs: [], omitted: [] });
-    assert.deepEqual(aggregateSessionSources([msg('m1', [])]), { refs: [], omitted: [] });
+    assert.deepEqual(aggregateSessionSources([]), { refs: [], meta: [], omitted: [] });
+    assert.deepEqual(aggregateSessionSources([msg('m1', [])]), { refs: [], meta: [], omitted: [] });
+  });
+
+  /**
+   * 登记骨架（INDEX.md/log.md/hot.md）是 wiki 技能每次启动必读的导航文件，
+   * 用户从不关心 —— 真机验收（2026-10-20 法考库）里它们占主列表 4/15，
+   * 「乱」的形状有一半是它们贡献的。与产出面板折叠 INDEX/log/hot 同款处理：
+   * 归入独立的 meta 组，主列表只留真实内容。
+   */
+  test('登记骨架（INDEX/log/hot）归 meta 组，不进主列表', () => {
+    const messages = [
+      msg('m1', [
+        { name: 'Read', input: { file_path: '/v/wiki/INDEX.md' } },
+        { name: 'Read', input: { file_path: '/v/hot.md' } },
+        { name: 'Read', input: { file_path: '/v/wiki/log.md' } },
+        { name: 'Read', input: { file_path: '/v/wiki/信用卡诈骗罪.md' } },
+      ]),
+    ];
+    const { refs, meta } = aggregateSessionSources(messages, '/v');
+    assert.equal(refs.length, 1);
+    assert.equal(refs[0]!.label, '信用卡诈骗罪.md');
+    assert.equal(meta.length, 3);
+    const labels = meta.map((m) => m.label).sort();
+    assert.deepEqual(labels, ['INDEX.md', 'hot.md', 'log.md']);
+  });
+
+  test('meta 组内同名消歧与计数独立进行', () => {
+    const messages = [
+      msg('m1', [
+        { name: 'Read', input: { file_path: '/v/wiki/INDEX.md' } },
+        { name: 'Read', input: { file_path: '/v/wiki/INDEX.md' } },
+        { name: 'Read', input: { file_path: '/v/concepts/INDEX.md' } },
+      ]),
+    ];
+    const { meta } = aggregateSessionSources(messages, '/v');
+    assert.equal(meta.length, 2);
+    const byTarget = new Map(meta.map((m) => [m.target, m.count]));
+    assert.equal(byTarget.get('/v/wiki/INDEX.md'), 2);
+    assert.equal(byTarget.get('/v/concepts/INDEX.md'), 1);
+    assert.equal(new Set(meta.map((m) => m.label)).size, 2); // 同名消歧生效
+  });
+
+  test('只有骨架被读 → refs 空但 meta 非空（面板据此仍渲染折叠组）', () => {
+    const messages = [msg('m1', [{ name: 'Read', input: { file_path: '/v/wiki/INDEX.md' } }])];
+    const { refs, meta } = aggregateSessionSources(messages, '/v');
+    assert.equal(refs.length, 0);
+    assert.equal(meta.length, 1);
   });
 
   test('Read 的 file_path 计入文件，计数跨轮累加、只出一行', () => {

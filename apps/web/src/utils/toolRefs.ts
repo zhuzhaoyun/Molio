@@ -156,6 +156,16 @@ const MARKDOWN_RE = /\.(mdown|markdown|md)$/i;
 const META_BASENAMES = new Set(['index.md', 'log.md', 'hot.md']);
 
 /**
+ * basename 是否登记元文件（INDEX.md / log.md / hot.md，大小写不敏感）。
+ * 产出面板用 classifyWritePath 把它们折进「其他写入」；引用 tab 用本谓词做同款折叠
+ * ——wiki 技能每次启动必读这些骨架，真机验收里它们占引用主列表 4/15。
+ */
+export function isMetaBasename(p: string): boolean {
+  const segments = p.replace(/\\/g, '/').split('/').filter((s) => s !== '');
+  return META_BASENAMES.has((segments[segments.length - 1] ?? '').toLowerCase());
+}
+
+/**
  * 归类一条写入路径（输入为 writeKey 归一化后的形态）：
  * - `hidden`  —— 库外写入（仍是绝对路径 / `~` / 含 `..`）或落在点开头目录：一律不出现。
  *   库外写入的预览与「在资源管理器中显示」都必然失败（daemon 只认 vault 内路径），

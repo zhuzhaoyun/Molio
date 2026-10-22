@@ -5,7 +5,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type Database from 'better-sqlite3';
 import { openDatabase, closeDatabase, createVault } from '../../src/core/db.js';
-import { VaultWatcher, VAULT_TREE_CHANGED_EVENT } from '../../src/core/vault-watcher.js';
+import {
+  VaultWatcher,
+  VAULT_TREE_CHANGED_EVENT,
+  VAULT_WATCH_STATE_CHANGED_EVENT,
+} from '../../src/core/vault-watcher.js';
 
 // Injected per-dir cap so the oversize-backstop test exercises the IDENTICAL
 // overflow branch (`next > maxDirEntries`) with ~350 files instead of
@@ -187,6 +191,40 @@ describe('VaultWatcher', () => {
     await settle(1500);
     watcher.off(VAULT_TREE_CHANGED_EVENT, onEmit);
     assert.equal(emitted, false);
+  });
+
+  it('readiness: 未就绪 → 就绪，重新 watch / unwatch 都翻转并广播', async () => {
+    // 从没 watch 过的 vault 永远是「未就绪」——这正是图谱缓存拒绝缓存它的依据：
+    // 监听没建立，落盘变化不会有 tree-changed，缓存只会变成陈旧数据。
+    const neverDir = mkdtempSync(join(tmpdir(), 'molio-vw-never-'));
+    const never = createVault(db, 'never-watched', neverDir, undefined);
+    assert.equal(watcher.isReady(never.id), false, 'unwatched vault must not report ready');
+
+    // beforeEach 里已经 watch 过本 vault → 就绪
+    assert.equal(watcher.isReady(vaultId), true);
+
+    const states: boolean[] = [];
+    const onState = (id: string) => {
+      if (id === vaultId) states.push(watcher.isReady(id));
+    };
+    watcher.on(VAULT_WATCH_STATE_CHANGED_EVENT, onState);
+
+    // 重新 watch：旧 watcher 先失活（新扫描空窗），完成后再就绪
+    await watcher.watch(vaultId, vaultDir);
+    assert.equal(watcher.isReady(vaultId), true);
+    assert.deepEqual(states, [false, true], `expected down-then-up, got ${JSON.stringify(states)}`);
+
+    states.length = 0;
+    await watcher.unwatch(vaultId);
+    assert.equal(watcher.isReady(vaultId), false);
+    assert.deepEqual(states, [false], 'unwatch must broadcast the loss of the signal');
+
+    // 恢复监听，让 afterEach 的 stop() 走正常路径
+    await watcher.watch(vaultId, vaultDir);
+    assert.equal(watcher.isReady(vaultId), true);
+
+    watcher.off(VAULT_WATCH_STATE_CHANGED_EVENT, onState);
+    rmSync(neverDir, { recursive: true, force: true });
   });
 
   it('one vault failing does not block another', async () => {

@@ -216,6 +216,8 @@ const zh: Record<string, string> = {
   'output.sourceCount': '本会话引用 {n} 次',
   'output.sourcesOmitted': '另有 {n} 条未展示',
   'output.sourcesOmittedHint': '库外文件、隐藏目录与检索路径不在此列表 —— 消息内联的「引用」标签里能看到它们',
+  'output.sourcesMeta': '索引·日志 {n}',
+  'output.sourcesMetaHint': 'wiki 每次操作都会读写的登记文件（目录索引、日志、缓存）——点开可预览',
   'output.changeKind.create': '新建文件',
   'output.changeKind.update': '编辑',
   'output.changeKind.append': '追加',
@@ -757,6 +759,12 @@ const zh: Record<string, string> = {
   'kb.exportPages': '已导出 {pages} 张图片',
   'kb.exportFailed': '导出失败，请重试',
   'kb.exportUnsupported': '没有可导出的内容',
+  'kb.exportPreset': '导出版式',
+  'kb.exportPresetLong': '长图',
+  'kb.exportPresetCard34': '3:4 竖卡',
+  'kb.exportHeader': '头卡（标题与元信息）',
+  'kb.exportWords': '{words} 字',
+  'kb.exportMinutes': '约 {minutes} 分钟',
 
   // ── FilePicker ──
   'filePicker.justNow': '刚刚',
