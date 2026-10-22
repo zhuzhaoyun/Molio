@@ -68,7 +68,12 @@ export function resolveSampleVaultPath(opts: SampleVaultOptions = {}): string {
   if (fs.existsSync(conventionalDocuments)) {
     return path.join(conventionalDocuments, 'Molio', '示例知识库');
   }
-  return path.join(home, '.molio', 'sample-vault');
+  // Never fall back into the data dir: `~/.molio/...` is a dot-directory, and
+  // validateVaultPath rejects those as vault roots (tool internals are not
+  // knowledge roots). That fallback made the sample-vault CTA fail outright on
+  // machines with no ~/Documents (Docker, trimmed Linux). Keep the same
+  // home-visible layout as above so users can find the folder they were given.
+  return path.join(home, 'Molio', '示例知识库');
 }
 
 function isSampleVaultSource(dir: string): boolean {

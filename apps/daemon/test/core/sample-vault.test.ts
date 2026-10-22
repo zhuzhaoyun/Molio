@@ -118,6 +118,33 @@ describe('sample vault core', () => {
     assert.equal(listVaults(db).length, 1);
   });
 
+  it('provisions a registrable fallback when the machine has no Documents directory', () => {
+    // Machines without ~/Documents and without MOLIO_DOCUMENTS_DIR /
+    // MOLIO_SAMPLE_VAULT_PATH (Docker containers, trimmed Linux images) used to
+    // fall back to ~/.molio/sample-vault — a dot-directory, which
+    // validateVaultPath rejects, so the sample-vault CTA failed with
+    // VAULT_PATH_DOT_DIR on exactly the installs that need activation most.
+    // The fallback must be a path the vault rule accepts.
+    const savedSample = process.env['MOLIO_SAMPLE_VAULT_PATH'];
+    const savedDocs = process.env['MOLIO_DOCUMENTS_DIR'];
+    delete process.env['MOLIO_SAMPLE_VAULT_PATH'];
+    delete process.env['MOLIO_DOCUMENTS_DIR'];
+    const home = join(root, 'home');
+    mkdirSync(home);
+    try {
+      const result = createSampleVault(db, watcher, { homeDir: home, sourceDir });
+      assert.equal(result.created, true);
+      assert.equal(result.vault.path, join(home, 'Molio', '示例知识库'));
+      assert.equal(readFileSync(join(result.vault.path, SAMPLE_VAULT_ENTRY), 'utf-8'), '# 开始使用\n');
+      assert.equal(listVaults(db).length, 1);
+    } finally {
+      if (savedSample === undefined) delete process.env['MOLIO_SAMPLE_VAULT_PATH'];
+      else process.env['MOLIO_SAMPLE_VAULT_PATH'] = savedSample;
+      if (savedDocs === undefined) delete process.env['MOLIO_DOCUMENTS_DIR'];
+      else process.env['MOLIO_DOCUMENTS_DIR'] = savedDocs;
+    }
+  });
+
   it('fails before touching disk or DB when the source directory is missing', () => {
     rmSync(sourceDir, { recursive: true, force: true });
     assert.throws(
@@ -188,10 +215,12 @@ describe('resolveSampleVaultPath', () => {
     );
   });
 
-  it('falls back to ~/.molio/sample-vault when there is no Documents directory', () => {
+  it('falls back to <home>/Molio when there is no Documents directory', () => {
+    // Not <home>/.molio: a dot-directory can never be registered as a vault
+    // (see the provisioning regression test above).
     assert.equal(
       resolveSampleVaultPath({ homeDir: home }),
-      join(home, '.molio', 'sample-vault'),
+      join(home, 'Molio', '示例知识库'),
     );
   });
 });
