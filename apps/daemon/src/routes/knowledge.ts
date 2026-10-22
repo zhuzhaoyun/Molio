@@ -37,7 +37,7 @@ import {
   type ImportResult,
 } from '../core/knowledge.js';
 import { searchVaultFiles, indexVaultFile, removeVaultFile, removeVaultDir, ensureVaultIndexed, hasInflightBuild } from '../core/vault-search.js';
-import { buildAnnotatedTree } from '../core/tree-build.js';
+import { buildTreeInWorker } from '../core/vault-worker.js';
 import { TreeCache } from '../core/tree-cache.js';
 import { VAULT_TREE_CHANGED_EVENT, type VaultWatcher } from '../core/vault-watcher.js';
 import type { RunManager } from '../core/RunManager.js';
@@ -161,8 +161,8 @@ export function knowledgeRoutes(
       // 树缓存与图谱缓存（#337）同一套规矩：watcher 未就绪 → 没有失效信号 →
       // 每次重扫（= 无缓存时的行为），绝不让「没有信号」冒充「内容没变」。
       const tree = isTreeCacheable(vault.id)
-        ? await treeCache.getOrBuild(vault.id, () => buildAnnotatedTree(vault.path))
-        : await buildAnnotatedTree(vault.path);
+        ? await treeCache.getOrBuild(vault.id, () => buildTreeInWorker(vault.path))
+        : await buildTreeInWorker(vault.path);
       return c.json({ tree });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to scan vault';

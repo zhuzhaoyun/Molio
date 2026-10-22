@@ -1,8 +1,9 @@
 /**
  * Graph API routes — knowledge graph data for visualisation.
  *
- * 图的实际构建（扫描整库 + 解析 [[wikilinks]]）在 `core/graph-build.ts`：
- * 那个模块必须能在 worker 线程里单独加载，不能拖上本文件的 db 依赖。
+ * 图的实际构建（扫描整库 + 解析 [[wikilinks]]）在 `core/graph-build.ts`，
+ * 并且跑在 worker 线程里（core/vault-worker.ts）：整库扫描是秒级的同步操作，
+ * 留在请求线程上会连带卡住文件树与聊天 SSE。
  * 这里只负责 HTTP：取 vault、过缓存、裁局部图、错误映射。
  */
 
@@ -10,10 +11,12 @@ import { Hono } from 'hono';
 import type Database from 'better-sqlite3';
 import { getVault } from '../core/db.js';
 import { GraphCache } from '../core/graph-cache.js';
-import { buildGraph, filterLocalGraph } from '../core/graph-build.js';
+import { filterLocalGraph } from '../core/graph-build.js';
+import { buildGraphInWorker } from '../core/vault-worker.js';
 import type { GraphData, GraphScope } from '@molio/contracts';
 
 // 兼容既有导入点（测试与一次性调用都从这里拿）——实现已经搬去 core/graph-build.ts。
+// 注意：这里导出的是**同步**的进程内实现；HTTP 路由走的是 worker 版本。
 export { buildGraph, buildLocalGraph, filterLocalGraph, isGraphExcludedFile } from '../core/graph-build.js';
 
 /**
@@ -27,8 +30,8 @@ async function buildGraphCached(
   vault: { id: string; path: string },
   isCacheable: (vaultId: string) => boolean,
 ): Promise<GraphData> {
-  if (!isCacheable(vault.id)) return buildGraph(vault.path);
-  return cache.getOrBuild(vault.id, async () => buildGraph(vault.path));
+  if (!isCacheable(vault.id)) return buildGraphInWorker(vault.path);
+  return cache.getOrBuild(vault.id, () => buildGraphInWorker(vault.path));
 }
 
 /**
