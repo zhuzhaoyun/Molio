@@ -6,7 +6,7 @@ import { test, expect, type Page } from '@playwright/test';
 import { rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { createTempVault, cleanupTempVault } from './helpers/cleanup';
-import { mockChatRun, mockUnavailableAgents } from './helpers/mock-sse';
+import { mockAgent, mockChatRun, mockUnavailableAgents } from './helpers/mock-sse';
 
 const DAEMON = `http://localhost:${Number(process.env.MOLIO_E2E_DAEMON_PORT ?? 3100)}`;
 const SAMPLE_PATH = join(process.env.MOLIO_E2E_DATA_DIR!, 'sample-vault');
@@ -233,6 +233,9 @@ test('发送失败不完成提问步：没问成就不该被引导去保存', as
   // 等于把一次失败的提问当成跑通。
   const vault = await createTempVault('e2e-onboarding-send-fail');
   try {
+    // 必须假装「有可用运行时」：没有 agentId 时 createRun 会在发 POST 之前就抛错，
+    // 那就测不到「POST 失败」这条路径了（CI runner 上本来就没有装运行时）。
+    await mockAgent(page);
     await page.addInitScript(() => {
       localStorage.setItem('molio.onboarding.v1', JSON.stringify({
         status: 'active',
