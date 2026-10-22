@@ -214,9 +214,6 @@ export function ChatSessionView({
     <ChatComposer
       key={composerMountKey}
       composerKey={composerKey}
-      // chip 缓存按「会话:文件」分桶（草稿按会话走）：切文档重挂载时，
-      // 摘除状态跟随文档，而未发送的草稿仍在。
-      fileRefsKey={composerMountKey ?? composerKey}
       isRunning={isRunning}
       onSend={handleSend}
       onCancel={onCancel}

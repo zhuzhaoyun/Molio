@@ -232,8 +232,9 @@ export function sessionComposerKey(id: string): string {
 }
 
 /**
- * composer 的 React key + 引用 chip 缓存键（按「会话:文件」重挂载，重新播种 chip）。
- * 与草稿键分开：摘掉过哪个文档的 chip 按文档记忆，草稿按会话记忆。
+ * composer 的 React key：带 filePath，换文档时重挂载以按新种子播种引用 chip。
+ * 草稿与 chip 缓存都按会话 id（`sessionComposerKey`）分桶，mountKey 只负责触发
+ * 重挂载；chip 缓存自己按「由哪篇文档播种」判断是否沿用。
  */
 export function sessionComposerMountKey(id: string, filePath?: string | null): string {
   return `${id}:${filePath ?? ''}`;

@@ -57,9 +57,10 @@ export function KbChatSession({
           // mountKey 带 filePath：会话被重新指向新文件时（显式问答 / 打开的文件切换），
           // 重挂载 composer 让 initialFileRefs 重新播种引用 chip —— 否则 store 变了、
           // 挂载过的输入框永远不更新。
-          // 引用 chip 缓存也按「会话:文件」分桶（ChatSessionView 用 mountKey 作
-          // fileRefsKey）：新文件按新种子播种，切回旧文件恢复该文件下用户的取舍。
-          // 草稿键只带会话 id（sessionComposerKey）：切换文档不吞没发送前的文字。
+          // chip 缓存与草稿都按会话 id（sessionComposerKey）分桶：chip 缓存自带
+          // 「由哪篇文档播种」标记，同一文档（面板 ⇄ 全屏）沿用摘除取舍，换文档重新播种；
+          // 草稿则无论怎么切都不吞没发送前的文字。缓存不得比对话界面活得久——否则在 A
+          // 摘掉 chip 后关掉对话再回来会永远没有 chip。
           // 两个 key 与全屏态（HomePage）共用同一真值源（见 kbChatSessionsStore）——R5 要求逐字一致。
           composerMountKey={sessionComposerMountKey(session.id, session.filePath)}
           composerKey={sessionComposerKey(session.id)}

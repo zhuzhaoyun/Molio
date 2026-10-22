@@ -113,6 +113,21 @@ test.describe('Chat — 文档引用 chip', () => {
     await expect(panel.locator('[data-testid="composer-input"]')).toHaveValue('还没发的草稿');
   });
 
+  test('摘掉引用后切到别的文档再切回：该文档的 chip 重新出现', async ({ page }) => {
+    const panel = await openAskPanel(page);
+    // 在「笔记.md」上摘掉 chip
+    await panel.locator('[data-testid="composer-file-ref-remove"]').click();
+    await expect(panel.locator('[data-testid="composer-file-ref"]')).toHaveCount(0);
+
+    // 切到另一篇 → chip 正常播种
+    await page.locator('.kb-tree-name').filter({ hasText: '另一篇.md' }).click();
+    await expect(panel.locator('[data-testid="composer-file-ref"]')).toContainText('另一篇.md');
+
+    // 切回「笔记.md」→ 摘除只对上次那次停留有效，重新播种
+    await page.locator('.kb-tree-name').filter({ hasText: '笔记.md' }).click();
+    await expect(panel.locator('[data-testid="composer-file-ref"]')).toContainText('笔记.md');
+  });
+
   test('发送后引用 chip 清空（与旧的 @文本被清空行为一致）', async ({ page }) => {
     const panel = await openAskPanel(page);
 
