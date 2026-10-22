@@ -48,12 +48,15 @@ export function buildAttachmentPrefix(pastedImages: PastedImage[]): string {
 const drafts = new Map<string, string>();
 
 /**
- * Module-level chip cache — 与 `drafts` 同源同键。
+ * Module-level chip cache — 键是 `fileRefsKey`（默认 `composerKey`），按「会话:文件」分桶。
  *
  * 面板 ⇄ 全屏态切换会让 composer 重挂载（两侧 composerMountKey 相同），若引用
  * 只存在组件 state 里，用户刚摘掉的 chip 会随 `initialFileRefs` 重新播种——等于
- * 「删了又自己回来」。缓存按 composerKey 记住当前引用集合（含空集合，空集合也
+ * 「删了又自己回来」。缓存按 fileRefsKey 记住当前引用集合（含空集合，空集合也
  * 是有效状态：移除必须留存），新文件/新会话的 key 不同 → 仍按 initialFileRefs 播种。
+ *
+ * 之所以与草稿分开键：草稿跟着**会话**走（切文档不该吞掉没发出去的话），
+ * 而「摘掉过这个文档的 chip」要按**文档**记忆（切回旧文档时仍是摘掉的状态）。
  */
 const fileRefsByKey = new Map<string, FileRef[]>();
 
@@ -78,6 +81,11 @@ interface Props {
   onDeleteConversations?: (ids: string[]) => void;
   /** Stable key for persisting draft text across navigation. */
   composerKey?: string;
+  /**
+   * chip 集合的缓存键（默认同 composerKey）。面板/全屏传「会话:文件」，
+   * 让「用户摘掉了引用」按文档记忆；草稿仍按会话走。
+   */
+  fileRefsKey?: string;
 }
 
 export function ChatComposer({
@@ -90,14 +98,16 @@ export function ChatComposer({
   onOpenConversation,
   onDeleteConversations,
   composerKey,
+  fileRefsKey,
 }: Props) {
   const { t } = useI18n();
+  const refsCacheKey = fileRefsKey ?? composerKey;
   const [text, setText] = useState(() => (composerKey ? drafts.get(composerKey) ?? '' : ''));
   // File references are chips in the toolbar row, NOT text in the textarea.
   // 旧实现挂载时把 `@路径` 种进输入文本：用户反馈「不希望被自动带上」，而且
   // 那段文本既不可发现也不方便删。chip 是显式可摘的对象，发送时才还原成 @token。
   const [fileRefs, setFileRefs] = useState<FileRef[]>(() => {
-    const cached = composerKey ? fileRefsByKey.get(composerKey) : undefined;
+    const cached = refsCacheKey ? fileRefsByKey.get(refsCacheKey) : undefined;
     return cached ?? initialFileRefs ?? [];
   });
   const [pastedImages, setPastedImages] = useState<PastedImage[]>([]);
@@ -135,9 +145,9 @@ export function ChatComposer({
 
   // Persist the chip set the same way (empty array included: removal must stick)
   useEffect(() => {
-    if (!composerKey) return;
-    fileRefsByKey.set(composerKey, fileRefs);
-  }, [fileRefs, composerKey]);
+    if (!refsCacheKey) return;
+    fileRefsByKey.set(refsCacheKey, fileRefs);
+  }, [fileRefs, refsCacheKey]);
 
   // Focus on mount and when run completes
   useEffect(() => {
@@ -332,7 +342,7 @@ export function ChatComposer({
         // 引用随消息一次性消费（与旧的 @文本被清空一致）：下一条消息不再自动带文档。
         // 缓存同步写入空集合（理由同上面的 drafts.delete）——发送后若立即重挂载，
         // 不能又从 initialFileRefs 播种回来。
-        if (composerKey) fileRefsByKey.set(composerKey, []);
+        if (refsCacheKey) fileRefsByKey.set(refsCacheKey, []);
         setFileRefs([]);
         setTriggerStartIdx(null);
         setSkillTrigger(false);

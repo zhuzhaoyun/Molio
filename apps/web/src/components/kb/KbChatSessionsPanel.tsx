@@ -141,6 +141,23 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
   const currentVaultId = vault?.id ?? null;
   const currentFilePath = filePath;
 
+  // 切换打开的文档 → 当前 qa 会话的引用 chip 跟着切（拍板：始终跟随当前文档，
+  // 对话进行中也一样）。只跟随**已绑定文档**的会话（filePath 非空）——库级会话
+  // 本来就没有 chip，不该被切换文档塞进来一个；图谱/发布等「可见上下文是库」时
+  // currentFilePath 为 null → 不改绑（与 openQa 的 null 约定一致）。
+  // 写回 store 而不是只改视图：重新挂载的 composer 与全屏态都从同一份
+  // session.filePath 播种 chip。
+  useEffect(() => {
+    if (!currentFilePath) return;
+    const active = kbChatSessionsStore.getActiveSession();
+    if (!active || active.mode !== 'qa' || !active.filePath) return;
+    if (active.filePath === currentFilePath) return;
+    kbChatSessionsStore.updateSession(active.id, {
+      filePath: currentFilePath,
+      vaultId: currentVaultId ?? active.vaultId,
+    });
+  }, [currentFilePath, currentVaultId]);
+
   const [pendingSelection, setPendingSelection] = useState<string | null>(null);
   // #5: pendingSelection 归属的会话 id（null = 无）。只投给目标会话，避免广播给所有空会话、
   // 被任意会话的首条消息消费。

@@ -232,7 +232,7 @@ export function HomePage({
             onDeleteMessages={state.deleteMessages}
             // composerKey/composerMountKey 与面板 `KbChatSession` 同源（R5：逐字一致）：
             // 面板态与全屏态共享同一份草稿、同一套 @ 上下文播种。
-            composerKey={sessionComposerKey(activeSession.id, activeSession.filePath)}
+            composerKey={sessionComposerKey(activeSession.id)}
             composerMountKey={sessionComposerMountKey(activeSession.id, activeSession.filePath)}
             composerInitialFileRefs={initialFileRefs}
             composerDisabled={!selectedAgentName}

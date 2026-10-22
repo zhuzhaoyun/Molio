@@ -54,15 +54,15 @@ export function KbChatSession({
           // 只有活动标签是勾选态宿主：非活动标签（display:none）不得用自己消息集裁剪
           // 全局单例里的选中 id，否则后台会话流式输出会清空当前会话的勾选态。
           pruneSelection={active}
-          // key 带 filePath：openQa 把活跃会话重新指向新文件时（updateSession），
+          // mountKey 带 filePath：会话被重新指向新文件时（显式问答 / 打开的文件切换），
           // 重挂载 composer 让 initialFileRefs 重新播种引用 chip —— 否则 store 变了、
-          // 挂载过的输入框永远不更新（#4 语义此前对 UI 无效）。
-          // composerKey（草稿 / 引用 chip 命名空间）同样带 filePath：引用 chip 与
-          // 草稿都按「会话:文件」分桶，新文件没有缓存 → 按新种子播种；切回旧文件
-          // 则恢复该文件下用户此前的取舍（草稿文本 + 是否保留了引用）。
+          // 挂载过的输入框永远不更新。
+          // 引用 chip 缓存也按「会话:文件」分桶（ChatSessionView 用 mountKey 作
+          // fileRefsKey）：新文件按新种子播种，切回旧文件恢复该文件下用户的取舍。
+          // 草稿键只带会话 id（sessionComposerKey）：切换文档不吞没发送前的文字。
           // 两个 key 与全屏态（HomePage）共用同一真值源（见 kbChatSessionsStore）——R5 要求逐字一致。
           composerMountKey={sessionComposerMountKey(session.id, session.filePath)}
-          composerKey={sessionComposerKey(session.id, session.filePath)}
+          composerKey={sessionComposerKey(session.id)}
           composerInitialFileRefs={initialFileRefs}
           // 面板保留既有 DOM 结构/类名与空态（空态含「就此提问」的选中文本预览）
           logClassName="file-chat-messages"

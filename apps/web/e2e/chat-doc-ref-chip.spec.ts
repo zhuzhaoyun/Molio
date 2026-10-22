@@ -25,6 +25,7 @@ test.describe('Chat — 文档引用 chip', () => {
   test.beforeAll(async () => {
     vault = await createTempVault('e2e-doc-ref-chip');
     fs.writeFileSync(path.join(vault.path, '笔记.md'), '# 笔记\n\n内容\n');
+    fs.writeFileSync(path.join(vault.path, '另一篇.md'), '# 另一篇\n\n内容\n');
   });
   test.afterAll(async () => { if (vault) await cleanupTempVault(vault); });
   test.afterEach(async ({ page }) => { await unmockAll(page); });
@@ -98,6 +99,18 @@ test.describe('Chat — 文档引用 chip', () => {
     await expect(fullscreen).toBeVisible({ timeout: 5_000 });
     await expect(fullscreen.locator('[data-testid="composer-input"]')).toBeVisible();
     await expect(fullscreen.locator('[data-testid="composer-file-ref"]')).toHaveCount(0);
+  });
+
+  test('切换打开的文档：引用 chip 跟着切，未发送的草稿留在会话里', async ({ page }) => {
+    const panel = await openAskPanel(page);
+    await expect(panel.locator('[data-testid="composer-file-ref"]')).toContainText('笔记.md');
+    await panel.locator('[data-testid="composer-input"]').fill('还没发的草稿');
+
+    // 只切文档，不再点 💬问答 —— 引用应当跟随当前打开的文档
+    await page.locator('.kb-tree-name').filter({ hasText: '另一篇.md' }).click();
+    await expect(panel.locator('[data-testid="composer-file-ref"]')).toContainText('另一篇.md');
+    // 草稿按会话保存：文档切换导致的 composer 重挂载不得吞掉没发出去的文字
+    await expect(panel.locator('[data-testid="composer-input"]')).toHaveValue('还没发的草稿');
   });
 
   test('发送后引用 chip 清空（与旧的 @文本被清空行为一致）', async ({ page }) => {
