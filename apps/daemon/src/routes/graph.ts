@@ -22,13 +22,13 @@ export { buildGraph, buildLocalGraph, filterLocalGraph, isGraphExcludedFile } fr
  * 后是不存在的**（watch() 是 fire-and-forget，失败只 warn）。没有信号还缓存，
  * 就等于把「没有信号」当成「内容没变」——图谱会停在旧数据上直到 TTL 到期。
  */
-function buildGraphCached(
+async function buildGraphCached(
   cache: GraphCache,
   vault: { id: string; path: string },
   isCacheable: (vaultId: string) => boolean,
-): GraphData {
+): Promise<GraphData> {
   if (!isCacheable(vault.id)) return buildGraph(vault.path);
-  return cache.getOrBuild(vault.id, () => buildGraph(vault.path));
+  return cache.getOrBuild(vault.id, async () => buildGraph(vault.path));
 }
 
 /**
@@ -45,14 +45,14 @@ export function graphRoutes(
   const app = new Hono();
 
   // GET /api/graph/:vaultId — build graph from vault markdown files
-  app.get('/:vaultId', (c) => {
+  app.get('/:vaultId', async (c) => {
     const vault = getVault(db, c.req.param('vaultId'));
     if (!vault) {
       return c.json({ error: { code: 'NOT_FOUND', message: 'Vault not found' } }, 404);
     }
 
     try {
-      const graphData = buildGraphCached(cache, vault, isCacheable);
+      const graphData = await buildGraphCached(cache, vault, isCacheable);
       return c.json(graphData);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to build graph';
@@ -61,7 +61,7 @@ export function graphRoutes(
   });
 
   // GET /api/graph/:vaultId/local — scoped sub-graph（file=1跳邻域 / dir=文件夹子图）
-  app.get('/:vaultId/local', (c) => {
+  app.get('/:vaultId/local', async (c) => {
     const vault = getVault(db, c.req.param('vaultId'));
     if (!vault) {
       return c.json({ error: { code: 'NOT_FOUND', message: 'Vault not found' } }, 404);
@@ -100,7 +100,7 @@ export function graphRoutes(
       const scope: GraphScope =
         scopeType === 'file' ? { type: 'file', path: scopePath, depth } : { type: 'dir', path: scopePath };
       // 局部图 = 同一张全量图做一次过滤：缓存全量图，切 scope 就不用重扫整库
-      const full = buildGraphCached(cache, vault, isCacheable);
+      const full = await buildGraphCached(cache, vault, isCacheable);
       return c.json(filterLocalGraph(full, scope));
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to build local graph';
