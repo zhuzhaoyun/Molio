@@ -3553,3 +3553,100 @@
 .file-chat-session { display: flex; flex-direction: column; flex: 1; min-height: 0; }
 .file-chat-session-stack { display: flex; flex-direction: column; flex: 1; min-height: 0; }
 
+
+/* ── 文档出图：导出气泡（版式二选一 + 头卡开关 + 导出动作） ──
+   一个按钮开气泡，结构与图谱出图（.graph-export-*）同款：版式是分段
+   控件而非下拉项——长图/竖卡是「同一件事」的二选一，并排一眼可比。
+   颜色全部走 tokens 变量，深色模式自动跟随。 */
+.kb-export-ctrl { position: relative; display: inline-flex; align-items: center; }
+
+.kb-export-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  /* 与 .kb-sort-dropdown（同为 header 区的下拉）一致 */
+  z-index: 40;
+  min-width: 176px;
+  padding: 5px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-md);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  white-space: nowrap;
+}
+
+.kb-export-aspects {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  margin-bottom: 3px;
+  border-radius: 6px;
+  background: var(--bg-muted);
+}
+
+.kb-export-aspect {
+  flex: 1;
+  padding: 4px 8px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text);
+  font-size: 12px;
+  opacity: 0.68;
+  cursor: pointer;
+}
+
+.kb-export-aspect:hover { opacity: 1; }
+
+.kb-export-aspect.is-active {
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-xs);
+  opacity: 1;
+  font-weight: 600;
+}
+
+/* 深色下 --bg-elevated 与 --bg-muted 明度几乎相同，白色芯片消失——
+   提亮选中芯片（对齐图谱出图的 [data-theme] 覆盖）。 */
+[data-theme='dark'] .kb-export-aspect.is-active {
+  background: rgba(255, 255, 255, 0.16);
+  box-shadow: none;
+}
+
+.kb-export-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px 5px;
+  font-size: 12px;
+  color: var(--text);
+  cursor: pointer;
+  opacity: 0.86;
+}
+
+.kb-export-toggle:hover { opacity: 1; }
+
+.kb-export-toggle input {
+  margin: 0;
+  cursor: pointer;
+  accent-color: var(--accent);
+}
+
+.kb-export-item {
+  display: block;
+  width: 100%;
+  padding: 5px 8px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.kb-export-item:hover { background: var(--bg-subtle); }
+.kb-export-item:disabled { opacity: 0.5; cursor: not-allowed; }

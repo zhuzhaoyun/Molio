@@ -18,12 +18,15 @@ import {
   WATERMARK,
   composeExportCss,
   docExportFileName,
+  exportPresetParams,
   footerInkFor,
   paginateBlocks,
   rangeHeight,
   sliceVerticalRects,
   type BlockRect,
+  type ExportPreset,
 } from './layout.ts';
+import { buildHeaderEl, type ExportHeaderData } from './header.ts';
 import { buildPageSvg, type PageFooter } from './svg.ts';
 
 export class ExportError extends Error {
@@ -40,6 +43,10 @@ export class ExportError extends Error {
 
 export interface ExportOptions {
   title: string;
+  /** 导出版式；不传 = 长图（一期行为）。 */
+  preset?: ExportPreset;
+  /** 头卡数据；不传 = 不画头卡。 */
+  header?: ExportHeaderData;
   onProgress?: (done: number, total: number) => void;
 }
 
@@ -235,6 +242,16 @@ export function measureBlocks(container: HTMLElement, blocks: HTMLElement[]): Bl
 }
 
 /**
+ * 空文档守卫：头卡本身不算内容。
+ *
+ * 空文档 + 头卡 = 仍然「没有可导出的内容」——否则会产出一张只有头卡的图，
+ * 看着像导出成功，正文其实全丢了。
+ */
+export function isEmptyExport(blockCount: number, hasHeader: boolean): boolean {
+  return blockCount === (hasHeader ? 1 : 0);
+}
+
+/**
  * 序列化一页正文。必须保留外层 `section.container`——主题 CSS 把标题规则
  * 写成了 `#output section h1`，丢了这层包装标题样式整页失效。
  */
@@ -318,8 +335,15 @@ export interface PagePlan {
 /**
  * 把测量好的块坐标规划成页。纯函数：不碰 DOM，分页与切片的坐标错误
  * （例如多算了一次块在原文档中的偏移）必须靠单测守住。
+ *
+ * `fixedPageHeight` 给定时每页都是这个高度（3:4 竖卡），内容不满一页时
+ * 下方由遮罩补底；不传时末页按内容自适应——一期长图的行为。
  */
-export function planPages(rects: BlockRect[], budget: number = PAGE_BUDGET): PagePlan[] {
+export function planPages(
+  rects: BlockRect[],
+  budget: number = PAGE_BUDGET,
+  fixedPageHeight?: number,
+): PagePlan[] {
   const pages: PagePlan[] = [];
   for (const [from, to] of paginateBlocks(rects, budget)) {
     const height = rangeHeight(rects, from, to);
@@ -330,7 +354,8 @@ export function planPages(rects: BlockRect[], budget: number = PAGE_BUDGET): Pag
         to,
         bodyHeight: EXPORT_PADDING_TOP + height,
         viewBoxY: 0,
-        viewBoxHeight: EXPORT_PADDING_TOP + height + EXPORT_FOOTER_HEIGHT,
+        viewBoxHeight:
+          fixedPageHeight ?? EXPORT_PADDING_TOP + height + EXPORT_FOOTER_HEIGHT,
         contentHeight: EXPORT_PADDING_TOP + height,
       });
       continue;
@@ -347,7 +372,7 @@ export function planPages(rects: BlockRect[], budget: number = PAGE_BUDGET): Pag
         bodyHeight: EXPORT_PADDING_TOP + height,
         viewBoxY: EXPORT_PADDING_TOP + slice.top,
         // 切片页同样保留页脚带（署名 + 页码），页脚带上沿刚好是切片底边。
-        viewBoxHeight: slice.height + EXPORT_FOOTER_HEIGHT,
+        viewBoxHeight: fixedPageHeight ?? slice.height + EXPORT_FOOTER_HEIGHT,
         contentHeight: slice.height,
       });
     }
@@ -416,15 +441,40 @@ export async function exportDocument(
     await inlineImages(host);
     await waitForAssets(host);
 
-    const { container, blocks } = collectBlocks(host);
-    if (blocks.length === 0) throw new ExportError('no-output', '文档没有可导出的内容');
+    const { container } = collectBlocks(host);
+    // 头卡插成第一个块：与正文同一套级联、同一套分页预算。必须在
+    // collectBlocks 之后、measureBlocks 之前——插早了 collectBlocks 拿不到
+    // 容器，插晚了头卡不参与测量。
+    if (options.header) {
+      container.insertBefore(buildHeaderEl(options.header), container.firstChild);
+      // 头卡已经把标题画了：正文里与标题同文的第一个 H1 摘掉，别让读者在
+      // 同一张图上连看两遍。头卡标题本就取自这个 H1（无 H1 时取文件名，
+      // 那时这里找不到匹配、什么都不摘），所以这是去重，不是丢内容。
+      const h1 = Array.from(container.children).find(
+        (el) => el.tagName === 'H1' && occupiesLayout(el),
+      );
+      if (h1 && (h1.textContent ?? '').trim() === options.header.title.trim()) {
+        h1.remove();
+      }
+    }
+    const blocks = Array.from(container.children).filter(occupiesLayout) as HTMLElement[];
+    // 头卡本身不算内容：空文档 + 头卡 ≠ 可导出，仍然报错。
+    if (isEmptyExport(blocks.length, Boolean(options.header))) {
+      throw new ExportError('no-output', '文档没有可导出的内容');
+    }
     const rects = measureBlocks(container, blocks);
 
     // 先把所有页规划并序列化出来，才能知道总页数、把 `页码 / 总页数` 写进每一页。
     // 超高块会切成多页：同一 `[from, to)` 只序列化一次、切片复用同一份字符串，
     // 否则一张很长的表格/代码块会随切片数成倍放大克隆与内存开销。
+    const presetParams = exportPresetParams(options.preset ?? 'long');
     const bodyHtmlByRange = new Map<string, string>();
-    const pages: RasterPage[] = planPages(rects, PAGE_BUDGET).map((plan) => {
+    const pages: RasterPage[] = planPages(
+      rects,
+      presetParams.pageBudget,
+      // 只有固定页高的版式才传第三个参数；长图保持末页自适应（一期行为）。
+      options.preset === 'card34' ? presetParams.pageHeight : undefined,
+    ).map((plan) => {
       const key = `${plan.from}:${plan.to}`;
       let bodyHtml = bodyHtmlByRange.get(key);
       if (bodyHtml === undefined) {

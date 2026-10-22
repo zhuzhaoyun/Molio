@@ -754,6 +754,12 @@ const en: Record<string, string> = {
   'kb.exportPages': 'Exported {pages} images',
   'kb.exportFailed': 'Export failed, please try again',
   'kb.exportUnsupported': 'Nothing to export',
+  'kb.exportPreset': 'Export layout',
+  'kb.exportPresetLong': 'Long image',
+  'kb.exportPresetCard34': '3:4 cards',
+  'kb.exportHeader': 'Header card (title & meta)',
+  'kb.exportWords': '{words} words',
+  'kb.exportMinutes': '~{minutes} min',
 
   // ── FilePicker ──
   'filePicker.justNow': 'Just now',

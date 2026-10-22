@@ -13,7 +13,9 @@ on:
 
 jobs:
   e2e-full:
-    runs-on: ubuntu-latest
+    # 钉 ubuntu-24.04（原因见 pr-check.yml 的 e2e-affected 注释）：
+    # ubuntu-latest 已是 ubuntu26.04，Playwright 1.60 装不上 chromium。
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
 
     steps:
