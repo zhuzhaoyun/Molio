@@ -97,19 +97,10 @@ export function buildGraph(vaultPath: string, deps: GraphBuildDeps = {}): GraphD
     linkCounts.set(key, 0);
   }
 
-  // Read file content for node type inference
-  for (const f of mdFiles) {
-    const absPath = resolveFilePath(vaultPath, f.path);
-    let content = '';
-    try {
-      content = readFile(absPath);
-    } catch { /* binary or unreadable */ }
-
-    const nodeType = inferNodeType(f.path, content);
-    nodeTypes.set(pathToKey.get(f.path)!, nodeType);
-  }
-
-  // Parse wikilinks from each file
+  // Parse wikilinks from each file —— 每个文件**只读一次**：同一次读到的内容同时
+  // 用于判节点类型（frontmatter）和提取链接。旧实现读两遍（第一遍读了全文却只看
+  // 开头那段 frontmatter），大库白付一倍 IO。索引只用目录树里的名字/路径构建，
+  // 不依赖内容，所以合并不改变链接解析的结果。
   const edges = new Set<string>(); // "source→target" strings for dedup
   const deadLinks = new Set<string>(); // Track dead links to avoid repeating warnings (lowercase name)
   // 死链目标节点（Obsidian 行为：未解析的 [[名字]] 也作为节点参与图）：
@@ -121,16 +112,17 @@ export function buildGraph(vaultPath: string, deps: GraphBuildDeps = {}): GraphD
     const absPath = resolveFilePath(vaultPath, f.path);
     const sourceKey = pathToKey.get(f.path)!;
 
-    // 单个文件读不了不该让整张图 500。existsSync 与 readFileSync 之间文件可能被删
-    // （TOCTOU），Windows 上还可能被别的进程占着（EBUSY/EPERM：同步盘、编辑器、
-    // 杀软实时扫描），移动盘休眠/掉线同理——读失败就跳过它的链接，节点本身仍留
-    // 在图里。
-    let content: string;
+    // 单个文件读不了不该让整张图 500。读之前不再 existsSync（那是 TOCTOU：检查
+    // 完文件仍可能被删；Windows 上还可能被别的进程占着 EBUSY/EPERM，同步盘、
+    // 编辑器、杀软实时扫描，移动盘休眠/掉线同理）——读失败就跳过它的链接，节点
+    // 本身仍留在图里，类型回落到按路径推断。
+    let content = '';
     try {
       content = readFile(absPath);
-    } catch { /* unreadable / vanished / locked — node stays, links dropped */
-      continue;
-    }
+    } catch { /* unreadable / vanished / locked — node stays, links dropped */ }
+
+    nodeTypes.set(sourceKey, inferNodeType(f.path, content));
+    if (!content) continue;
 
     // 代码块/行内代码里的 [[...]] 是字面文本，不渲染成链接 —— 不进图、不算死链。
     // 与 deadcheck.mjs 的链接扫描同口径：检查员放行的东西，图谱里也不该冒出假节点。
