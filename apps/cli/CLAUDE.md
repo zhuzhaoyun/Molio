@@ -39,7 +39,8 @@ src/
     server.ts       createMcpServer(client) 工厂（注册 7 tools）+ runMcpServer()（连 stdio）
     tools/          common.ts（toolOk/toolText/toolError/runTool）+ 7 个 registerXxx
 connector/          WorkBuddy 提交资产（见下节）
-test/               fake-daemon.ts + helpers.ts + sse-parser/vault-resolver/daemon-client/ask-service/commands/mcp-tools 测试
+pi/                 Pi Coding Agent 插件资产（Pi package，见下节）
+test/               fake-daemon.ts + helpers.ts + sse-parser/vault-resolver/daemon-client/ask-service/commands/mcp-tools/pi-assets 测试
 ```
 
 ## 命令面
@@ -100,6 +101,26 @@ skills/molio-kb/SKILL.md   frontmatter 必填 description/description_zh/descrip
 
 ⚠️ **提交硬前置**：`mcp.json` 用 `npx -y @molio/cli mcp` 在用户机现装 → **@molio/cli 必须先发布到 npm**（发布管线见下节，已建好；实际发布需 npm @molio scope + 仓库 `NPM_TOKEN` secret 两个一次性人工步骤）。未发布前本地验证用 `node <abs>/dist/src/index.js mcp`。**WorkBuddy 接入无需注册 OAuth 应用**——连接器走「开放平台入驻（资质认证）+ 打包目录提交审核」，OAuth 那套是反方向（Molio 调 WorkBuddy API）才用。
 
+## Pi Coding Agent 插件资产（pi/，Pi package）
+
+[Pi](https://pi.dev)（earendil-works/pi，Mario Zechner 的极简 coding agent）≥1.0 原生支持 MCP。`@molio/cli` 本身就是 Pi package——`pi install npm:@molio/cli` 一步获得 MCP server + skill：
+
+```
+pi/
+  extensions/molio-mcp.ts     pi.registerMcpServer("molio", stdio)：process.execPath + 包内 dist/src/index.js mcp；dist 缺失兜底 npx -y @molio/cli mcp
+  skills/molio-kb/SKILL.md    Agent Skills 规范技能：7 工具 + codemode 调用约定（tools.mcp__molio__*）+ 两条工作流 + 错误恢复表
+  README.md                   安装说明（npm/git/本地 + 手动 pi mcp add 兜底）
+```
+
+**规则**：
+
+1. **package.json 的 `pi` manifest 键**（`extensions`/`skills` 路径）与 `files` 的 `pi/`、`keywords` 的 `pi-package` 是插件被发现的三要素，改目录结构必须同步；`test/pi-assets.test.ts` 做结构性把关。
+2. **`@earendil-works/pi-coding-agent` 不得进任何依赖字段**（dependencies/devDependencies/peerDependencies 都不行）。扩展对 pi 包只有 `import type`（jiti 加载时擦除，宿主运行时提供类型面），运行时 import 只允许 `node:` 内置模块。⚠️ 连 optional peer 也不能声明——pnpm `auto-install-peers` 会把 pi 全家桶真装进 workspace（连带 `@google/genai` 触发 `ERR_PNPM_IGNORED_BUILDS`、锁文件 +900 行，2026-10 实测踩坑）。
+3. **扩展 factory 内只做注册，不启动进程/长命资源**（Pi 在 session start 才连接；部分调用场景加载扩展但不开会话）。
+4. 用户级 `mcp.json` 同名 server **覆盖**扩展注册（Pi 规则）——手动 `pi mcp add molio …` 可改端口等配置，不要在扩展里对抗。
+5. Pi 默认 codemode exposure：工具在脚本里是 `tools.mcp__molio__kb_search({…})`（非合法标识符字符转 `_`）；SKILL.md 的调用示例必须与此一致。
+6. 本机验证：`pi install <repo>/apps/cli`（需先 build）→ `pi list` → `pi --print "调用 molio_status…"`。注意 `pi mcp list` **不加载扩展**，看不到扩展注册的 server，验证要走真实会话。
+
 ## npm 发布（.github/workflows/cli-publish.yml）
 
 - **触发**：push tag `cli-v*`（如 `cli-v0.1.0`）或手动 workflow_dispatch。与桌面端 `v*`（release.yml）互不干扰。
@@ -107,7 +128,7 @@ skills/molio-kb/SKILL.md   frontmatter 必填 description/description_zh/descrip
 - **预发布**：version 含 `-`（如 `0.2.0-beta.1`）自动发到 `beta` dist-tag，latest 只留正式版（`npx -y @molio/cli` 装 latest）。
 - **流水线步骤**：install → 版本校验 → build contracts → `pnpm --filter @molio/cli test`（自带 rebuild dist）→ NPM_TOKEN guard → 拷根 LICENSE 进包 → `npm pack --dry-run` 公示内容 → `pnpm publish` → registry 回查。
 - **一次性人工前置**：① npm 注册 `@molio` scope（组织）；② 仓库 Settings → Secrets 加 `NPM_TOKEN`（automation token，需 @molio 发布权限）。
-- **发布内容**：`dist/src`（含 .d.ts）+ `connector/` + README + LICENSE，约 45 kB / 91 文件；运行时依赖仅 `@modelcontextprotocol/sdk` + `zod`。
+- **发布内容**：`dist/src`（含 .d.ts）+ `connector/` + `pi/`（Pi package 资产）+ README + LICENSE；运行时依赖仅 `@modelcontextprotocol/sdk` + `zod`。
 
 ```bash
 # 发版流程
@@ -140,4 +161,4 @@ pnpm typecheck    # tsc --noEmit
 
 ## 后续（不在本包首版）
 
-write/import 写入 tools、CLI+Skill 备选方案（cli.json + device flow，需 apps/cloud 配合）、千问桌面端实测、WorkBuddy 开放平台提交（硬前置：npm 首发完成）。
+write/import 写入 tools、CLI+Skill 备选方案（cli.json + device flow，需 apps/cloud 配合）、千问桌面端实测、WorkBuddy 开放平台提交（硬前置：npm 首发完成）、Pi package gallery 收录（硬前置同上：npm 首发后 `pi install npm:@molio/cli` 才可用；本地路径安装已实测通过）、**MCP tools 加 outputSchema/structuredContent**（Pi codemode 实测：无 outputSchema 时业务数据只是 `content[0].text` 里的 JSON 字符串，模型常直接取结构化字段得 undefined 误判"工具异常"——目前靠 SKILL.md 教 JSON.parse 兜住；加了 outputSchema 后 codemode 直接解析为结构化值，WorkBuddy 等其他 MCP 客户端同样受益）。
