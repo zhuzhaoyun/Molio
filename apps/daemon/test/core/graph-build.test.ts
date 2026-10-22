@@ -65,6 +65,21 @@ describe('buildGraph 读盘次数', () => {
     assert.deepEqual(g.deadLinks.map((d) => d.targetName), ['ghost']);
   });
 
+  it('模糊匹配：[[AI Safety]] 命中 ai-safety.md（预建归一化索引与线性扫描等价）', () => {
+    const vault = makeVault(
+      ['ai-safety.md', '# A\n'],
+      ['note.md', '# N\n\n[[AI Safety]]\n[[概念/知识库]]\n'],
+      ['概念/知识库.md', '# K\n'],
+    );
+
+    const g = buildGraph(vault);
+    // Case 3：[[AI Safety]] 归一化成 aisafety，命中 ai-safety.md
+    assert.ok(g.edges.some((e) => [e.source, e.target].sort().join('|') === 'ai-safety.md|note.md'));
+    // 带目录前缀的链接按 basename 命中（Case 2，先于模糊匹配）
+    assert.ok(g.edges.some((e) => [e.source, e.target].sort().join('|') === 'note.md|概念/知识库.md'));
+    assert.deepEqual(g.deadLinks, [], '两条链接都该解析成功，不该退化成死链');
+  });
+
   it('读失败的文件仍留在图里，类型按路径推断（读盘合并后不丢这条韧性）', () => {
     const vault = makeVault(
       ['wiki/concepts/locked.md', '# L\n\n[[a]]\n'],
