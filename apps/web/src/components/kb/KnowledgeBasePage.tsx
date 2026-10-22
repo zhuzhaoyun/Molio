@@ -349,6 +349,11 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
     setCreatingSampleVault(true);
     try {
       const result = await api.createSampleVault();
+      // 示例库按钮只出现在零库欢迎页，这条路径本身就是「全新安装」。必须在这里
+      // 就先声明激活态：首屏库列表请求失败过的话（vaultsLoaded 一直 false），
+      // 建库后的这次刷新才是第一次成功加载，按库数初始化会得到 1 → 直接写死
+      // done，checklist 永远不出现。init 对已有状态是 no-op，不会覆盖进度。
+      onboardingStore.init(0);
       await kb.refreshVaults();
       vaultStore.setActiveVaultId(result.vault.id);
       navigate(

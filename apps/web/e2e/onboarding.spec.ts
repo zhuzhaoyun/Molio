@@ -116,6 +116,34 @@ test('全新安装点示例库后 checklist 紧接着出现', async ({ page }) =
   await expect(cta).toHaveRole('button');
 });
 
+test('首屏库列表加载失败后建示例库，checklist 仍必须出现', async ({ page }) => {
+  // 首屏 GET /vaults 失败时 vaultsLoaded 保持 false，引导状态始终没初始化；
+  // 建完示例库后的那次刷新才第一次「成功」，若此时按库数初始化（=1）就会把用户
+  // 判成老用户写死 done，checklist 永远不出现。示例库是显式的全新安装路径，
+  // 必须在创建时就声明自己处于激活态。
+  await page.addInitScript(() => localStorage.removeItem('molio.onboarding.v1'));
+  // 失败必须持续到示例库建成为止：只失败第一次的话，StrictMode 的第二次挂载
+  // 请求就会拿到真实（0 库）列表把引导初始化掉，复现不了这条路径。
+  let sampleCreated = false;
+  await page.route('**/api/knowledge/vaults', async (route) => {
+    if (route.request().method() === 'GET' && !sampleCreated) {
+      await route.fulfill({ status: 500, body: 'daemon warming up' });
+      return;
+    }
+    await route.continue();
+  });
+  await page.route('**/api/knowledge/sample-vault', async (route) => {
+    sampleCreated = true;
+    await route.continue();
+  });
+  await page.goto('/knowledge');
+
+  await page.locator('[data-testid="kb-empty-sample-vault-cta"]').click();
+
+  await expect(page.locator('.kb-wtab-title').filter({ hasText: '开始使用' })).toBeVisible();
+  await expect(page.locator('[data-testid="kb-onboarding"]')).toBeVisible();
+});
+
 test('checklist 1/5 → 5/5：打开、导入、提问、存回都走通', async ({ page }) => {
   const vault = await createTempVault('e2e-onboarding-checklist');
   try {
@@ -194,6 +222,54 @@ test('checklist 1/5 → 5/5：打开、导入、提问、存回都走通', async
 
     await expect(page.locator('[data-testid="kb-onboarding-done"]')).toBeVisible();
     await expect(page.locator('[data-testid="kb-onboarding-done"]')).toContainText('主流程已跑通');
+  } finally {
+    await cleanupTempVault(vault);
+  }
+});
+
+test('发送失败不完成提问步：没问成就不该被引导去保存', async ({ page }) => {
+  // markAsk 曾在 send 的同步包装里打勾，POST /api/runs 还没发出就先算「提问完成」。
+  // 运行时缺失 / daemon 掉线时用户看到的是报错，checklist 却已经跳到保存步，
+  // 等于把一次失败的提问当成跑通。
+  const vault = await createTempVault('e2e-onboarding-send-fail');
+  try {
+    await page.addInitScript(() => {
+      localStorage.setItem('molio.onboarding.v1', JSON.stringify({
+        status: 'active',
+        steps: { vault: true, openOrImport: true, import: true, ask: false, save: false },
+        mapDismissed: true,
+        startedAt: Date.now(),
+      }));
+    });
+    let runPostSeen = false;
+    await page.route('**/api/runs', async (route) => {
+      if (route.request().method() === 'POST') {
+        runPostSeen = true;
+        await route.fulfill({
+          status: 500,
+          contentType: 'application/json',
+          body: JSON.stringify({ error: 'boom' }),
+        });
+        return;
+      }
+      await route.continue();
+    });
+    await page.goto(`/knowledge?vault=${vault.id}`);
+
+    await page.locator('.kb-tree-item').filter({ hasText: 'test.md' }).first().click();
+    await page.locator('[data-testid="kb-btn-ask"]').click();
+    const panel = page.locator('[data-testid="kb-chat-panel"]');
+    await panel.locator('[data-testid="composer-input"]').fill('这份资料讲了什么？');
+    await panel.locator('[data-testid="composer-send"]').click();
+
+    // 守卫：请求必须真的走到了 /api/runs（本地 agentId 缺失会提前抛错，那不算这条路径）
+    await expect.poll(() => runPostSeen).toBe(true);
+    await expect(page.locator('[data-testid="assistant-error"]')).toBeVisible();
+
+    const checklist = page.locator('[data-testid="kb-onboarding"]');
+    await expect(checklist).toContainText('3/5');
+    // 保存步的常显提示同样不该被提前触发（按钮本来就在工具条里，看的是引导态）
+    await expect(page.locator('[data-testid="msg-save-kb-btn"]').last()).not.toHaveClass(/icon-btn--labeled/);
   } finally {
     await cleanupTempVault(vault);
   }
