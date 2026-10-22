@@ -71,6 +71,11 @@ export function buildGraph(vaultPath: string, deps: GraphBuildDeps = {}): GraphD
 
   // Build map: file basename (no ext) → list of relative paths (for link resolution)
   const nameIndex = new Map<string, string[]>();
+  // 模糊匹配索引：normalizeName(basename) → 同名路径表（只记首次出现的那个 basename，
+  // 与「按 nameIndex 插入序遍历、命中即停」完全等价）。死链很多的大库里，逐个死链
+  // 线性扫全库文件名是整库构建的主要耗时（3000 文件 + 3000 死链实测 665ms，改成
+  // 查表后回到百毫秒级）。
+  const fuzzyIndex = new Map<string, string[]>();
   // Build map: relative path → node key (for edge dedup)
   const pathToKey = new Map<string, string>();
   // Counter for link counts
@@ -92,7 +97,12 @@ export function buildGraph(vaultPath: string, deps: GraphBuildDeps = {}): GraphD
     if (!nameIndex.has(basename)) {
       nameIndex.set(basename, []);
     }
-    nameIndex.get(basename)!.push(relPath);
+    const sameNamePaths = nameIndex.get(basename)!;
+    sameNamePaths.push(relPath);
+    const fuzzyKey = normalizeName(basename);
+    if (!fuzzyIndex.has(fuzzyKey)) {
+      fuzzyIndex.set(fuzzyKey, sameNamePaths);
+    }
 
     linkCounts.set(key, 0);
   }
@@ -141,7 +151,7 @@ export function buildGraph(vaultPath: string, deps: GraphBuildDeps = {}): GraphD
       if (GRAPH_EXCLUDED_BASENAMES.has(linkBase)) continue;
 
       // Try to resolve the link target
-      const targetKey = resolveLink(rawName, f.path, nameIndex, pathToKey);
+      const targetKey = resolveLink(rawName, f.path, nameIndex, fuzzyIndex, pathToKey);
       if (!targetKey) {
         // 死链：目标名作为节点并入图，与引用页建立连线（Obsidian 同款）。
         // key 用 lowercase 规范化去重（[[Foo]] 与 [[foo]] 指向同一节点）
@@ -302,6 +312,7 @@ function resolveLink(
   rawName: string,
   sourcePath: string,
   nameIndex: Map<string, string[]>,
+  fuzzyIndex: Map<string, string[]>,
   pathToKey: Map<string, string>,
 ): string | null {
   // Strip any .md extension from the link text
@@ -328,13 +339,11 @@ function resolveLink(
     // Case 3: Fuzzy match — strip spaces/dashes/underscores for comparison.
     // AI-generated wikilinks like [[AI Safety]] may not match filename
     // ai-safety.md with exact string comparison.
-    const fuzzyKey = normalizeName(cleanName);
-    for (const [key, paths] of nameIndex) {
-      if (normalizeName(key) === fuzzyKey) {
-        candidates = paths;
-        break;
-      }
-    }
+    // 查预建索引而不是线性扫全库：死链在大库里可能上百条，每条扫一遍 6.5k 文件名
+    // 会把整库构建从百毫秒拖到秒级。索引只收每个 basename 的首次归一化结果，
+    // 与原来的「按插入序命中即停」等价（cleanName 含 '/' 时归一化后带 '/'，
+    // 与 basename 永不相等，同样落到 null）。
+    candidates = fuzzyIndex.get(normalizeName(cleanName));
   }
   if (!candidates || candidates.length === 0) return null;
 
