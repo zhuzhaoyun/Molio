@@ -1,6 +1,8 @@
 node_modules/
 dist/
 *.log
+# npm pack 产物（本地打包测试用，不入仓）
+*.tgz
 .turbo/
 *.tsbuildinfo
 .multica/
@@ -46,3 +48,6 @@ log2.txt
 apps/cloud/.deploy-staging/
 apps/cloud/.runtime-cache/
 apps/cloud/molio-cloud-deploy.zip
+
+# 发布时从根 LICENSE 拷贝（同 apps/cli 约定），不入仓
+packages/dsh-plugin-molio/LICENSE

@@ -1,0 +1,115 @@
+# dsh-plugin-molio npm 发布管线
+#
+# 触发：push tag `dsh-plugin-v*`（如 dsh-plugin-v0.1.0），或手动 workflow_dispatch。
+# 前置（一次性，人工）：
+#   仓库 Settings → Secrets 添加 NPM_TOKEN（automation 类型 access token；
+#   dsh-plugin-molio 是非 scoped 包，token 所属 npm 账号需已首发过该包名）
+#
+# 版本规则：tag `dsh-plugin-vX.Y.Z` 必须与 packages/dsh-plugin-molio/package.json
+# version 一致（workflow 会校验）。含 `-` 的预发布版本（如 0.2.0-beta.1）发布到
+# `beta` dist-tag，不影响 `dsh plugin add dsh-plugin-molio` 默认安装的 latest。
+# 与桌面端 `v*`（release.yml）、CLI `cli-v*`（cli-publish.yml）互不干扰。
+
+name: Publish dsh-plugin-molio
+
+on:
+  push:
+    tags: ['dsh-plugin-v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+        env:
+          npm_config_registry: https://registry.npmjs.org
+
+      - name: Verify version consistency
+        shell: bash
+        run: |
+          set -euo pipefail
+          PKG_VERSION=$(node -p "require('./packages/dsh-plugin-molio/package.json').version")
+          echo "package.json version: $PKG_VERSION"
+
+          # tag 触发时：tag 版本必须与 package.json 一致
+          REF="${GITHUB_REF_NAME:-}"
+          if [[ "$REF" == dsh-plugin-v* ]]; then
+            TAG_VERSION="${REF#dsh-plugin-v}"
+            if [[ "$TAG_VERSION" != "$PKG_VERSION" ]]; then
+              echo "❌ tag $REF ($TAG_VERSION) != packages/dsh-plugin-molio/package.json version ($PKG_VERSION)"
+              echo "   先改 package.json 再打 tag"
+              exit 1
+            fi
+          fi
+
+      - name: Build contracts (插件测试吃 contracts dist 类型)
+        run: pnpm --filter @molio/contracts build
+
+      - name: Build & test plugin
+        run: pnpm --filter dsh-plugin-molio test
+
+      - name: Guard NPM_TOKEN
+        shell: bash
+        run: |
+          if [ -z "$NPM_TOKEN_VALUE" ]; then
+            echo "❌ NPM_TOKEN secret 未配置。仓库 Settings → Secrets and variables → Actions 添加。"
+            exit 1
+          fi
+        env:
+          NPM_TOKEN_VALUE: ${{ secrets.NPM_TOKEN }}
+
+      - name: Copy root LICENSE into package
+        run: cp LICENSE packages/dsh-plugin-molio/LICENSE
+
+      - name: Show publish contents (dry run)
+        run: cd packages/dsh-plugin-molio && npm pack --dry-run 2>&1 | tail -40
+
+      - name: Publish to npm
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION=$(node -p "require('./packages/dsh-plugin-molio/package.json').version")
+          DIST_TAG_FLAG=""
+          # 预发布版本（含 -）走 beta dist-tag，latest 只留给正式版
+          if [[ "$VERSION" == *-* ]]; then
+            DIST_TAG_FLAG="--tag beta"
+          fi
+          # --registry 显式传 CLI flag：根 .npmrc 指向 npmmirror（只读镜像，PUT 401），
+          # 仅靠 npm_config_registry env 覆盖不掉（cli-publish.yml run 39446092169 实测）
+          pnpm --filter dsh-plugin-molio publish --no-git-checks --registry=https://registry.npmjs.org $DIST_TAG_FLAG
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          npm_config_registry: https://registry.npmjs.org
+
+      - name: Verify on registry
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION=$(node -p "require('./packages/dsh-plugin-molio/package.json').version")
+          sleep 10
+          # 显式查 npmjs：npmmirror 是同步镜像有延迟，且根 .npmrc 默认指向它
+          PUBLISHED=$(npm view dsh-plugin-molio@"$VERSION" version --registry=https://registry.npmjs.org 2>/dev/null || echo "")
+          if [[ "$PUBLISHED" != "$VERSION" ]]; then
+            echo "❌ registry 上未查到 dsh-plugin-molio@$VERSION（发布可能失败或仍在传播）"
+            exit 1
+          fi
+          echo "✅ dsh-plugin-molio@$VERSION 已发布"
