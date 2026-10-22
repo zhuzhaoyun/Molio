@@ -45,7 +45,7 @@ test.describe('KB 导入入口', () => {
   });
 
   test('文件面板工具栏有常驻的「导入」按钮', async ({ page }) => {
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+    await page.goto(`/knowledge?vault=${vault.id}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
     await expect(page.locator('[data-testid="kb-btn-import"]')).toBeVisible({ timeout: 5_000 });
   });
@@ -55,7 +55,7 @@ test.describe('KB 导入入口', () => {
     // `.kb-file-toolbar button:not(.kb-sort-item):not(.kb-create-item)` 的特异度是 (0,3,1)，
     // 早先写的 accent 规则只有 (0,2,0)，被静默盖掉——按钮渲染成了跟旁边一样的灰图标，
     // 代码看着像做了高亮，实际完全没生效（截图才发现）。这条断言锁死「它必须跟邻居不同色」。
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+    await page.goto(`/knowledge?vault=${vault.id}`);
     await expect(page.locator('[data-testid="kb-btn-import"]')).toBeVisible({ timeout: 5_000 });
 
     const { importColor, neighborColor } = await page.evaluate(() => {
@@ -75,7 +75,7 @@ test.describe('KB 导入入口', () => {
   });
 
   test('点「导入」按钮打开导入弹窗', async ({ page }) => {
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+    await page.goto(`/knowledge?vault=${vault.id}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
 
     await page.locator('[data-testid="kb-btn-import"]').click();
@@ -88,7 +88,7 @@ test.describe('KB 导入入口', () => {
   test('「＋」菜单第一条就是导入文件，点击打开导入弹窗', async ({ page }) => {
     // ＋ 是通用的「添加」形状、又是工具栏第一颗按钮，想要导文件的人第一反应是点它。
     // 菜单里如果只有「新建笔记/新建文件夹/新窗口」，用户会在最显眼的控件上再次走进死胡同。
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+    await page.goto(`/knowledge?vault=${vault.id}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
 
     await page.locator('[data-testid="kb-btn-create"]').click();
@@ -104,7 +104,7 @@ test.describe('KB 导入入口', () => {
   });
 
   test('导入弹窗是中文的，并标明文件会落到哪个库', async ({ page }) => {
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+    await page.goto(`/knowledge?vault=${vault.id}`);
     await page.locator('[data-testid="kb-btn-import"]').click();
 
     const dialog = importDialog(page);
@@ -123,7 +123,7 @@ test.describe('KB 导入入口', () => {
     await page.route('**/api/knowledge/vaults', (route) =>
       route.request().method() === 'GET' ? route.fulfill({ json: { vaults: [] } }) : route.continue(),
     );
-    await page.goto('http://localhost:5173/knowledge');
+    await page.goto('/knowledge');
 
     const cta = page.locator('[data-testid="kb-empty-create-vault-cta"]');
     await expect(cta).toBeVisible({ timeout: 10_000 });
@@ -133,7 +133,7 @@ test.describe('KB 导入入口', () => {
   });
 
   test('空库的文件树空态给出拖拽/导入提示（不是英文空话）', async ({ page }) => {
-    await page.goto(`http://localhost:5173/knowledge?vault=${emptyVault.id}`);
+    await page.goto(`/knowledge?vault=${emptyVault.id}`);
 
     const hint = page.locator('[data-testid="kb-tree-empty-hint"]');
     await expect(hint).toBeVisible({ timeout: 5_000 });
@@ -144,7 +144,7 @@ test.describe('KB 导入入口', () => {
   test('有文件但未建 Wiki 时，空态给出「导入文件」次级出口', async ({ page }) => {
     // 这屏的语境是「已经有文件、还没建 Wiki」——正是「我看了一下，还想再补几个文件」
     // 最自然的时刻，而原来这里只有「建 Wiki」和「问答」两条路，想补素材得回头找工具栏图标。
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+    await page.goto(`/knowledge?vault=${vault.id}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
 
     const build = page.locator('[data-testid="kb-empty-build-cta"]');
@@ -163,7 +163,7 @@ test.describe('KB 导入入口', () => {
   test('这屏的中文里不再冒出英文 vault', async ({ page }) => {
     // 术语统一成「知识库」是同一批修复的一部分，但这行文案漏网过
     //（术语守卫 spec 当时只覆盖了仓库管理器）。中文句子里夹一个 vault 很扎眼。
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+    await page.goto(`/knowledge?vault=${vault.id}`);
 
     const state = page.locator('.kb-empty-state').first();
     await expect(state).toBeVisible({ timeout: 5_000 });
@@ -179,7 +179,7 @@ test.describe('KB 导入入口', () => {
         ? route.fulfill({ json: { locale: 'en' } })
         : route.continue(),
     );
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+    await page.goto(`/knowledge?vault=${vault.id}`);
 
     const state = page.locator('.kb-empty-state').first();
     await expect(state).toBeVisible({ timeout: 10_000 });
@@ -188,7 +188,7 @@ test.describe('KB 导入入口', () => {
   });
 
   test('空库首屏的主 CTA 是「导入文件」，且「构建 Wiki」不可点', async ({ page }) => {
-    await page.goto(`http://localhost:5173/knowledge?vault=${emptyVault.id}`);
+    await page.goto(`/knowledge?vault=${emptyVault.id}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
 
     const cta = page.locator('[data-testid="kb-empty-import-cta"]');
