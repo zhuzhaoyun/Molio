@@ -55,11 +55,11 @@ export function KbChatSession({
           // 全局单例里的选中 id，否则后台会话流式输出会清空当前会话的勾选态。
           pruneSelection={active}
           // key 带 filePath：openQa 把活跃会话重新指向新文件时（updateSession），
-          // 重挂载 composer 让 initialFileRefs 重新播种 @ —— 否则 store 变了、
+          // 重挂载 composer 让 initialFileRefs 重新播种引用 chip —— 否则 store 变了、
           // 挂载过的输入框永远不更新（#4 语义此前对 UI 无效）。
-          // composerKey（草稿命名空间）同样带 filePath：播种出的 @ 文本会被存成
-          // 草稿，若草稿只按会话分桶，重指向时旧文件的 @ 草稿会压过新种子；
-          // 按会话:文件 分桶后，新文件无草稿 → 新种子胜出，切回旧文件还能恢复其草稿。
+          // composerKey（草稿 / 引用 chip 命名空间）同样带 filePath：引用 chip 与
+          // 草稿都按「会话:文件」分桶，新文件没有缓存 → 按新种子播种；切回旧文件
+          // 则恢复该文件下用户此前的取舍（草稿文本 + 是否保留了引用）。
           // 两个 key 与全屏态（HomePage）共用同一真值源（见 kbChatSessionsStore）——R5 要求逐字一致。
           composerMountKey={sessionComposerMountKey(session.id, session.filePath)}
           composerKey={sessionComposerKey(session.id, session.filePath)}

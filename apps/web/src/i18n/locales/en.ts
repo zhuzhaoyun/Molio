@@ -101,6 +101,7 @@ const en: Record<string, string> = {
   'composer.uploadNoVault': 'Please select or create a vault first',
   'composer.uploadDismiss': 'Dismiss',
   'composer.uploadImage': 'Upload image',
+  'composer.removeFileRef': 'Remove reference',
   'composer.uploadRetryHint': 'Please paste the image again',
   'composer.history': 'History',
   'composer.modelMenu': 'Model & runtime',

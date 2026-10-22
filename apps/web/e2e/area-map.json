@@ -77,7 +77,8 @@
         "session-output-history",
         "quiz",
         "sandbox",
-        "chat-autoscroll"
+        "chat-autoscroll",
+        "chat-doc-ref-chip"
       ]
     },
     "kb": {
@@ -322,6 +323,10 @@
     "chat-autoscroll": {
       "priority": "P1",
       "file": "chat-autoscroll.spec.ts"
+    },
+    "chat-doc-ref-chip": {
+      "priority": "P1",
+      "file": "chat-doc-ref-chip.spec.ts"
     },
     "chat-copy": {
       "priority": "P0",

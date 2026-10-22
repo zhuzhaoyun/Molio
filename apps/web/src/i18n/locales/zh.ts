@@ -100,6 +100,7 @@ const zh: Record<string, string> = {
   'composer.uploadNoVault': '请先选择或创建知识库',
   'composer.uploadDismiss': '关闭',
   'composer.uploadImage': '上传图片',
+  'composer.removeFileRef': '移除引用',
   'composer.uploadRetryHint': '请重新粘贴图片',
   'composer.history': '历史记录',
   'composer.modelMenu': '模型与运行时',

@@ -2100,3 +2100,60 @@
   background-color: var(--bg);
   color: var(--text);
 }
+
+/* ── 文档引用 chip（工具条左端）────────────────────────────────────────
+   从知识库文档进入问答时，文档以可摘除的 chip 呈现，而不是把 `@路径`
+   种进输入框文本。占现有工具条一行内的位置，不新增行高。 */
+.composer-file-refs {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow-x: auto;
+  /* 长文件名时让位给模型 pill / 发送键，不把右簇挤出去 */
+  flex: 0 1 auto;
+}
+
+.composer-file-ref {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 220px;
+  padding: 3px 4px 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background-color: var(--bg-elevated);
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.composer-file-ref-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 170px;
+  color: var(--text);
+}
+
+.composer-file-ref-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: none;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.composer-file-ref-remove:hover {
+  background-color: var(--border);
+  color: var(--text);
+}

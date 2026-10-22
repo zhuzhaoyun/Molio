@@ -31,14 +31,23 @@ export interface ExpandOpts {
 /** Title hint telling the agent to enumerate a referenced folder. */
 const FOLDER_TITLE = '文件夹，请读取其下所有相关文件';
 
+/**
+ * Markdown link destination. 手打 `@path` 不含空白，但 chip 带进来的路径可以
+ * （「我的 笔记.md」很常见）——裸写会在这里断成半个链接，用 CommonMark 的
+ * `<...>` 形式兜住空白/括号。
+ */
+function linkDestination(path: string): string {
+  return /[\s()<>]/.test(path) ? `<${path.replace(/[<>]/g, encodeURIComponent)}>` : path;
+}
+
 /** Markdown link for a vault-relative file or folder path (agent-facing format). */
 export function fileRefMarkdown(path: string, isDirectory: boolean): string {
   const name = path.replace(/\/$/, '').split('/').pop() ?? path;
   if (isDirectory) {
     const p = path.endsWith('/') ? path : `${path}/`;
-    return `[📁 ${name}/](${p} "${FOLDER_TITLE}")`;
+    return `[📁 ${name}/](${linkDestination(p)} "${FOLDER_TITLE}")`;
   }
-  return `[📄 ${name}](${path})`;
+  return `[📄 ${name}](${linkDestination(path)})`;
 }
 
 interface TreeNodeBase {

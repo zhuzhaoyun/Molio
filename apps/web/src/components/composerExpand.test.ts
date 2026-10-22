@@ -110,6 +110,21 @@ describe('fileRefMarkdown', () => {
       '[📁 docs/](docs/ "文件夹，请读取其下所有相关文件")',
     );
   });
+
+  // chip 引用来自文件树，路径可以带空格（「我的 笔记.md」）；裸写会让链接断在空格处。
+  it('wraps destinations containing spaces in angle brackets', () => {
+    assert.equal(
+      fileRefMarkdown('我的 笔记.md', false),
+      '[📄 我的 笔记.md](<我的 笔记.md>)',
+    );
+  });
+
+  it('angle-brackets destinations containing parentheses too', () => {
+    assert.equal(
+      fileRefMarkdown('notes/a (1).md', false),
+      '[📄 a (1).md](<notes/a (1).md>)',
+    );
+  });
 });
 
 describe('flattenTreePaths', () => {
