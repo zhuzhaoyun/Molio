@@ -24,12 +24,22 @@
 const DEFAULT_MAX_ENTRIES = 4;
 const DEFAULT_TTL_MS = 2 * 60 * 1000;
 
+interface InflightBuild<T> {
+  promise: Promise<T>;
+  /** 发起这次构建时的失效代（见 generations）。 */
+  generation: number;
+}
+
 export class VaultCache<T> {
   private entries = new Map<string, { value: T; builtAt: number }>();
   /** 构建中的 vault → 共享 Promise（single-flight）。 */
-  private inflight = new Map<string, Promise<T>>();
-  /** 最近一次失效的时间戳——用于识别「构建期间发生的失效」。 */
-  private invalidatedAt = new Map<string, number>();
+  private inflight = new Map<string, InflightBuild<T>>();
+  /**
+   * 每个 vault 的失效代：invalidate() 一次 +1。构建启动时记下当时的代，收尾时
+   * 比对——代变了说明「扫描期间内容又变了」，这份快照既不能入库，也不能被失效
+   * 之后到来的请求复用。用代而不是时间戳：同一毫秒内的失效不会漏判。
+   */
+  private generations = new Map<string, number>();
 
   constructor(
     private readonly maxEntries: number = DEFAULT_MAX_ENTRIES,
@@ -53,21 +63,21 @@ export class VaultCache<T> {
       return hit.value;
     }
 
+    const generation = this.generationOf(vaultId);
     const pending = this.inflight.get(vaultId);
-    if (pending) return pending;
+    // 只复用**当前这一代**的构建。构建启动后发生过失效（tree-changed 落在扫描
+    // 窗口里）→ 那份快照对失效之后到来的调用已经过时，另起一次扫描；否则这次
+    // 调用会拿到「失效之前的内容」，而缓存又因为代不符不会记住它，白等一次。
+    if (pending && pending.generation === generation) return pending.promise;
 
-    const startedAt = this.now();
+    const entry: InflightBuild<T> = { generation, promise: undefined as never };
     const building = build()
       .then((value) => {
-        this.inflight.delete(vaultId);
+        if (this.inflight.get(vaultId) === entry) this.inflight.delete(vaultId);
         // 构建期间发生过失效（tree-changed / API 写）→ 这份结果是开始扫描时的
         // 快照，失效要的正是它别被记住。照常返回给本次调用（点内快照仍有效），
         // 但不入库——下一次请求重新构建。
-        if ((this.invalidatedAt.get(vaultId) ?? 0) > startedAt) {
-          this.invalidatedAt.delete(vaultId);
-          return value;
-        }
-        this.invalidatedAt.delete(vaultId);
+        if (this.generationOf(vaultId) !== generation) return value;
         this.entries.delete(vaultId); // 过期条目先摘掉，保证 set 后它在末尾
         this.entries.set(vaultId, { value, builtAt: this.now() });
         while (this.entries.size > this.maxEntries) {
@@ -78,16 +88,17 @@ export class VaultCache<T> {
         return value;
       })
       .catch((err) => {
-        this.inflight.delete(vaultId);
+        if (this.inflight.get(vaultId) === entry) this.inflight.delete(vaultId);
         throw err;
       });
-    this.inflight.set(vaultId, building);
+    entry.promise = building;
+    this.inflight.set(vaultId, entry);
     return building;
   }
 
   /** 库内容变了（tree-changed / API 写成功）或监听就绪态翻转时调用。重复调用无害。 */
   invalidate(vaultId: string): void {
-    this.invalidatedAt.set(vaultId, this.now());
+    this.generations.set(vaultId, this.generationOf(vaultId) + 1);
     this.entries.delete(vaultId);
   }
 
@@ -95,5 +106,10 @@ export class VaultCache<T> {
   clear(): void {
     this.entries.clear();
     this.inflight.clear();
+    this.generations.clear();
+  }
+
+  private generationOf(vaultId: string): number {
+    return this.generations.get(vaultId) ?? 0;
   }
 }
