@@ -3,7 +3,7 @@ import type {
   RewindResendRequest,
   ChatMessage, Project, Conversation, ConversationHistoryItem,
   ConversationHistoryPage, ListHistoryQuery,
-  Vault, TreeNode, FileContent, KbHistoryEntry, CreateVaultRequest,
+  Vault, TreeNode, FileContent, KbHistoryEntry, CreateVaultRequest, SampleVaultResponse,
   WikiStatusResponse,
   GraphData, GraphScope, SearchResult, SearchResponse,
   AuthStatus, SendCodeResponse, User, MeResponse,
@@ -601,6 +601,19 @@ export const api = {
     if (!res.ok) {
       const err = await res.json();
       throw new Error(err.error?.message ?? `Failed to create vault: ${res.status}`);
+    }
+    return res.json();
+  },
+
+  /**
+   * Provision the built-in sample vault (activation path for new installs).
+   * Idempotent: returns the existing vault with `created: false` on repeat.
+   */
+  async createSampleVault(): Promise<SampleVaultResponse> {
+    const res = await fetch(`${BASE}/knowledge/sample-vault`, { method: 'POST' });
+    if (!res.ok) {
+      const err = await res.json().catch(() => null);
+      throw new Error(err?.error?.message ?? `Failed to create sample vault: ${res.status}`);
     }
     return res.json();
   },

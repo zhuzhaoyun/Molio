@@ -93,6 +93,7 @@ export type {
   VaultListResponse,
   FileTreeResponse,
   KbHistoryListResponse,
+  SampleVaultResponse,
   // Wiki
   WikiOperationType,
   WikiStatusResponse,

@@ -124,6 +124,21 @@ describe('reconcileBundledSync', () => {
     assert.ok(md.includes('<!-- molio:env-self-heal -->'), 'always-on rule kept');
   });
 
+  it('gates the sandbox-suggest rule on the rule-sandbox skill', () => {
+    makeSourceSkill('rule-sandbox');
+
+    // Skill effective → the suggest rule is injected with the marker contract.
+    reconcileBundledSync(new Set(['rule-sandbox']), new Set(['rule-sandbox']), vaultDir, { sourceDir });
+    const md = readClaudeMd();
+    assert.ok(md.includes('<!-- molio:sandbox-suggest -->'), 'sandbox-suggest rule present when effective');
+    assert.ok(md.includes('sandbox-suggest:'), 'rule documents the marker format');
+    assert.ok(md.includes('要求演示时'), 'rule scopes itself to unrequested demos');
+
+    // Skill not effective → rule removed by sentinel.
+    reconcileBundledSync(new Set([]), new Set(['rule-sandbox']), vaultDir, { sourceDir });
+    assert.ok(!readClaudeMd().includes('<!-- molio:sandbox-suggest -->'), 'rule removed when not effective');
+  });
+
   it('updates an installed skill to a newer source version (version bump propagates)', () => {
     makeSourceSkill('docling', '1.0.0');
     reconcileBundledSync(new Set(['docling']), new Set(['docling']), vaultDir, { sourceDir });

@@ -5,7 +5,8 @@
   "main": "dist/src/index.js",
   "files": [
     "dist",
-    "src/tools/skills"
+    "src/tools/skills",
+    "src/tools/sample-vault"
   ],
   "scripts": {
     "dev": "tsx src/index.ts",

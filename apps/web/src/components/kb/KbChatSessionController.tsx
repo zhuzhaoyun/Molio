@@ -9,6 +9,7 @@ import { api } from '../../api/client';
 import { useChatCore, type CreateRunContext, type ChatMessage } from '../../hooks/useChatCore';
 import { kbChatSessionsStore, type ChatSessionTab } from '../../stores/kbChatSessionsStore';
 import { chatRuntimeStore } from '../../stores/chatRuntimeStore';
+import { onboardingStore } from '../../stores/onboardingStore';
 import { type PastedImage, buildAttachmentPrefix } from '../ChatComposer';
 import { useI18n } from '../../i18n';
 import { WIKI_QUERY_TRIGGER, deriveChatTitle } from './kbChatPrompts';
@@ -97,6 +98,10 @@ export function KbChatSessionController({
       conversationId: ctx.conversationId ?? undefined,
       history: contractHistory.length > 0 ? contractHistory : undefined,
     });
+    // 提问步在这里打勾，不在发送包装里：POST /api/runs 成功才算「问成了」。
+    // 之前同步打勾，运行时缺失 / daemon 掉线时用户看到的是报错，checklist 却
+    // 已经跳到保存步——把一次失败的提问当成跑通。
+    if (session.mode === 'qa') onboardingStore.markAsk();
     if (result.conversationId) {
       kbChatSessionsStore.updateSession(session.id, { conversationId: result.conversationId });
       const cur = kbChatSessionsStore.getSessions().find((s) => s.id === session.id);
@@ -105,7 +110,7 @@ export function KbChatSessionController({
       }
     }
     return { runId: result.runId, conversationId: result.conversationId };
-  }, [agentId, vaultPath, session.id]);
+  }, [agentId, vaultPath, session.id, session.mode]);
 
   // 重新生成 / 编辑重发（消息级工具条）也要走 controller：`useChatCore` 缺少 rewindResend
   // 时 regenerateLast / editAndResend 会直接 no-op（见 useChatCore.ts 的 `if (!rewindResend) return;`）。
@@ -287,7 +292,9 @@ export function KbChatSessionController({
     isRunning: chat.isRunning,
     activity: chat.activity ?? null,
     conversationId: chat.conversationId ?? null,
-    send: (text, opts) => sendRef.current(text, opts),
+    send: (text, opts) => {
+      sendRef.current(text, opts);
+    },
     cancel: () => { void cancelRef.current(); },
     submitToolResult: (toolUseId, content) => submitToolResultRef.current(toolUseId, content),
     regenerateLast: () => { void regenerateRef.current(); },
@@ -295,7 +302,7 @@ export function KbChatSessionController({
     deleteMessages: (ids) => deleteMessagesRef.current(ids),
     buildSend,
   }), [
-    chat.messages, chat.isRunning, chat.activity, chat.conversationId, buildSend,
+    chat.messages, chat.isRunning, chat.activity, chat.conversationId, buildSend, session.mode,
   ]);
 
   return <>{children(state)}</>;

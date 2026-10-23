@@ -10,7 +10,11 @@ import { MAX_IMPORT_FILE_SIZE } from '@molio/contracts';
 import { useKnowledge } from '../../hooks/useKnowledge';
 import type { ScrollIntent } from '../../hooks/useScrollMemory';
 import { useKbTabs, MAX_TABS, type WorkspaceTab } from '../../hooks/useKbTabs';
-import { vaultStore, useActiveVaultId } from '../../stores/vaultStore';
+import { vaultStore, useActiveVaultId, useVaultsLoaded, useVaults } from '../../stores/vaultStore';
+import { onboardingStore } from '../../stores/onboardingStore';
+import { useAgents } from '../../hooks/useAgents';
+import { useOnboardingHint } from '../../hooks/useOnboardingHint';
+import { OnboardingChecklist } from './OnboardingChecklist';
 import { kbChatSessionsStore } from '../../stores/kbChatSessionsStore';
 import { navigationHistoryStore } from '../../stores/navigationHistoryStore';
 import { useAuthStatus } from '../../stores/authStore';
@@ -311,6 +315,59 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
     saveToastTimer.current = setTimeout(() => setSaveToast(null), 2000);
   }, []);
 
+  const vaultsLoaded = useVaultsLoaded();
+  // 计数必须与「已取回」标志取自同一个 store 快照：`kb.vaults` 是 useKnowledge 的
+  // 本地 state，它的提交可能晚于 vaultStore 的 emit 一帧——用它会读到「已加载但空」，
+  // 对着老用户错误激活引导（init 幂等，写一次 active 就再也回不去 done）。
+  const storeVaults = useVaults();
+
+  // 引导动画指向真实按钮：导入 → 文件面板的导入键，提问 → 文档头的问答键，
+  // 保存 → 消息工具条。没有可用运行时的那一帧例外：提问键点了也发不出去，
+  // 此时动画仍留在 checklist 的「先配置 AI」上。
+  const { agents, loading: agentsLoading, error: agentsError } = useAgents();
+  // daemon 永远会列出全部已知运行时（包括没装的），「没装」体现在 available
+  // 为 false，而不是数组为空——只判 length 会让真机上这条分流永远不生效。
+  const noRuntime =
+    !agentsLoading && !agentsError && !agents.some((a) => a.available);
+  const onboardingHint = useOnboardingHint();
+
+  // 只在库列表首次取回时初始化：0 库 → 激活，老用户 → 直接 done。
+  useEffect(() => {
+    if (!vaultsLoaded) return;
+    onboardingStore.init(storeVaults.length);
+  }, [vaultsLoaded, storeVaults.length]);
+
+  // 步骤 1：有任何 vault 被选中即完成。
+  useEffect(() => {
+    if (kb.activeVault) onboardingStore.markVault();
+  }, [kb.activeVault?.id]);
+
+  const [creatingSampleVault, setCreatingSampleVault] = useState(false);
+
+  const handleCreateSampleVault = useCallback(async () => {
+    if (creatingSampleVault) return;
+    setCreatingSampleVault(true);
+    try {
+      const result = await api.createSampleVault();
+      // 示例库按钮只出现在零库欢迎页，这条路径本身就是「全新安装」。必须在这里
+      // 就先声明激活态：首屏库列表请求失败过的话（vaultsLoaded 一直 false），
+      // 建库后的这次刷新才是第一次成功加载，按库数初始化会得到 1 → 直接写死
+      // done，checklist 永远不出现。init 对已有状态是 no-op，不会覆盖进度。
+      onboardingStore.init(0);
+      await kb.refreshVaults();
+      vaultStore.setActiveVaultId(result.vault.id);
+      navigate(
+        `/knowledge?vault=${encodeURIComponent(result.vault.id)}&file=${encodeURIComponent(result.entryFile)}`,
+      );
+    } catch (err) {
+      showToast(t('kb.sampleVaultCreateFailed', {
+        error: err instanceof Error ? err.message : t('kb.connectionFailed'),
+      }));
+    } finally {
+      setCreatingSampleVault(false);
+    }
+  }, [creatingSampleVault, kb.refreshVaults, navigate, showToast, t]);
+
   // ─── Tab-aware file selection ───
 
   /**
@@ -364,6 +421,7 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
    */
   const handleSelectFile = useCallback((path: string, opts?: { intent?: ScrollIntent }) => {
     const action = () => {
+      onboardingStore.markOpenOrImport();
       const fileName = path.split('/').pop() ?? path;
       const tabId = `file:${path}`;
       const existingTab = tabs.tabs.find(t => t.id === tabId);
@@ -1201,6 +1259,10 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
       const imported = result.imported.length;
       const renamed = result.renamed.length;
       const skipped = result.skipped.length;
+      if (imported + renamed > 0) {
+        onboardingStore.markOpenOrImport();
+        onboardingStore.markImport();
+      }
 
       const parts: string[] = [];
       if (imported > 0) parts.push(`${imported} 个文件`);
@@ -1230,6 +1292,10 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
       const imported = result.imported.length;
       const renamed = result.renamed.length;
       const skipped = result.skipped.length;
+      if (imported + renamed > 0) {
+        onboardingStore.markOpenOrImport();
+        onboardingStore.markImport();
+      }
 
       const parts: string[] = [];
       if (imported + renamed > 0) parts.push(`成功导入 ${imported + renamed} 个文件`);
@@ -1380,6 +1446,21 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
 
       {/* Tab Bar + Main Content */}
       <div className="kb-main-wrapper">
+        <OnboardingChecklist
+          hasVault={storeVaults.length > 0}
+          noRuntime={noRuntime}
+          onImport={() => kb.setShowImport(true)}
+          onAsk={handleOpenQa}
+          onBuildWiki={() => { void handleBuildWiki(); }}
+          onOpenGraph={() => {
+            // 图谱已是知识库里的标签页，没有独立的 /graph 路由。
+            const q = new URLSearchParams({ panel: 'graph' });
+            if (kb.activeVault) q.set('vault', kb.activeVault.id);
+            navigate(`/knowledge?${q.toString()}`);
+          }}
+          onOpenHistory={() => navigate('/history')}
+          onOpenRuntimeSettings={() => navigate('/settings?tab=runtimes')}
+        />
         <KbTabBar
           tabs={tabs.tabs}
           activeTabId={tabs.activeTabId}
@@ -1471,10 +1552,13 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
               onBuildWiki={handleBuildWiki}
               onImport={() => kb.setShowImport(true)}
               onOpenVaultManager={() => kb.setShowVaultSwitcher(true)}
+              onCreateSampleVault={() => { void handleCreateSampleVault(); }}
+              creatingSampleVault={creatingSampleVault}
               hasFiles={kb.tree.length > 0}
               onAskAboutSelection={handleAskAboutSelection}
               onOpenOutline={() => setShowOutline(true)}
               onAskAboutFile={handleOpenQa}
+              guideAsk={onboardingHint === 'ask' && !noRuntime}
               showFileName={true}
               isEditMode={kb.isEditMode}
               onToggleEdit={kb.toggleEditMode}
@@ -1660,6 +1744,10 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
           const imported = result.imported.length;
           const renamed = result.renamed.length;
           const skipped = result.skipped.length;
+          if (imported + renamed > 0) {
+            onboardingStore.markOpenOrImport();
+            onboardingStore.markImport();
+          }
           const parts: string[] = [];
           if (imported + renamed > 0) parts.push(`成功导入 ${imported + renamed} 个文件`);
           if (skipped > 0) parts.push(`${skipped} 个已跳过`);

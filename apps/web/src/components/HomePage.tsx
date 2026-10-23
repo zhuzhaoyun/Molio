@@ -6,7 +6,6 @@ import { ChatSessionView } from './ChatSessionView';
 import { PanelIcon } from './icons';
 import { NoRuntimeCard } from './NoRuntimeCard';
 import { AgentsUnavailableCard } from './AgentsUnavailableCard';
-import { FirstRunOnboarding } from './home/FirstRunOnboarding';
 import { messageSelectionStore } from '../stores/messageSelectionStore';
 
 import {
@@ -156,7 +155,7 @@ export function HomePage({
   // 旧判据「有消息或已绑定 conversation」会让全新空会话（用户刚新建、还没发第一条）
   // 点「全屏」落到 landing——landing 没有 header 和最小化按钮，用户被困在无头页面
   // （2026-10-10 用户实测踩中）。空会话的全屏态 = header + 空消息区 + composer，
-  // 语义自洽；「无会话」才回到 hero + FirstRunOnboarding。
+  // 语义自洽；「无会话」才回到 landing hero。
   const shellMode = activeSession != null;
 
   // ── 全屏 shell：存在活动标签 ──
@@ -232,7 +231,7 @@ export function HomePage({
             onDeleteMessages={state.deleteMessages}
             // composerKey/composerMountKey 与面板 `KbChatSession` 同源（R5：逐字一致）：
             // 面板态与全屏态共享同一份草稿、同一套 @ 上下文播种。
-            composerKey={sessionComposerKey(activeSession.id, activeSession.filePath)}
+            composerKey={sessionComposerKey(activeSession.id)}
             composerMountKey={sessionComposerMountKey(activeSession.id, activeSession.filePath)}
             composerInitialFileRefs={initialFileRefs}
             composerDisabled={!selectedAgentName}
@@ -257,9 +256,6 @@ export function HomePage({
   return (
     <div className="home-page home-landing">
       <div className="home-hero-view">
-        {/* 首次运行引导 —— 只在落地页出现（有会话说明人已经在用了，不再打扰） */}
-        <FirstRunOnboarding />
-
         {/* Hero */}
         <div className="home-hero">
           <div className="home-hero__brand">

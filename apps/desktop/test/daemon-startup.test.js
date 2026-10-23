@@ -550,3 +550,30 @@ describe('main.js: startup parallelism — daemon kicked off alongside monitorin
     );
   });
 });
+
+describe('main.js: packaged daemon must receive the OS documents directory', () => {
+  it('injects MOLIO_DOCUMENTS_DIR from Electron app.getPath', () => {
+    assert.ok(
+      mainJs.includes("MOLIO_DOCUMENTS_DIR: app.getPath('documents')"),
+      'sample vault must land under the real (OneDrive-aware) Documents folder'
+    );
+  });
+});
+
+describe('prepare-resources.mjs: sample vault content must ship in packaged builds', () => {
+  it('copies src/tools/sample-vault to resources/daemon/sample-vault', () => {
+    assert.ok(
+      prepareResourcesJs.includes("path.join(daemonDir, 'src', 'tools', 'sample-vault')") ||
+        prepareResourcesJs.includes("join(daemonDir, 'src', 'tools', 'sample-vault')"),
+      'prepare-resources must point at the sample vault source'
+    );
+    assert.ok(
+      prepareResourcesJs.includes("join(resourcesDir, 'daemon', 'sample-vault')"),
+      'prepare-resources must copy the sample vault into resources/daemon'
+    );
+    assert.ok(
+      prepareResourcesJs.includes('copySampleVaultSources()'),
+      'the copy must actually be invoked in the main sequence'
+    );
+  });
+});

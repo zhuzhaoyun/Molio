@@ -1,10 +1,12 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useI18n } from '../i18n';
+import { api } from '../api/client';
 import { useAuthStatus } from '../stores/authStore';
 import { loginIntentStore } from '../stores/loginIntentStore';
 import { useActiveVaultId } from '../stores/vaultStore';
 import { useGraphViewActive } from '../stores/graphViewStore';
+import { onboardingStore } from '../stores/onboardingStore';
 import { AccountModal } from './account/AccountModal';
 import { DEFAULT_ROUTE } from '../routes';
 
@@ -15,9 +17,27 @@ export function NavRail() {
   const activeVaultId = useActiveVaultId();
   const graphActive = useGraphViewActive();
   const auth = useAuthStatus();
+  const onboarding = useSyncExternalStore(
+    onboardingStore.subscribe,
+    onboardingStore.getState,
+    onboardingStore.getState,
+  );
   const [accountOpen, setAccountOpen] = useState(false);
   /** 账号面板是否由登录意图打开（提层盖过 z-200 的仓库管理器，保证登录视图可见可操作） */
   const [intentOpen, setIntentOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
+
+  // 帮助菜单：点外部任意位置收起（capture 之前先判 closest，避免刚点开就被自己关掉）。
+  useEffect(() => {
+    if (!helpOpen) return;
+    const close = (event: PointerEvent) => {
+      if (!(event.target as Element | null)?.closest('.entry-nav-rail__help')) {
+        setHelpOpen(false);
+      }
+    };
+    document.addEventListener('pointerdown', close);
+    return () => document.removeEventListener('pointerdown', close);
+  }, [helpOpen]);
 
   /** 图谱入口：进入知识库并打开/激活图谱标签。图谱已从独立页改为标签页。 */
   const openGraphFromRail = () => {
@@ -197,28 +217,80 @@ export function NavRail() {
           {!auth?.loggedIn && <span className="entry-nav-rail__dot" />}
         </button>
 
-        {/* Help — external link to online docs */}
-        <a
-          href="https://molio.cn/help.html"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="entry-nav-rail__btn"
-          data-view="help"
-          data-tooltip={t('nav.help')}
-        >
-          <svg
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
+        {/* Help — online docs plus the onboarding guide. 引导不能只活在一次性的
+            localStorage 初始态里：首次用户可以主动打开，老用户收起后也能找回。 */}
+        <div className="entry-nav-rail__help">
+          <button
+            type="button"
+            className={`entry-nav-rail__btn${helpOpen ? ' is-active' : ''}`}
+            data-view="help"
+            data-testid="nav-help-btn"
+            aria-haspopup="menu"
+            aria-expanded={helpOpen}
+            data-tooltip={t('nav.help')}
+            onClick={() => setHelpOpen((value) => !value)}
           >
-            <circle cx="12" cy="12" r="10" />
-            <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
-            <line x1="12" y1="17" x2="12.01" y2="17" />
-          </svg>
-        </a>
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <circle cx="12" cy="12" r="10" />
+              <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
+              <line x1="12" y1="17" x2="12.01" y2="17" />
+            </svg>
+          </button>
+          {helpOpen && (
+            <div className="entry-nav-rail__menu" role="menu" data-testid="nav-help-menu">
+              <a
+                href="https://molio.cn/help.html"
+                target="_blank"
+                rel="noopener noreferrer"
+                role="menuitem"
+                className="entry-nav-rail__menu-item"
+                onClick={() => setHelpOpen(false)}
+              >
+                {t('nav.helpOnline')}
+              </a>
+              <button
+                type="button"
+                role="menuitem"
+                className="entry-nav-rail__menu-item"
+                data-testid="nav-onboarding-guide"
+                onClick={() => {
+                  setHelpOpen(false);
+                  navigate(DEFAULT_ROUTE);
+                  // 是否已有知识库决定引导形态：零库 = 全新流程；已有库 = 从当前
+                  // 进度继续 / 展开功能地图，绝不重置进度或碰任何库内容。
+                  // 取不到库列表时传 null（保守：不改无法判断的状态）。
+                  void api.listVaults()
+                    .then((vaults) => onboardingStore.openGuide(vaults.length > 0))
+                    .catch(() => onboardingStore.openGuide(null));
+                }}
+              >
+                {t('nav.onboardingGuide')}
+              </button>
+              {onboarding?.status === 'done' && (
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="entry-nav-rail__menu-item"
+                  data-testid="nav-feature-map"
+                  onClick={() => {
+                    setHelpOpen(false);
+                    navigate(DEFAULT_ROUTE);
+                    onboardingStore.showMap();
+                  }}
+                >
+                  {t('nav.featureMap')}
+                </button>
+              )}
+            </div>
+          )}
+        </div>
 
         <NavLink
           to="/settings"

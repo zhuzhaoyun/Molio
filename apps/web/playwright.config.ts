@@ -115,6 +115,7 @@ export default defineConfig({
         MOLIO_DEBUG_LOG_DIR: join(E2E_DATA_DIR, 'debug'),
         MOLIO_CLAUDE_HOME: join(E2E_DATA_DIR, 'claude'),
         MOLIO_CODEX_HOME: join(E2E_DATA_DIR, 'codex'),
+        MOLIO_SAMPLE_VAULT_PATH: join(E2E_DATA_DIR, 'sample-vault'),
       },
     },
     {

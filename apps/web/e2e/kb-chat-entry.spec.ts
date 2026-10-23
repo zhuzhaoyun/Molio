@@ -182,9 +182,10 @@ test.describe('KB chat entry (scoped buttons)', () => {
     await expect(panel.locator('.file-chat-input')).toContainText(/doc2\.md/);
   });
 
-  test('💬问答 from graph tab keeps the session file binding', async ({ page }) => {
-    // 契约：上下文跟随可见视图。图谱标签页激活时可见上下文是库（图谱），
-    // 点 💬 = 打开/继续会话，不改绑、不清除文件绑定（被隐藏的 selectedFile 不参与）。
+  test('切换打开的文档：qa 会话跟着改绑；图谱标签不参与改绑', async ({ page }) => {
+    // 契约（2026-10-22 修订）：引用 chip 始终跟随当前打开的文档——打开新文档即改绑，
+    // 不再需要再点一次 💬问答。图谱标签页激活时可见上下文是库（filePath=null），
+    // 点 💬 = 打开/继续会话，不改绑、不清除已有文件绑定（被隐藏的 selectedFile 不参与）。
     await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
     await expect(page.locator('.kb-main')).toContainText('Doc', { timeout: 10_000 });
@@ -195,7 +196,7 @@ test.describe('KB chat entry (scoped buttons)', () => {
     await page.locator('[data-testid="kb-chat-close"]').click();
     await expect(panel).toBeHidden();
 
-    // 打开 doc2.md（selectedFile 变为 doc2）→ 经 NavRail 切到图谱标签 → 点问答
+    // 打开 doc2.md → 会话绑定自动跟随 doc2（页面重载也不影响：store 里的绑定会被改写）
     await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc2.md`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
     await expect(page.locator('.kb-main')).toContainText('Doc2', { timeout: 10_000 });
@@ -204,8 +205,9 @@ test.describe('KB chat entry (scoped buttons)', () => {
     await expect(page.locator('[data-testid="kb-wtab-graph"]')).toHaveClass(/is-active/, { timeout: 10_000 });
     await page.locator('[data-testid="kb-btn-ask-tab"]').click();
     await expect(panel).toBeVisible();
-    await expect(panel.locator('.file-chat-input')).toContainText(/doc\.md/);
-    await expect(panel.locator('.file-chat-input')).not.toContainText(/doc2\.md/);
+    // 图谱激活（可见上下文=库）既不改绑也不清除绑定 → 仍是 doc2
+    await expect(panel.locator('.file-chat-input')).toContainText(/doc2\.md/);
+    await expect(panel.locator('.file-chat-input')).not.toContainText(/doc\.md/);
   });
 
   test('💬问答 from graph tab starts vault-scoped session (no hidden file)', async ({ page }) => {

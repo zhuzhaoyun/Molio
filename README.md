@@ -235,6 +235,16 @@ pnpm build        # Build all packages
 pnpm test:e2e     # E2E tests (requires pnpm dev running)
 ```
 
+### 🧩 DeepSeek Harness (dsh) plugin
+
+Molio's knowledge base is also available as a read-only plugin for DeepSeek Harness (dsh), so dsh agents can search and read your local Molio vaults during a conversation:
+
+```bash
+dsh plugin add dsh-plugin-molio
+```
+
+It exposes 5 read-only tools (`molio_status`, `molio_kb_vaults`, `molio_kb_tree`, `molio_kb_search`, `molio_kb_read`) backed by the local Molio daemon HTTP API. Requires a running Molio service (desktop app or Docker). Details: [`packages/dsh-plugin-molio/README.md`](packages/dsh-plugin-molio/README.md) · [npm: dsh-plugin-molio](https://www.npmjs.com/package/dsh-plugin-molio)
+
 ## 🏗️ Architecture
 
 ```

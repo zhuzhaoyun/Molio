@@ -44,6 +44,7 @@ import { VAULT_TREE_CHANGED_EVENT, type VaultWatcher } from '../core/vault-watch
 import type { RunManager } from '../core/RunManager.js';
 import { reconcileVault } from '../core/skills/vault-config.js';
 import { FileTooLargeError } from '../core/encoding.js';
+import { createSampleVault, SampleVaultPathError } from '../core/sample-vault.js';
 
 /** 扫描 + wiki 状态标注（annotateTreeStatus 原地改树，两者必须一起重算）。 */
 async function buildAnnotatedTree(vaultPath: string): Promise<TreeNode[]> {
@@ -106,6 +107,22 @@ export function knowledgeRoutes(
       return c.json({ ...vault, fileCount: 0 }, 201);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to create vault';
+      return c.json({ error: { code: 'INTERNAL', message } }, 500);
+    }
+  });
+
+  // POST /api/knowledge/sample-vault — provision the built-in sample vault.
+  // Idempotent by design: the activation CTA can be clicked twice (or from two
+  // windows) and must never create duplicate registrations or overwrite edits.
+  app.post('/sample-vault', (c) => {
+    try {
+      const result = createSampleVault(db, vaultWatcher);
+      return c.json(result, result.created ? 201 : 200);
+    } catch (err) {
+      if (err instanceof SampleVaultPathError) {
+        return c.json({ error: { code: err.code, message: err.message } }, 400);
+      }
+      const message = err instanceof Error ? err.message : 'Failed to create sample vault';
       return c.json({ error: { code: 'INTERNAL', message } }, 500);
     }
   });

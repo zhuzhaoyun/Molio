@@ -1,6 +1,6 @@
 {
   "name": "@molio/cli",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Molio CLI — 知识库命令 + MCP server，daemon 的薄 HTTP 客户端，供外部桌面 agent（WorkBuddy / 千问等）调用",
   "type": "module",
   "bin": {
@@ -9,7 +9,8 @@
   "main": "dist/src/index.js",
   "files": [
     "dist/src",
-    "connector"
+    "connector",
+    "pi"
   ],
   "engines": {
     "node": ">=20.0.0"
@@ -19,8 +20,17 @@
     "molio",
     "knowledge-base",
     "mcp",
-    "cli"
+    "cli",
+    "pi-package"
   ],
+  "pi": {
+    "extensions": [
+      "./pi/extensions/molio-mcp.ts"
+    ],
+    "skills": [
+      "./pi/skills"
+    ]
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/zhuzhaoyun/Molio.git",

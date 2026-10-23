@@ -77,7 +77,8 @@
         "session-output-history",
         "quiz",
         "sandbox",
-        "chat-autoscroll"
+        "chat-autoscroll",
+        "chat-doc-ref-chip"
       ]
     },
     "kb": {
@@ -176,10 +177,21 @@
       "specs": [
         "bootstrap",
         "navigation",
-        "home-onboarding",
+        "onboarding",
         "default-landing",
         "auth",
         "market-community"
+      ]
+    },
+    "onboarding": {
+      "paths": [
+        "apps/web/src/stores/onboardingStore.ts",
+        "apps/web/src/components/kb/OnboardingChecklist*",
+        "apps/web/src/components/kb/KbMainContent*",
+        "apps/web/src/api/client.ts"
+      ],
+      "specs": [
+        "onboarding"
       ]
     },
     "settings": {
@@ -323,6 +335,10 @@
       "priority": "P1",
       "file": "chat-autoscroll.spec.ts"
     },
+    "chat-doc-ref-chip": {
+      "priority": "P1",
+      "file": "chat-doc-ref-chip.spec.ts"
+    },
     "chat-copy": {
       "priority": "P0",
       "file": "chat-copy.spec.ts"
@@ -455,9 +471,9 @@
       "priority": "P0",
       "file": "kb-large-file.spec.ts"
     },
-    "home-onboarding": {
-      "priority": "P1",
-      "file": "home-onboarding.spec.ts"
+    "onboarding": {
+      "priority": "P0",
+      "file": "onboarding.spec.ts"
     },
     "kb-large-file-gbk": {
       "priority": "P0",

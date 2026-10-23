@@ -94,6 +94,18 @@ export interface KbHistoryListResponse {
   history: KbHistoryEntry[];
 }
 
+/**
+ * POST /api/knowledge/sample-vault response.
+ * Idempotent: when the sample vault already exists, `created` is false and the
+ * existing vault is returned without rewriting any files.
+ */
+export interface SampleVaultResponse {
+  vault: Vault;
+  /** Vault-relative path of the entry document, e.g. '开始使用.md'. */
+  entryFile: string;
+  created: boolean;
+}
+
 // ─── Wiki types ───
 
 export type WikiOperationType = 'build' | 'ingest' | 'lint' | 'query' | 'save';

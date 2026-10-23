@@ -12,6 +12,7 @@
 ```
 packages/
   contracts/    @molio/contracts  — shared types (AgentEvent, RunInfo, API types, SSE, auth)
+  dsh-plugin-molio/  dsh-plugin-molio — DeepSeek Harness (dsh) 插件：5 个只读 KB 工具直连 daemon HTTP API，零运行时依赖，独立发布 npm
 apps/
   daemon/       @molio/daemon    — Hono HTTP server, RunManager, SSE transport (→ apps/daemon/CLAUDE.md)
   web/          @molio/web       — Vite + React web UI, consuming daemon SSE (→ apps/web/CLAUDE.md)
@@ -342,3 +343,5 @@ git tag v0.3.22 && git push origin v0.3.22
 CI 中通过 `grep -qiE '(test|beta|alpha|rc|dirty)'` 判断是否为预发布版，匹配则跳过 OSS latest 文件更新。
 
 **@molio/cli 独立发布**：tag `cli-v*`（如 `cli-v0.1.0`）触发 `cli-publish.yml` 发布 npm 包，与桌面端 `v*` tag 互不干扰。详见 `apps/cli/CLAUDE.md` 的「npm 发布」节。
+
+**dsh-plugin-molio 独立发布**：tag `dsh-plugin-v*`（如 `dsh-plugin-v0.1.0`）触发 `dsh-plugin-publish.yml` 发布 npm 包（非 scoped 包名 `dsh-plugin-molio`，供 `dsh plugin add` 安装）。插件是 DeepSeek Harness (dsh) 生态的只读知识库插件，改动后发版前建议用本机 dsh 真机回归一次（装 tgz 进测试 profile 实调工具）。

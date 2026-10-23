@@ -253,6 +253,34 @@ const REMOTION_RULE_BLOCK = [
  */
 const WIKI_QUERY_RULE_SENTINEL = '<!-- molio:wiki-query-preference -->';
 
+const SANDBOX_SUGGEST_SENTINEL = '<!-- molio:sandbox-suggest -->';
+
+/**
+ * Resident rule for one-click demo suggestions: when an answer's core
+ * conclusion hinges on a clear threshold/boundary and the user did NOT ask
+ * for a demo, append a hidden marker at the very end; the web turns it into
+ * a suggestion chip. Deliberately conservative wording — every clause exists
+ * to suppress a noise failure mode: max one per reply (spam), only
+ * vault-grounded boundaries (retrieval red line), never when a demo/quiz was
+ * requested (the card itself follows), marker only (never inline demos).
+ */
+const SANDBOX_SUGGEST_BLOCK = [
+  SANDBOX_SUGGEST_SENTINEL,
+  '## 演示建议（可选招呼，不是任务）',
+  '',
+  '当一条回答的**核心结论取决于某个明确的数值/条件边界**（警戒线、期限、资格线、安全区间），',
+  '且这些依据来自本库材料，而用户**没有**要求演示时：在回答的最后一行追加',
+  '`<!-- sandbox-suggest: <这个边界的一句话标题> -->`。前端会把它转成「做成可拖动演示」按钮，',
+  '用户点了才真正生成。',
+  '',
+  '约束（都要满足才加）：',
+  '',
+  '- 每条回答最多 1 个标记；不确定该不该加就不加',
+  '- 边界必须能在库内材料里找到依据，禁止凭训练记忆',
+  '- 用户已要求演示/出题，或本条回答并没有真正用到这条边界时，不加',
+  '- 只追加标记行，正文不要因此改变；标记必须独占一行',
+].join('\n');
+
 /**
  * Always-on rule that makes the agent retrieve from the vault's wiki BEFORE
  * any vault-topic work, instead of working from training memory.
@@ -307,6 +335,7 @@ const MOILIO_RULES: Array<{ sentinel: string; block: string; label: string; gate
   { sentinel: REMOTION_RULE_SENTINEL, block: REMOTION_RULE_BLOCK, label: 'remotion preference (retired)', gateSlug: 'remotion' },
   { sentinel: WEB_FETCH_SENTINEL, block: WEB_FETCH_BLOCK, label: 'web fetch preference' },
   { sentinel: WIKI_QUERY_RULE_SENTINEL, block: WIKI_QUERY_RULE_BLOCK, label: 'wiki-query preference', gateSlug: 'wiki-query' },
+  { sentinel: SANDBOX_SUGGEST_SENTINEL, block: SANDBOX_SUGGEST_BLOCK, label: 'sandbox suggestion', gateSlug: 'rule-sandbox' },
 ];
 
 /** Closing sentinel of a rule block: `<!-- molio:x -->` → `<!-- /molio:x -->`. */

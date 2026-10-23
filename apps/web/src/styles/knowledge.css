@@ -3650,3 +3650,478 @@
 
 .kb-export-item:hover { background: var(--bg-subtle); }
 .kb-export-item:disabled { opacity: 0.5; cursor: not-allowed; }
+/* ── Zero-vault welcome: two equal starting actions ── */
+.kb-empty-state--welcome {
+  /* flex 列的子项默认 stretch，max-width 会把盒子钉在交叉轴起点（左边缘）；
+     auto 外边距把剩余空间均分到两侧，欢迎区才落在主内容区的中线上。 */
+  width: 100%;
+  max-width: 720px;
+  margin: 0 auto;
+}
+
+.kb-empty-actions--cards {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  width: 100%;
+  max-width: 640px;
+  margin-top: 8px;
+}
+
+.kb-empty-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 20px 18px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-subtle);
+  text-align: center;
+}
+
+.kb-empty-card__title {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.kb-empty-card__body {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+@media (max-width: 640px) {
+  .kb-empty-actions--cards {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ── First-run checklist banner ── */
+.kb-onboarding {
+  flex: none;
+  border-bottom: 1px solid var(--border);
+  /* 比文档底色暖一档：让它读起来像「正在进行的引导」，而不是又一条工具栏。 */
+  background: color-mix(in srgb, var(--accent-tint) 55%, var(--bg-panel));
+  font-size: 13px;
+  position: relative;
+}
+
+.kb-onboarding__bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 0 8px 0 12px;
+}
+
+.kb-onboarding__summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+}
+
+.kb-onboarding__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: 6px;
+  flex: none;
+}
+
+.kb-onboarding__toggle:hover {
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+}
+
+.kb-onboarding__toggle:focus-visible,
+.kb-onboarding__cta:focus-visible,
+.kb-onboarding__dismiss:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.kb-onboarding__dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  /* 纯进度标记：不响应点击，也不该给出可点的光标暗示。 */
+  cursor: default;
+  user-select: none;
+}
+
+.kb-onboarding__dot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 1px solid var(--border-strong);
+  color: var(--text-muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  flex: none;
+}
+
+.kb-onboarding__dot.is-current {
+  border-color: var(--accent);
+  border-width: 1.5px;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.kb-onboarding__dot.is-done {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.kb-onboarding__title {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.kb-onboarding__progress {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.kb-onboarding__chevron {
+  color: var(--text-muted);
+  transition: transform 150ms ease;
+}
+
+.kb-onboarding__toggle[aria-expanded='true'] .kb-onboarding__chevron {
+  transform: rotate(180deg);
+}
+
+/* 下一步说明紧跟在进度后面，主按钮就在它旁边——不把唯一动作推到远端角落。 */
+.kb-onboarding__hint {
+  color: var(--text-muted);
+  margin-left: 6px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kb-onboarding__cta {
+  flex: none;
+  height: 28px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: var(--accent);
+  color: #fff;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 120ms ease;
+}
+
+/* 引导呼吸环长在「真实按钮」上（导入 / 问答 / 保存）：引导收起后用户日常用的
+   就是这些键，动画不该只教会用户点 checklist 上的中转按钮。
+
+   持续循环而不是只播 3 次：验收时用户恰好没看向那一块，4 秒后动画已经结束，
+   结果就是「我没看到」。步骤一完成 class 移除，动画随之消失。
+
+   2026-10-19 二轮验收（「还是没看到」）：最初只做扩散环，环淡出后剩下的
+   半个周期完全不可见，26px 的小图标很容易整段错过。改为底色呼吸 + 扩散环，
+   任意时刻都有可见提示；周期缩到 1.8s。
+
+   不要把缩放写进这个动画：持续 transform 会让按钮的包围盒一直变化，
+   Playwright 判定「element is not stable」→ 所有引导用例点不下去。
+   底色与阴影不改变布局盒，既有存在感又保持可点击。 */
+@keyframes kb-guide-pulse {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 55%, transparent);
+    background-color: color-mix(in srgb, var(--accent) 20%, transparent);
+  }
+  45% {
+    box-shadow: 0 0 0 6px transparent;
+    background-color: color-mix(in srgb, var(--accent) 7%, transparent);
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+    background-color: color-mix(in srgb, var(--accent) 20%, transparent);
+  }
+}
+
+.kb-guide-pulse {
+  animation: kb-guide-pulse 1.8s ease-in-out infinite;
+}
+
+/* checklist 的中转按钮是实心 accent 底 + 白字，不能套用上面的底色呼吸
+   （会把实心底冲淡成 7–20% 的浅色，白字直接失去对比度）。只保留扩散环。 */
+@keyframes kb-guide-pulse-solid {
+  0%   { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 55%, transparent); }
+  45%  { box-shadow: 0 0 0 6px transparent; }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+
+.kb-guide-pulse--solid {
+  animation: kb-guide-pulse-solid 1.8s ease-in-out infinite;
+}
+
+.kb-onboarding__cta:hover {
+  background: var(--accent-hover);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* 关闭动画不等于去掉提示：留一圈静态高亮，否则「减弱动态效果」的用户
+     会彻底看不到引导目标。 */
+  .kb-guide-pulse,
+  .kb-guide-pulse--solid {
+    animation: none;
+    box-shadow: 0 0 0 2px var(--accent-soft);
+  }
+}
+
+.kb-onboarding__dismiss {
+  margin-left: auto;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 4px 6px;
+  flex: none;
+}
+
+.kb-onboarding__rail {
+  height: 2px;
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+.kb-onboarding__rail > span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width 240ms ease;
+}
+
+@media (max-width: 720px) {
+  .kb-onboarding__hint {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kb-onboarding__rail > span,
+  .kb-onboarding__chevron {
+    transition: none;
+  }
+}
+
+.kb-onboarding__details {
+  padding: 2px 12px 10px 14px;
+}
+
+.kb-onboarding__steps {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.kb-onboarding__steps li {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  color: var(--text);
+}
+
+.kb-onboarding__steps li.is-done {
+  color: var(--text-muted);
+}
+
+.kb-onboarding__steps li.is-current {
+  color: var(--text);
+}
+
+.kb-onboarding__check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  margin-top: 1px;
+  border-radius: 50%;
+  border: 1px solid var(--border-strong);
+  font-size: 11px;
+  flex: none;
+}
+
+.kb-onboarding__steps li.is-current .kb-onboarding__check {
+  border-color: var(--accent);
+  border-width: 1.5px;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.kb-onboarding__steps li.is-done .kb-onboarding__check {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.kb-onboarding__step-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.kb-onboarding__step-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.kb-onboarding__current {
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+/* 「怎么完成」比步骤名低一档：扫读时先看进度，需要时再看做法。 */
+.kb-onboarding__step-how {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.kb-onboarding__auto-hint {
+  margin: 12px 0 0 26px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+/* ── Completion: persistent feature map ──
+   不是 8 秒消失的庆祝条：跑通闭环之后，用户真正的问题是「这个产品还能
+   干什么」。地图留到用户主动收起，并且可以从帮助菜单重新打开。 */
+.kb-onboarding--map {
+  padding: 12px 14px 14px;
+}
+
+.kb-onboarding__map-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+}
+
+.kb-onboarding__map-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  margin-top: 1px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  font-size: 11px;
+  flex: none;
+}
+
+.kb-onboarding__map-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.kb-onboarding__map-title {
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.kb-onboarding__map-body {
+  color: var(--text-muted);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.kb-onboarding__map-head .kb-onboarding__dismiss {
+  margin-left: auto;
+}
+
+.kb-onboarding__map-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px 18px;
+  margin-top: 11px;
+  padding-top: 11px;
+  border-top: 1px solid color-mix(in srgb, var(--accent) 18%, var(--border));
+}
+
+.kb-onboarding__map-grid section {
+  min-width: 0;
+}
+
+.kb-onboarding__map-grid h4 {
+  margin: 0 0 3px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.kb-onboarding__map-grid p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+
+.kb-onboarding__map-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin-top: 4px;
+}
+
+.kb-onboarding__map-actions button {
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  font-size: 12.5px;
+  padding: 0;
+  cursor: pointer;
+}
+
+.kb-onboarding__map-actions button:hover {
+  text-decoration: underline;
+}
+
+.kb-onboarding__map-actions button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+@media (max-width: 1100px) {
+  .kb-onboarding__map-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .kb-onboarding__map-grid {
+    grid-template-columns: 1fr;
+  }
+}
