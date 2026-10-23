@@ -1941,6 +1941,27 @@
 }
 .quiz-fill-input:focus { border-color: var(--accent); }
 .quiz-fill-input:disabled { opacity: 0.7; }
+/* 符号面板：通用难输入字符插入（分组清单依据 docs/2026-10-24-quiz-fill-input-domains.md） */
+.quiz-fill { display: flex; flex-direction: column; gap: 6px; }
+.quiz-symbol-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.quiz-symbol-btn {
+  min-width: 26px;
+  height: 24px;
+  padding: 0 5px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background-color: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+.quiz-symbol-btn:hover:not(:disabled) { border-color: var(--border-strong); background-color: var(--bg-subtle); }
+.quiz-symbol-btn:disabled { opacity: 0.5; cursor: default; }
+.quiz-symbol-more { margin-left: auto; min-width: 0; font-size: 12px; color: var(--text-muted); }
+.quiz-symbol-group { display: flex; align-items: center; gap: 4px; width: 100%; }
+.quiz-symbol-group-label { min-width: 4em; font-size: 11px; color: var(--text-muted); }
 .quiz-option {
   display: flex;
   gap: 8px;

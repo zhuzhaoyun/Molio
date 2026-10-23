@@ -244,12 +244,35 @@ export function normalizeFillText(value: string): string {
   return value.normalize('NFKC').trim().replace(/\s+/g, ' ').toLowerCase();
 }
 
+/**
+ * 无歧义 ASCII 记法 → 符号，判分前对两侧同折：把「键盘顺手写法」与
+ * 「符号写法」折进同一等价类。只做记法级等价，不做数学/语义等价
+ * （0.5 ≠ 1/2，答案形式本身常是考点，等价写法由模型在 answer 数组里
+ * 显式给出）；繁简、去音符等有语义争议或字典级依赖的不进表。
+ * 两侧同折，所以普通单词里的部分串命中无害（piano 双方同折仍相等）。
+ */
+const ASCII_NOTATION_FOLDS: ReadonlyArray<readonly [string, string]> = [
+  ['sqrt', '√'],
+  ['pi', 'π'],
+  ['<=', '≤'],
+  ['>=', '≥'],
+  ['!=', '≠'],
+  ['+-', '±'],
+  ['->', '→'],
+];
+
+function foldAsciiNotation(value: string): string {
+  let folded = value;
+  for (const [from, to] of ASCII_NOTATION_FOLDS) folded = folded.split(from).join(to);
+  return folded;
+}
+
 export function isFillAnswerCorrect(typed: string, answers: string[]): boolean {
-  const typedNormalized = normalizeFillText(typed);
+  const typedNormalized = foldAsciiNotation(normalizeFillText(typed));
   if (!typedNormalized) return false;
   const typedCondensed = typedNormalized.replace(/ /g, '');
   return answers.some((answer) => {
-    const normalized = normalizeFillText(answer);
+    const normalized = foldAsciiNotation(normalizeFillText(answer));
     return normalized === typedNormalized || normalized.replace(/ /g, '') === typedCondensed;
   });
 }

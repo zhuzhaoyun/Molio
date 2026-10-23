@@ -352,4 +352,24 @@ describe('fill 题型（填空）', () => {
     assert.equal(isQuizComplete(quiz, { f1: ['   '] }), false);
     assert.equal(isQuizComplete(quiz, { f1: ['25'] }), true);
   });
+
+  it('folds ascii notation on both sides before matching', () => {
+    // 记法折叠只做「同一记法的不同写法」，不做数学等价（0.5 ≠ 1/2）。
+    assert.ok(isFillAnswerCorrect('sqrt2/2', ['√2/2']));
+    assert.ok(isFillAnswerCorrect('√2/2', ['sqrt2/2']));
+    // 带括号的完整写法由模型在 answer 数组里并列给出（skill 的写法变体规则），
+    // 折叠不猜括号——去括号会制造 (1+2)/4 与 1+2/4 的假等价。
+    assert.ok(isFillAnswerCorrect('sqrt(2)/2', ['sqrt(2)/2']));
+    assert.ok(isFillAnswerCorrect('2pi', ['2π']));
+    assert.ok(isFillAnswerCorrect('π/4', ['pi/4']));
+    assert.ok(isFillAnswerCorrect('a<=b', ['a≤b']));
+    assert.ok(isFillAnswerCorrect('x>=1', ['x≥1']));
+    assert.ok(isFillAnswerCorrect('a!=b', ['a≠b']));
+    assert.ok(isFillAnswerCorrect('1+-i', ['1±i']));
+    assert.ok(isFillAnswerCorrect('A->B', ['A→B']));
+    // 折叠对两侧一致施加：普通单词同折后仍相等
+    assert.ok(isFillAnswerCorrect('piano', ['piano']));
+    assert.ok(!isFillAnswerCorrect('2pi', ['3π']));
+    assert.ok(!isFillAnswerCorrect('0.5', ['1/2']));
+  });
 });

@@ -32,6 +32,15 @@ interface Props {
   conversationId?: string | null;
 }
 
+/** 填空符号面板：通用难输入字符（理工科一期组）。分组与后置项依据
+ *  docs/2026-10-24-quiz-fill-input-domains.md（文科/小语种组后续按需追加）。 */
+const FILL_SYMBOL_ROW: readonly string[] = ['√', 'π', '°', '≤', '≥', '≠', '±', '→', '×', '÷', '∞'];
+const FILL_SYMBOL_GROUPS: ReadonlyArray<{ labelKey: string; chars: readonly string[] }> = [
+  { labelKey: 'quiz.symbolGroup.greek', chars: ['α', 'β', 'γ', 'δ', 'θ', 'λ', 'μ', 'σ', 'ω', 'Δ', 'Ω'] },
+  { labelKey: 'quiz.symbolGroup.logic', chars: ['∪', '∩', '∈', '⊂', '∅', '∀', '∃', '⇒', '⇔'] },
+  { labelKey: 'quiz.symbolGroup.units', chars: ['‰', '′', '″', '↑', '↓', '⇌'] },
+];
+
 /**
  * Quiz 交互块（交互块注册表的第一个块）。
  *
@@ -176,6 +185,28 @@ function QuizBody({
     [submitted],
   );
 
+  const fillInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
+  const [moreSymbols, setMoreSymbols] = useState(false);
+
+  // 符号面板：在光标处插入字符。onMouseDown preventDefault 保住输入框焦点；
+  // 键盘用户走折叠判分（pi/sqrt/<=…），面板是鼠标/触屏的兜底输入。
+  const insertSymbol = useCallback(
+    (questionId: string, char: string) => {
+      if (submitted) return;
+      const input = fillInputRefs.current[questionId];
+      if (!input) return;
+      const start = input.selectionStart ?? input.value.length;
+      const end = input.selectionEnd ?? start;
+      const next = input.value.slice(0, start) + char + input.value.slice(end);
+      setFillText(questionId, next);
+      requestAnimationFrame(() => {
+        input.focus();
+        input.setSelectionRange(start + char.length, start + char.length);
+      });
+    },
+    [submitted, setFillText],
+  );
+
   const handleSubmit = useCallback(() => {
     if (!ready || submitted) return;
     setSubmitted(true);
@@ -265,20 +296,71 @@ function QuizBody({
 
             <div className="quiz-options">
               {question.type === 'fill' ? (
-                /* 填空：文本作答。判分在 gradeQuiz 里做规范化匹配；
+                /* 填空：文本作答。判分在 gradeQuiz 里做规范化匹配（含 ASCII 记法折叠）；
                  * 64 上限与 daemon chosen 逐项上限一致，超长会落不了库。 */
-                <input
-                  className="quiz-fill-input"
-                  data-testid="quiz-fill-input"
-                  data-question-id={question.id}
-                  type="text"
-                  value={chosen[0] ?? ''}
-                  maxLength={MAX_QUIZ_KEY_CHARS}
-                  aria-label={t('quiz.fillPlaceholder')}
-                  placeholder={t('quiz.fillPlaceholder')}
-                  disabled={submitted}
-                  onChange={(event) => setFillText(question.id, event.target.value)}
-                />
+                <div className="quiz-fill">
+                  <input
+                    ref={(el) => { fillInputRefs.current[question.id] = el; }}
+                    className="quiz-fill-input"
+                    data-testid="quiz-fill-input"
+                    data-question-id={question.id}
+                    type="text"
+                    value={chosen[0] ?? ''}
+                    maxLength={MAX_QUIZ_KEY_CHARS}
+                    aria-label={t('quiz.fillPlaceholder')}
+                    placeholder={t('quiz.fillPlaceholder')}
+                    disabled={submitted}
+                    onChange={(event) => setFillText(question.id, event.target.value)}
+                  />
+                  <div className="quiz-symbol-bar" data-testid="quiz-symbol-bar">
+                    {FILL_SYMBOL_ROW.map((char) => (
+                      <button
+                        key={char}
+                        type="button"
+                        className="quiz-symbol-btn"
+                        data-testid="quiz-symbol-btn"
+                        data-char={char}
+                        aria-label={char}
+                        disabled={submitted}
+                        onMouseDown={(event) => event.preventDefault()}
+                        onClick={() => insertSymbol(question.id, char)}
+                      >
+                        {char}
+                      </button>
+                    ))}
+                    <button
+                      type="button"
+                      className="quiz-symbol-btn quiz-symbol-more"
+                      data-testid="quiz-symbol-more"
+                      aria-expanded={moreSymbols}
+                      disabled={submitted}
+                      onMouseDown={(event) => event.preventDefault()}
+                      onClick={() => setMoreSymbols((prev) => !prev)}
+                    >
+                      {moreSymbols ? t('quiz.symbolLess') : t('quiz.symbolMore')}
+                    </button>
+                    {moreSymbols && FILL_SYMBOL_GROUPS.map((group) => (
+                      <div className="quiz-symbol-group" key={group.labelKey}>
+                        <span className="quiz-symbol-group-label">{t(group.labelKey)}</span>
+                        {group.chars.map((char) => (
+                          <button
+                            key={char}
+                            type="button"
+                            className="quiz-symbol-btn"
+                            data-testid="quiz-symbol-btn"
+                            data-char={char}
+                            aria-label={char}
+                            disabled={submitted}
+                            onMouseDown={(event) => event.preventDefault()}
+                            onClick={() => insertSymbol(question.id, char)}
+                          >
+                            {char}
+                          </button>
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+                </div>
               ) : question.options.map((option) => {
                 const on = chosen.includes(option.key);
                 const isAnswer = question.answer.includes(option.key);

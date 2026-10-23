@@ -495,6 +495,82 @@ test.describe('Quiz interaction block', () => {
     await expect(card.locator('[data-testid="quiz-explanation"]')).toContainText('25 分钟');
   });
 
+  test('offers a symbol palette and folds ascii notation when grading fill answers', async ({ page }) => {
+    const symbolQuiz = `\`\`\`quiz
+{
+  "version": 1,
+  "title": "填空 · 符号 2 题",
+  "questions": [
+    {
+      "id": "sy1",
+      "type": "fill",
+      "stem": "求值：cos²(π/8) − sin²(π/8) = ____。",
+      "answer": ["√2/2", "sqrt2/2"],
+      "explanation": "逆用二倍角公式得 cos(π/4)。",
+      "sources": [{ "path": "notes/番茄工作法.md" }]
+    },
+    {
+      "id": "sy2",
+      "type": "fill",
+      "stem": "特殊角 tan(π/4) = ____。",
+      "answer": ["π/4"],
+      "explanation": "45° 正切。",
+      "sources": [{ "path": "notes/番茄工作法.md" }]
+    }
+  ]
+}
+\`\`\``;
+    await mockChatRun(page, { runId: 'run-1', conversationId: 'conv-1', script: [
+      { type: 'status', label: 'running' },
+      { type: 'text_delta', delta: symbolQuiz },
+      { type: 'turn_end', stopReason: 'end_turn' },
+    ] });
+    await gotoHome(page);
+    await sendMessage(page, '出几道填空题');
+
+    const card = page.locator('[data-testid="quiz-card"]');
+    await expect(card).toBeVisible({ timeout: 10_000 });
+    const inputs = card.locator('[data-testid="quiz-fill-input"]');
+
+    // 符号面板：默认行可见；点 √ 在输入框插入字符。
+    const bar = card.locator('[data-testid="quiz-symbol-bar"]').first();
+    await expect(bar).toBeVisible();
+    await card.locator('[data-testid="quiz-symbol-btn"][data-char="√"]').first().click();
+    await expect(inputs.nth(0)).toHaveValue('√');
+    await inputs.nth(0).fill('√2/2');
+
+    // 「更多」展开分组（理工科组：希腊/集合与逻辑/单位与箭头）。
+    await card.locator('[data-testid="quiz-symbol-more"]').first().click();
+    await expect(card.locator('[data-testid="quiz-symbol-btn"][data-char="α"]').first()).toBeVisible();
+
+    // 记法折叠：键盘顺手写法 pi/4 判对 π/4。
+    await inputs.nth(1).fill('pi/4');
+
+    await page.unroute('**/api/quiz/attempts');
+    let attemptBody: any = null;
+    await page.route('**/api/quiz/attempts', async (route) => {
+      attemptBody = JSON.parse(route.request().postData() || '{}');
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ ok: true, inserted: 2 }),
+      });
+    });
+    await card.locator('[data-testid="quiz-submit"]').click();
+
+    await expect.poll(() => attemptBody?.attempts?.length).toBe(2);
+    expect(attemptBody.attempts[0]).toMatchObject({
+      questionId: 'sy1', chosen: ['√2/2'], correct: true,
+    });
+    // 落库保留用户原文 pi/4，判分按折叠等价。
+    expect(attemptBody.attempts[1]).toMatchObject({
+      questionId: 'sy2', chosen: ['pi/4'], correct: true,
+    });
+    const results = card.locator('[data-testid="quiz-result"]');
+    await expect(results.nth(0)).toHaveAttribute('data-correct', 'true');
+    await expect(results.nth(1)).toHaveAttribute('data-correct', 'true');
+  });
+
   test('appends a sequence number when the quiz filename already exists', async ({ page }) => {
     let savedUrl: string | null = null;
 
