@@ -70,6 +70,35 @@ describe('TreeCache', () => {
     assert.equal(builds, 2, '被失效打断过的构建结果不许留在缓存里');
   });
 
+  it('构建中途失效后到来的请求不复用那次过期构建（不能拿失效前的快照应答）', async () => {
+    const cache = new TreeCache();
+    let builds = 0;
+    const gates: Array<() => void> = [];
+    const build = async (): Promise<TreeNode[]> => {
+      builds++;
+      const mine = builds;
+      await new Promise<void>((r) => gates.push(r));
+      return node(`snapshot-${mine}.md`);
+    };
+
+    const first = cache.getOrBuild('v1', build); // 扫描开始（builds=1，卡在 gate 里）
+    assert.equal(builds, 1);
+    cache.invalidate('v1'); // 扫描窗口里内容变了
+
+    const second = cache.getOrBuild('v1', build); // 失效之后到来的请求
+    assert.equal(builds, 2, '失效后的请求必须重扫，不能挂在失效前那次构建上');
+
+    for (const release of gates) release();
+    const [r1, r2] = await Promise.all([first, second]);
+    assert.equal(r1[0]!.name, 'snapshot-1.md', '首次调用仍拿自己的点内快照');
+    assert.equal(r2[0]!.name, 'snapshot-2.md');
+
+    // 旧构建（gen0）先完成也没有把 in-flight 抢走：新一代结果正常入库
+    const cached = await cache.getOrBuild('v1', build);
+    assert.equal(builds, 2, '新一代构建的结果必须被缓存');
+    assert.equal(cached[0]!.name, 'snapshot-2.md');
+  });
+
   it('invalidate 后同一 vault 重新构建（tree-changed / API 写的失效路径）', async () => {
     const cache = new TreeCache();
     let builds = 0;
