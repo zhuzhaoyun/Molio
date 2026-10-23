@@ -31,6 +31,9 @@ describe('bundled quiz-generate skill', () => {
     assert.ok(parsed.instructions.includes('"fill"'), 'type enum must include fill');
     assert.ok(parsed.instructions.includes('____'), 'must mark the blank in stem');
     assert.ok(parsed.instructions.includes('64'), 'answer item cap must match daemon chosen limit');
+    // 写法变体规则（领域无关）：难输入字符须给键盘可打变体，且变体不得改变考察点。
+    assert.ok(parsed.instructions.includes('sqrt'), 'must document a keyboard-typeable variant example');
+    assert.ok(parsed.instructions.includes('考察点'), 'variants must not change what is being tested');
     // 主观题降级（混合请求不得整体退化成纯文本，主观题不进围栏）。
     assert.ok(parsed.instructions.includes('主观题'), 'must document the subjective-question fallback');
     assert.ok(parsed.instructions.includes('围栏外'), 'subjective questions stay outside the fence');
