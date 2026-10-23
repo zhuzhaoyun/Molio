@@ -11,6 +11,9 @@
 [![GitHub Stars](https://img.shields.io/github/stars/zhuzhaoyun/Molio?style=flat-square)](https://github.com/zhuzhaoyun/Molio/stargazers)
 [![Last Commit](https://img.shields.io/github/last-commit/zhuzhaoyun/Molio?style=flat-square)](https://github.com/zhuzhaoyun/Molio/commits)
 
+[![npm: @molio/cli — MCP server & CLI](https://img.shields.io/npm/v/%40molio/cli?style=flat-square&label=MCP%20%40molio%2Fcli&color=blue)](https://www.npmjs.com/package/@molio/cli)
+[![npm: dsh-plugin-molio — DeepSeek Harness 插件](https://img.shields.io/npm/v/dsh-plugin-molio?style=flat-square&label=dsh%20plugin&color=blue)](https://www.npmjs.com/package/dsh-plugin-molio)
+
 </div>
 
 ---
