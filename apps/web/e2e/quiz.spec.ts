@@ -433,6 +433,68 @@ test.describe('Quiz interaction block', () => {
     ).toHaveText('25 分钟');
   });
 
+  test('supports fill-in-blank: submit disabled until text, normalized match, reference answer on wrong', async ({ page }) => {
+    const fillQuiz = `\`\`\`quiz
+{
+  "version": 1,
+  "title": "填空 · 1 题",
+  "questions": [
+    {
+      "id": "f1",
+      "type": "fill",
+      "stem": "标准番茄钟的专注时长为____分钟。",
+      "answer": ["25", "二十五"],
+      "explanation": "一个番茄钟为 25 分钟。",
+      "sources": [{ "path": "notes/番茄工作法.md" }]
+    }
+  ]
+}
+\`\`\``;
+    await mockChatRun(page, { runId: 'run-1', conversationId: 'conv-1', script: [
+      { type: 'status', label: 'running' },
+      { type: 'text_delta', delta: fillQuiz },
+      { type: 'turn_end', stopReason: 'end_turn' },
+    ] });
+    await gotoHome(page);
+    await sendMessage(page, '出几道填空题');
+
+    const card = page.locator('[data-testid="quiz-card"]');
+    await expect(card).toBeVisible({ timeout: 10_000 });
+    await expect(card.locator('[data-testid="quiz-type"]')).toHaveText('填空');
+
+    const input = card.locator('[data-testid="quiz-fill-input"]');
+    const submit = card.locator('[data-testid="quiz-submit"]');
+    await expect(submit).toBeDisabled();
+
+    // 正确：输入原文带首尾空格 → 规范化判分对，落库保留用户原文。
+    await input.fill(' 25 ');
+    await expect(submit).toBeEnabled();
+    await page.unroute('**/api/quiz/attempts');
+    let attemptBody: any = null;
+    await page.route('**/api/quiz/attempts', async (route) => {
+      attemptBody = JSON.parse(route.request().postData() || '{}');
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ ok: true, inserted: 1 }),
+      });
+    });
+    await submit.click();
+    await expect.poll(() => attemptBody?.attempts?.length).toBe(1);
+    expect(attemptBody.attempts[0]).toMatchObject({
+      questionId: 'f1', chosen: [' 25 '], correct: true,
+    });
+    await expect(card.locator('[data-testid="quiz-result"]')).toHaveAttribute('data-correct', 'true');
+
+    // 重做后答错：显示参考答案（全部可接受写法）与解析。
+    await card.locator('[data-testid="quiz-redo"]').click();
+    await input.fill('二十四');
+    await submit.click();
+    await expect(card.locator('[data-testid="quiz-result"]').locator('nth=0')).toHaveAttribute('data-correct', 'false');
+    await expect(card.locator('[data-testid="quiz-answer"]')).toHaveText('正确答案：25 / 二十五');
+    await expect(card.locator('[data-testid="quiz-explanation"]')).toContainText('25 分钟');
+  });
+
   test('appends a sequence number when the quiz filename already exists', async ({ page }) => {
     let savedUrl: string | null = null;
 

@@ -14,6 +14,7 @@ import {
   quizStorageKey,
   parseStoredQuizState,
   quizStemOf,
+  MAX_QUIZ_KEY_CHARS,
   type InvalidQuestion,
   type Quiz,
   type QuizGrade,
@@ -166,13 +167,30 @@ function QuizBody({
     [submitted],
   );
 
+  // 填空作答：空文本存空数组（isQuizComplete 据此判未作答）。
+  const setFillText = useCallback(
+    (questionId: string, text: string) => {
+      if (submitted) return;
+      setSelections((prev) => ({ ...prev, [questionId]: text.trim() ? [text] : [] }));
+    },
+    [submitted],
+  );
+
   const handleSubmit = useCallback(() => {
     if (!ready || submitted) return;
     setSubmitted(true);
 
     // 本地判分已完成；落库失败不阻塞用户看结果。
+    // 空/超长 chosen 不进批次：daemon 对两者整批拒绝，会把整次提交的答题
+    // 记录全部丢掉。超长只可能来自被改过的 localStorage（正常输入被
+    // maxLength 挡住），丢弃该题保住其余题目的落库。
     if (fingerprint) {
-      const attempts = gradeQuiz(quiz, selections).map((grade) => ({
+      const attempts = gradeQuiz(quiz, selections)
+        .filter((grade) =>
+          grade.chosen.length > 0
+          && grade.chosen.every((key) => key.length <= MAX_QUIZ_KEY_CHARS),
+        )
+        .map((grade) => ({
         questionId: grade.questionId,
         chosen: grade.chosen,
         correct: grade.correct,
@@ -225,7 +243,7 @@ function QuizBody({
           <div className="quiz-question" data-testid="quiz-question" data-question-id={question.id} key={question.id}>
             <div className="quiz-question-head">
               <span className="quiz-index">{t('quiz.question', { n: index + 1 })}</span>
-              <span className="quiz-type">{t(`quiz.type.${question.type}`)}</span>
+              <span className="quiz-type" data-testid="quiz-type">{t(`quiz.type.${question.type}`)}</span>
               {grade && (
                 <span
                   className={`quiz-result ${grade.correct ? 'correct' : 'wrong'}`}
@@ -246,7 +264,22 @@ function QuizBody({
             />
 
             <div className="quiz-options">
-              {question.options.map((option) => {
+              {question.type === 'fill' ? (
+                /* 填空：文本作答。判分在 gradeQuiz 里做规范化匹配；
+                 * 64 上限与 daemon chosen 逐项上限一致，超长会落不了库。 */
+                <input
+                  className="quiz-fill-input"
+                  data-testid="quiz-fill-input"
+                  data-question-id={question.id}
+                  type="text"
+                  value={chosen[0] ?? ''}
+                  maxLength={MAX_QUIZ_KEY_CHARS}
+                  aria-label={t('quiz.fillPlaceholder')}
+                  placeholder={t('quiz.fillPlaceholder')}
+                  disabled={submitted}
+                  onChange={(event) => setFillText(question.id, event.target.value)}
+                />
+              ) : question.options.map((option) => {
                 const on = chosen.includes(option.key);
                 const isAnswer = question.answer.includes(option.key);
                 const className = [
