@@ -39,6 +39,28 @@ const MAX_EVENTS = 2_000;
 const RUN_TTL_MS = 30 * 60 * 1000; // 30 minutes
 
 /**
+ * Spawn-path (stdio-jsonl) idle watchdog defaults. The ACP path has its own
+ * promptIdle/absolute timeouts on the transport; spawn-based agents (claude/
+ * codex/gemini/qwen) previously had NONE — a child hung on a dead provider
+ * request (2026-10-22 incident: qwen3.8-max silent for 20+ min mid-turn, zero
+ * CPU) kept the run 'running' forever, occupying channel dispatchers.
+ *
+ * Phase-aware budgets:
+ * - model phase (no pending tool_use): 10 min — must exceed worst-case
+ *   first-token latency of slow reasoning models, and matches the web client's
+ *   FALLBACK_IDLE_MS so daemon and UI surface the hang at the same time.
+ * - tool phase (tool_use awaiting tool_result): 30 min — covers silent
+ *   long-running tools (Bash caps at 10 min, but MCP/subagent tools don't).
+ *   Subagent progress re-arms the timer anyway via transcript activity events.
+ *
+ * Any emitted event re-arms (resets) the countdown, so an ACTIVE run of any
+ * length never false-fires. Override via MOLIO_SPAWN_IDLE_TIMEOUT_MS /
+ * MOLIO_SPAWN_TOOL_IDLE_TIMEOUT_MS (tests use small values).
+ */
+const SPAWN_IDLE_MODEL_DEFAULT_MS = 10 * 60 * 1000;
+const SPAWN_IDLE_TOOL_DEFAULT_MS = 30 * 60 * 1000;
+
+/**
  * Map ACP PromptResponse.stopReason → Molio turn_end.stopReason.
  * ACP values: end_turn | max_tokens | max_turn_requests | refusal | cancelled
  */
@@ -460,6 +482,10 @@ export class RunManager {
       error: null,
       errorCode: null,
       turnText: new TurnTextCollector(runId, opts.onTurnComplete),
+      // Spawn-path idle watchdog state (no-op for ACP runs — never armed there).
+      idleWatchdog: null,
+      watchdogArmed: false,
+      pendingToolUses: new Set<string>(),
     };
     this.runs.set(runId, run);
 
@@ -631,11 +657,24 @@ export class RunManager {
 
       if (run.stdinOpen && ev.type === 'tool_use' && ev.name === 'AskUserQuestion') {
         run.pendingHostAnswers.add(ev.id);
+        // Waiting for a human answer is unbounded (hours overnight) — the idle
+        // watchdog must not kill the run for it. Re-armed in submitToolResult.
+        this.disarmIdleWatchdog(run);
       }
 
       if (ev.type === 'turn_end') {
         run.lastStopReason = ev.stopReason;
         this.maybeCloseStdin(run);
+        // Turn complete: stale tool bookkeeping cleared; multiTurn agents now
+        // wait for the NEXT user message (weixin queue / desktop follow-up) —
+        // that wait is user-driven and unbounded, so disarm until sendMessage
+        // starts a new turn. Single-turn agents keep the watchdog armed: their
+        // child should exit promptly after the result, and a hung exit is
+        // exactly what the watchdog must catch.
+        if (ev.stopReason !== 'tool_use') {
+          run.pendingToolUses?.clear();
+          if (def.multiTurn) this.disarmIdleWatchdog(run);
+        }
       }
 
       if (ev.type === 'usage') {
@@ -683,6 +722,11 @@ export class RunManager {
       parser.flush();
       this.finishRun(run, code === 0 ? 'succeeded' : 'failed', code, null);
     });
+
+    // Arm the idle watchdog for the first turn (the prompt was just written to
+    // stdin / passed as argv). Every emitted event re-arms it; see the constants
+    // at the top of this file for phase budgets and the 2026-10-22 rationale.
+    this.armIdleWatchdog(run);
 
     return runId;
   }
@@ -1075,6 +1119,9 @@ export class RunManager {
       message: { role: 'user', content: message },
     });
     run.child.stdin.write(msg + '\n', 'utf8');
+    // A new turn starts — re-arm the idle watchdog (disarmed at the previous
+    // turn_end for multiTurn agents).
+    this.armIdleWatchdog(run);
   }
 
   submitToolResult(runId: string, toolUseId: string, content: string): void {
@@ -1105,6 +1152,11 @@ export class RunManager {
     run.child.stdin.write(msg + '\n', 'utf8');
     run.pendingHostAnswers.delete(toolUseId);
     this.maybeCloseStdin(run);
+    // The model resumes once every pending host answer is in — re-arm the idle
+    // watchdog (disarmed while AskUserQuestion waited on the human).
+    if (run.pendingHostAnswers.size === 0) {
+      this.armIdleWatchdog(run);
+    }
   }
 
   /**
@@ -1136,6 +1188,10 @@ export class RunManager {
     // run-starter.ts:onTurnComplete (which checks isTerminal) blocks the
     // append. Local onTurnComplete callbacks that don't check isTerminal
     // (e.g. the shutdown-flush path) still receive the buffered text.
+    // Stop the idle watchdog first — a cancel must not race a watchdog fire
+    // (both would try to terminate the run; cancel semantics win).
+    this.disarmIdleWatchdog(run);
+
     const wasTerminal = TERMINAL_STATUSES.has(run.status);
     console.log(
       `[runs] cancel run=${runId} reason=${reason} agent=${run.agentId}`
@@ -1219,6 +1275,20 @@ export class RunManager {
       run.error = event.message;
     }
 
+    // Idle-watchdog bookkeeping (spawn path only; the Set exists on every run
+    // but is only consumed by armIdleWatchdog, which ACP runs never call):
+    // pending tool_use ids select the phase budget, and ANY emitted event
+    // (stdout parse, transcript activity, …) proves the run is alive and
+    // resets the countdown.
+    if (event.type === 'tool_use') {
+      run.pendingToolUses?.add(event.id);
+    } else if (event.type === 'tool_result') {
+      run.pendingToolUses?.delete(event.toolUseId);
+    }
+    if (run.watchdogArmed) {
+      this.armIdleWatchdog(run);
+    }
+
     // Accumulate text for turn-complete persistence
     if (event.type === 'text_delta') {
       run.turnText.append(event.delta);
@@ -1286,6 +1356,10 @@ export class RunManager {
     signal: string | null,
   ): void {
     if (TERMINAL_STATUSES.has(run.status)) return;
+
+    // Terminal transition — stop the idle watchdog so a finished run never
+    // keeps a timer alive (and a late fire can't re-enter finishRun).
+    this.disarmIdleWatchdog(run);
 
     run.status = status;
     run.exitCode = code;
@@ -1362,6 +1436,83 @@ export class RunManager {
       return run.eventsLogStream;
     } catch {
       return null;
+    }
+  }
+
+  // ─── Spawn-path idle watchdog ─────────────────────────────────────────────
+  // See SPAWN_IDLE_* constants at the top of this file for rationale. Only
+  // stdio-jsonl runs are armed; ACP runs have transport-level promptIdle /
+  // absolute timeouts and never touch these methods.
+
+  /** Resolve the phase budgets (env override for tests, `> 0` semantics
+   *  matching the ACP timeout knobs). */
+  private spawnIdleTimeoutsMs(): { model: number; tool: number } {
+    const envModel = Number(process.env.MOLIO_SPAWN_IDLE_TIMEOUT_MS);
+    const envTool = Number(process.env.MOLIO_SPAWN_TOOL_IDLE_TIMEOUT_MS);
+    return {
+      model: envModel > 0 ? envModel : SPAWN_IDLE_MODEL_DEFAULT_MS,
+      tool: envTool > 0 ? envTool : SPAWN_IDLE_TOOL_DEFAULT_MS,
+    };
+  }
+
+  /**
+   * Arm (or re-arm) the idle countdown for a spawn-path run. Called on turn
+   * start (createRun / sendMessage / submitToolResult) and on EVERY emitted
+   * event while armed, so only genuine silence can fire it. The phase budget
+   * is picked at arm time from pendingToolUses (tool phase = a tool_use is
+   * awaiting its tool_result).
+   */
+  private armIdleWatchdog(run: RunState): void {
+    if (TERMINAL_STATUSES.has(run.status)) return;
+    const { model, tool } = this.spawnIdleTimeoutsMs();
+    const inToolPhase = (run.pendingToolUses?.size ?? 0) > 0;
+    const timeoutMs = inToolPhase ? tool : model;
+    run.watchdogArmed = true;
+    if (run.idleWatchdog) clearTimeout(run.idleWatchdog);
+    run.idleWatchdog = setTimeout(() => {
+      run.idleWatchdog = null;
+      this.onSpawnIdleTimeout(run, inToolPhase, timeoutMs);
+    }, timeoutMs);
+  }
+
+  /** Stop the countdown (turn_end of a multiTurn agent, host-answer wait,
+   *  cancel, or any terminal transition). Idempotent. */
+  private disarmIdleWatchdog(run: RunState): void {
+    run.watchdogArmed = false;
+    if (run.idleWatchdog) {
+      clearTimeout(run.idleWatchdog);
+      run.idleWatchdog = null;
+    }
+  }
+
+  /**
+   * The child produced nothing for a full phase budget — treat the run as
+   * hung (2026-10-22: qwen3.8-max blocked on a dead provider request, alive
+   * but 0% CPU for 20+ min; nothing ever terminated the run). Emit a
+   * descriptive error, mark the run failed, and tree-kill the child so a
+   * zombie CLI doesn't outlive the run.
+   */
+  private onSpawnIdleTimeout(run: RunState, inToolPhase: boolean, timeoutMs: number): void {
+    if (TERMINAL_STATUSES.has(run.status)) return;
+    // Disarm FIRST: the error/status events below flow through emitEvent,
+    // which would otherwise re-arm a fresh countdown on a dying run.
+    this.disarmIdleWatchdog(run);
+    const mins = Math.round(timeoutMs / 60_000);
+    const phase = inToolPhase ? '工具执行' : '模型生成';
+    const binarySuffix = run.binaryPath ? ` [binary: ${run.binaryPath}]` : '';
+    console.log(
+      `[runs] idle watchdog fired run=${run.id} agent=${run.agentId} phase=${phase} timeoutMs=${timeoutMs}`,
+    );
+    this.emitEvent(run, {
+      type: 'error',
+      message: `模型无响应：agent 已 ${mins} 分钟无任何输出（${phase}阶段）—— 判定为挂起，已终止该 run${binarySuffix}`,
+    });
+    this.finishRun(run, 'failed', 1, null);
+    // finishRun does not kill the child (the normal callers are child-driven:
+    // close/error handlers). Here the child IS the problem — reap it.
+    killAgentProcessTree(run.child);
+    if (run.child?.stdin?.writable) {
+      try { run.child.stdin.end(); } catch { /* ignore */ }
     }
   }
 

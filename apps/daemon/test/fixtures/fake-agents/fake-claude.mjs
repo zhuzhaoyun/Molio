@@ -20,6 +20,22 @@
 //     burns 10 attempts (~3 min) before giving up; the fake emits attempt 1
 //     immediately so tests can assert fast-fail behavior without waiting.
 //     Use 401/403 for auth failures, 429/500 for transient-retry behavior.
+//
+// Idle-watchdog modes (2026-10-22 qwen-hang incident → RunManager spawn-path
+// idle watchdog tests):
+//   - FAKE_CLAUDE_SILENT_HANG=1: emit system/init, then ABSOLUTE SILENCE and
+//     never exit — mimics a child blocked on a dead provider request (alive
+//     process, 0% CPU, no output). Model-phase hang.
+//   - FAKE_CLAUDE_HANG_IN_TOOL=1: emit init + an assistant tool_use (Bash),
+//     then silence forever — tool-phase hang (tool_use awaiting tool_result).
+//   - FAKE_CLAUDE_DRIP_MS=<n> + FAKE_CLAUDE_DRIP_COUNT=<k>: emit one text
+//     delta every <n> ms; after <k> deltas emit the final assistant + result
+//     and exit. An actively-dripping run must never false-fire the watchdog
+//     even when the total drip duration exceeds the idle timeout — each
+//     delta re-arms the countdown.
+//   - FAKE_CLAUDE_ASK_WAIT=1: emit init + an AskUserQuestion tool_use, then
+//     wait; on the NEXT stdin line (the host answer) emit text + result and
+//     stay alive. The wait-for-human phase must not trip the watchdog.
 
 import { createInterface } from 'node:readline';
 
@@ -43,6 +59,13 @@ const API_RETRY_STATUS = process.env['FAKE_CLAUDE_API_RETRY']
 // event. When enabled, emit stop_reason: null (matching production) so turn_end
 // relies entirely on the result fallback path.
 const REAL_STREAM = process.env['FAKE_CLAUDE_REAL_STREAM'] === '1';
+
+// Idle-watchdog modes (see header comment).
+const SILENT_HANG = process.env['FAKE_CLAUDE_SILENT_HANG'] === '1';
+const HANG_IN_TOOL = process.env['FAKE_CLAUDE_HANG_IN_TOOL'] === '1';
+const ASK_WAIT = process.env['FAKE_CLAUDE_ASK_WAIT'] === '1';
+const DRIP_MS = Number(process.env['FAKE_CLAUDE_DRIP_MS'] || 0);
+const DRIP_COUNT = Number(process.env['FAKE_CLAUDE_DRIP_COUNT'] || 0);
 
 function emit(obj) {
   console.log(JSON.stringify(obj));
@@ -131,6 +154,95 @@ function maybeExit() {
   setTimeout(() => process.exit(0), 50);
 }
 
+// ─── Idle-watchdog modes ────────────────────────────────────────────────────
+
+/** init (+ optional tool_use), then absolute silence forever — never exits. */
+function runWatchdogHang(inTool) {
+  emit({ type: 'system', subtype: 'init', model: 'fake-claude' });
+  if (inTool) {
+    emit({
+      type: 'assistant',
+      message: {
+        id: 'msg-fake-tool',
+        content: [{
+          type: 'tool_use', id: 'toolu_hang', name: 'Bash',
+          input: { command: 'sleep 99999' },
+        }],
+        stop_reason: 'tool_use',
+      },
+    });
+  }
+}
+
+/** Drip text deltas every DRIP_MS; after DRIP_COUNT, finish + exit. */
+function runDrip() {
+  emit({ type: 'system', subtype: 'init', model: 'fake-claude' });
+  let n = 0;
+  const timer = setInterval(() => {
+    n += 1;
+    emit({
+      type: 'stream_event',
+      event: {
+        type: 'content_block_delta',
+        index: 0,
+        delta: { type: 'text_delta', text: `drip${n} ` },
+      },
+    });
+    if (n >= DRIP_COUNT) {
+      clearInterval(timer);
+      emit({
+        type: 'assistant',
+        message: {
+          id: 'msg-fake-drip',
+          content: [{ type: 'text', text: 'drip done' }],
+          stop_reason: 'end_turn',
+        },
+      });
+      emit({
+        type: 'result',
+        usage: { input_tokens: 5, output_tokens: 5 },
+        total_cost_usd: 0.0001,
+        duration_ms: 10,
+      });
+      setTimeout(() => process.exit(0), 50);
+    }
+  }, DRIP_MS);
+}
+
+/** First line: AskUserQuestion tool_use, then wait. Second line (host
+ *  answer): complete the turn. Process stays alive (multi-turn style). */
+function runAskWait(isFirstLine) {
+  if (isFirstLine) {
+    emit({ type: 'system', subtype: 'init', model: 'fake-claude' });
+    emit({
+      type: 'assistant',
+      message: {
+        id: 'msg-fake-ask',
+        content: [{
+          type: 'tool_use', id: 'toolu_ask', name: 'AskUserQuestion',
+          input: { questions: [{ question: 'proceed?', header: 'confirm', options: [] }] },
+        }],
+        stop_reason: 'tool_use',
+      },
+    });
+    return;
+  }
+  emit({
+    type: 'assistant',
+    message: {
+      id: 'msg-fake-ask-2',
+      content: [{ type: 'text', text: 'Thanks for answering!' }],
+      stop_reason: 'end_turn',
+    },
+  });
+  emit({
+    type: 'result',
+    usage: { input_tokens: 5, output_tokens: 5 },
+    total_cost_usd: 0.0001,
+    duration_ms: 10,
+  });
+}
+
 const rl = createInterface({ input: process.stdin });
 
 rl.on('line', () => {
@@ -138,6 +250,23 @@ rl.on('line', () => {
     if (responded) return;
     responded = true;
     runApiRetryLoop();
+    return;
+  }
+  if (SILENT_HANG || HANG_IN_TOOL) {
+    if (responded) return;
+    responded = true;
+    runWatchdogHang(HANG_IN_TOOL);
+    return;
+  }
+  if (ASK_WAIT) {
+    runAskWait(!responded);
+    responded = true;
+    return;
+  }
+  if (DRIP_MS > 0) {
+    if (responded) return;
+    responded = true;
+    runDrip();
     return;
   }
   if (NO_TURN_END && responded) return;
@@ -149,6 +278,7 @@ rl.on('line', () => {
 rl.on('close', () => {
   if (responded) return;
   if (API_RETRY_STATUS) return; // process would already be dead; nothing to do
+  if (SILENT_HANG || HANG_IN_TOOL || ASK_WAIT || DRIP_MS > 0) return;
   runResponse();
   maybeExit();
 });
