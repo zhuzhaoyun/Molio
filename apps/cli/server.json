@@ -7,16 +7,19 @@
     "url": "https://github.com/zhuzhaoyun/Molio",
     "source": "github"
   },
+  "websiteUrl": "https://molio.cn/",
   "version": "0.1.2",
   "packages": [
     {
       "registryType": "npm",
       "identifier": "@molio/cli",
       "version": "0.1.2",
+      "registryBaseUrl": "https://registry.npmjs.org",
+      "runtimeHint": "npx",
       "transport": {
         "type": "stdio"
       },
-      "runtimeArguments": [
+      "packageArguments": [
         {
           "type": "positional",
           "value": "mcp"

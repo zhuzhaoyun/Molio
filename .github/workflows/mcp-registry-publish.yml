@@ -1,0 +1,107 @@
+# 官方 MCP Registry（registry.modelcontextprotocol.io）发布管线
+#
+# 触发：push tag `cli-v*`（与 cli-publish.yml 同 tag），或手动 workflow_dispatch。
+# 只做 Registry 元数据发布——npm 包发布在 cli-publish.yml，两者互不重复。
+#
+# 身份：走 GitHub Actions OIDC（`mcp-publisher login github-oidc`）。Registry 认
+# 「zhuzhaoyun/Molio 仓库的 Actions」= io.github.zhuzhaoyun/* 命名空间的所有者，
+# 无需任何人工登录/token。前置：id-token: write 权限（下方已声明）。
+#
+# 顺序依赖：Registry 会回查 npm 包的 mcpName 做归属验证，所以先轮询等
+# @molio/cli@<version> 在 npmjs 可见（cli-publish.yml 并行跑，通常先完成），
+# 再执行 Registry 发布。
+#
+# server.json 校验：apps/cli/test/registry-assets.test.ts 做结构把关
+#（name/mcpName 一致、版本三处同步、`mcp` 子命令在 packageArguments）。
+
+name: Publish to MCP Registry
+
+on:
+  push:
+    tags: ['cli-v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  registry-publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      id-token: write # OIDC：mcp-publisher login github-oidc 必需
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify server.json version matches package.json
+        shell: bash
+        run: |
+          set -euo pipefail
+          PKG_VERSION=$(node -p "require('./apps/cli/package.json').version")
+          SRV_VERSION=$(node -p "require('./apps/cli/server.json').version")
+          SRV_PKG_VERSION=$(node -p "require('./apps/cli/server.json').packages[0].version")
+          if [[ "$SRV_VERSION" != "$PKG_VERSION" || "$SRV_PKG_VERSION" != "$PKG_VERSION" ]]; then
+            echo "❌ server.json version ($SRV_VERSION / packages[0] $SRV_PKG_VERSION) != package.json ($PKG_VERSION)"
+            echo "   发版前先同步 apps/cli/server.json 两处 version"
+            exit 1
+          fi
+          echo "version: $PKG_VERSION"
+
+      - name: Install mcp-publisher
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsSL "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_linux_amd64.tar.gz" | tar xz mcp-publisher
+          ./mcp-publisher --help
+
+      - name: Wait for npm package visibility
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION=$(node -p "require('./apps/cli/package.json').version")
+          # Registry 归属验证要回查 npm 包的 mcpName；cli-publish.yml 与本 workflow
+          # 同 tag 并行触发，先轮询等 npmjs 可见再发（重试 ~3 分钟）。
+          for i in $(seq 1 18); do
+            PUBLISHED=$(npm view @molio/cli@"$VERSION" version --registry=https://registry.npmjs.org 2>/dev/null || echo "")
+            if [[ "$PUBLISHED" == "$VERSION" ]]; then
+              echo "✅ @molio/cli@$VERSION 已在 npmjs 可见"
+              exit 0
+            fi
+            echo "npm 暂未可见（第 $i/18 次），10s 后重试..."
+            sleep 10
+          done
+          echo "❌ npmjs 上未查到 @molio/cli@$VERSION，Registry 归属验证会失败，中止"
+          exit 1
+
+      - name: Validate server.json
+        working-directory: apps/cli
+        run: ../../mcp-publisher validate
+
+      - name: Login via GitHub OIDC
+        working-directory: apps/cli
+        run: ../../mcp-publisher login github-oidc
+
+      - name: Publish to MCP Registry
+        working-directory: apps/cli
+        run: ../../mcp-publisher publish
+
+      - name: Verify on MCP Registry
+        shell: bash
+        run: |
+          set -euo pipefail
+          NAME=$(node -p "require('./apps/cli/server.json').name")
+          VERSION=$(node -p "require('./apps/cli/server.json').version")
+          for i in $(seq 1 6); do
+            FOUND=$(curl -fsS "https://registry.modelcontextprotocol.io/v0.1/servers?search=${NAME}" \
+              | node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>{const j=JSON.parse(d);const s=(j.servers??[]).find(s=>s.name==='${NAME}');console.log(s&&s.version==='${VERSION}'?'ok':'')}")
+            if [[ "$FOUND" == "ok" ]]; then
+              echo "✅ Registry 已收录 ${NAME}@${VERSION}"
+              exit 0
+            fi
+            echo "Registry 暂未可见（第 $i/6 次），10s 后重试..."
+            sleep 10
+          done
+          echo "❌ Registry 上未查到 ${NAME}@${VERSION}（发布可能失败，可手动 workflow_dispatch 重跑）"
+          exit 1

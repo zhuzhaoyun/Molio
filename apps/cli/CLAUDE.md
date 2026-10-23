@@ -135,6 +135,14 @@ pi/
 git tag cli-v0.1.0 && git push origin cli-v0.1.0
 ```
 
+## 官方 MCP Registry（.github/workflows/mcp-registry-publish.yml）
+
+- **触发**：同 `cli-v*` tag（与 npm 发布并行）或手动 workflow_dispatch。只发 Registry 元数据，npm 发布仍在 cli-publish.yml。
+- **身份**：GitHub Actions OIDC（`mcp-publisher login github-oidc`）——Registry 认「zhuzhaoyun/Molio 的 Actions」= `io.github.zhuzhaoyun/*` 命名空间所有者，**无需人工登录**。本地 gh 账号（协作者）login 是过不了权限校验的。
+- **归属验证**：Registry 回查 npm 包 `package.json` 的 `mcpName`（已随 0.1.2 发布，值 `io.github.zhuzhaoyun/molio`），workflow 先轮询等 npmjs 可见再发。
+- **server.json（包根，不进 npm tarball）**：`name` 必须 == `mcpName`；version 两处 == package.json（发版同步改）；description ≤100 字符；⚠️ `mcp` 子命令放 **packageArguments**（传给 molio 二进制），不是 runtimeArguments（传给 npx）——放错则客户端装完启动的是 CLI 主命令而非 MCP server。结构校验在 `test/registry-assets.test.ts`。
+- **发布后**：`curl "https://registry.modelcontextprotocol.io/v0.1/servers?search=io.github.zhuzhaoyun/molio"` 回查；Glama/PulseMCP 等目录自动爬取官方 Registry。
+
 ## 命令
 
 ```bash
