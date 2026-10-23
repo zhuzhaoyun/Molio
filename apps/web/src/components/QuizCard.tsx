@@ -34,7 +34,8 @@ interface Props {
 /**
  * Quiz 交互块（交互块注册表的第一个块）。
  *
- * 只解析 JSON，不执行任何代码；题干/选项/解析都由 React 文本节点渲染。
+ * 只解析 JSON，不执行任何代码；题干/选项/解析经 renderMarkdown 渲染
+ * （先转义 HTML 再生成受控标签，与聊天正文同一信任级）。
  * 判分在本地完成（不依赖 runtime 工具调用），提交后可重做、可存题库。
  */
 export function QuizCard({ raw, complete, streaming, conversationId }: Props) {
@@ -236,7 +237,13 @@ function QuizBody({
               )}
             </div>
 
-            <div className="quiz-stem" data-testid="quiz-stem">{question.stem}</div>
+            {/* 题干走受控 markdown（renderMarkdown 先转义 HTML）：图片/加粗/
+                上下标等才能显示；`____` 空位标记不受强调语法影响。 */}
+            <div
+              className="quiz-stem"
+              data-testid="quiz-stem"
+              dangerouslySetInnerHTML={{ __html: renderMarkdown(question.stem) }}
+            />
 
             <div className="quiz-options">
               {question.options.map((option) => {
@@ -261,7 +268,10 @@ function QuizBody({
                     onClick={() => toggle(question.id, question.type, option.key)}
                   >
                     <span className="quiz-option-key">{option.key}</span>
-                    <span className="quiz-option-text">{option.text}</span>
+                    <span
+                      className="quiz-option-text"
+                      dangerouslySetInnerHTML={{ __html: renderMarkdown(option.text) }}
+                    />
                   </button>
                 );
               })}

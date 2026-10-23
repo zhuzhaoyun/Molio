@@ -1915,13 +1915,19 @@
 .quiz-result { margin-left: auto; font-size: 12px; font-weight: 600; }
 .quiz-result.correct { color: var(--green); }
 .quiz-result.wrong { color: var(--red); }
+/* 题干/选项经 renderMarkdown 输出受控 HTML：<p>/<img>/<strong> 等。
+ * 原先的 white-space: pre-wrap 由 markdown 的 <br>/<p> 接管，不再需要。 */
 .quiz-stem {
   margin-bottom: 10px;
   font-size: 14px;
   line-height: 1.6;
   color: var(--text);
-  white-space: pre-wrap;
 }
+.quiz-stem p { margin: 0 0 6px; }
+.quiz-stem p:last-child { margin-bottom: 0; }
+.quiz-stem img { max-width: 100%; height: auto; border-radius: var(--radius-sm); }
+.quiz-stem table { margin: 4px 0; }
+.quiz-option-text p { margin: 0; display: inline; }
 .quiz-options { display: flex; flex-direction: column; gap: 6px; }
 .quiz-option {
   display: flex;

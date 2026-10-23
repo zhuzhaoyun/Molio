@@ -385,6 +385,54 @@ test.describe('Quiz interaction block', () => {
     await page.unroute('**/api/knowledge/vaults/vault-1/files/**');
   });
 
+  test('renders markdown in stem and options (image, bold, blank marker)', async ({ page }) => {
+    // 题干/选项走受控 markdown：图片语法出 <img>、加粗出 <strong>；
+    // `____` 空位标记不得被强调语法吃掉（renderMarkdown 只认 `*`）。
+    const markdownQuiz = `\`\`\`quiz
+{
+  "version": 1,
+  "title": "markdown 渲染 · 1 题",
+  "questions": [
+    {
+      "id": "m1",
+      "type": "single",
+      "stem": "如图 ![温度计](raw/thermometer.png) 所示，标准番茄钟专注 **25 分钟**，即____。",
+      "options": [
+        { "key": "A", "text": "**25 分钟**" },
+        { "key": "B", "text": "45 分钟" }
+      ],
+      "answer": ["A"],
+      "explanation": "解析。",
+      "sources": [{ "path": "notes/番茄工作法.md" }]
+    }
+  ]
+}
+\`\`\``;
+    await mockChatRun(page, {
+      runId: 'run-1',
+      conversationId: 'conv-1',
+      script: [
+        { type: 'status', label: 'running' },
+        { type: 'text_delta', delta: markdownQuiz },
+        { type: 'turn_end', stopReason: 'end_turn' },
+      ],
+    });
+    await gotoHome(page);
+    await sendMessage(page, '出几道题');
+
+    const card = page.locator('[data-testid="quiz-card"]');
+    await expect(card).toBeVisible({ timeout: 10_000 });
+
+    const stem = card.locator('[data-testid="quiz-stem"]');
+    await expect(stem.locator('img')).toHaveAttribute('src', 'raw/thermometer.png');
+    await expect(stem.locator('strong')).toHaveText('25 分钟');
+    await expect(stem).toContainText('____');
+
+    await expect(
+      card.locator('[data-testid="quiz-option"][data-key="A"] .quiz-option-text strong'),
+    ).toHaveText('25 分钟');
+  });
+
   test('appends a sequence number when the quiz filename already exists', async ({ page }) => {
     let savedUrl: string | null = null;
 
