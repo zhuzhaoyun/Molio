@@ -238,6 +238,28 @@ pnpm build        # 构建所有子包
 pnpm test:e2e     # E2E 测试 (需先启动 pnpm dev)
 ```
 
+### 🔌 MCP server & Pi 插件
+
+Molio 知识库同时是一个只读 MCP server，Claude Code、Cursor、Pi 以及任何兼容 MCP 的 agent 都能在对话中搜索、读取你本机的知识库：
+
+```bash
+npx -y @molio/cli mcp                            # stdio MCP server，7 个只读工具
+claude mcp add molio -- npx -y @molio/cli mcp    # 注册到 Claude Code
+pi install npm:@molio/cli                        # Pi：自动注册 server + 附带 `molio-kb` 技能
+```
+
+其他 MCP 客户端：
+
+```json
+{
+  "mcpServers": {
+    "molio": { "command": "npx", "args": ["-y", "@molio/cli", "mcp"] }
+  }
+}
+```
+
+工具：`molio_status`、`kb_vaults`、`kb_tree`、`kb_read`、`kb_search`、`kb_ask_start`、`kb_ask_poll`——全部只读，已发布到官方 MCP Registry（`io.github.zhuzhaoyun/molio`）。需 Molio 服务（桌面端或 Docker）处于运行状态。详见 [`apps/cli/README.md`](apps/cli/README.md) · [npm: @molio/cli](https://www.npmjs.com/package/@molio/cli)
+
 ### 🧩 DeepSeek Harness (dsh) 插件
 
 Molio 知识库同时封装为 DeepSeek Harness (dsh) 的只读插件，dsh agent 可在对话中直接搜索、读取你本机的 Molio 知识库：

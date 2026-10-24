@@ -238,6 +238,28 @@ pnpm build        # Build all packages
 pnpm test:e2e     # E2E tests (requires pnpm dev running)
 ```
 
+### 🔌 MCP server & Pi package
+
+Molio's knowledge base is also available as a read-only MCP server, so Claude Code, Cursor, Pi, and any MCP-compatible agent can search and read your local vaults mid-conversation:
+
+```bash
+npx -y @molio/cli mcp                            # stdio MCP server, 7 read-only tools
+claude mcp add molio -- npx -y @molio/cli mcp    # register it in Claude Code
+pi install npm:@molio/cli                        # Pi: auto-registers the server + a `molio-kb` skill
+```
+
+Any other MCP client:
+
+```json
+{
+  "mcpServers": {
+    "molio": { "command": "npx", "args": ["-y", "@molio/cli", "mcp"] }
+  }
+}
+```
+
+Tools: `molio_status`, `kb_vaults`, `kb_tree`, `kb_read`, `kb_search`, `kb_ask_start`, `kb_ask_poll` — strictly read-only, published to the official MCP Registry as `io.github.zhuzhaoyun/molio`. Requires a running Molio service (desktop app or Docker). Details: [`apps/cli/README.md`](apps/cli/README.md) · [npm: @molio/cli](https://www.npmjs.com/package/@molio/cli)
+
 ### 🧩 DeepSeek Harness (dsh) plugin
 
 Molio's knowledge base is also available as a read-only plugin for DeepSeek Harness (dsh), so dsh agents can search and read your local Molio vaults during a conversation:
