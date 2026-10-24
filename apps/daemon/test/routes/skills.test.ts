@@ -2,7 +2,7 @@ import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { mkdtempSync, rmSync, existsSync } from 'node:fs';
+import { mkdtempSync, rmSync, existsSync, writeFileSync } from 'node:fs';
 import { Hono } from 'hono';
 import type Database from 'better-sqlite3';
 import { skillsRoutes } from '../../src/routes/skills.js';
@@ -277,6 +277,117 @@ describe('Skills routes', () => {
       body: JSON.stringify({ raw: 'x', folderPath: 'y' }),
     });
     assert.equal(both.status, 400);
+  });
+
+  it('POST /preview-import on a valid dir → ok preview + files', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'molio-skill-preview-'));
+    try {
+      writeFileSync(join(dir, 'SKILL.md'), '---\nname: 预览技能\ndescription: d\n---\n\nbody\n', 'utf8');
+      writeFileSync(join(dir, 'ref.md'), 'r\n', 'utf8');
+      const res = await app.request('/api/skills/preview-import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ folderPath: dir }),
+      });
+      assert.equal(res.status, 200);
+      const data = await json(res);
+      const preview = data['preview'] as Record<string, unknown>;
+      assert.equal(preview['ok'], true);
+      assert.equal(preview['name'], '预览技能');
+      assert.equal((preview['files'] as unknown[]).length, 2);
+      assert.equal(data['conflict'], null);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('POST /preview-import without SKILL.md → ok=false + NO_ENTRY; missing path → SOURCE_UNREADABLE', async () => {
+    const empty = mkdtempSync(join(tmpdir(), 'molio-skill-preview-empty-'));
+    try {
+      const res = await app.request('/api/skills/preview-import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ folderPath: empty }),
+      });
+      assert.equal(res.status, 200);
+      const data = await json(res);
+      const preview = data['preview'] as { ok: boolean; issues: { code: string }[] };
+      assert.equal(preview.ok, false);
+      assert.equal(preview.issues[0]?.code, 'NO_ENTRY');
+    } finally {
+      rmSync(empty, { recursive: true, force: true });
+    }
+
+    const missing = await app.request('/api/skills/preview-import', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ folderPath: '/definitely/not/here' }),
+    });
+    assert.equal(missing.status, 200);
+    const missingData = await json(missing);
+    const missingPreview = missingData['preview'] as { issues: { code: string }[] };
+    assert.equal(missingPreview.issues[0]?.code, 'SOURCE_UNREADABLE');
+  });
+
+  it('POST /preview-import XOR guard → 400', async () => {
+    const both = await app.request('/api/skills/preview-import', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ raw: 'x', folderPath: '/tmp' }),
+    });
+    assert.equal(both.status, 400);
+    const neither = await app.request('/api/skills/preview-import', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    assert.equal(neither.status, 400);
+  });
+
+  it('POST /preview-import reports a case-insensitive name conflict', async () => {
+    const created = await app.request('/api/skills', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: '冲突名', description: '', instructions: 'body' }),
+    });
+    const existing = (await json(created))['skill'] as SkillManifestEntry;
+    const dir = mkdtempSync(join(tmpdir(), 'molio-skill-preview-conflict-'));
+    try {
+      writeFileSync(join(dir, 'SKILL.md'), '---\nname: 冲突名 \ndescription: d\n---\n\nbody\n', 'utf8');
+      const res = await app.request('/api/skills/preview-import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ folderPath: dir }),
+      });
+      const data = await json(res);
+      assert.deepEqual(data['conflict'], { existingId: existing.id, existingName: existing.name });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+      await app.request(`/api/skills/${existing.id}`, { method: 'DELETE' });
+    }
+  });
+
+  it('POST /import honors name/description overrides; non-string name → 400', async () => {
+    const created = await app.request('/api/skills/import', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ raw: '---\nname: 原名\n---\n\nbody\n', name: '覆盖名', description: '覆盖描述' }),
+    });
+    assert.equal(created.status, 201);
+    const skill = (await json(created))['skill'] as SkillManifestEntry;
+    try {
+      assert.equal(skill.name, '覆盖名');
+      assert.equal(skill.description, '覆盖描述');
+    } finally {
+      await app.request(`/api/skills/${skill.id}`, { method: 'DELETE' });
+    }
+
+    const badName = await app.request('/api/skills/import', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ raw: 'body', name: 123 }),
+    });
+    assert.equal(badName.status, 400);
   });
 
   it('POST /prefill with empty content → 400', async () => {
