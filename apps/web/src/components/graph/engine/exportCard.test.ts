@@ -228,6 +228,48 @@ describe('computeCardLayout', () => {
   });
 });
 
+// ── 页脚不溢出（真实案例 2026-10-24：大图导出后图例/署名被卡底裁掉近半）──
+//
+// 根因：footerH 没把「图底 → 分隔线」的空隙算进预留，而图例基线按
+// ruleY + 0.55×footerH + 0.36×legendFont 定位。legendFont 被 clamp 到上限 30
+// （导出位图长边 ≥ ~2000 就命中——resolveExportScale 的目标长边恰是 2000），
+// pad 继续随宽度按 4.5% 长，基线整个沉到卡底之下。
+// 尺寸取导出位图的真实区间：目标长边 2000、上限 4096，外加免倍率的小图。
+
+describe('computeCardLayout 页脚不溢出', () => {
+  const cases = [
+    { graphW: 800, graphH: 600 },
+    { graphW: 1200, graphH: 800 },
+    { graphW: 2000, graphH: 1300 },
+    { graphW: 2048, graphH: 2048 },
+    { graphW: 2880, graphH: 1800 },
+    { graphW: 3500, graphH: 2400 },
+    { graphW: 4096, graphH: 4096 },
+  ];
+
+  for (const { graphW, graphH } of cases) {
+    it(`图例与署名的字身留在卡内（${graphW}x${graphH}）`, () => {
+      for (const aspect of ['natural', 'square', 'portrait', 'wide'] as const) {
+        const layout = computeCardLayout({ graphW, graphH, aspect, hasTopics: true });
+        assert.ok(layout, `${graphW}x${graphH} ${aspect}`);
+        // drawCard 的基线 = legendY + 0.36×legendFont；CJK 字身还要再往下探 ~0.25em
+        const baseline = layout.legendY + Math.round(layout.legendFont * 0.36);
+        const bottom = baseline + layout.legendFont * 0.25;
+        assert.ok(
+          bottom <= layout.height,
+          `${graphW}x${graphH} ${aspect}: 字底 ${bottom.toFixed(1)} 超出卡底 ${layout.height}` +
+            `（legendY=${layout.legendY} f=${layout.legendFont} pad=${layout.pad}）`,
+        );
+        // 圆点同样不许出界
+        assert.ok(
+          layout.legendY + layout.legendDot / 2 <= layout.height,
+          `${graphW}x${graphH} ${aspect}: 图例圆点出界`,
+        );
+      }
+    });
+  }
+});
+
 // ── drawCard ──
 
 class FakeCtx {
