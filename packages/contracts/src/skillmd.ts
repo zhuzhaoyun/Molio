@@ -30,6 +30,8 @@ export interface ParsedSkillMd {
   name: string;
   description: string;
   instructions: string;
+  /** True when `name` was explicitly set in frontmatter (not the heading fallback). */
+  nameFromFrontmatter?: boolean;
 }
 
 /** Collapse newlines so name/description stay valid single-line frontmatter values. */
@@ -108,9 +110,10 @@ export function stripFrontmatter(content: string): string {
  */
 export function parseSkillMd(content: string): ParsedSkillMd {
   const { frontmatter, body } = splitFrontmatter(content);
-  const name = (frontmatterField(frontmatter, 'name') ?? '').trim() || firstHeadingText(body);
+  const fmName = (frontmatterField(frontmatter, 'name') ?? '').trim();
+  const name = fmName || firstHeadingText(body);
   const description = frontmatterField(frontmatter, 'description') ?? '';
-  return { name, description, instructions: body.trim() };
+  return { name, description, instructions: body.trim(), nameFromFrontmatter: !!fmName };
 }
 
 /**

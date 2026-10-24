@@ -61,6 +61,9 @@ export interface UpdateSkillRequest {
 export interface ImportSkillRequest {
   raw?: string;
   folderPath?: string;
+  /** Preview-card edits — non-empty values override what was parsed from the content. */
+  name?: string;
+  description?: string;
 }
 
 export interface PrefillRequest {
@@ -69,6 +72,49 @@ export interface PrefillRequest {
 }
 
 // ─── Response types ───
+
+export type SkillImportIssueCode =
+  | 'NO_ENTRY'
+  | 'EMPTY_BODY'
+  | 'SOURCE_UNREADABLE'
+  | 'TOO_MANY_FILES'
+  | 'TOO_LARGE'
+  | 'NAME_FALLBACK'
+  | 'DESCRIPTION_FALLBACK';
+
+export interface SkillImportIssue {
+  level: 'error' | 'warning';
+  code: SkillImportIssueCode;
+  /** Daemon-side zh fallback copy. The UI maps `code` → i18n copy; message is for unknown codes/logs. */
+  message: string;
+}
+
+export interface SkillImportPreview {
+  /** No error-level issues — import may proceed. */
+  ok: boolean;
+  name: string;
+  /** True when the name did NOT come from SKILL.md frontmatter (heading/basename/default fallback). */
+  nameFallback: boolean;
+  description: string;
+  descriptionFallback: boolean;
+  /** Entry file relative path ('SKILL.md' or the single .md's name); null when unresolved. */
+  entryFile: string | null;
+  /** Entry file + siblings, relative posix paths, sorted. */
+  files: { path: string; size: number }[];
+  truncated: boolean;
+  issues: SkillImportIssue[];
+}
+
+/** Name collides with an existing library skill (trim + case-insensitive). */
+export interface SkillImportConflict {
+  existingId: string;
+  existingName: string;
+}
+
+export interface SkillImportPreviewResponse {
+  preview: SkillImportPreview;
+  conflict: SkillImportConflict | null;
+}
 
 export interface PrefillResult {
   name: string;
