@@ -5,6 +5,7 @@ import { useActiveVaultId } from '../stores/vaultStore';
 import { useWikiLinkClick } from '../hooks/useWikiLinkClick';
 import { CodeBlock } from './CodeBlock';
 import { renderMarkdown } from '../utils/markdown';
+import { preprocessLocalImages } from '../utils/kbImage';
 import { saveQuizToVault } from '../utils/quizFile';
 import {
   parseQuizBlock,
@@ -90,6 +91,13 @@ function QuizBody({
   const { t } = useI18n();
   const vaultId = useActiveVaultId();
   const handleWikiLinkClick = useWikiLinkClick();
+
+  // 题干/选项/解析里的 ![alt](库内相对路径) 改写成 daemon raw URL 才能真正加载
+  // （KB 查看器同款规则，见 utils/kbImage.ts）。无活跃库时保持原文。
+  const renderQuizMarkdown = useCallback(
+    (text: string) => renderMarkdown(vaultId ? preprocessLocalImages(text, vaultId) : text),
+    [vaultId],
+  );
 
   const [fingerprint, setFingerprint] = useState<string | null>(null);
   const [selections, setSelections] = useState<QuizSelections>({});
@@ -310,7 +318,7 @@ function QuizBody({
             <div
               className="quiz-stem"
               data-testid="quiz-stem"
-              dangerouslySetInnerHTML={{ __html: renderMarkdown(question.stem) }}
+              dangerouslySetInnerHTML={{ __html: renderQuizMarkdown(question.stem) }}
             />
 
             <div className="quiz-options">
@@ -395,7 +403,7 @@ function QuizBody({
                     <span className="quiz-option-key">{option.key}</span>
                     <span
                       className="quiz-option-text"
-                      dangerouslySetInnerHTML={{ __html: renderMarkdown(option.text) }}
+                      dangerouslySetInnerHTML={{ __html: renderQuizMarkdown(option.text) }}
                     />
                   </button>
                 );
@@ -412,7 +420,7 @@ function QuizBody({
               <div className="quiz-explanation" data-testid="quiz-explanation">
                 <div className="quiz-section-label">{t('quiz.explanation')}</div>
                 {/* renderMarkdown 先转义 HTML，再生成受控标签。 */}
-                <div dangerouslySetInnerHTML={{ __html: renderMarkdown(question.explanation) }} />
+                <div dangerouslySetInnerHTML={{ __html: renderQuizMarkdown(question.explanation) }} />
               </div>
             )}
 

@@ -6,7 +6,7 @@ const VAULT = 'vault-1';
 const ORIGIN = 'http://localhost:5173';
 
 /** The URL preprocessLocalImages would emit for `path`. */
-const raw = (path: string) => `${ORIGIN}/api/knowledge/vaults/${VAULT}/raw/${encodeURIComponent(path)}`;
+const raw = (path: string) => `${ORIGIN}/api/knowledge/vaults/${VAULT}/raw/${encodeURIComponent(path).replace(/[()]/g, (ch) => ch === '(' ? '%28' : '%29')}`;
 
 describe('resolveNoteRelative', () => {
   it('resolves against the note own folder (Obsidian rule)', () => {
@@ -74,6 +74,15 @@ describe('preprocessLocalImages', () => {
       `![a](${raw('wiki/图 (1).png')} "caption")`);
     assert.equal(preprocessLocalImages('![a](图 1.png)', VAULT, 'wiki/a.md', ORIGIN),
       `![a](${raw('wiki/图 1.png')})`);
+  });
+
+  it('percent-encodes parentheses in the emitted URL so naive markdown parsers keep the link intact', () => {
+    // encodeURIComponent 不转义 `()`；字面括号会截断 renderMarkdown 的
+    // `![..](..)` 行内正则（聊天侧），必须全部转成 %28/%29（daemon 解码一次，等价）。
+    const out = preprocessLocalImages('![图](图 (1).png)', VAULT, undefined, ORIGIN);
+    assert.equal(out, `![图](${raw('图 (1).png')})`);
+    // 掐掉 markdown 语法自身的收尾 `)`，URL 部分不得残留字面括号。
+    assert.ok(!/[()]/.test(out.slice(out.indexOf('/raw/'), -1)), 'raw URL 内不得残留字面括号');
   });
 
   it('preserves literal image examples in fenced and inline code', () => {

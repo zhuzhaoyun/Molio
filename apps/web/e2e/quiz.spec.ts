@@ -12,6 +12,20 @@ import { mockChatRun, unmockAll } from './helpers/mock-sse';
 
 const VAULT_ID = 'vault-1';
 
+// 1×1 透明 PNG —— 让 raw 路由 mock 返回真实可解码的图片字节，
+// 断言 naturalWidth 才能证明「真的加载了」而不只是 src 对。
+const TINY_PNG = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==',
+  'base64',
+);
+
+/** 拦截 raw 文件请求并回一张真 PNG（模拟 daemon /raw/* 的行为）。 */
+async function mockRawImage(page: import('@playwright/test').Page): Promise<void> {
+  await page.route('**/api/knowledge/vaults/vault-1/raw/**', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'image/png', body: TINY_PNG });
+  });
+}
+
 const QUIZ_MARKDOWN = `我来出 3 道题，检验一下对材料的理解。
 
 \`\`\`quiz
@@ -417,6 +431,7 @@ test.describe('Quiz interaction block', () => {
         { type: 'turn_end', stopReason: 'end_turn' },
       ],
     });
+    await mockRawImage(page);
     await gotoHome(page);
     await sendMessage(page, '出几道题');
 
@@ -424,13 +439,44 @@ test.describe('Quiz interaction block', () => {
     await expect(card).toBeVisible({ timeout: 10_000 });
 
     const stem = card.locator('[data-testid="quiz-stem"]');
-    await expect(stem.locator('img')).toHaveAttribute('src', 'raw/thermometer.png');
+    // 库内相对路径被改写成 daemon raw URL 且真实加载（KB 查看器同款规则）。
+    await expect(stem.locator('img')).toHaveAttribute(
+      'src',
+      /\/api\/knowledge\/vaults\/vault-1\/raw\/raw%2Fthermometer\.png$/,
+    );
+    await expect(stem.locator('img')).toHaveJSProperty('naturalWidth', 1);
     await expect(stem.locator('strong')).toHaveText('25 分钟');
     await expect(stem).toContainText('____');
 
     await expect(
       card.locator('[data-testid="quiz-option"][data-key="A"] .quiz-option-text strong'),
     ).toHaveText('25 分钟');
+  });
+
+  test('rewrites chat prose images to loadable raw URLs', async ({ page }) => {
+    // 助手正文里的 ![alt](库相对路径) 同样走改写——聊天里模型贴的库内图片能直接看。
+    const markdown = `先看示意图：\n\n![质心示意图](图/质心.png)\n\n图中红点即质心位置。`;
+    await mockChatRun(page, {
+      runId: 'run-1',
+      conversationId: 'conv-1',
+      script: [
+        { type: 'status', label: 'running' },
+        { type: 'text_delta', delta: markdown },
+        { type: 'turn_end', stopReason: 'end_turn' },
+      ],
+    });
+    await mockRawImage(page);
+    await gotoHome(page);
+    await sendMessage(page, '给我画个图');
+
+    const prose = page.locator('[data-testid="assistant-prose"]');
+    const img = prose.locator('img');
+    await expect(img).toHaveAttribute(
+      'src',
+      /\/api\/knowledge\/vaults\/vault-1\/raw\/%E5%9B%BE%2F%E8%B4%A8%E5%BF%83\.png$/,
+    );
+    await expect(img).toHaveJSProperty('naturalWidth', 1);
+    await expect(prose).toContainText('图中红点即质心位置');
   });
 
   test('supports fill-in-blank: submit disabled until text, normalized match, reference answer on wrong', async ({ page }) => {

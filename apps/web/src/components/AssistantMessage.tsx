@@ -1,6 +1,8 @@
 import { useMemo, useState } from 'react';
 import type { ChatMessage } from '../hooks/useChatCore';
 import { renderMarkdown, splitContent } from '../utils/markdown';
+import { preprocessLocalImages } from '../utils/kbImage';
+import { useActiveVaultId } from '../stores/vaultStore';
 import { groupTools, isInteractive } from '../utils/toolGroups';
 import { splitMessageParts } from '../utils/messageText';
 import { extractSandboxSuggest } from '../utils/ruleSandbox';
@@ -44,6 +46,7 @@ interface Props {
 
 export function AssistantMessage({ message, isLast, onAnswerToolUse, onSubmitForm, onRegenerate, onContinue, onRequestDelete, conversationId, highlightSave }: Props) {
   const { t } = useI18n();
+  const vaultId = useActiveVaultId();
   const selectMode = useSelectMode();
   const selected = useIsSelected(message.id);
 
@@ -202,7 +205,12 @@ export function AssistantMessage({ message, isLast, onAnswerToolUse, onSubmitFor
         >
           {segments.map((seg, i) => {
             if (seg.type === 'text') {
-              return <div key={i} dangerouslySetInnerHTML={{ __html: renderMarkdown(seg.content) }} />;
+              // 正文里的 ![alt](库内相对路径) 改写成 raw URL 才能加载（与 QuizCard、
+              // KB 查看器同款规则）；无活跃库时保持原文。
+              const html = vaultId
+                ? renderMarkdown(preprocessLocalImages(seg.content, vaultId))
+                : renderMarkdown(seg.content);
+              return <div key={i} dangerouslySetInnerHTML={{ __html: html }} />;
             }
             if (seg.type === 'quiz') {
               return (
