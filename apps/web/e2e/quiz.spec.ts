@@ -495,7 +495,7 @@ test.describe('Quiz interaction block', () => {
     await expect(card.locator('[data-testid="quiz-explanation"]')).toContainText('25 分钟');
   });
 
-  test('offers a symbol palette and folds ascii notation when grading fill answers', async ({ page }) => {
+  test('offers a summoned symbol tray per fill question and folds ascii notation', async ({ page }) => {
     const symbolQuiz = `\`\`\`quiz
 {
   "version": 1,
@@ -532,16 +532,29 @@ test.describe('Quiz interaction block', () => {
     await expect(card).toBeVisible({ timeout: 10_000 });
     const inputs = card.locator('[data-testid="quiz-fill-input"]');
 
-    // 符号面板：默认行可见；点 √ 在输入框插入字符。
-    const bar = card.locator('[data-testid="quiz-symbol-bar"]').first();
-    await expect(bar).toBeVisible();
-    await card.locator('[data-testid="quiz-symbol-btn"][data-char="√"]').first().click();
-    await expect(inputs.nth(0)).toHaveValue('√');
-    await inputs.nth(0).fill('√2/2');
+    // 默认零占用：托盘要点「符号」才出现。
+    await expect(card.locator('[data-testid="quiz-symbol-tray"]')).toHaveCount(0);
+    await card.locator('[data-testid="quiz-symbol-trigger"]').nth(0).click();
 
-    // 「更多」展开分组（理工科组：希腊/集合与逻辑/单位与箭头）。
-    await card.locator('[data-testid="quiz-symbol-more"]').first().click();
-    await expect(card.locator('[data-testid="quiz-symbol-btn"][data-char="α"]').first()).toBeVisible();
+    const sy1Tray = card.locator('[data-fill-scope="sy1"] [data-testid="quiz-symbol-tray"]');
+    await expect(sy1Tray).toBeVisible();
+    await expect(sy1Tray.locator('[data-testid="quiz-symbol-btn"][data-char="√"]')).toBeVisible();
+
+    // 点符号插入，托盘保持打开（连续插入多个符号）。
+    await sy1Tray.locator('[data-testid="quiz-symbol-btn"][data-char="√"]').click();
+    await expect(inputs.nth(0)).toHaveValue('√');
+    await expect(sy1Tray).toBeVisible();
+
+    // 直接切第 2 题：第 1 题托盘关、第 2 题开（一次只开一个）。
+    await card.locator('[data-testid="quiz-symbol-trigger"]').nth(1).click();
+    await expect(sy1Tray).toHaveCount(0);
+    await expect(card.locator('[data-fill-scope="sy2"] [data-testid="quiz-symbol-tray"]')).toHaveCount(1);
+
+    // 点外部关闭。
+    await card.locator('[data-testid="quiz-title"]').click();
+    await expect(card.locator('[data-testid="quiz-symbol-tray"]')).toHaveCount(0);
+
+    await inputs.nth(0).fill('√2/2');
 
     // 记法折叠：键盘顺手写法 pi/4 判对 π/4。
     await inputs.nth(1).fill('pi/4');
