@@ -195,7 +195,15 @@ export function computeCardLayout(input: CardLayoutInput): CardLayout | null {
   const headerBottom = includeInfo
     ? (hasTopics ? topicsY : metaY) + Math.round(smallFont * 0.9) + Math.round(pad * 0.4)
     : pad;
-  const footerH = Math.round(legendFont * 2.2) + Math.round(pad * 0.3);
+  // 页脚带的预留必须覆盖它的全部消费：「图底 → 分隔线」空隙 + 图例行自身
+  // + 行下到卡底的呼吸空间。漏掉空隙时（2026-10-24 真实案例）基线按
+  // ruleY + 0.55×footerH 定位后正好把预留花光，legendFont 一被 clamp 到
+  // 上限（导出位图长边 ≥ ~2000 就命中）基线就沉到卡底之下，图例和署名
+  // 被裁掉近半。三项分列后可证任何尺寸都安全：基线下的字身 ≈ 0.61×f，
+  // 而图例行自身留了 2.2×f，永远盖得住。
+  const footerGap = Math.round(pad * 0.35);
+  const legendRowH = Math.round(legendFont * 2.2);
+  const footerH = footerGap + legendRowH + Math.round(pad * 0.3);
 
   const naturalH = headerBottom + graphH + footerH;
   const height =
@@ -221,8 +229,10 @@ export function computeCardLayout(input: CardLayoutInput): CardLayout | null {
     h: drawH,
   };
 
-  const ruleY = graphBox.y + graphBox.h + Math.round(pad * 0.35);
-  const legendY = ruleY + Math.round(footerH * 0.55);
+  const ruleY = graphBox.y + graphBox.h + footerGap;
+  // 图例在「分隔线 → 卡底」的子带内取中，不能按整个 footerH 取中——
+  // 那会把空隙二次摊进行位置，正是溢出的来源。
+  const legendY = ruleY + Math.round(legendRowH * 0.55);
 
   return {
     width,

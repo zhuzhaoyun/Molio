@@ -74,7 +74,13 @@ describe('skills/prefill prefillFromContent', () => {
       const runManager = {
         createRun: (o: { cwd?: string; onTurnComplete?: (text: string) => void }) => {
           capturedCwd = o.cwd;
-          o.onTurnComplete?.(JSON.stringify({ name: 'N', description: 'D', instructions: 'I' }));
+          // 真实 RunManager 的 onTurnComplete 由流事件驱动，永远在 createRun
+          // 返回之后异步触发。这里若同步触发，settle() 会赶在 prefill 内部
+          // timeout 定时器赋值之前执行，留下 30s 悬挂定时器拖住测试进程
+          // （此文件曾在全量并行下因此撞上 --test-timeout=30000 被判 flaky）。
+          queueMicrotask(() =>
+            o.onTurnComplete?.(JSON.stringify({ name: 'N', description: 'D', instructions: 'I' })),
+          );
           return Promise.resolve('run-1');
         },
         onEvent: () => () => {},
@@ -84,8 +90,11 @@ describe('skills/prefill prefillFromContent', () => {
       } as unknown as RunManager;
 
       const result = await prefillFromContent('content', runManager, { molioHome: blockedAsFile });
-      // The orphan-cancel runs in createRun().then() — a microtask behind the
-      // settle; drain the queue before asserting on it.
+      // queueMicrotask 排在 createRun 返回的 .then() 反应之前：settle()
+      // 执行时 runId 仍是 null，cancel 实际走 .then() 里的孤儿取消分支
+      // （与修复前同一条路径，覆盖不变）。真实 RunManager 的回调是宏任务，
+      // 排在 .then() 之后，走 settle 内的正常取消路径——该路径目前无测试
+      // 覆盖（既有空洞，不在本文件范围）。drain 队列让 cancel 对断言可见。
       await new Promise((r) => setImmediate(r));
 
       assert.equal(capturedCwd, os.tmpdir(), 'scratch cwd falls back to os.tmpdir()');

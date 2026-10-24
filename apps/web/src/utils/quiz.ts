@@ -9,11 +9,14 @@ export const QUIZ_PROTOCOL_VERSION = 1;
 export const MAX_QUIZ_RAW_CHARS = 512_000;
 export const MAX_QUIZ_QUESTIONS = 100;
 export const MAX_QUIZ_OPTIONS = 8;
-/** 与 daemon /api/quiz/attempts 的上限保持一致：渲染放行、落库拒绝 = 答题记录静默丢失。 */
+/** fill 可接受写法个数上限（第 1 个是标准答案，其余为同义写法）。 */
+export const MAX_FILL_ANSWERS = 8;
+/** 与 daemon /api/quiz/attempts 的上限保持一致：渲染放行、落库拒绝 = 答题记录静默丢失。
+ *  同时约束 fill：答案写法每项 ≤64，用户输入框 maxLength 也用它。 */
 export const MAX_QUIZ_KEY_CHARS = 64;
 export const MAX_QUIZ_ID_CHARS = 200;
 
-export type QuizQuestionType = 'single' | 'multiple' | 'judge';
+export type QuizQuestionType = 'single' | 'multiple' | 'judge' | 'fill';
 
 export interface QuizOption {
   key: string;
@@ -138,7 +141,7 @@ function parseQuestion(raw: unknown):
   if (raw.id.trim().length > MAX_QUIZ_ID_CHARS) {
     return { ok: false, error: `题目 id 超过 ${MAX_QUIZ_ID_CHARS} 字符上限` };
   }
-  if (raw.type !== 'single' && raw.type !== 'multiple' && raw.type !== 'judge') {
+  if (raw.type !== 'single' && raw.type !== 'multiple' && raw.type !== 'judge' && raw.type !== 'fill') {
     return { ok: false, error: '不支持的题型' };
   }
   if (!nonEmptyString(raw.stem)) return { ok: false, error: '缺少题干' };
@@ -146,6 +149,13 @@ function parseQuestion(raw: unknown):
   let options: QuizOption[];
   if (raw.type === 'judge' && raw.options == null) {
     options = JUDGE_OPTIONS.map((option) => ({ ...option }));
+  } else if (raw.type === 'fill') {
+    // 填空题没有选项。模型把选项塞进来说明它想出的是选择题，按坏题处理，
+    // 不静默丢弃字段。
+    if (raw.options != null && !(Array.isArray(raw.options) && raw.options.length === 0)) {
+      return { ok: false, error: '填空题不应有选项' };
+    }
+    options = [];
   } else {
     if (!Array.isArray(raw.options) || raw.options.length < 2 || raw.options.length > MAX_QUIZ_OPTIONS) {
       return { ok: false, error: `选项数量必须是 2–${MAX_QUIZ_OPTIONS} 个` };
@@ -178,12 +188,23 @@ function parseQuestion(raw: unknown):
   }
   if (raw.type === 'single' || raw.type === 'judge') {
     if (answers.length !== 1) return { ok: false, error: '单选题必须有且只有一个答案' };
-  } else if (answers.length < 2) {
-    return { ok: false, error: '多选题至少需要两个答案' };
+  } else if (raw.type === 'multiple') {
+    if (answers.length < 2) return { ok: false, error: '多选题至少需要两个答案' };
+  } else {
+    // fill：answer 是可接受写法数组（第 1 项=标准答案），判分做规范化匹配，
+    // 每项长度对齐 daemon chosen 的 64 上限。
+    if (answers.length > MAX_FILL_ANSWERS) {
+      return { ok: false, error: `填空题可接受写法最多 ${MAX_FILL_ANSWERS} 个` };
+    }
+    if (answers.some((answer) => answer.length > MAX_QUIZ_KEY_CHARS)) {
+      return { ok: false, error: `填空题答案超过 ${MAX_QUIZ_KEY_CHARS} 字符上限` };
+    }
   }
-  const optionKeys = new Set(options.map((option) => option.key));
-  if (answers.some((answer) => !optionKeys.has(answer))) {
-    return { ok: false, error: '答案不在选项中' };
+  if (raw.type !== 'fill') {
+    const optionKeys = new Set(options.map((option) => option.key));
+    if (answers.some((answer) => !optionKeys.has(answer))) {
+      return { ok: false, error: '答案不在选项中' };
+    }
   }
 
   if (!nonEmptyString(raw.explanation)) return { ok: false, error: '缺少解析' };
@@ -215,8 +236,60 @@ function parseQuestion(raw: unknown):
   };
 }
 
+/**
+ * 填空判分的规范化：NFKC（全角→半角）+ trim + 空白折叠 + 小写。
+ * 匹配时额外比较「去掉全部空格」的变体，容忍中英文混排的空格习惯差异。
+ */
+export function normalizeFillText(value: string): string {
+  return value.normalize('NFKC').trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
+/**
+ * 无歧义 ASCII 记法 → 符号，判分前对两侧同折：把「键盘顺手写法」与
+ * 「符号写法」折进同一等价类。只做记法级等价，不做数学/语义等价
+ * （0.5 ≠ 1/2，答案形式本身常是考点，等价写法由模型在 answer 数组里
+ * 显式给出）；繁简、去音符等有语义争议或字典级依赖的不进表。
+ * 两侧同折，所以普通单词里的部分串命中无害（piano 双方同折仍相等）。
+ */
+const ASCII_NOTATION_FOLDS: ReadonlyArray<readonly [string, string]> = [
+  ['sqrt', '√'],
+  ['pi', 'π'],
+  ['<=', '≤'],
+  ['>=', '≥'],
+  ['!=', '≠'],
+  ['+-', '±'],
+  ['->', '→'],
+];
+
+function foldAsciiNotation(value: string): string {
+  let folded = value;
+  for (const [from, to] of ASCII_NOTATION_FOLDS) folded = folded.split(from).join(to);
+  return folded;
+}
+
+export function isFillAnswerCorrect(typed: string, answers: string[]): boolean {
+  const typedNormalized = foldAsciiNotation(normalizeFillText(typed));
+  if (!typedNormalized) return false;
+  const typedCondensed = typedNormalized.replace(/ /g, '');
+  return answers.some((answer) => {
+    const normalized = foldAsciiNotation(normalizeFillText(answer));
+    return normalized === typedNormalized || normalized.replace(/ /g, '') === typedCondensed;
+  });
+}
+
 export function gradeQuiz(quiz: Quiz, selections: QuizSelections): QuizGrade[] {
   return quiz.questions.map((question) => {
+    if (question.type === 'fill') {
+      // chosen 保留用户原文（落库即输入内容）；判分用规范化匹配。
+      // 空文本不该出现（isQuizComplete 已挡），这里防御性地不产出空 chosen——
+      // daemon 对空数组整批拒绝，会让全部答题记录静默丢失。
+      const typed = selections[question.id]?.[0] ?? '';
+      return {
+        questionId: question.id,
+        correct: isFillAnswerCorrect(typed, question.answer),
+        chosen: typed.trim() ? [typed] : [],
+      };
+    }
     const validKeys = new Set(question.options.map((option) => option.key));
     const chosen = [...new Set((selections[question.id] ?? []).filter((key) => validKeys.has(key)))]
       .sort();
@@ -231,6 +304,9 @@ export function gradeQuiz(quiz: Quiz, selections: QuizSelections): QuizGrade[] {
 
 export function isQuizComplete(quiz: Quiz, selections: QuizSelections): boolean {
   return quiz.questions.every((question) => {
+    if (question.type === 'fill') {
+      return (selections[question.id]?.[0] ?? '').trim().length > 0;
+    }
     const validKeys = new Set(question.options.map((option) => option.key));
     return (selections[question.id] ?? []).some((key) => validKeys.has(key));
   });

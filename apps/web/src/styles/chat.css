@@ -1915,14 +1915,96 @@
 .quiz-result { margin-left: auto; font-size: 12px; font-weight: 600; }
 .quiz-result.correct { color: var(--green); }
 .quiz-result.wrong { color: var(--red); }
+/* 题干/选项经 renderMarkdown 输出受控 HTML：<p>/<img>/<strong> 等。
+ * 原先的 white-space: pre-wrap 由 markdown 的 <br>/<p> 接管，不再需要。 */
 .quiz-stem {
   margin-bottom: 10px;
   font-size: 14px;
   line-height: 1.6;
   color: var(--text);
-  white-space: pre-wrap;
 }
+.quiz-stem p { margin: 0 0 6px; }
+.quiz-stem p:last-child { margin-bottom: 0; }
+.quiz-stem img { max-width: 100%; height: auto; border-radius: var(--radius-sm); }
+.quiz-stem table { margin: 4px 0; }
+.quiz-option-text p { margin: 0; display: inline; }
 .quiz-options { display: flex; flex-direction: column; gap: 6px; }
+/* 输入行：输入框与「符号」触发钮同一容器，聚焦时容器边框点亮 */
+.quiz-input-row {
+  display: flex;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background-color: var(--bg);
+  transition: border-color 120ms ease;
+}
+.quiz-input-row:focus-within { border-color: var(--accent); }
+.quiz-fill-input {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 10px;
+  border: none;
+  outline: none;
+  background-color: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+}
+.quiz-fill-input:disabled { opacity: 0.7; }
+.quiz-symbol-trigger {
+  flex-shrink: 0;
+  margin-right: 4px;
+  padding: 4px 8px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background-color: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.quiz-symbol-trigger:hover:not(:disabled) { background-color: var(--bg-subtle); color: var(--text); }
+/* 打开态是整块面板唯一用 accent 的地方 */
+.quiz-symbol-trigger.on:not(:disabled) { background-color: var(--accent-tint); color: var(--accent); }
+/* 唤起式托盘：只服务一道题，在文档流内手风琴式展开——不用浮层，
+ * 避免盖住下一题的输入框造成误触（一次只开一道，下移量可控） */
+.quiz-symbol-tray {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 6px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background-color: var(--bg);
+  box-shadow: var(--shadow-xs);
+  animation: quiz-tray-in 120ms ease;
+}
+@keyframes quiz-tray-in {
+  from { opacity: 0; transform: translateY(-2px); }
+  to { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .quiz-symbol-tray { animation: none; }
+}
+.quiz-symbol-btn {
+  min-width: 26px;
+  height: 24px;
+  padding: 0 5px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background-color: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+.quiz-symbol-btn:hover:not(:disabled) { border-color: var(--border-strong); background-color: var(--bg-subtle); }
+.quiz-symbol-btn:disabled { opacity: 0.5; cursor: default; }
+.quiz-symbol-group { display: flex; align-items: flex-start; gap: 6px; }
+.quiz-symbol-group-label { flex-shrink: 0; min-width: 4em; padding-top: 5px; font-size: 11px; color: var(--text-muted); }
+.quiz-symbol-keys { display: flex; flex-wrap: wrap; gap: 4px; }
 .quiz-option {
   display: flex;
   gap: 8px;
@@ -2016,7 +2098,9 @@
 .quiz-question-invalid .quiz-error { margin-top: 4px; }
 .quiz-option:focus-visible,
 .quiz-btn:focus-visible,
-.quiz-source:focus-visible {
+.quiz-source:focus-visible,
+.quiz-symbol-btn:focus-visible,
+.quiz-symbol-trigger:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }

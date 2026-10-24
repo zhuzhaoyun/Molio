@@ -14,6 +14,7 @@ import {
   quizStorageKey,
   parseStoredQuizState,
   quizStemOf,
+  MAX_QUIZ_KEY_CHARS,
   type InvalidQuestion,
   type Quiz,
   type QuizGrade,
@@ -31,10 +32,20 @@ interface Props {
   conversationId?: string | null;
 }
 
+/** 填空符号托盘：通用难输入字符（理工科一期组）。分组与后置项依据
+ *  docs/2026-10-24-quiz-fill-input-domains.md（文科/小语种组后续按需追加）。 */
+const FILL_SYMBOL_GROUPS: ReadonlyArray<{ labelKey: string; chars: readonly string[] }> = [
+  { labelKey: 'quiz.symbolGroup.common', chars: ['√', 'π', '°', '≤', '≥', '≠', '±', '→', '×', '÷', '∞'] },
+  { labelKey: 'quiz.symbolGroup.greek', chars: ['α', 'β', 'γ', 'δ', 'θ', 'λ', 'μ', 'σ', 'ω', 'Δ', 'Ω'] },
+  { labelKey: 'quiz.symbolGroup.logic', chars: ['∪', '∩', '∈', '⊂', '∅', '∀', '∃', '⇒', '⇔'] },
+  { labelKey: 'quiz.symbolGroup.units', chars: ['‰', '′', '″', '↑', '↓', '⇌'] },
+];
+
 /**
  * Quiz 交互块（交互块注册表的第一个块）。
  *
- * 只解析 JSON，不执行任何代码；题干/选项/解析都由 React 文本节点渲染。
+ * 只解析 JSON，不执行任何代码；题干/选项/解析经 renderMarkdown 渲染
+ * （先转义 HTML 再生成受控标签，与聊天正文同一信任级）。
  * 判分在本地完成（不依赖 runtime 工具调用），提交后可重做、可存题库。
  */
 export function QuizCard({ raw, complete, streaming, conversationId }: Props) {
@@ -165,13 +176,71 @@ function QuizBody({
     [submitted],
   );
 
+  // 填空作答：空文本存空数组（isQuizComplete 据此判未作答）。
+  const setFillText = useCallback(
+    (questionId: string, text: string) => {
+      if (submitted) return;
+      setSelections((prev) => ({ ...prev, [questionId]: text.trim() ? [text] : [] }));
+    },
+    [submitted],
+  );
+
+  const fillInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
+  // 唤起式符号托盘：一次只开一道题的（点触发钮切换，点外部/Esc 关闭）。
+  const [openSymbolsFor, setOpenSymbolsFor] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!openSymbolsFor) return;
+    const closeOnOutside = (event: Event) => {
+      const target = event.target as Element | null;
+      if (target?.closest?.(`[data-fill-scope="${openSymbolsFor}"]`)) return;
+      setOpenSymbolsFor(null);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOpenSymbolsFor(null);
+    };
+    document.addEventListener('mousedown', closeOnOutside);
+    document.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.removeEventListener('mousedown', closeOnOutside);
+      document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [openSymbolsFor]);
+
+  // 符号面板：在光标处插入字符。onMouseDown preventDefault 保住输入框焦点；
+  // 键盘用户走折叠判分（pi/sqrt/<=…），面板是鼠标/触屏的兜底输入。
+  const insertSymbol = useCallback(
+    (questionId: string, char: string) => {
+      if (submitted) return;
+      const input = fillInputRefs.current[questionId];
+      if (!input) return;
+      const start = input.selectionStart ?? input.value.length;
+      const end = input.selectionEnd ?? start;
+      const next = input.value.slice(0, start) + char + input.value.slice(end);
+      setFillText(questionId, next);
+      requestAnimationFrame(() => {
+        input.focus();
+        input.setSelectionRange(start + char.length, start + char.length);
+      });
+    },
+    [submitted, setFillText],
+  );
+
   const handleSubmit = useCallback(() => {
     if (!ready || submitted) return;
     setSubmitted(true);
 
     // 本地判分已完成；落库失败不阻塞用户看结果。
+    // 空/超长 chosen 不进批次：daemon 对两者整批拒绝，会把整次提交的答题
+    // 记录全部丢掉。超长只可能来自被改过的 localStorage（正常输入被
+    // maxLength 挡住），丢弃该题保住其余题目的落库。
     if (fingerprint) {
-      const attempts = gradeQuiz(quiz, selections).map((grade) => ({
+      const attempts = gradeQuiz(quiz, selections)
+        .filter((grade) =>
+          grade.chosen.length > 0
+          && grade.chosen.every((key) => key.length <= MAX_QUIZ_KEY_CHARS),
+        )
+        .map((grade) => ({
         questionId: grade.questionId,
         chosen: grade.chosen,
         correct: grade.correct,
@@ -224,7 +293,7 @@ function QuizBody({
           <div className="quiz-question" data-testid="quiz-question" data-question-id={question.id} key={question.id}>
             <div className="quiz-question-head">
               <span className="quiz-index">{t('quiz.question', { n: index + 1 })}</span>
-              <span className="quiz-type">{t(`quiz.type.${question.type}`)}</span>
+              <span className="quiz-type" data-testid="quiz-type">{t(`quiz.type.${question.type}`)}</span>
               {grade && (
                 <span
                   className={`quiz-result ${grade.correct ? 'correct' : 'wrong'}`}
@@ -236,10 +305,73 @@ function QuizBody({
               )}
             </div>
 
-            <div className="quiz-stem" data-testid="quiz-stem">{question.stem}</div>
+            {/* 题干走受控 markdown（renderMarkdown 先转义 HTML）：图片/加粗/
+                上下标等才能显示；`____` 空位标记不受强调语法影响。 */}
+            <div
+              className="quiz-stem"
+              data-testid="quiz-stem"
+              dangerouslySetInnerHTML={{ __html: renderMarkdown(question.stem) }}
+            />
 
             <div className="quiz-options">
-              {question.options.map((option) => {
+              {question.type === 'fill' ? (
+                /* 填空：文本作答。判分在 gradeQuiz 里做规范化匹配（含 ASCII 记法折叠）；
+                 * 64 上限与 daemon chosen 逐项上限一致，超长会落不了库。 */
+                <div className="quiz-fill" data-fill-scope={question.id}>
+                  <div className="quiz-input-row">
+                    <input
+                      ref={(el) => { fillInputRefs.current[question.id] = el; }}
+                      className="quiz-fill-input"
+                      data-testid="quiz-fill-input"
+                      data-question-id={question.id}
+                      type="text"
+                      value={chosen[0] ?? ''}
+                      maxLength={MAX_QUIZ_KEY_CHARS}
+                      aria-label={t('quiz.fillPlaceholder')}
+                      placeholder={t('quiz.fillPlaceholder')}
+                      disabled={submitted}
+                      onChange={(event) => setFillText(question.id, event.target.value)}
+                    />
+                    <button
+                      type="button"
+                      className={`quiz-symbol-trigger${openSymbolsFor === question.id ? ' on' : ''}`}
+                      data-testid="quiz-symbol-trigger"
+                      aria-expanded={openSymbolsFor === question.id}
+                      disabled={submitted}
+                      onMouseDown={(event) => event.preventDefault()}
+                      onClick={() => setOpenSymbolsFor((prev) => (prev === question.id ? null : question.id))}
+                    >
+                      {t('quiz.symbolTrigger')}
+                    </button>
+                  </div>
+                  {openSymbolsFor === question.id && (
+                    <div className="quiz-symbol-tray" data-testid="quiz-symbol-tray">
+                      {FILL_SYMBOL_GROUPS.map((group) => (
+                        <div className="quiz-symbol-group" key={group.labelKey}>
+                          <span className="quiz-symbol-group-label">{t(group.labelKey)}</span>
+                          <div className="quiz-symbol-keys">
+                            {group.chars.map((char) => (
+                              <button
+                                key={char}
+                                type="button"
+                                className="quiz-symbol-btn"
+                                data-testid="quiz-symbol-btn"
+                                data-char={char}
+                                aria-label={char}
+                                disabled={submitted}
+                                onMouseDown={(event) => event.preventDefault()}
+                                onClick={() => insertSymbol(question.id, char)}
+                              >
+                                {char}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ) : question.options.map((option) => {
                 const on = chosen.includes(option.key);
                 const isAnswer = question.answer.includes(option.key);
                 const className = [
@@ -261,7 +393,10 @@ function QuizBody({
                     onClick={() => toggle(question.id, question.type, option.key)}
                   >
                     <span className="quiz-option-key">{option.key}</span>
-                    <span className="quiz-option-text">{option.text}</span>
+                    <span
+                      className="quiz-option-text"
+                      dangerouslySetInnerHTML={{ __html: renderMarkdown(option.text) }}
+                    />
                   </button>
                 );
               })}

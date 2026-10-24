@@ -385,6 +385,205 @@ test.describe('Quiz interaction block', () => {
     await page.unroute('**/api/knowledge/vaults/vault-1/files/**');
   });
 
+  test('renders markdown in stem and options (image, bold, blank marker)', async ({ page }) => {
+    // 题干/选项走受控 markdown：图片语法出 <img>、加粗出 <strong>；
+    // `____` 空位标记不得被强调语法吃掉（renderMarkdown 只认 `*`）。
+    const markdownQuiz = `\`\`\`quiz
+{
+  "version": 1,
+  "title": "markdown 渲染 · 1 题",
+  "questions": [
+    {
+      "id": "m1",
+      "type": "single",
+      "stem": "如图 ![温度计](raw/thermometer.png) 所示，标准番茄钟专注 **25 分钟**，即____。",
+      "options": [
+        { "key": "A", "text": "**25 分钟**" },
+        { "key": "B", "text": "45 分钟" }
+      ],
+      "answer": ["A"],
+      "explanation": "解析。",
+      "sources": [{ "path": "notes/番茄工作法.md" }]
+    }
+  ]
+}
+\`\`\``;
+    await mockChatRun(page, {
+      runId: 'run-1',
+      conversationId: 'conv-1',
+      script: [
+        { type: 'status', label: 'running' },
+        { type: 'text_delta', delta: markdownQuiz },
+        { type: 'turn_end', stopReason: 'end_turn' },
+      ],
+    });
+    await gotoHome(page);
+    await sendMessage(page, '出几道题');
+
+    const card = page.locator('[data-testid="quiz-card"]');
+    await expect(card).toBeVisible({ timeout: 10_000 });
+
+    const stem = card.locator('[data-testid="quiz-stem"]');
+    await expect(stem.locator('img')).toHaveAttribute('src', 'raw/thermometer.png');
+    await expect(stem.locator('strong')).toHaveText('25 分钟');
+    await expect(stem).toContainText('____');
+
+    await expect(
+      card.locator('[data-testid="quiz-option"][data-key="A"] .quiz-option-text strong'),
+    ).toHaveText('25 分钟');
+  });
+
+  test('supports fill-in-blank: submit disabled until text, normalized match, reference answer on wrong', async ({ page }) => {
+    const fillQuiz = `\`\`\`quiz
+{
+  "version": 1,
+  "title": "填空 · 1 题",
+  "questions": [
+    {
+      "id": "f1",
+      "type": "fill",
+      "stem": "标准番茄钟的专注时长为____分钟。",
+      "answer": ["25", "二十五"],
+      "explanation": "一个番茄钟为 25 分钟。",
+      "sources": [{ "path": "notes/番茄工作法.md" }]
+    }
+  ]
+}
+\`\`\``;
+    await mockChatRun(page, { runId: 'run-1', conversationId: 'conv-1', script: [
+      { type: 'status', label: 'running' },
+      { type: 'text_delta', delta: fillQuiz },
+      { type: 'turn_end', stopReason: 'end_turn' },
+    ] });
+    await gotoHome(page);
+    await sendMessage(page, '出几道填空题');
+
+    const card = page.locator('[data-testid="quiz-card"]');
+    await expect(card).toBeVisible({ timeout: 10_000 });
+    await expect(card.locator('[data-testid="quiz-type"]')).toHaveText('填空');
+
+    const input = card.locator('[data-testid="quiz-fill-input"]');
+    const submit = card.locator('[data-testid="quiz-submit"]');
+    await expect(submit).toBeDisabled();
+
+    // 正确：输入原文带首尾空格 → 规范化判分对，落库保留用户原文。
+    await input.fill(' 25 ');
+    await expect(submit).toBeEnabled();
+    await page.unroute('**/api/quiz/attempts');
+    let attemptBody: any = null;
+    await page.route('**/api/quiz/attempts', async (route) => {
+      attemptBody = JSON.parse(route.request().postData() || '{}');
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ ok: true, inserted: 1 }),
+      });
+    });
+    await submit.click();
+    await expect.poll(() => attemptBody?.attempts?.length).toBe(1);
+    expect(attemptBody.attempts[0]).toMatchObject({
+      questionId: 'f1', chosen: [' 25 '], correct: true,
+    });
+    await expect(card.locator('[data-testid="quiz-result"]')).toHaveAttribute('data-correct', 'true');
+
+    // 重做后答错：显示参考答案（全部可接受写法）与解析。
+    await card.locator('[data-testid="quiz-redo"]').click();
+    await input.fill('二十四');
+    await submit.click();
+    await expect(card.locator('[data-testid="quiz-result"]').locator('nth=0')).toHaveAttribute('data-correct', 'false');
+    await expect(card.locator('[data-testid="quiz-answer"]')).toHaveText('正确答案：25 / 二十五');
+    await expect(card.locator('[data-testid="quiz-explanation"]')).toContainText('25 分钟');
+  });
+
+  test('offers a summoned symbol tray per fill question and folds ascii notation', async ({ page }) => {
+    const symbolQuiz = `\`\`\`quiz
+{
+  "version": 1,
+  "title": "填空 · 符号 2 题",
+  "questions": [
+    {
+      "id": "sy1",
+      "type": "fill",
+      "stem": "求值：cos²(π/8) − sin²(π/8) = ____。",
+      "answer": ["√2/2", "sqrt2/2"],
+      "explanation": "逆用二倍角公式得 cos(π/4)。",
+      "sources": [{ "path": "notes/番茄工作法.md" }]
+    },
+    {
+      "id": "sy2",
+      "type": "fill",
+      "stem": "特殊角 tan(π/4) = ____。",
+      "answer": ["π/4"],
+      "explanation": "45° 正切。",
+      "sources": [{ "path": "notes/番茄工作法.md" }]
+    }
+  ]
+}
+\`\`\``;
+    await mockChatRun(page, { runId: 'run-1', conversationId: 'conv-1', script: [
+      { type: 'status', label: 'running' },
+      { type: 'text_delta', delta: symbolQuiz },
+      { type: 'turn_end', stopReason: 'end_turn' },
+    ] });
+    await gotoHome(page);
+    await sendMessage(page, '出几道填空题');
+
+    const card = page.locator('[data-testid="quiz-card"]');
+    await expect(card).toBeVisible({ timeout: 10_000 });
+    const inputs = card.locator('[data-testid="quiz-fill-input"]');
+
+    // 默认零占用：托盘要点「符号」才出现。
+    await expect(card.locator('[data-testid="quiz-symbol-tray"]')).toHaveCount(0);
+    await card.locator('[data-testid="quiz-symbol-trigger"]').nth(0).click();
+
+    const sy1Tray = card.locator('[data-fill-scope="sy1"] [data-testid="quiz-symbol-tray"]');
+    await expect(sy1Tray).toBeVisible();
+    await expect(sy1Tray.locator('[data-testid="quiz-symbol-btn"][data-char="√"]')).toBeVisible();
+
+    // 点符号插入，托盘保持打开（连续插入多个符号）。
+    await sy1Tray.locator('[data-testid="quiz-symbol-btn"][data-char="√"]').click();
+    await expect(inputs.nth(0)).toHaveValue('√');
+    await expect(sy1Tray).toBeVisible();
+
+    // 直接切第 2 题：第 1 题托盘关、第 2 题开（一次只开一个）。
+    await card.locator('[data-testid="quiz-symbol-trigger"]').nth(1).click();
+    await expect(sy1Tray).toHaveCount(0);
+    await expect(card.locator('[data-fill-scope="sy2"] [data-testid="quiz-symbol-tray"]')).toHaveCount(1);
+
+    // 点外部关闭。
+    await card.locator('[data-testid="quiz-title"]').click();
+    await expect(card.locator('[data-testid="quiz-symbol-tray"]')).toHaveCount(0);
+
+    await inputs.nth(0).fill('√2/2');
+
+    // 记法折叠：键盘顺手写法 pi/4 判对 π/4。
+    await inputs.nth(1).fill('pi/4');
+
+    await page.unroute('**/api/quiz/attempts');
+    let attemptBody: any = null;
+    await page.route('**/api/quiz/attempts', async (route) => {
+      attemptBody = JSON.parse(route.request().postData() || '{}');
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ ok: true, inserted: 2 }),
+      });
+    });
+    await card.locator('[data-testid="quiz-submit"]').click();
+
+    await expect.poll(() => attemptBody?.attempts?.length).toBe(2);
+    expect(attemptBody.attempts[0]).toMatchObject({
+      questionId: 'sy1', chosen: ['√2/2'], correct: true,
+    });
+    // 落库保留用户原文 pi/4，判分按折叠等价。
+    expect(attemptBody.attempts[1]).toMatchObject({
+      questionId: 'sy2', chosen: ['pi/4'], correct: true,
+    });
+    const results = card.locator('[data-testid="quiz-result"]');
+    await expect(results.nth(0)).toHaveAttribute('data-correct', 'true');
+    await expect(results.nth(1)).toHaveAttribute('data-correct', 'true');
+  });
+
   test('appends a sequence number when the quiz filename already exists', async ({ page }) => {
     let savedUrl: string | null = null;
 
