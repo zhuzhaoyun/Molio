@@ -34,6 +34,8 @@ describe('bundled quiz-generate skill', () => {
     // 写法变体规则（领域无关）：难输入字符须给键盘可打变体，且变体不得改变考察点。
     assert.ok(parsed.instructions.includes('sqrt'), 'must document a keyboard-typeable variant example');
     assert.ok(parsed.instructions.includes('考察点'), 'variants must not change what is being tested');
+    // 答题区不渲染 LaTeX：题干/选项必须用纯文本记法（√ x²），禁止 $…$ 源码。
+    assert.ok(parsed.instructions.includes('LaTeX'), 'must forbid LaTeX source in stems/options');
     // 主观题降级（混合请求不得整体退化成纯文本，主观题不进围栏）。
     assert.ok(parsed.instructions.includes('主观题'), 'must document the subjective-question fallback');
     assert.ok(parsed.instructions.includes('围栏外'), 'subjective questions stay outside the fence');
