@@ -1,6 +1,7 @@
 {
   "name": "@molio/cli",
-  "version": "0.1.1",
+  "version": "0.1.2",
+  "mcpName": "io.github.zhuzhaoyun/molio",
   "description": "Molio CLI — 知识库命令 + MCP server，daemon 的薄 HTTP 客户端，供外部桌面 agent（WorkBuddy / 千问等）调用",
   "type": "module",
   "bin": {

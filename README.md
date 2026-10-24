@@ -11,6 +11,9 @@
 [![GitHub Stars](https://img.shields.io/github/stars/zhuzhaoyun/Molio?style=flat-square)](https://github.com/zhuzhaoyun/Molio/stargazers)
 [![Last Commit](https://img.shields.io/github/last-commit/zhuzhaoyun/Molio?style=flat-square)](https://github.com/zhuzhaoyun/Molio/commits)
 
+[![npm: @molio/cli — MCP server & CLI](https://img.shields.io/npm/v/%40molio/cli?style=flat-square&label=MCP%20%40molio%2Fcli&color=blue)](https://www.npmjs.com/package/@molio/cli)
+[![npm: dsh-plugin-molio — DeepSeek Harness plugin](https://img.shields.io/npm/v/dsh-plugin-molio?style=flat-square&label=dsh%20plugin&color=blue)](https://www.npmjs.com/package/dsh-plugin-molio)
+
 </div>
 
 ---
@@ -234,6 +237,16 @@ pnpm typecheck    # Type checking
 pnpm build        # Build all packages
 pnpm test:e2e     # E2E tests (requires pnpm dev running)
 ```
+
+### 🧩 DeepSeek Harness (dsh) plugin
+
+Molio's knowledge base is also available as a read-only plugin for DeepSeek Harness (dsh), so dsh agents can search and read your local Molio vaults during a conversation:
+
+```bash
+dsh plugin add dsh-plugin-molio
+```
+
+It exposes 5 read-only tools (`molio_status`, `molio_kb_vaults`, `molio_kb_tree`, `molio_kb_search`, `molio_kb_read`) backed by the local Molio daemon HTTP API. Requires a running Molio service (desktop app or Docker). Details: [`packages/dsh-plugin-molio/README.md`](packages/dsh-plugin-molio/README.md) · [npm: dsh-plugin-molio](https://www.npmjs.com/package/dsh-plugin-molio)
 
 ## 🏗️ Architecture
 

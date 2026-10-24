@@ -11,6 +11,9 @@
 [![GitHub Stars](https://img.shields.io/github/stars/zhuzhaoyun/Molio?style=flat-square)](https://github.com/zhuzhaoyun/Molio/stargazers)
 [![Last Commit](https://img.shields.io/github/last-commit/zhuzhaoyun/Molio?style=flat-square)](https://github.com/zhuzhaoyun/Molio/commits)
 
+[![npm: @molio/cli — MCP server & CLI](https://img.shields.io/npm/v/%40molio/cli?style=flat-square&label=MCP%20%40molio%2Fcli&color=blue)](https://www.npmjs.com/package/@molio/cli)
+[![npm: dsh-plugin-molio — DeepSeek Harness 插件](https://img.shields.io/npm/v/dsh-plugin-molio?style=flat-square&label=dsh%20plugin&color=blue)](https://www.npmjs.com/package/dsh-plugin-molio)
+
 </div>
 
 ---
@@ -234,6 +237,16 @@ pnpm typecheck    # 全量类型检查
 pnpm build        # 构建所有子包
 pnpm test:e2e     # E2E 测试 (需先启动 pnpm dev)
 ```
+
+### 🧩 DeepSeek Harness (dsh) 插件
+
+Molio 知识库同时封装为 DeepSeek Harness (dsh) 的只读插件，dsh agent 可在对话中直接搜索、读取你本机的 Molio 知识库：
+
+```bash
+dsh plugin add dsh-plugin-molio
+```
+
+提供 5 个只读工具（`molio_status`、`molio_kb_vaults`、`molio_kb_tree`、`molio_kb_search`、`molio_kb_read`），数据经本机 Molio daemon HTTP API 获取，需 Molio 服务（桌面端或 Docker）处于运行状态。详见 [`packages/dsh-plugin-molio/README.md`](packages/dsh-plugin-molio/README.md) · [npm: dsh-plugin-molio](https://www.npmjs.com/package/dsh-plugin-molio)
 
 ## 🏗️ 项目架构
 

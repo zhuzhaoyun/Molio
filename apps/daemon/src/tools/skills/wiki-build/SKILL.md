@@ -1,7 +1,7 @@
 ---
 name: wiki-build
 description: 构建/重建本地知识库的 Wiki。扫描 vault 中所有源文件，从中构建一个结构化的 wiki（源文件摘要、实体、概念、对比、概述页），创建分层 INDEX（根索引 + 各目录索引）/log/hot，密集交叉链接。支持超长源文件（百万字级小说等）：prep.mjs 确定性预处理 + 分层 digest 构建 + 断点续传。开工前先侦察源文件：扫描版走 OCR、电子版直接抽文字，**电子版文字层被坏字体污染**（方正书版把数学斜体字母映射成不相干汉字）则先用 fontmap.py 清洗——三类管线完全不同，选错代价极大。支持含图源文件（扫描版教材、PPT、带插图的 PDF/论文）：docling 抽图 → media.mjs 归置与规范化 → 页面内 ![[ ]] 嵌入 → 图版对账。也能把旧单索引库的索引重构为分层布局。Triggers on: 构建 wiki, 重建 wiki, build wiki, 扫描源文件构建, 初始构建, 重新构建知识库, start wiki build, 重构索引, 索引分层, 索引迁移, restructure index, 图片入库, 图版, 插图, 带图的源文件, 扫描版教材, 教材入库, figure, image ingest.
-version: 2.3.0
+version: 2.4.0
 ---
 
 # wiki-build: 构建 Wiki
@@ -218,7 +218,7 @@ node "<skill_dir>/scripts/prep.mjs" <源文件> --vault . [--profile <name>] [--
 node "<skill_dir>/scripts/curate.mjs" draft <x> --vault .
 
 # 3b. agent 审核草稿：按「建页粒度」判据筛选、分组、标注页类
-#     产出: curation-<x>.tsv（审核后的最终版）
+#     产出: curation-<x>.tsv（审核后的最终版）——必须分块审核、边审边落盘（见下）
 
 # 3c. 脚本分批：校验格式 + 按 # cat= 分组 + 单批超 15 条自动拆分
 node "<skill_dir>/scripts/curate.mjs" split <x> --vault .
@@ -236,6 +236,13 @@ node "<skill_dir>/scripts/curate.mjs" split <x> --vault .
 - 每行标注 `页类: entity` 或 `页类: concept`
 - 补全别名（从 census.aliasHints / digest 中认领）
 - 补全证据行号（代表性行号，不是全量）
+
+**3b 必须分块审核、边审边落盘（硬规则）**：草稿动辄数百行（长篇一次 ingest 可产出 600+ 实体行），**禁止在一次回复里生成完整的 curation TSV**——超大单次生成会撞 32k 输出上限，且长时间无输出会被 daemon 的 idle watchdog 判定挂起而终止 run（2026-10-22《封神演義》ingest 事故正是停在这一步：agent 试图一口气审核全部草稿，模型请求挂死 20+ 分钟）。正确做法：
+
+- 可先通读草稿定下 `# cat=` 分组方案（只输出分组规划，不写行）
+- **行落盘必须分块**：每块 ~30-50 行，审完立即追加写入 `curation-<x>.tsv`（首块 Write 建档，后续用 Bash `cat >>` 或 Edit 追加；组头 `# cat=` 随该组首块写入）
+- 每块写完即继续下一块，不要攒到"最后统一输出"
+- 全部写完后核对：curation TSV 的有效行数 + 明确删除数 ≈ 草稿行数，缺口即漏审
 
 **脚本预填做什么**（机械部分，agent 不需花 token）：
 - 按 count 排序、过滤低频噪音
