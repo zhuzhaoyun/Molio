@@ -207,8 +207,8 @@ function renderCta(m: MarketListing): { cta: string; note: string } {
   }
   if (m.priceCents > 0) {
     return {
-      cta: `<button type="button" class="btn btn-primary" id="pay-btn" data-auth-gate="微信支付 ¥${escapeHtml(price)}">微信支付 ¥${escapeHtml(price)}</button>`,
-      note: '扫码支付成功后自动解锁下载，下载链接 1 小时内有效。',
+      cta: `<button type="button" class="btn btn-primary" id="pay-btn" data-auth-gate="立即购买 ¥${escapeHtml(price)}">立即购买 ¥${escapeHtml(price)}</button>`,
+      note: '支付成功后即可下载资源包，建议在电脑上解压使用。',
     };
   }
   return {
@@ -398,7 +398,7 @@ ${NAV}
 
 ${FOOTER}
 
-<!-- 交互层：登录门槛 / 微信支付 / 签名下载 / 灯箱。内嵌 __LISTING__ 避免二次请求 -->
+<!-- 交互层：登录门槛 / 支付 / 签名下载 / 灯箱。内嵌 __LISTING__ 避免二次请求 -->
 <script>window.MOLIO_PAY_BASE = '${PAY_BASE}';window.__LISTING__ = ${safeJson(m)};</script>
 <script src="/vendor/qrcode.min.js"></script>
 <script src="/auth.js?v=20260824a"></script>
@@ -537,7 +537,7 @@ export function renderListingPage(listings: MarketListing[]): string {
     ? cards
     : '<p class="rl-empty">资源整理中，稍后回来看看。</p>';
   const title = '知识图谱资源库 — 现成可导入 AI 的结构化知识底座 | Molio 墨流';
-  const desc = '从红楼梦、史记、资治通鉴等经史典籍，到专业领域的积累，逐部提取实体与概念、建立关联，加工成结构化的知识底座：你可以顺着图谱阅读探索，Claude Code、Codex 也能立即在它上面工作。微信支付后自动解锁下载，兼容 Obsidian。';
+  const desc = '从红楼梦、史记、资治通鉴等经史典籍，到专业领域的积累，逐部提取实体与概念、建立关联，加工成结构化的知识底座：你可以顺着图谱阅读探索，Claude Code、Codex 也能立即在它上面工作。支付后自动解锁下载，兼容 Obsidian。';
 
   return `<!DOCTYPE html>
 <html lang="zh-CN">

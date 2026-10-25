@@ -1,7 +1,7 @@
 // resource-hydrate.js「已购识别」测试（node:test）。
 //
 // 背景（用户报障）：付完款关掉页面，那个 1 小时签名的下载链就找不回来了；重新打开商品页，
-// CTA 还是「微信支付 ¥49」（云端 SSR 只按商品价格生成，不感知用户），用户以为要再付一次 ——
+// CTA 还是「立即购买 ¥49」（云端 SSR 只按商品价格生成，不感知用户），用户以为要再付一次 ——
 // 真点下去会再建一笔合法订单、真的重复扣款。
 //
 // 修复：已登录时查一次云端已购，命中且商品在架 → 主按钮换成「下载」
@@ -70,13 +70,13 @@ function loadHydrate(opts = {}) {
   payBtn.id = 'pay-btn';
   payBtn.className = 'btn btn-primary';
   const priceYuan = listing && listing.priceCents ? listing.priceCents / 100 : 0;
-  payBtn.textContent = `微信支付 ¥${priceYuan}`;
+  payBtn.textContent = `立即购买 ¥${priceYuan}`;
   const card = makeEl('div');
   card.className = 'res-side-card';
   card.appendChild(payBtn);
   const note = makeEl('p');
   note.className = 'res-side-note';
-  note.textContent = '扫码支付成功后自动解锁下载，下载链接 1 小时内有效。';
+  note.textContent = '支付成功后即可下载资源包，建议在电脑上解压使用。';
   card.appendChild(note);
 
   const byId = new Map([['pay-btn', payBtn]]);
@@ -144,7 +144,7 @@ const purchasesRespond = (items, status = 200) => (url) => {
   return null;
 };
 
-test('已购 + 在架：主按钮换成「已购 · 下载资源包」，不再出现「微信支付」', async () => {
+test('已购 + 在架：主按钮换成「已购 · 下载资源包」，不再出现「立即购买」', async () => {
   const h = loadHydrate({
     loggedIn: true,
     respond: purchasesRespond([{ id: LISTING_ID, purchasedAt: '2026-10-01T00:00:00Z', available: true }]),
@@ -157,7 +157,7 @@ test('已购 + 在架：主按钮换成「已购 · 下载资源包」，不再�
     assert.ok(h.purchasesCalls()[0].endsWith('/market/purchases'));
     assert.ok(h.swapped(), '主按钮已被置换');
     assert.equal(h.swappedText(), '已购 · 下载资源包');
-    assert.ok(!h.swappedText().includes('微信支付'), '不再显示付费入口');
+    assert.ok(!h.swappedText().includes('立即购买'), '不再显示付费入口');
     assert.ok(h.note.textContent.includes('已购买'), '侧栏说明同步改写，避免「还要再付」的错觉');
   } finally {
     h.restore();
@@ -185,13 +185,13 @@ test('已购态点击：直接取签名下载链，绝不重新下单', async ()
   }
 });
 
-test('未登录：不探测，保持「微信支付」（免得把付费入口藏掉）', async () => {
+test('未登录：不探测，保持「立即购买」（免得把付费入口藏掉）', async () => {
   const h = loadHydrate({ loggedIn: false, respond: purchasesRespond([{ id: LISTING_ID, available: true }]) });
   try {
     await flushAll();
     assert.equal(h.fetchCalls.length, 0, '未登录不发任何请求');
     assert.equal(h.swapped(), null, '按钮未被置换');
-    assert.equal(h.swappedText(), '微信支付 ¥49');
+    assert.equal(h.swappedText(), '立即购买 ¥49');
   } finally {
     h.restore();
   }
@@ -202,7 +202,7 @@ test('探测失败（云端 502 / 网络）：静默保持原按钮，用户仍�
   try {
     await flushAll();
     assert.equal(h.swapped(), null, '探测失败不置换');
-    assert.equal(h.swappedText(), '微信支付 ¥49');
+    assert.equal(h.swappedText(), '立即购买 ¥49');
     h.payBtn.click();
     assert.equal(h.swapped(), null, '付费按钮仍可用（MolioPay.open 被调用）');
   } finally {
@@ -215,19 +215,19 @@ test('请求抛错（网络中断）：同样静默保持原按钮', async () =>
   try {
     await flushAll();
     assert.equal(h.swapped(), null);
-    assert.equal(h.swappedText(), '微信支付 ¥49');
+    assert.equal(h.swappedText(), '立即购买 ¥49');
   } finally {
     h.restore();
   }
 });
 
-test('已购列表里没有本商品：保持「微信支付」', async () => {
+test('已购列表里没有本商品：保持「立即购买」', async () => {
   const h = loadHydrate({ loggedIn: true, respond: purchasesRespond([{ id: 'other-listing', available: true }]) });
   try {
     await flushAll();
     assert.equal(h.purchasesCalls().length, 1, '探测发出去了');
     assert.equal(h.swapped(), null, '未命中不置换');
-    assert.equal(h.swappedText(), '微信支付 ¥49');
+    assert.equal(h.swappedText(), '立即购买 ¥49');
   } finally {
     h.restore();
   }
@@ -238,7 +238,7 @@ test('已购但商品已下架（available:false）：不置换，避免点了 4
   try {
     await flushAll();
     assert.equal(h.swapped(), null);
-    assert.equal(h.swappedText(), '微信支付 ¥49');
+    assert.equal(h.swappedText(), '立即购买 ¥49');
   } finally {
     h.restore();
   }

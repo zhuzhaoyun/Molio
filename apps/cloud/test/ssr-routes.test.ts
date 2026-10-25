@@ -96,11 +96,11 @@ test('SSR 商品页：用户提交内容做 XSS 转义（HTML 与内嵌 JSON 双
 
 test('SSR 商品页：付费形态三选一 CTA', async () => {
   const { app, marketStore } = await bootSsrApp();
-  // 微信支付（priceCents>0 且无 payUrl）
+  // 站内支付（priceCents>0 且无 payUrl）：桌面微信扫码 / 手机支付宝 WAP
   await marketStore.insertListing(listing({}));
   let html = await (await app.request('/resource/01JABCDE0000000000000001.html')).text();
-  assert.ok(html.includes('id="pay-btn"'), '微信支付按钮');
-  assert.ok(html.includes('data-auth-gate="微信支付 ¥5.9"'), '登录门槛文案承载');
+  assert.ok(html.includes('id="pay-btn"'), '站内支付按钮');
+  assert.ok(html.includes('data-auth-gate="立即购买 ¥5.9"'), '登录门槛文案承载');
   // 外链购买（有 payUrl）
   await marketStore.insertListing(listing({ id: '01JABCDE0000000000000002', payUrl: 'https://pay.example/x?a=1&b=2' }));
   html = await (await app.request('/resource/01JABCDE0000000000000002.html')).text();

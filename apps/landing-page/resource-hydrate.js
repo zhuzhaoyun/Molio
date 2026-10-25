@@ -2,7 +2,7 @@
  * 商品详情页（/resource/{id}.html，SSR）交互层 —— 渐进增强。
  *
  * 页面正文由云端 SSR 完整输出（爬虫零 JS 可读）；本脚本只负责把
- * 登录门槛 / 微信支付 / 签名下载 / 灯箱等交互绑到已存在的静态节点上。
+ * 登录门槛 / 支付 / 签名下载 / 灯箱等交互绑到已存在的静态节点上。
  * 数据来源是页面内嵌的 window.__LISTING__（SSR 注入，避免二次请求）。
  *
  * 依赖（必须先于本文件加载，见 SSR 模板脚本顺序）：
@@ -18,7 +18,7 @@
   // 云端认证/市场服务地址（本地联调注入点：window.MOLIO_AUTH_BASE）
   function marketBase() { return window.MOLIO_AUTH_BASE || 'https://auth.molio.cn'; }
 
-  /* ---------- 微信支付（扫码下单/轮询/交付统一在 pay.js） ---------- */
+  /* ---------- 支付（桌面微信扫码 / 手机支付宝 WAP，下单/轮询/交付统一在 pay.js） ---------- */
   var payBtn = document.getElementById('pay-btn');
   if (payBtn) {
     payBtn.addEventListener('click', function () {
@@ -29,7 +29,7 @@
 
   /* ---------- 已购识别：买过就别再让用户重付 ----------
    * 商品页 CTA 由云端 SSR 按**商品价格**生成，不感知用户状态 —— 已购用户重新打开
-   * 仍看到「微信支付 ¥49」，误点会真的再扣一次钱（后端拦不住：那是一笔合法新订单）。
+   * 仍看到「立即购买 ¥49」，误点会真的再扣一次钱（后端拦不住：那是一笔合法新订单）。
    * 而那个限时下载链只在支付成功那一刻展示过一次，滚走/过期就找不回来了。
    *
    * 所以已登录时先问一次云端已购：命中且商品在架 → 主按钮换成「下载」。
@@ -53,10 +53,10 @@
           if (list[i] && list[i].id === m.id && list[i].available !== false) { markPurchased(); return; }
         }
       })
-      .catch(function () { /* 探测失败：保持「微信支付」，用户仍可正常购买 */ });
+      .catch(function () { /* 探测失败：保持「立即购买」，用户仍可正常购买 */ });
   }
 
-  /** 已购态：主按钮从「微信支付」换成「下载」，侧栏说明同步改写 */
+  /** 已购态：主按钮从「立即购买」换成「下载」，侧栏说明同步改写 */
   function markPurchased() {
     var btn = document.createElement('button');
     btn.type = 'button';
