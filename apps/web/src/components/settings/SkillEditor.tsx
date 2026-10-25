@@ -1,7 +1,11 @@
-import { useState, useEffect, useRef, type ClipboardEvent } from 'react';
+import { useState, useEffect, useRef, useCallback, type ClipboardEvent, type DragEvent } from 'react';
 import { parseSkillMd } from '@molio/contracts';
-import type { SkillManifestEntry, PrefillResult, ImportSkillRequest } from '@molio/contracts';
+import type {
+  SkillManifestEntry, PrefillResult, ImportSkillRequest,
+  SkillImportPreview, SkillImportConflict, SkillImportIssueCode,
+} from '@molio/contracts';
 import { useI18n } from '../../i18n';
+import { api } from '../../api/client';
 
 export type SkillFormMode = 'create' | 'edit' | 'prefill' | 'new';
 
@@ -86,6 +90,13 @@ export function SkillEditor({
   const [instructions, setInstructions] = useState('');
   const [source, setSource] = useState<NewSource>('paste');
   const [folderPath, setFolderPath] = useState('');
+  const [preview, setPreview] = useState<SkillImportPreview | null>(null);
+  const [previewConflict, setPreviewConflict] = useState<SkillImportConflict | null>(null);
+  const [previewName, setPreviewName] = useState('');
+  const [previewDescription, setPreviewDescription] = useState('');
+  const [previewing, setPreviewing] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  const [dragActive, setDragActive] = useState(false);
   const [fieldError, setFieldError] = useState<string | null>(null);
 
   // Reset fields exactly at the closed→open transition. Two hazards guarded:
@@ -105,6 +116,12 @@ export function SkillEditor({
     setFieldError(null);
     setSource('paste');
     setFolderPath('');
+    setPreview(null);
+    setPreviewConflict(null);
+    setPreviewName('');
+    setPreviewDescription('');
+    setPreviewError(null);
+    setDragActive(false);
     if (mode === 'prefill' && prefillData) {
       setName(prefillData.name);
       setDescription(prefillData.description);
@@ -123,14 +140,73 @@ export function SkillEditor({
   // there we hide the browse buttons and let the user type the container path.
   const isDesktop = Boolean(window.__electron__?.showDirectoryPicker);
 
+  const runPreview = useCallback(async (src: { folderPath: string }) => {
+    setPreviewing(true);
+    setPreviewError(null);
+    try {
+      const resp = await api.previewSkillImport(src);
+      setPreview(resp.preview);
+      setPreviewConflict(resp.conflict);
+      setPreviewName(resp.preview.name);
+      setPreviewDescription(resp.preview.description);
+    } catch (err) {
+      setPreview(null);
+      setPreviewConflict(null);
+      setPreviewError((err as Error).message);
+    } finally {
+      setPreviewing(false);
+    }
+  }, []);
+
+  const previewByPath = useCallback((picked: string) => {
+    setFolderPath(picked);
+    void runPreview({ folderPath: picked });
+  }, [runPreview]);
+
   const handleBrowseFolder = async () => {
     const picked = await window.__electron__?.showDirectoryPicker();
-    if (picked) setFolderPath(picked);
+    if (picked) previewByPath(picked);
   };
 
   const handleBrowseFile = async () => {
     const picked = await window.__electron__?.showSkillFilePicker?.();
-    if (picked) setFolderPath(picked);
+    if (picked) previewByPath(picked);
+  };
+
+  const ISSUE_KEY: Record<SkillImportIssueCode, string> = {
+    NO_ENTRY: 'skills.form.issueNoEntry',
+    EMPTY_BODY: 'skills.form.issueEmptyBody',
+    SOURCE_UNREADABLE: 'skills.form.issueSourceUnreadable',
+    TOO_MANY_FILES: 'skills.form.issueTooManyFiles',
+    TOO_LARGE: 'skills.form.issueTooLarge',
+    NAME_FALLBACK: 'skills.form.previewNameFallback',
+    DESCRIPTION_FALLBACK: 'skills.form.previewDescFallback',
+  };
+
+  const issueText = (issue: SkillImportPreview['issues'][number]): string =>
+    issue.code === 'NAME_FALLBACK'
+      ? t('skills.form.previewNameFallback', { name: previewName.trim() || preview?.name || '' })
+      : t(ISSUE_KEY[issue.code], {});
+
+  // Drop zone accepts exactly ONE entry: a folder or a single .md. Dragging
+  // non-files (text, page elements) yields an empty files list — a silent
+  // no-op, never an error (Review Focus #1).
+  const handleDrop = (e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setDragActive(false);
+    const list = e.dataTransfer.files;
+    if (!list || list.length === 0) return;
+    if (list.length > 1) setPreviewError(t('skills.form.dropOneOnly'));
+    if (!isDesktop) {
+      setPreviewError(t('skills.form.dropDesktopOnly'));
+      return;
+    }
+    const dropped = window.__electron__?.getPathForFile?.(list[0]);
+    if (!dropped) {
+      setPreviewError(t('skills.form.dropResolveFail'));
+      return;
+    }
+    previewByPath(dropped);
   };
 
   /**
@@ -178,13 +254,16 @@ export function SkillEditor({
 
   const handleSubmit = () => {
     if (isImportSource) {
-      const folder = folderPath.trim();
-      if (!folder) {
-        setFieldError(t('skills.form.folderRequired'));
-        return;
-      }
+      // Confirm is only meaningful after a PASSING preview (Review Focus #3:
+      // if the source vanished since, onImport fails and the editor stays open
+      // with the error — same contract as save-failure).
+      if (!preview || !preview.ok) return;
       setFieldError(null);
-      void onImport?.({ folderPath: folder });
+      void onImport?.({
+        folderPath: folderPath.trim(),
+        ...(previewName.trim() ? { name: previewName.trim() } : {}),
+        ...(previewDescription.trim() ? { description: previewDescription.trim() } : {}),
+      });
       return;
     }
     if (!validateFields()) return;
@@ -251,7 +330,7 @@ export function SkillEditor({
             className="kb-btn kb-btn-primary"
             data-testid="skill-form-submit"
             onClick={handleSubmit}
-            disabled={busy}
+            disabled={busy || (isImportSource && (!preview || !preview.ok))}
           >
             {busy ? t('skills.form.saving') : submitLabel}
           </button>
@@ -287,40 +366,108 @@ export function SkillEditor({
         )}
 
         {isImportSource ? (
-          <div className="sk-field">
-            <span className="sk-field__label">{t('skills.form.importModeFolder')}</span>
-            <div className="sk-import-row">
-              <input
-                className="sk-field__input"
-                data-testid="skill-import-folder"
-                type="text"
-                value={folderPath}
-                placeholder={t('skills.form.folderPlaceholder')}
-                onChange={(e) => setFolderPath(e.target.value)}
-              />
-              {isDesktop && (
-                <>
-                  <button
-                    type="button"
-                    className="sk-browse-btn"
-                    data-testid="skill-import-browse-folder"
-                    onClick={handleBrowseFolder}
-                  >
-                    {t('skills.form.browseFolder')}
-                  </button>
-                  <button
-                    type="button"
-                    className="sk-browse-btn"
-                    data-testid="skill-import-browse-file"
-                    onClick={handleBrowseFile}
-                  >
-                    {t('skills.form.browseFile')}
-                  </button>
-                </>
-              )}
+          <div className="sk-import">
+            <div
+              className={`sk-import-dropzone${dragActive ? ' sk-import-dropzone--active' : ''}`}
+              data-testid="skill-import-dropzone"
+              onDragOver={(e) => { e.preventDefault(); setDragActive(true); }}
+              onDragLeave={() => setDragActive(false)}
+              onDrop={handleDrop}
+            >
+              <span className="sk-import-dropzone__icon">📥</span>
+              <span>{t('skills.form.dropHint')}</span>
             </div>
-            {!isDesktop && (
-              <p className="sk-form-hint">{t('skills.form.browseDesktopOnly')}</p>
+
+            <div className="sk-field">
+              <span className="sk-field__label">{t('skills.form.importModeFolder')}</span>
+              <div className="sk-import-row">
+                <input
+                  className="sk-field__input"
+                  data-testid="skill-import-folder"
+                  type="text"
+                  value={folderPath}
+                  placeholder={t('skills.form.folderPlaceholder')}
+                  onChange={(e) => setFolderPath(e.target.value)}
+                />
+                <button
+                  type="button"
+                  className="sk-browse-btn"
+                  data-testid="skill-import-preview-btn"
+                  onClick={() => { const p = folderPath.trim(); if (p) void runPreview({ folderPath: p }); }}
+                  disabled={previewing}
+                >
+                  {previewing ? t('skills.form.previewing') : t('skills.form.previewAction')}
+                </button>
+                {isDesktop && (
+                  <>
+                    <button type="button" className="sk-browse-btn" data-testid="skill-import-browse-folder" onClick={handleBrowseFolder}>
+                      {t('skills.form.browseFolder')}
+                    </button>
+                    <button type="button" className="sk-browse-btn" data-testid="skill-import-browse-file" onClick={handleBrowseFile}>
+                      {t('skills.form.browseFile')}
+                    </button>
+                  </>
+                )}
+              </div>
+              {!isDesktop && <p className="sk-form-hint">{t('skills.form.browseDesktopOnly')}</p>}
+            </div>
+
+            {preview && (
+              <div className="sk-preview" data-testid="skill-import-preview-card">
+                <div className="sk-editor__meta">
+                  <label className="sk-field">
+                    <span className="sk-field__label">{t('skills.form.name')} *</span>
+                    <input
+                      className="sk-field__input"
+                      data-testid="skill-import-preview-name"
+                      type="text"
+                      value={previewName}
+                      onChange={(e) => setPreviewName(e.target.value)}
+                    />
+                  </label>
+                  <label className="sk-field">
+                    <span className="sk-field__label">{t('skills.form.description')}</span>
+                    <input
+                      className="sk-field__input"
+                      data-testid="skill-import-preview-description"
+                      type="text"
+                      value={previewDescription}
+                      onChange={(e) => setPreviewDescription(e.target.value)}
+                    />
+                  </label>
+                </div>
+
+                <div className={`sk-preview__verdict${preview.ok ? '' : ' sk-preview__verdict--error'}`}>
+                  {preview.ok
+                    ? (preview.files.length > 1
+                        ? t('skills.form.previewStructureOk', { count: String(preview.files.length - 1) })
+                        : t('skills.form.previewStructureSingle'))
+                    : t(ISSUE_KEY[(preview.issues.find((i) => i.level === 'error'))!.code], {})}
+                </div>
+
+                {preview.issues.filter((i) => i.level === 'warning').map((i) => (
+                  <div key={i.code} className="sk-preview__issue sk-preview__issue--warning">{issueText(i)}</div>
+                ))}
+
+                {preview.truncated && <div className="sk-preview__issue">{t('skills.form.previewTruncated')}</div>}
+
+                {previewConflict && (
+                  <div className="sk-preview__conflict" data-testid="skill-import-conflict">
+                    {t('skills.form.previewConflict', { name: previewConflict.existingName })}
+                  </div>
+                )}
+
+                {preview.files.length > 0 && (
+                  <details className="sk-preview__files">
+                    <summary data-testid="skill-import-files-toggle">
+                      {t('skills.form.previewFilesToggle', { count: String(preview.files.length) })}
+                    </summary>
+                    <ul>
+                      {preview.files.map((f) => <li key={f.path}>{f.path}</li>)}
+                    </ul>
+                  </details>
+                )}
+              </div>
             )}
           </div>
         ) : (
@@ -368,8 +515,8 @@ export function SkillEditor({
           </>
         )}
 
-        {(fieldError || externalError) && (
-          <div className="sk-form-error" data-testid="skill-form-error">{fieldError || externalError}</div>
+        {(fieldError || externalError || previewError) && (
+          <div className="sk-form-error" data-testid="skill-form-error">{fieldError || externalError || previewError}</div>
         )}
       </div>
     </div>

@@ -321,7 +321,17 @@ test.describe('Skills library', () => {
       // In a plain browser there is no Electron, so the native browse buttons
       // stay hidden — type the path.
       await expect(page.getByTestId('skill-import-browse-folder')).toHaveCount(0);
+      // Preview two-phase: path → 预览 → confirm on the card.
       await page.getByTestId('skill-import-folder').fill(dir);
+      await page.getByTestId('skill-import-preview-btn').click();
+      const card = page.getByTestId('skill-import-preview-card');
+      await expect(card).toBeVisible({ timeout: 10_000 });
+      await expect(page.getByTestId('skill-import-preview-name')).toHaveValue(unique);
+      await expect(card).toContainText('references/guide.md');
+      await page.getByTestId('skill-import-files-toggle').click();
+      // Post-expansion assertion: a file-list row becomes visible (the toggle
+      // actually opened the <details>, not just DOM presence of the text).
+      await expect(card.locator('.sk-preview__files li').first()).toBeVisible();
       await page.getByTestId('skill-form-submit').click();
 
       // Row appears once the import is processed (generous timeout for dev queue).
@@ -335,6 +345,99 @@ test.describe('Skills library', () => {
       await expect(row).toHaveCount(0, { timeout: 15_000 });
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test('import preview surfaces a structure error and blocks confirmation', async ({ page }) => {
+    await gotoSkillsTab(page);
+    await page.locator('[data-testid="skill-new-btn"]').click();
+    await expect(page.getByTestId('skill-form-overlay')).toBeVisible();
+    await page.getByTestId('skill-source-import').click();
+    const emptyDir = fs.mkdtempSync(path.join(os.tmpdir(), 'molio-e2e-skill-empty-'));
+    try {
+      await page.getByTestId('skill-import-folder').fill(emptyDir);
+      await page.getByTestId('skill-import-preview-btn').click();
+      await expect(page.getByTestId('skill-import-preview-card')).toBeVisible({ timeout: 10_000 });
+      await expect(page.getByTestId('skill-form-submit')).toBeDisabled();
+      await expect(page.getByTestId('skill-import-preview-card')).toContainText('SKILL.md');
+    } finally {
+      fs.rmSync(emptyDir, { recursive: true, force: true });
+      await page.getByTestId('skill-form-cancel').click();
+    }
+  });
+
+  test('import preview reports a same-name conflict; both skills coexist after confirm', async ({ page }) => {
+    const ts = Date.now();
+    const existingName = `E2E冲突${ts}`;
+    const droppedName = `e2E冲突${ts} `; // case variant + trailing space — same skill by trim+ci
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'molio-e2e-skill-conflict-'));
+    fs.writeFileSync(
+      path.join(dir, 'SKILL.md'),
+      `---\nname: ${droppedName}\ndescription: 冲突测试\n---\n\nbody\n`,
+      'utf8',
+    );
+
+    const DAEMON = `http://localhost:${process.env.MOLIO_E2E_DAEMON_PORT ?? '3100'}`;
+    // Seed the existing skill directly via API (name collides only by trim+ci).
+    const res = await page.request.post(`${DAEMON}/api/skills`, {
+      data: { name: existingName, description: '冲突测试已存在', instructions: 'body' },
+    });
+    const existing = (await res.json())['skill'] as { id: string };
+
+    try {
+      await gotoSkillsTab(page);
+      await page.locator('[data-testid="skill-new-btn"]').click();
+      await expect(page.getByTestId('skill-form-overlay')).toBeVisible();
+      await page.getByTestId('skill-source-import').click();
+      await page.getByTestId('skill-import-folder').fill(dir);
+      await page.getByTestId('skill-import-preview-btn').click();
+
+      // The conflict chip appears on the card (trim + case-insensitive hit).
+      const card = page.getByTestId('skill-import-preview-card');
+      await expect(card).toBeVisible({ timeout: 10_000 });
+      await expect(page.getByTestId('skill-import-conflict')).toBeVisible();
+
+      // Confirm anyway — both skills are kept (the new one gets a sync suffix).
+      await page.getByTestId('skill-form-submit').click();
+      await expect(page.getByTestId('skill-form-overlay')).toHaveCount(0, { timeout: 15_000 });
+
+      const both = page.locator('.sk-row', { hasText: String(ts) });
+      await expect(both).toHaveCount(2, { timeout: 15_000 });
+    } finally {
+      // Cleanup: delete both skills (API — rows may carry sync suffixes).
+      const list = await page.request.get(`${DAEMON}/api/skills`);
+      const skills = ((await list.json())['skills'] as { id: string; name: string }[]) ?? [];
+      for (const s of skills) {
+        if (s.name.replaceAll(' ', '').toLowerCase().includes(`e2e冲突${ts}`.toLowerCase())) {
+          await page.request.delete(`${DAEMON}/api/skills/${s.id}`);
+        }
+      }
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test('import failure after preview keeps the editor open with the error', async ({ page }) => {
+    await gotoSkillsTab(page);
+    await page.locator('[data-testid="skill-new-btn"]').click();
+    await page.getByTestId('skill-source-import').click();
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'molio-e2e-skill-vanish-'));
+    fs.writeFileSync(path.join(dir, 'SKILL.md'), '---\nname: 消失技能\ndescription: d\n---\n\nbody\n', 'utf8');
+    await page.route('**/api/skills/import', (route) => route.fulfill({
+      status: 404,
+      contentType: 'application/json',
+      body: JSON.stringify({ error: { code: 'NOT_FOUND', message: 'E2E模拟源已消失' } }),
+    }));
+    try {
+      await page.getByTestId('skill-import-folder').fill(dir);
+      await page.getByTestId('skill-import-preview-btn').click();
+      await expect(page.getByTestId('skill-import-preview-card')).toBeVisible({ timeout: 10_000 });
+      await page.getByTestId('skill-form-submit').click();
+      await expect(page.getByTestId('skill-form-error')).toHaveText('E2E模拟源已消失', { timeout: 10_000 });
+      await expect(page.getByTestId('skill-form-overlay')).toBeVisible();
+    } finally {
+      await page.unroute('**/api/skills/import');
+      fs.rmSync(dir, { recursive: true, force: true });
+      await page.getByTestId('skill-form-cancel').click();
     }
   });
 });

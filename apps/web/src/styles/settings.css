@@ -850,6 +850,24 @@
   background: var(--bg-subtle);
 }
 
+/* Skill import dropzone + preview card */
+.sk-import { display: flex; flex-direction: column; gap: 16px; }
+.sk-import-dropzone {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  padding: 20px 12px; border: 1.5px dashed var(--border); border-radius: var(--radius);
+  color: var(--text-muted); font-size: 13px; cursor: default; transition: border-color .15s, background .15s;
+}
+.sk-import-dropzone--active { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.sk-preview { border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+.sk-preview__verdict { font-size: 12.5px; color: var(--green); }
+.sk-preview__verdict--error { color: var(--red); font-weight: 500; }
+.sk-preview__issue { font-size: 12px; color: var(--text-muted); }
+.sk-preview__issue--warning { color: var(--amber); }
+.sk-preview__conflict { font-size: 12px; color: var(--amber); }
+.sk-preview__files summary { font-size: 12px; color: var(--text-muted); cursor: pointer; }
+.sk-preview__files ul { margin: 6px 0 0; padding-left: 18px; max-height: 160px; overflow-y: auto; }
+.sk-preview__files li { font-size: 11.5px; color: var(--text-faint); font-family: var(--mono); }
+
 .sk-form-error {
   margin-top: 4px;
   padding: 8px 12px;
