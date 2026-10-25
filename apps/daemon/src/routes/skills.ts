@@ -29,6 +29,7 @@ import {
   listSkills,
   getSkill,
   readInstructions,
+  listSkillFiles,
   createSkill,
   updateSkill,
   toggleSkill,
@@ -180,6 +181,17 @@ export function skillsRoutes(db: Database.Database, runManager: RunManager): Hon
       }
       return mapHubError(c, err);
     }
+  });
+
+  // GET /api/skills/:id/files — the library skill's content-dir listing (the
+  // "查看目录结构" view, mirroring the import preview's file list). Bundled
+  // skills are treated as not found, like every other by-id route.
+  app.get('/:id/files', (c) => {
+    const result = listSkillFiles(db, c.req.param('id'));
+    if (!result) {
+      return c.json({ error: { code: 'NOT_FOUND', message: 'Skill not found' } }, 404);
+    }
+    return c.json(result);
   });
 
   // GET /api/skills/:id — one skill + its instructions (for the edit/duplicate

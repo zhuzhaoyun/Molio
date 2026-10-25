@@ -1033,6 +1033,16 @@ export const api = {
     return res.json();
   },
 
+  /** Content-dir listing of a library skill (GET /api/skills/:id/files). */
+  async listSkillFiles(id: string): Promise<{ dir: string; files: { path: string; size: number }[]; truncated: boolean }> {
+    const res = await fetch(`${BASE}/skills/${id}/files`);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error?.message ?? `Failed to list skill files: ${res.status}`);
+    }
+    return res.json();
+  },
+
   async importSkill(req: ImportSkillRequest): Promise<SkillManifestEntry> {
     const res = await fetch(`${BASE}/skills/import`, {
       method: 'POST',

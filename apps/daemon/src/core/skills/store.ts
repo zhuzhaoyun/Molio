@@ -98,6 +98,62 @@ export function readInstructions(id: string, opts?: SkillPathsOpts): string {
   }
 }
 
+export interface SkillFilesResult {
+  /** Absolute content dir — the desktop "reveal in file manager" target. */
+  dir: string;
+  /** Relative posix paths, sorted; the entry SKILL.md included. */
+  files: { path: string; size: number }[];
+  truncated: boolean;
+}
+
+/** Same cap as the importer's folder walk (importer.MAX_IMPORT_FILES); kept
+ * local to avoid a store → importer cycle (importer imports store). */
+const MAX_LIST_FILES = 1000;
+
+/**
+ * List a library skill's content-dir files (the "查看目录结构" view). Returns
+ * null for bundled (hidden, no library content) and unknown ids — the route
+ * maps that to 404 like every other by-id route. A vanished dir degrades to an
+ * empty list rather than a 500 (same contract as readInstructions).
+ */
+export function listSkillFiles(db: Database.Database, id: string, opts?: SkillPathsOpts): SkillFilesResult | null {
+  const skill = getSkill(db, id);
+  if (!skill || skill.kind === 'bundled') return null;
+  const dir = skillContentDir(id, opts);
+  const files: { path: string; size: number }[] = [];
+  let truncated = false;
+  const walk = (d: string): void => {
+    if (truncated) return;
+    let entries: fs.Dirent[];
+    try {
+      entries = fs.readdirSync(d, { withFileTypes: true });
+    } catch {
+      return; // unreadable subtree — degrade, don't 500
+    }
+    for (const entry of entries) {
+      const p = path.join(d, entry.name);
+      if (entry.isDirectory()) {
+        walk(p);
+        continue;
+      }
+      if (files.length >= MAX_LIST_FILES) {
+        truncated = true;
+        return;
+      }
+      let size = 0;
+      try {
+        size = fs.statSync(p).size;
+      } catch {
+        continue; // vanished mid-walk
+      }
+      files.push({ path: path.relative(dir, p).split(path.sep).join('/'), size });
+    }
+  };
+  if (fs.existsSync(dir)) walk(dir);
+  files.sort((a, b) => (a.path < b.path ? -1 : 1));
+  return { dir, files, truncated };
+}
+
 export interface CreateSkillInput {
   /** Stable id for built-in/bundled seeds; a UUID is generated when omitted. */
   id?: string;

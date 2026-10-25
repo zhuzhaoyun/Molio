@@ -2,7 +2,7 @@ import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { mkdtempSync, rmSync, existsSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, existsSync, writeFileSync, mkdirSync } from 'node:fs';
 import { Hono } from 'hono';
 import type Database from 'better-sqlite3';
 import { skillsRoutes } from '../../src/routes/skills.js';
@@ -232,6 +232,7 @@ describe('Skills routes', () => {
 
       for (const [method, suffix, body] of [
         ['GET', '', undefined],
+        ['GET', '/files', undefined],
         ['PATCH', '', JSON.stringify({ name: 'x' })],
         ['PATCH', '/toggle', JSON.stringify({ enabled: false })],
       ] as const) {
@@ -364,6 +365,47 @@ describe('Skills routes', () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
       await app.request(`/api/skills/${existing.id}`, { method: 'DELETE' });
+    }
+  });
+
+  it('GET /:id/files lists the content dir; single-file skill → generated SKILL.md; unknown → 404', async () => {
+    // Multi-file skill via the import route (whole-dir copy).
+    const dir = mkdtempSync(join(tmpdir(), 'molio-skill-files-'));
+    writeFileSync(join(dir, 'SKILL.md'), '---\nname: 文件清单\ndescription: d\n---\n\nbody\n', 'utf8');
+    mkdirSync(join(dir, 'references'));
+    writeFileSync(join(dir, 'references', 'guide.md'), 'g\n', 'utf8');
+    const imp = await app.request('/api/skills/import', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ folderPath: dir }),
+    });
+    const multi = (await json(imp))['skill'] as SkillManifestEntry;
+
+    const created = await app.request('/api/skills', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: '单文件清单', description: '', instructions: 'body' }),
+    });
+    const single = (await json(created))['skill'] as SkillManifestEntry;
+    try {
+      const res = await app.request(`/api/skills/${multi.id}/files`);
+      assert.equal(res.status, 200);
+      const data = await json(res);
+      const files = data['files'] as { path: string }[];
+      assert.deepEqual(files.map((f) => f.path), ['SKILL.md', 'references/guide.md']);
+      assert.equal(data['truncated'], false);
+      assert.equal(typeof data['dir'], 'string');
+
+      const res2 = await app.request(`/api/skills/${single.id}/files`);
+      assert.equal(res2.status, 200);
+      const data2 = await json(res2);
+      assert.deepEqual((data2['files'] as { path: string }[]).map((f) => f.path), ['SKILL.md']);
+
+      assert.equal((await app.request('/api/skills/nope/files')).status, 404);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+      await app.request(`/api/skills/${multi.id}`, { method: 'DELETE' });
+      await app.request(`/api/skills/${single.id}`, { method: 'DELETE' });
     }
   });
 

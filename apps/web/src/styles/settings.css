@@ -875,6 +875,14 @@
   100% { background: transparent; }
 }
 
+/* Library-skill row: folded content-dir listing (same visual language as the
+   import preview's file list). */
+.sk-row-files { margin-top: 2px; }
+.sk-row-files summary { font-size: 12px; color: var(--text-muted); cursor: pointer; width: fit-content; }
+.sk-row-files__reveal { margin-top: 6px; }
+.sk-row-files ul { margin: 6px 0 0; padding-left: 18px; max-height: 160px; overflow-y: auto; }
+.sk-row-files li { font-size: 11.5px; color: var(--text-faint); font-family: var(--mono); }
+
 .sk-form-error {
   margin-top: 4px;
   padding: 8px 12px;

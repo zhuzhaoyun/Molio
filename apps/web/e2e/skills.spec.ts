@@ -342,6 +342,12 @@ test.describe('Skills library', () => {
       await expect(row).toHaveClass(/sk-row--highlight/, { timeout: 10_000 });
       await expect(page.getByTestId('skill-form-overlay')).toHaveCount(0);
 
+      // The row's folded content-dir listing mirrors the import preview's:
+      // expanding it lazily fetches GET /:id/files and shows the siblings.
+      await row.getByTestId('skill-row-files-toggle').click();
+      await expect(row.locator('.sk-row-files li', { hasText: 'references/guide.md' })).toBeVisible({ timeout: 10_000 });
+      await expect(row.getByTestId('skill-row-files-toggle')).toContainText('2');
+
       // Cleanup: delete the imported skill (mirrors the lifecycle test pattern).
       await row.locator('[data-testid^="skill-delete-"]').first().click();
       await row.locator('[data-testid^="skill-delete-confirm-"]').first().click();
