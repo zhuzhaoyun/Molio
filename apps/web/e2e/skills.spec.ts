@@ -314,10 +314,13 @@ test.describe('Skills library', () => {
     try {
       await gotoSkillsTab(page);
 
-      // Single "新建技能" button; switch its source to "导入文件 / 文件夹".
+      // Single "新建技能" button opens ONE merged surface: dropzone (import)
+      // and the manual three-field form are visible together, no source tabs.
       await page.locator('[data-testid="skill-new-btn"]').click();
       await expect(page.getByTestId('skill-form-overlay')).toBeVisible();
-      await page.getByTestId('skill-source-import').click();
+      await expect(page.getByTestId('skill-import-dropzone')).toBeVisible();
+      await expect(page.getByTestId('skill-name-input')).toBeVisible();
+      await expect(page.getByTestId('skill-source-import')).toHaveCount(0);
       // In a plain browser there is no Electron, so the native browse buttons
       // stay hidden — type the path.
       await expect(page.getByTestId('skill-import-browse-folder')).toHaveCount(0);
@@ -361,7 +364,6 @@ test.describe('Skills library', () => {
     await gotoSkillsTab(page);
     await page.locator('[data-testid="skill-new-btn"]').click();
     await expect(page.getByTestId('skill-form-overlay')).toBeVisible();
-    await page.getByTestId('skill-source-import').click();
     const emptyDir = fs.mkdtempSync(path.join(os.tmpdir(), 'molio-e2e-skill-empty-'));
     try {
       await page.getByTestId('skill-import-folder').fill(emptyDir);
@@ -397,7 +399,6 @@ test.describe('Skills library', () => {
       await gotoSkillsTab(page);
       await page.locator('[data-testid="skill-new-btn"]').click();
       await expect(page.getByTestId('skill-form-overlay')).toBeVisible();
-      await page.getByTestId('skill-source-import').click();
       await page.getByTestId('skill-import-folder').fill(dir);
       await page.getByTestId('skill-import-preview-btn').click();
 
@@ -428,7 +429,6 @@ test.describe('Skills library', () => {
   test('import failure after preview keeps the editor open with the error', async ({ page }) => {
     await gotoSkillsTab(page);
     await page.locator('[data-testid="skill-new-btn"]').click();
-    await page.getByTestId('skill-source-import').click();
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'molio-e2e-skill-vanish-'));
     fs.writeFileSync(path.join(dir, 'SKILL.md'), '---\nname: 消失技能\ndescription: d\n---\n\nbody\n', 'utf8');
     await page.route('**/api/skills/import', (route) => route.fulfill({

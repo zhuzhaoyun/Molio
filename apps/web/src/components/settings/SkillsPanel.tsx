@@ -86,7 +86,7 @@ function SkillRow({
               {isDesktop && fileList.dir && (
                 <button
                   type="button"
-                  className="sk-browse-btn sk-row-files__reveal"
+                  className="rt-btn rt-btn--sm rt-btn--ghost sk-row-files__reveal"
                   onClick={() => void window.__electron__?.showItemInFolder(fileList.dir)}
                 >
                   {t('skills.row.reveal')}

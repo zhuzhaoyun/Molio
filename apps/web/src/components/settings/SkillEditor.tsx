@@ -40,9 +40,6 @@ interface SkillEditorProps {
   onImport?: (req: ImportSkillRequest) => void | Promise<void>;
 }
 
-/** Where the new-skill dialog sources its content from. */
-type NewSource = 'paste' | 'import';
-
 function titleKey(mode: SkillFormMode): string {
   switch (mode) {
     case 'create': return 'skills.form.createTitle';
@@ -59,9 +56,11 @@ function titleKey(mode: SkillFormMode): string {
  * editor fills all remaining height (Ctrl/Cmd+S saves).
  *
  * Authoring surface — three explicit fields (name / description / instructions):
- *   - new           → the single "新建技能" surface: a source switch at the top
- *                     toggles between the three-field form (→ create via onSave)
- *                     and importing a local file / folder path (→ onImport).
+ *   - new           → the single "新建技能" surface: import (dropzone / path /
+ *                     preview card) and the manual three-field form live on ONE
+ *                     page; the primary button follows the last-produced source
+ *                     (a passing preview → 导入 via onImport, otherwise → 保存
+ *                     via onSave).
  *   - create / edit → the same three fields; `create` is reused by "duplicate"
  *                     (prefilled copy).
  *   - prefill       → three fields prefilled from the AI extraction of an
@@ -88,7 +87,6 @@ export function SkillEditor({
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [instructions, setInstructions] = useState('');
-  const [source, setSource] = useState<NewSource>('paste');
   const [folderPath, setFolderPath] = useState('');
   const [preview, setPreview] = useState<SkillImportPreview | null>(null);
   const [previewConflict, setPreviewConflict] = useState<SkillImportConflict | null>(null);
@@ -114,7 +112,6 @@ export function SkillEditor({
     if (wasOpenRef.current) return; // already open — never reset mid-edit
     wasOpenRef.current = true;
     setFieldError(null);
-    setSource('paste');
     setFolderPath('');
     setPreview(null);
     setPreviewConflict(null);
@@ -133,9 +130,6 @@ export function SkillEditor({
     }
   }, [show, mode, prefillData, initialValues]);
 
-  // The new-skill surface imports only when its source switch is on "import";
-  // otherwise (and for standalone create/edit) it authors via the three fields.
-  const isImportSource = mode === 'new' && source === 'import';
   // The desktop app exposes native pickers; a browser (Docker/NAS) does not, so
   // there we hide the browse buttons and let the user type the container path.
   const isDesktop = Boolean(window.__electron__?.showDirectoryPicker);
@@ -253,12 +247,17 @@ export function SkillEditor({
     return true;
   };
 
+  // ONE merged new-skill surface: dropzone/path on top, the manual three-field
+  // form below. The primary button follows whatever the user last produced —
+  // a passing preview switches it to 导入; without a preview it is the plain 保存.
+  // edit/prefill never produce a preview, so they always take the save path.
   const handleSubmit = () => {
-    if (isImportSource) {
+    if (preview) {
       // Confirm is only meaningful after a PASSING preview (Review Focus #3:
       // if the source vanished since, onImport fails and the editor stays open
-      // with the error — same contract as save-failure).
-      if (!preview || !preview.ok) return;
+      // with the error — same contract as save-failure). A failed preview
+      // no-ops here, matching the disabled primary button.
+      if (!preview.ok) return;
       setFieldError(null);
       void onImport?.({
         folderPath: folderPath.trim(),
@@ -291,7 +290,7 @@ export function SkillEditor({
 
   if (!show) return null;
 
-  const submitLabel = isImportSource ? t('skills.form.importAction') : t('skills.form.save');
+  const submitLabel = preview ? t('skills.form.importAction') : t('skills.form.save');
 
   return (
     <div
@@ -331,7 +330,7 @@ export function SkillEditor({
             className="kb-btn kb-btn-primary"
             data-testid="skill-form-submit"
             onClick={handleSubmit}
-            disabled={busy || (isImportSource && (!preview || !preview.ok))}
+            disabled={busy || (!!preview && !preview.ok)}
           >
             {busy ? t('skills.form.saving') : submitLabel}
           </button>
@@ -344,29 +343,6 @@ export function SkillEditor({
         )}
 
         {mode === 'new' && (
-          <div className="sk-import-switch" role="tablist">
-            <button
-              type="button"
-              role="tab"
-              className={`sk-import-switch__btn${source === 'paste' ? ' is-active' : ''}`}
-              data-testid="skill-source-paste"
-              onClick={() => setSource('paste')}
-            >
-              {t('skills.form.sourcePaste')}
-            </button>
-            <button
-              type="button"
-              role="tab"
-              className={`sk-import-switch__btn${source === 'import' ? ' is-active' : ''}`}
-              data-testid="skill-source-import"
-              onClick={() => setSource('import')}
-            >
-              {t('skills.form.sourceImport')}
-            </button>
-          </div>
-        )}
-
-        {isImportSource ? (
           <div className="sk-import">
             <div
               className={`sk-import-dropzone${dragActive ? ' sk-import-dropzone--active' : ''}`}
@@ -418,6 +394,18 @@ export function SkillEditor({
 
             {preview && (
               <div className="sk-preview" data-testid="skill-import-preview-card">
+                {/* Clear the preview to fall back to the manual form — the
+                    visible way out of import mode (re-drop replaces, this
+                    removes). */}
+                <button
+                  type="button"
+                  className="sk-preview__clear"
+                  data-testid="skill-import-preview-clear"
+                  onClick={() => { setPreview(null); setPreviewConflict(null); }}
+                  aria-label={t('skills.form.cancel')}
+                >
+                  ×
+                </button>
                 <div className="sk-editor__meta">
                   <label className="sk-field">
                     <span className="sk-field__label">{t('skills.form.name')} *</span>
@@ -473,50 +461,50 @@ export function SkillEditor({
                 )}
               </div>
             )}
+
+            <p className="sk-form-hint sk-import__divider">{t('skills.form.manualHint')}</p>
           </div>
-        ) : (
-          <>
-            <div className="sk-editor__meta">
-              <label className="sk-field">
-                <span className="sk-field__label">{t('skills.form.name')} *</span>
-                <input
-                  className="sk-field__input"
-                  data-testid="skill-name-input"
-                  type="text"
-                  value={name}
-                  placeholder={t('skills.form.namePlaceholder')}
-                  onChange={(e) => setName(e.target.value)}
-                />
-              </label>
+        )}
 
-              <label className="sk-field">
-                <span className="sk-field__label">{t('skills.form.description')} *</span>
-                <input
-                  className="sk-field__input"
-                  data-testid="skill-description-input"
-                  type="text"
-                  value={description}
-                  placeholder={t('skills.form.descriptionPlaceholder')}
-                  onChange={(e) => setDescription(e.target.value)}
-                />
-              </label>
-            </div>
+        <div className="sk-editor__meta">
+          <label className="sk-field">
+            <span className="sk-field__label">{t('skills.form.name')} *</span>
+            <input
+              className="sk-field__input"
+              data-testid="skill-name-input"
+              type="text"
+              value={name}
+              placeholder={t('skills.form.namePlaceholder')}
+              onChange={(e) => setName(e.target.value)}
+            />
+          </label>
 
-            <label className="sk-field sk-field--grow">
-              <span className="sk-field__label">{t('skills.form.instructions')} *</span>
-              <textarea
-                className="sk-field__textarea sk-field__textarea--md"
-                data-testid="skill-instructions-input"
-                value={instructions}
-                placeholder={t('skills.form.instructionsPlaceholder')}
-                onChange={(e) => setInstructions(e.target.value)}
-                onPaste={handleInstructionsPaste}
-              />
-            </label>
-            {mode !== 'prefill' && (
-              <p className="sk-form-hint">{t('skills.form.pasteHint')}</p>
-            )}
-          </>
+          <label className="sk-field">
+            <span className="sk-field__label">{t('skills.form.description')} *</span>
+            <input
+              className="sk-field__input"
+              data-testid="skill-description-input"
+              type="text"
+              value={description}
+              placeholder={t('skills.form.descriptionPlaceholder')}
+              onChange={(e) => setDescription(e.target.value)}
+            />
+          </label>
+        </div>
+
+        <label className="sk-field sk-field--grow">
+          <span className="sk-field__label">{t('skills.form.instructions')} *</span>
+          <textarea
+            className="sk-field__textarea sk-field__textarea--md"
+            data-testid="skill-instructions-input"
+            value={instructions}
+            placeholder={t('skills.form.instructionsPlaceholder')}
+            onChange={(e) => setInstructions(e.target.value)}
+            onPaste={handleInstructionsPaste}
+          />
+        </label>
+        {mode !== 'prefill' && (
+          <p className="sk-form-hint">{t('skills.form.pasteHint')}</p>
         )}
 
         {(fieldError || externalError || previewError) && (
