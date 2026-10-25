@@ -177,6 +177,7 @@ export function SkillEditor({
     NO_ENTRY: 'skills.form.issueNoEntry',
     EMPTY_BODY: 'skills.form.issueEmptyBody',
     SOURCE_UNREADABLE: 'skills.form.issueSourceUnreadable',
+    UNSUPPORTED_TYPE: 'skills.form.issueUnsupportedType',
     TOO_MANY_FILES: 'skills.form.issueTooManyFiles',
     TOO_LARGE: 'skills.form.issueTooLarge',
     NAME_FALLBACK: 'skills.form.previewNameFallback',
@@ -375,7 +376,10 @@ export function SkillEditor({
               onDrop={handleDrop}
             >
               <span className="sk-import-dropzone__icon">📥</span>
-              <span>{t('skills.form.dropHint')}</span>
+              {/* Re-drag semantics are REPLACE: with a preview already on
+                  screen, say so at drag-time instead of leaving the user to
+                  guess whether the drop appends or overwrites. */}
+              <span>{t(dragActive && preview ? 'skills.form.dropReplace' : 'skills.form.dropHint')}</span>
             </div>
 
             <div className="sk-field">

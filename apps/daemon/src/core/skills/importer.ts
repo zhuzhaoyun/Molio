@@ -185,6 +185,13 @@ export function inspectSkillSource(input: { raw: string } | { folderPath: string
   }
 
   if (stat.isFile()) {
+    // Spec §5.3: only a single .md is a valid file source. Any other file
+    // (a .rar/.zip archive, a stray image) must be REJECTED here — its binary
+    // bytes would otherwise "parse" as instructions and the preview would show
+    // a green verdict for garbage (real-machine regression, 2026-10-25).
+    if (!/\.md$/i.test(p)) {
+      return fail([{ level: 'error', code: 'UNSUPPORTED_TYPE', message: '仅支持技能文件夹（含 SKILL.md）或 .md 文件；压缩包请先解压成文件夹后再导入' }]);
+    }
     const size = stat.size;
     if (size > MAX_IMPORT_BYTES) {
       return fail([{ level: 'error', code: 'TOO_LARGE', message: `导入文件大小超过上限（最大 ${Math.round(MAX_IMPORT_BYTES / 1024 / 1024)} MB）` }]);

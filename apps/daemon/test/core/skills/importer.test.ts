@@ -327,6 +327,37 @@ describe('skills/importer inspectSkillSource', () => {
     }
   });
 
+  it('single .MD file (uppercase extension) is still a valid single-file skill', () => {
+    const file = path.join(os.tmpdir(), `molio-skill-inspect-upper-${Date.now()}.MD`);
+    try {
+      fs.writeFileSync(file, '---\nname: 大写扩展\ndescription: d\n---\n\nbody\n', 'utf8');
+      const r = inspectSkillSource({ folderPath: file });
+      assert.equal(r.ok, true);
+      assert.equal(r.entryFile, path.basename(file));
+    } finally {
+      fs.rmSync(file, { force: true });
+    }
+  });
+
+  it('single non-.md file (e.g. a .rar archive) → UNSUPPORTED_TYPE error, never a fake "single-file skill"', () => {
+    // Regression (real-machine): dragging a .rar onto the dropzone used to be
+    // accepted as a "single-file skill" — the binary junk parsed as instructions
+    // and the preview showed a green verdict. Spec §5.3: only a single .md is a
+    // valid file source; anything else must be rejected with a human-readable
+    // error (archives: extract first).
+    const file = path.join(os.tmpdir(), `molio-skill-inspect-rar-${Date.now()}.rar`);
+    try {
+      fs.writeFileSync(file, '---\nname: 压缩包\ndescription: d\n---\n\nbody\n', 'utf8');
+      const r = inspectSkillSource({ folderPath: file });
+      assert.equal(r.ok, false);
+      assert.equal(r.entry, null);
+      assert.equal(r.issues[0]?.code, 'UNSUPPORTED_TYPE');
+      assert.equal(r.issues[0]?.level, 'error');
+    } finally {
+      fs.rmSync(file, { force: true });
+    }
+  });
+
   it('raw without instructions → EMPTY_BODY', () => {
     const r = inspectSkillSource({ raw: '---\nname: x\n---\n\n   ' });
     assert.equal(r.ok, false);

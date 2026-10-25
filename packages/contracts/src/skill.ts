@@ -77,6 +77,7 @@ export type SkillImportIssueCode =
   | 'NO_ENTRY'
   | 'EMPTY_BODY'
   | 'SOURCE_UNREADABLE'
+  | 'UNSUPPORTED_TYPE'
   | 'TOO_MANY_FILES'
   | 'TOO_LARGE'
   | 'NAME_FALLBACK'
