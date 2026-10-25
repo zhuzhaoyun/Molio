@@ -345,11 +345,14 @@ test.describe('Skills library', () => {
       await expect(row).toHaveClass(/sk-row--highlight/, { timeout: 10_000 });
       await expect(page.getByTestId('skill-form-overlay')).toHaveCount(0);
 
-      // The row's folded content-dir listing mirrors the import preview's:
-      // expanding it lazily fetches GET /:id/files and shows the siblings.
-      await row.getByTestId('skill-row-files-toggle').click();
-      await expect(row.locator('.sk-row-files li', { hasText: 'references/guide.md' })).toBeVisible({ timeout: 10_000 });
-      await expect(row.getByTestId('skill-row-files-toggle')).toContainText('2');
+      // Clicking the CARD BODY is the view/edit entry: one interaction opens
+      // the editor with details + file listing together (view/edit closure).
+      await row.locator('.sk-row__body').click();
+      await expect(page.getByTestId('skill-form-overlay')).toBeVisible();
+      await page.getByTestId('skill-editor-files-toggle').click();
+      await expect(page.locator('.sk-preview__files li', { hasText: 'references/guide.md' })).toBeVisible({ timeout: 10_000 });
+      await page.getByTestId('skill-form-cancel').click();
+      await expect(page.getByTestId('skill-form-overlay')).toHaveCount(0);
 
       // Cleanup: delete the imported skill (mirrors the lifecycle test pattern).
       await row.locator('[data-testid^="skill-delete-"]').first().click();

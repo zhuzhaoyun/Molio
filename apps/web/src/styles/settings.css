@@ -592,23 +592,13 @@
 /* ── Skill Row ── */
 .sk-row {
   display: flex;
-  /* Top-aligned, not centered: an expanded row (file listing) must not push
-     the toggle / action buttons to the vertical middle of a tall card. */
-  align-items: flex-start;
+  align-items: center;
   gap: 14px;
   padding: 12px 16px;
   background: var(--bg-panel);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   transition: border-color 120ms ease;
-}
-
-.sk-row .sk-switch {
-  margin-top: 2px;
-}
-
-.sk-row .sk-row__actions {
-  margin-top: -1px;
 }
 
 .sk-row:hover {
@@ -895,21 +885,13 @@
   100% { background: transparent; }
 }
 
-/* Library-skill row: folded content-dir listing (same visual language as the
-   import preview's file list). */
-.sk-row-files { margin-top: 6px; }
-.sk-row-files summary {
-  font-size: 12px; color: var(--text-muted); cursor: pointer; width: fit-content;
-  border-radius: var(--radius-sm); transition: color 120ms ease;
-}
-.sk-row-files summary:hover { color: var(--text); }
-.sk-row-files summary::marker { color: var(--text-faint); }
-.sk-row-files__reveal { margin-top: 8px; }
-.sk-row-files ul { margin: 6px 0 0; padding-left: 20px; max-height: 180px; overflow-y: auto; }
-.sk-row-files li {
-  font-size: 11.5px; line-height: 1.7; color: var(--text-faint); font-family: var(--mono);
-}
-.sk-row-files li::marker { color: var(--border-strong); }
+/* Library-skill row: the card body is the view/edit entry — pointer + hover
+   name emphasis make the affordance legible without adding chrome. */
+.sk-row__body { cursor: pointer; min-width: 0; }
+.sk-row__body:hover .sk-row__name { color: var(--accent); }
+
+/* Editor's folded content-dir listing reuses .sk-preview__files visuals. */
+.sk-files-reveal { margin-top: 8px; }
 
 .sk-form-error {
   margin-top: 4px;

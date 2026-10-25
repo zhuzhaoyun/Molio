@@ -11,6 +11,8 @@ interface ModalState {
   skill: SkillManifestEntry | null;
   /** Prefilled fields for create (duplicate) / edit. */
   initialValues?: Partial<SkillFormValues>;
+  /** Content-dir listing for the editor's folded file view (edit/duplicate). */
+  files?: { dir: string; files: { path: string; size: number }[]; truncated: boolean } | null;
 }
 
 /**
@@ -44,16 +46,6 @@ function SkillRow({
   onDeleteCancel: () => void;
 }) {
   const { t } = useI18n();
-  // The row only lists library skills, same as the API — the guard here is for TS.
-  const isDesktop = Boolean(window.__electron__?.showDirectoryPicker);
-  // Content-dir listing, loaded lazily on first expand (same folded-list
-  // interaction as the import preview card). Failed loads degrade to an empty
-  // list so the toggle never gets stuck on "loading".
-  const [fileList, setFileList] = useState<{ dir: string; files: { path: string; size: number }[]; truncated: boolean } | null>(null);
-  const loadFiles = () => {
-    if (fileList) return;
-    api.listSkillFiles(skill.id).then(setFileList).catch(() => setFileList({ dir: '', files: [], truncated: false }));
-  };
 
   return (
     <div className={`sk-row${highlighted ? ' sk-row--highlight' : ''}`} data-testid={`skill-row-${skill.id}`}>
@@ -67,38 +59,15 @@ function SkillRow({
         <span className="sk-switch__track" />
       </label>
 
-      <div className="sk-row__body">
+      {/* The card body IS the view/edit entry: one click opens the editor where
+          details (file listing) and editing live together. The toggle switch
+          and the action buttons sit OUTSIDE this div, so their clicks never
+          bubble into an editor open. */}
+      <div className="sk-row__body" onClick={() => { if (!fetching) onEdit(); }}>
         <div className="sk-row__header">
           <span className="sk-row__name">{skill.name}</span>
         </div>
         {skill.description && <div className="sk-row__desc">{skill.description}</div>}
-        <details
-          className="sk-row-files"
-          onToggle={(e) => { if ((e.target as HTMLDetailsElement).open) loadFiles(); }}
-        >
-          <summary data-testid="skill-row-files-toggle">
-            {fileList
-              ? t('skills.form.previewFilesToggle', { count: String(fileList.files.length) })
-              : t('skills.row.filesToggle')}
-          </summary>
-          {fileList && (
-            <>
-              {isDesktop && fileList.dir && (
-                <button
-                  type="button"
-                  className="rt-btn rt-btn--sm rt-btn--ghost sk-row-files__reveal"
-                  onClick={() => void window.__electron__?.showItemInFolder(fileList.dir)}
-                >
-                  {t('skills.row.reveal')}
-                </button>
-              )}
-              {fileList.truncated && <div className="sk-preview__issue">{t('skills.form.previewTruncated')}</div>}
-              <ul>
-                {fileList.files.map((f) => <li key={f.path}>{f.path}</li>)}
-              </ul>
-            </>
-          )}
-        </details>
       </div>
 
       <div className="sk-row__actions">
@@ -193,12 +162,18 @@ export function SkillsPanel() {
     setFormError(null);
     setFetchingId(skill.id);
     try {
-      const { instructions } = await api.getSkill(skill.id);
+      // Files fetch degrades to null on failure — the editor still opens for
+      // editing; the folded listing just doesn't render.
+      const [{ instructions }, files] = await Promise.all([
+        api.getSkill(skill.id),
+        api.listSkillFiles(skill.id).catch(() => null),
+      ]);
       if (openSeqRef.current !== seq) return; // superseded by a newer open
       setModal({
         mode: 'edit',
         skill,
         initialValues: { name: skill.name, description: skill.description, instructions },
+        files,
       });
     } catch (err) {
       if (openSeqRef.current !== seq) return;
@@ -213,12 +188,16 @@ export function SkillsPanel() {
     setFormError(null);
     setFetchingId(skill.id);
     try {
-      const { instructions } = await api.getSkill(skill.id);
+      const [{ instructions }, files] = await Promise.all([
+        api.getSkill(skill.id),
+        api.listSkillFiles(skill.id).catch(() => null),
+      ]);
       if (openSeqRef.current !== seq) return; // superseded by a newer open
       setModal({
         mode: 'create',
         skill: null,
         initialValues: { name: `${skill.name} 副本`, description: skill.description, instructions },
+        files,
       });
     } catch (err) {
       if (openSeqRef.current !== seq) return;
@@ -377,6 +356,7 @@ export function SkillsPanel() {
         initialValues={modal?.initialValues}
         busy={busy}
         externalError={formError}
+        files={modal?.files}
         onClose={closeModal}
         onSave={handleSave}
         onImport={handleImport}

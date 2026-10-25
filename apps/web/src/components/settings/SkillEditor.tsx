@@ -33,6 +33,12 @@ interface SkillEditorProps {
    * inline validation errors. The host clears it on close / retry.
    */
   externalError?: string | null;
+  /**
+   * Content-dir listing (edit/duplicate) — the folded "查看目录结构" view with
+   * a desktop reveal shortcut. View and edit share one surface. Absent (null)
+   * for new/create-from-scratch: there is no content dir yet.
+   */
+  files?: { dir: string; files: { path: string; size: number }[]; truncated: boolean } | null;
   onClose: () => void;
   /** create / edit / prefill / new(paste) → save a skill from form values. */
   onSave?: (values: SkillFormValues) => void | Promise<void>;
@@ -78,6 +84,7 @@ export function SkillEditor({
   initialValues,
   busy,
   externalError,
+  files,
   onClose,
   onSave,
   onImport,
@@ -505,6 +512,27 @@ export function SkillEditor({
         </label>
         {mode !== 'prefill' && (
           <p className="sk-form-hint">{t('skills.form.pasteHint')}</p>
+        )}
+
+        {files && files.files.length > 0 && (
+          <details className="sk-preview__files">
+            <summary data-testid="skill-editor-files-toggle">
+              {t('skills.form.previewFilesToggle', { count: String(files.files.length) })}
+            </summary>
+            {isDesktop && files.dir && (
+              <button
+                type="button"
+                className="rt-btn rt-btn--sm rt-btn--ghost sk-files-reveal"
+                onClick={() => void window.__electron__?.showItemInFolder(files.dir)}
+              >
+                {t('skills.row.reveal')}
+              </button>
+            )}
+            {files.truncated && <div className="sk-preview__issue">{t('skills.form.previewTruncated')}</div>}
+            <ul>
+              {files.files.map((f) => <li key={f.path}>{f.path}</li>)}
+            </ul>
+          </details>
         )}
 
         {(fieldError || externalError || previewError) && (
