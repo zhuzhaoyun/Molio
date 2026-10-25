@@ -8,7 +8,7 @@ import type {
   GraphData, GraphScope, SearchResult, SearchResponse,
   AuthStatus, SendCodeResponse, User, MeResponse,
   SkillManifestEntry, SkillDetailResponse, CreateSkillRequest, UpdateSkillRequest,
-  ImportSkillRequest, PrefillResult,
+  ImportSkillRequest, PrefillResult, SkillImportPreviewResponse,
   HubSkillsQuery, HubSkillsListResponse, HubCategoriesResponse,
   InstallHubSkillRequest, InstallHubSkillResponse,
   HubSkillDetailQuery, HubSkillDetailResponse,
@@ -1017,6 +1017,30 @@ export const api = {
       const err = await res.json().catch(() => ({}));
       throw new Error(err.error?.message ?? `Failed to delete skill: ${res.status}`);
     }
+  },
+
+  /** Stateless pre-import inspection (POST /api/skills/preview-import). */
+  async previewSkillImport(req: ImportSkillRequest): Promise<SkillImportPreviewResponse> {
+    const res = await fetch(`${BASE}/skills/preview-import`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error?.message ?? `Failed to preview skill import: ${res.status}`);
+    }
+    return res.json();
+  },
+
+  /** Content-dir listing of a library skill (GET /api/skills/:id/files). */
+  async listSkillFiles(id: string): Promise<{ dir: string; files: { path: string; size: number }[]; truncated: boolean }> {
+    const res = await fetch(`${BASE}/skills/${id}/files`);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error?.message ?? `Failed to list skill files: ${res.status}`);
+    }
+    return res.json();
   },
 
   async importSkill(req: ImportSkillRequest): Promise<SkillManifestEntry> {
