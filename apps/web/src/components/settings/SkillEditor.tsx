@@ -469,49 +469,59 @@ export function SkillEditor({
               </div>
             )}
 
-            <p className="sk-form-hint sk-import__divider">{t('skills.form.manualHint')}</p>
+            {!preview && (
+              <p className="sk-form-hint sk-import__divider">{t('skills.form.manualHint')}</p>
+            )}
           </div>
         )}
 
-        <div className="sk-editor__meta">
-          <label className="sk-field">
-            <span className="sk-field__label">{t('skills.form.name')} *</span>
-            <input
-              className="sk-field__input"
-              data-testid="skill-name-input"
-              type="text"
-              value={name}
-              placeholder={t('skills.form.namePlaceholder')}
-              onChange={(e) => setName(e.target.value)}
-            />
-          </label>
+        {/* ONE set of name/description/instructions on screen at a time: while
+            a preview card is up (new mode) the manual form hides — the card's
+            name/description ARE the fields; × clears the preview and returns
+            to the manual form. edit/prefill always show the manual form. */}
+        {!(mode === 'new' && preview) && (
+          <>
+            <div className="sk-editor__meta">
+              <label className="sk-field">
+                <span className="sk-field__label">{t('skills.form.name')} *</span>
+                <input
+                  className="sk-field__input"
+                  data-testid="skill-name-input"
+                  type="text"
+                  value={name}
+                  placeholder={t('skills.form.namePlaceholder')}
+                  onChange={(e) => setName(e.target.value)}
+                />
+              </label>
 
-          <label className="sk-field">
-            <span className="sk-field__label">{t('skills.form.description')} *</span>
-            <input
-              className="sk-field__input"
-              data-testid="skill-description-input"
-              type="text"
-              value={description}
-              placeholder={t('skills.form.descriptionPlaceholder')}
-              onChange={(e) => setDescription(e.target.value)}
-            />
-          </label>
-        </div>
+              <label className="sk-field">
+                <span className="sk-field__label">{t('skills.form.description')} *</span>
+                <input
+                  className="sk-field__input"
+                  data-testid="skill-description-input"
+                  type="text"
+                  value={description}
+                  placeholder={t('skills.form.descriptionPlaceholder')}
+                  onChange={(e) => setDescription(e.target.value)}
+                />
+              </label>
+            </div>
 
-        <label className="sk-field sk-field--grow">
-          <span className="sk-field__label">{t('skills.form.instructions')} *</span>
-          <textarea
-            className="sk-field__textarea sk-field__textarea--md"
-            data-testid="skill-instructions-input"
-            value={instructions}
-            placeholder={t('skills.form.instructionsPlaceholder')}
-            onChange={(e) => setInstructions(e.target.value)}
-            onPaste={handleInstructionsPaste}
-          />
-        </label>
-        {mode !== 'prefill' && (
-          <p className="sk-form-hint">{t('skills.form.pasteHint')}</p>
+            <label className="sk-field sk-field--grow">
+              <span className="sk-field__label">{t('skills.form.instructions')} *</span>
+              <textarea
+                className="sk-field__textarea sk-field__textarea--md"
+                data-testid="skill-instructions-input"
+                value={instructions}
+                placeholder={t('skills.form.instructionsPlaceholder')}
+                onChange={(e) => setInstructions(e.target.value)}
+                onPaste={handleInstructionsPaste}
+              />
+            </label>
+            {mode !== 'prefill' && (
+              <p className="sk-form-hint">{t('skills.form.pasteHint')}</p>
+            )}
+          </>
         )}
 
         {files && files.files.length > 0 && (

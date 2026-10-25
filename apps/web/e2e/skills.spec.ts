@@ -329,12 +329,22 @@ test.describe('Skills library', () => {
       await page.getByTestId('skill-import-preview-btn').click();
       const card = page.getByTestId('skill-import-preview-card');
       await expect(card).toBeVisible({ timeout: 10_000 });
+      // ONE set of name/description at a time: the manual form hides while a
+      // preview is on screen (no duplicate fields on the same page).
+      await expect(page.getByTestId('skill-name-input')).toHaveCount(0);
       await expect(page.getByTestId('skill-import-preview-name')).toHaveValue(unique);
       await expect(card).toContainText('references/guide.md');
       await page.getByTestId('skill-import-files-toggle').click();
       // Post-expansion assertion: a file-list row becomes visible (the toggle
       // actually opened the <details>, not just DOM presence of the text).
       await expect(card.locator('.sk-preview__files li').first()).toBeVisible();
+      // × clears the preview — the manual form comes back.
+      await page.getByTestId('skill-import-preview-clear').click();
+      await expect(page.getByTestId('skill-name-input')).toBeVisible();
+      await expect(page.getByTestId('skill-import-preview-card')).toHaveCount(0);
+      // Re-preview to continue the import.
+      await page.getByTestId('skill-import-preview-btn').click();
+      await expect(page.getByTestId('skill-import-preview-card')).toBeVisible({ timeout: 10_000 });
       await page.getByTestId('skill-form-submit').click();
 
       // Row appears once the import is processed (generous timeout for dev queue).
