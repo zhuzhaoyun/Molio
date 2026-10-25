@@ -337,6 +337,9 @@ test.describe('Skills library', () => {
       // Row appears once the import is processed (generous timeout for dev queue).
       const row = page.locator('.sk-row', { hasText: unique });
       await expect(row).toBeVisible({ timeout: 15_000 });
+      // Freshly imported row flashes for ~3s to guide the eye. Assert right
+      // after visibility — the flash window is open exactly now.
+      await expect(row).toHaveClass(/sk-row--highlight/, { timeout: 10_000 });
       await expect(page.getByTestId('skill-form-overlay')).toHaveCount(0);
 
       // Cleanup: delete the imported skill (mirrors the lifecycle test pattern).

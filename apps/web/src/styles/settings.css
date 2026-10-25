@@ -868,6 +868,13 @@
 .sk-preview__files ul { margin: 6px 0 0; padding-left: 18px; max-height: 160px; overflow-y: auto; }
 .sk-preview__files li { font-size: 11.5px; color: var(--text-faint); font-family: var(--mono); }
 
+/* Newly created/imported skill row — flashes ~3s to locate the new entry. */
+.sk-row--highlight { animation: sk-row-flash 3s ease-out; }
+@keyframes sk-row-flash {
+  0% { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+  100% { background: transparent; }
+}
+
 .sk-form-error {
   margin-top: 4px;
   padding: 8px 12px;
