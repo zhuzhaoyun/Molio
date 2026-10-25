@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { deriveChatTitle, stripLeadingRefs } from './kbChatPrompts.ts';
+import { deriveChatTitle, stripLeadingRefs, stripWikiQueryTrigger, WIKI_QUERY_TRIGGER } from './kbChatPrompts.ts';
 
 // 发送时 composer 会把文档引用 chip 还原成 `@path` 再展开成 `[📄 name](path)`，
 // 贴在用户正文前面。标签标题必须只描述用户的问题（2026-10-22 实测：
@@ -44,4 +44,35 @@ test('deriveChatTitle: 只有引用、没有正文时回退「新会话」', () 
 test('deriveChatTitle: 折叠空白并截断 24 字', () => {
   assert.equal(deriveChatTitle('  一句   很长的   话  '), '一句 很长的 话');
   assert.equal(deriveChatTitle('一'.repeat(30)), '一'.repeat(24));
+});
+
+// ── wiki-query 触发语（2026-10-24 软化为条件式 + 气泡剥离）──
+
+test('WIKI_QUERY_TRIGGER: 条件式语义——通用问题可跳过检索', () => {
+  assert.ok(WIKI_QUERY_TRIGGER('x').includes('明显无关'));
+  assert.ok(WIKI_QUERY_TRIGGER('x').includes('无需检索'));
+});
+
+test('WIKI_QUERY_TRIGGER: 触发语以换行结尾、问题在末行（标题派生/剥离都依赖）', () => {
+  assert.ok(WIKI_QUERY_TRIGGER('什么是熵').endsWith('\n什么是熵'));
+});
+
+test('stripWikiQueryTrigger: 剥掉现行触发语，只剩用户问题', () => {
+  assert.equal(stripWikiQueryTrigger(WIKI_QUERY_TRIGGER('什么是熵')), '什么是熵');
+});
+
+test('stripWikiQueryTrigger: 旧版无条件触发语（历史会话）也剥', () => {
+  const legacy =
+    '（知识库问答：请用 wiki-query skill，先读 wiki/INDEX.md 检索相关页面再回答，不要凭训练记忆作答）\n旧会话里的问题';
+  assert.equal(stripWikiQueryTrigger(legacy), '旧会话里的问题');
+});
+
+test('stripWikiQueryTrigger: 剥离后保留触发语之后的前缀与多行正文', () => {
+  const wrapped = `${WIKI_QUERY_TRIGGER('![image](/tmp/a.png)\n\n看这张图')}`;
+  assert.equal(stripWikiQueryTrigger(wrapped), '![image](/tmp/a.png)\n\n看这张图');
+});
+
+test('stripWikiQueryTrigger: 普通消息原样返回', () => {
+  assert.equal(stripWikiQueryTrigger('你好'), '你好');
+  assert.equal(stripWikiQueryTrigger('请问（知识库问答）是什么'), '请问（知识库问答）是什么');
 });
