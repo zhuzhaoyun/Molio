@@ -97,8 +97,6 @@ export function SkillEditor({
   const [folderPath, setFolderPath] = useState('');
   const [preview, setPreview] = useState<SkillImportPreview | null>(null);
   const [previewConflict, setPreviewConflict] = useState<SkillImportConflict | null>(null);
-  const [previewName, setPreviewName] = useState('');
-  const [previewDescription, setPreviewDescription] = useState('');
   const [previewing, setPreviewing] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [dragActive, setDragActive] = useState(false);
@@ -122,8 +120,6 @@ export function SkillEditor({
     setFolderPath('');
     setPreview(null);
     setPreviewConflict(null);
-    setPreviewName('');
-    setPreviewDescription('');
     setPreviewError(null);
     setDragActive(false);
     if (mode === 'prefill' && prefillData) {
@@ -141,6 +137,9 @@ export function SkillEditor({
   // there we hide the browse buttons and let the user type the container path.
   const isDesktop = Boolean(window.__electron__?.showDirectoryPicker);
 
+  // Preview FILLS the form fields — there is no second card-form. Parsed
+  // name/description/instructions land in the one editable set; the check
+  // result (verdict/warnings/conflict) renders under the dropzone.
   const runPreview = useCallback(async (src: { folderPath: string }) => {
     setPreviewing(true);
     setPreviewError(null);
@@ -148,8 +147,9 @@ export function SkillEditor({
       const resp = await api.previewSkillImport(src);
       setPreview(resp.preview);
       setPreviewConflict(resp.conflict);
-      setPreviewName(resp.preview.name);
-      setPreviewDescription(resp.preview.description);
+      setName(resp.preview.name);
+      setDescription(resp.preview.description);
+      setInstructions(resp.preview.instructions);
     } catch (err) {
       setPreview(null);
       setPreviewConflict(null);
@@ -187,7 +187,7 @@ export function SkillEditor({
 
   const issueText = (issue: SkillImportPreview['issues'][number]): string =>
     issue.code === 'NAME_FALLBACK'
-      ? t('skills.form.previewNameFallback', { name: previewName.trim() || preview?.name || '' })
+      ? t('skills.form.previewNameFallback', { name: name.trim() || preview?.name || '' })
       : t(ISSUE_KEY[issue.code], {});
 
   // Drop zone accepts exactly ONE entry: a folder or a single .md. Dragging
@@ -254,10 +254,15 @@ export function SkillEditor({
     return true;
   };
 
+  // Multi-file imports copy the folder VERBATIM — the instructions box is then
+  // a read-only look at SKILL.md, and edits there cannot be honored.
+  const isMultiFileImport = !!preview && preview.files.length > 1;
+
   // ONE merged new-skill surface: dropzone/path on top, the manual three-field
-  // form below. The primary button follows whatever the user last produced —
-  // a passing preview switches it to 导入; without a preview it is the plain 保存.
-  // edit/prefill never produce a preview, so they always take the save path.
+  // form below (the preview FILLS these fields). The primary button follows
+  // whatever the user last produced — a passing preview switches it to 导入;
+  // without a preview it is the plain 保存. edit/prefill never produce a
+  // preview, so they always take the save path.
   const handleSubmit = () => {
     if (preview) {
       // Confirm is only meaningful after a PASSING preview (Review Focus #3:
@@ -266,10 +271,14 @@ export function SkillEditor({
       // no-ops here, matching the disabled primary button.
       if (!preview.ok) return;
       setFieldError(null);
+      // Single-file skills import via the raw channel so EDITED instructions
+      // are honored; multi-file skills must import the folder verbatim (the
+      // instructions box is then a read-only preview of SKILL.md).
+      const singleFile = preview.files.length === 1;
       void onImport?.({
-        folderPath: folderPath.trim(),
-        ...(previewName.trim() ? { name: previewName.trim() } : {}),
-        ...(previewDescription.trim() ? { description: previewDescription.trim() } : {}),
+        ...(singleFile ? { raw: instructions } : { folderPath: folderPath.trim() }),
+        ...(name.trim() ? { name: name.trim() } : {}),
+        ...(description.trim() ? { description: description.trim() } : {}),
       });
       return;
     }
@@ -400,10 +409,10 @@ export function SkillEditor({
             </div>
 
             {preview && (
-              <div className="sk-preview" data-testid="skill-import-preview-card">
-                {/* Clear the preview to fall back to the manual form — the
-                    visible way out of import mode (re-drop replaces, this
-                    removes). */}
+              <div className="sk-import-check" data-testid="skill-import-check">
+                {/* Clear the check result to drop back to plain manual authoring
+                    — the visible way out of import mode (re-drop replaces, this
+                    removes). Filled field values stay. */}
                 <button
                   type="button"
                   className="sk-preview__clear"
@@ -413,28 +422,6 @@ export function SkillEditor({
                 >
                   ×
                 </button>
-                <div className="sk-editor__meta">
-                  <label className="sk-field">
-                    <span className="sk-field__label">{t('skills.form.name')} *</span>
-                    <input
-                      className="sk-field__input"
-                      data-testid="skill-import-preview-name"
-                      type="text"
-                      value={previewName}
-                      onChange={(e) => setPreviewName(e.target.value)}
-                    />
-                  </label>
-                  <label className="sk-field">
-                    <span className="sk-field__label">{t('skills.form.description')}</span>
-                    <input
-                      className="sk-field__input"
-                      data-testid="skill-import-preview-description"
-                      type="text"
-                      value={previewDescription}
-                      onChange={(e) => setPreviewDescription(e.target.value)}
-                    />
-                  </label>
-                </div>
 
                 <div className={`sk-preview__verdict${preview.ok ? '' : ' sk-preview__verdict--error'}`}>
                   {preview.ok
@@ -455,17 +442,6 @@ export function SkillEditor({
                     {t('skills.form.previewConflict', { name: previewConflict.existingName })}
                   </div>
                 )}
-
-                {preview.files.length > 0 && (
-                  <details className="sk-preview__files">
-                    <summary data-testid="skill-import-files-toggle">
-                      {t('skills.form.previewFilesToggle', { count: String(preview.files.length) })}
-                    </summary>
-                    <ul>
-                      {preview.files.map((f) => <li key={f.path}>{f.path}</li>)}
-                    </ul>
-                  </details>
-                )}
               </div>
             )}
 
@@ -475,53 +451,65 @@ export function SkillEditor({
           </div>
         )}
 
-        {/* ONE set of name/description/instructions on screen at a time: while
-            a preview card is up (new mode) the manual form hides — the card's
-            name/description ARE the fields; × clears the preview and returns
-            to the manual form. edit/prefill always show the manual form. */}
-        {!(mode === 'new' && preview) && (
-          <>
-            <div className="sk-editor__meta">
-              <label className="sk-field">
-                <span className="sk-field__label">{t('skills.form.name')} *</span>
-                <input
-                  className="sk-field__input"
-                  data-testid="skill-name-input"
-                  type="text"
-                  value={name}
-                  placeholder={t('skills.form.namePlaceholder')}
-                  onChange={(e) => setName(e.target.value)}
-                />
-              </label>
+        {/* THE one form (no second card-form): a preview FILLS these fields.
+            new mode keeps the instructions box compact — an import's body comes
+            from SKILL.md and needs glanceability, not drafting height. */}
+        <div className="sk-editor__meta">
+          <label className="sk-field">
+            <span className="sk-field__label">{t('skills.form.name')} *</span>
+            <input
+              className="sk-field__input"
+              data-testid="skill-name-input"
+              type="text"
+              value={name}
+              placeholder={t('skills.form.namePlaceholder')}
+              onChange={(e) => setName(e.target.value)}
+            />
+          </label>
 
-              <label className="sk-field">
-                <span className="sk-field__label">{t('skills.form.description')} *</span>
-                <input
-                  className="sk-field__input"
-                  data-testid="skill-description-input"
-                  type="text"
-                  value={description}
-                  placeholder={t('skills.form.descriptionPlaceholder')}
-                  onChange={(e) => setDescription(e.target.value)}
-                />
-              </label>
-            </div>
+          <label className="sk-field">
+            <span className="sk-field__label">{t('skills.form.description')} *</span>
+            <input
+              className="sk-field__input"
+              data-testid="skill-description-input"
+              type="text"
+              value={description}
+              placeholder={t('skills.form.descriptionPlaceholder')}
+              onChange={(e) => setDescription(e.target.value)}
+            />
+          </label>
+        </div>
 
-            <label className="sk-field sk-field--grow">
-              <span className="sk-field__label">{t('skills.form.instructions')} *</span>
-              <textarea
-                className="sk-field__textarea sk-field__textarea--md"
-                data-testid="skill-instructions-input"
-                value={instructions}
-                placeholder={t('skills.form.instructionsPlaceholder')}
-                onChange={(e) => setInstructions(e.target.value)}
-                onPaste={handleInstructionsPaste}
-              />
-            </label>
-            {mode !== 'prefill' && (
-              <p className="sk-form-hint">{t('skills.form.pasteHint')}</p>
-            )}
-          </>
+        <label className="sk-field sk-field--grow">
+          <span className="sk-field__label">{t('skills.form.instructions')} *</span>
+          <textarea
+            className={`sk-field__textarea sk-field__textarea--md${mode === 'new' ? ' sk-field__textarea--compact' : ''}`}
+            data-testid="skill-instructions-input"
+            value={instructions}
+            placeholder={t('skills.form.instructionsPlaceholder')}
+            onChange={(e) => setInstructions(e.target.value)}
+            onPaste={handleInstructionsPaste}
+            readOnly={isMultiFileImport}
+          />
+        </label>
+        {isMultiFileImport && (
+          <p className="sk-form-hint">{t('skills.form.importMultiFileBody')}</p>
+        )}
+        {mode !== 'prefill' && (
+          <p className="sk-form-hint">{t('skills.form.pasteHint')}</p>
+        )}
+
+        {/* File listing at the BOTTOM — the same slot as the editor's folded
+            listing on the view/edit surface (one shared skeleton). */}
+        {preview && preview.files.length > 0 && (
+          <details className="sk-preview__files">
+            <summary data-testid="skill-import-files-toggle">
+              {t('skills.form.previewFilesToggle', { count: String(preview.files.length) })}
+            </summary>
+            <ul>
+              {preview.files.map((f) => <li key={f.path}>{f.path}</li>)}
+            </ul>
+          </details>
         )}
 
         {files && files.files.length > 0 && (

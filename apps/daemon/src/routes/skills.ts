@@ -341,6 +341,7 @@ export function skillsRoutes(db: Database.Database, runManager: RunManager): Hon
         description: inspected.description,
         descriptionFallback: inspected.descriptionFallback,
         entryFile: inspected.entryFile,
+        instructions: inspected.instructions,
         files: inspected.files,
         truncated: inspected.truncated,
         issues: inspected.issues,

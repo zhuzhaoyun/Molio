@@ -295,6 +295,9 @@ describe('Skills routes', () => {
       const preview = data['preview'] as Record<string, unknown>;
       assert.equal(preview['ok'], true);
       assert.equal(preview['name'], '预览技能');
+      // The body rides along so the web preview can FILL the form's
+      // instructions field with it (fill-the-form interaction).
+      assert.equal(preview['instructions'], 'body');
       assert.equal((preview['files'] as unknown[]).length, 2);
       assert.equal(data['conflict'], null);
     } finally {

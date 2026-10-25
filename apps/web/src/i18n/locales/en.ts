@@ -492,6 +492,7 @@ const en: Record<string, string> = {
   'skills.form.editTitle': 'Edit Skill',
   'skills.form.prefillTitle': 'Save as Skill',
   'skills.form.manualHint': 'Or fill in the skill content manually below',
+  'skills.form.importMultiFileBody': 'Multi-file skills take their instructions from SKILL.md, imported with the folder — edits here will not be saved',
   'skills.form.name': 'Name',
   'skills.form.namePlaceholder': 'e.g. Write an article',
   'skills.form.description': 'Description',

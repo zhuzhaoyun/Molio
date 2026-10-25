@@ -100,6 +100,8 @@ export interface SkillImportPreview {
   descriptionFallback: boolean;
   /** Entry file relative path ('SKILL.md' or the single .md's name); null when unresolved. */
   entryFile: string | null;
+  /** Parsed instruction body — the preview FILLS the form's instructions field with it. */
+  instructions: string;
   /** Entry file + siblings, relative posix paths, sorted. */
   files: { path: string; size: number }[];
   truncated: boolean;

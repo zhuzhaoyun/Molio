@@ -324,27 +324,24 @@ test.describe('Skills library', () => {
       // In a plain browser there is no Electron, so the native browse buttons
       // stay hidden — type the path.
       await expect(page.getByTestId('skill-import-browse-folder')).toHaveCount(0);
-      // Preview two-phase: path → 预览 → confirm on the card.
+      // Preview fills THE form fields (no second card-form): parsed values
+      // land in the one and only name/description/instructions set.
       await page.getByTestId('skill-import-folder').fill(dir);
       await page.getByTestId('skill-import-preview-btn').click();
-      const card = page.getByTestId('skill-import-preview-card');
-      await expect(card).toBeVisible({ timeout: 10_000 });
-      // ONE set of name/description at a time: the manual form hides while a
-      // preview is on screen (no duplicate fields on the same page).
-      await expect(page.getByTestId('skill-name-input')).toHaveCount(0);
-      await expect(page.getByTestId('skill-import-preview-name')).toHaveValue(unique);
-      await expect(card).toContainText('references/guide.md');
+      const check = page.getByTestId('skill-import-check');
+      await expect(check).toBeVisible({ timeout: 10_000 });
+      await expect(page.getByTestId('skill-name-input')).toHaveValue(unique);
+      await expect(page.getByTestId('skill-instructions-input')).not.toHaveValue('');
+      // The file listing lives at the BOTTOM (same slot as the editor's).
       await page.getByTestId('skill-import-files-toggle').click();
-      // Post-expansion assertion: a file-list row becomes visible (the toggle
-      // actually opened the <details>, not just DOM presence of the text).
-      await expect(card.locator('.sk-preview__files li').first()).toBeVisible();
-      // × clears the preview — the manual form comes back.
+      await expect(page.locator('.sk-preview__files li', { hasText: 'references/guide.md' })).toBeVisible({ timeout: 10_000 });
+      // × clears the check result; the filled fields stay editable.
       await page.getByTestId('skill-import-preview-clear').click();
-      await expect(page.getByTestId('skill-name-input')).toBeVisible();
-      await expect(page.getByTestId('skill-import-preview-card')).toHaveCount(0);
+      await expect(page.getByTestId('skill-import-check')).toHaveCount(0);
+      await expect(page.getByTestId('skill-name-input')).toHaveValue(unique);
       // Re-preview to continue the import.
       await page.getByTestId('skill-import-preview-btn').click();
-      await expect(page.getByTestId('skill-import-preview-card')).toBeVisible({ timeout: 10_000 });
+      await expect(page.getByTestId('skill-import-check')).toBeVisible({ timeout: 10_000 });
       await page.getByTestId('skill-form-submit').click();
 
       // Row appears once the import is processed (generous timeout for dev queue).
@@ -381,9 +378,9 @@ test.describe('Skills library', () => {
     try {
       await page.getByTestId('skill-import-folder').fill(emptyDir);
       await page.getByTestId('skill-import-preview-btn').click();
-      await expect(page.getByTestId('skill-import-preview-card')).toBeVisible({ timeout: 10_000 });
+      await expect(page.getByTestId('skill-import-check')).toBeVisible({ timeout: 10_000 });
       await expect(page.getByTestId('skill-form-submit')).toBeDisabled();
-      await expect(page.getByTestId('skill-import-preview-card')).toContainText('SKILL.md');
+      await expect(page.getByTestId('skill-import-check')).toContainText('SKILL.md');
     } finally {
       fs.rmSync(emptyDir, { recursive: true, force: true });
       await page.getByTestId('skill-form-cancel').click();
@@ -415,9 +412,9 @@ test.describe('Skills library', () => {
       await page.getByTestId('skill-import-folder').fill(dir);
       await page.getByTestId('skill-import-preview-btn').click();
 
-      // The conflict chip appears on the card (trim + case-insensitive hit).
-      const card = page.getByTestId('skill-import-preview-card');
-      await expect(card).toBeVisible({ timeout: 10_000 });
+      // The conflict chip appears in the check result (trim + ci hit).
+      const check = page.getByTestId('skill-import-check');
+      await expect(check).toBeVisible({ timeout: 10_000 });
       await expect(page.getByTestId('skill-import-conflict')).toBeVisible();
 
       // Confirm anyway — both skills are kept (the new one gets a sync suffix).
@@ -452,7 +449,7 @@ test.describe('Skills library', () => {
     try {
       await page.getByTestId('skill-import-folder').fill(dir);
       await page.getByTestId('skill-import-preview-btn').click();
-      await expect(page.getByTestId('skill-import-preview-card')).toBeVisible({ timeout: 10_000 });
+      await expect(page.getByTestId('skill-import-check')).toBeVisible({ timeout: 10_000 });
       await page.getByTestId('skill-form-submit').click();
       await expect(page.getByTestId('skill-form-error')).toHaveText('E2E模拟源已消失', { timeout: 10_000 });
       await expect(page.getByTestId('skill-form-overlay')).toBeVisible();

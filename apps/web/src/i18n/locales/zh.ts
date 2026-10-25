@@ -491,6 +491,7 @@ const zh: Record<string, string> = {
   'skills.form.editTitle': '编辑技能',
   'skills.form.prefillTitle': '存为技能',
   'skills.form.manualHint': '也可以在下方手动填写技能内容',
+  'skills.form.importMultiFileBody': '多文件技能的指令以 SKILL.md 为准，随文件夹导入——此处修改不会保存',
   'skills.form.name': '名称',
   'skills.form.namePlaceholder': '例如：写文章',
   'skills.form.description': '描述',

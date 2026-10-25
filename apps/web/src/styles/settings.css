@@ -859,6 +859,20 @@
 }
 .sk-import-dropzone--active { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, transparent); }
 .sk-preview { border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; display: flex; flex-direction: column; gap: 8px; position: relative; }
+/* Import check result — a light strip under the dropzone (verdict + warnings +
+   conflict). Lighter chrome than a full card: it's feedback, not a form. */
+.sk-import-check {
+  position: relative;
+  display: flex; flex-direction: column; gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius);
+  background: var(--bg-subtle);
+}
+/* Compact instructions box for the new-skill surface (import body comes from
+   SKILL.md; manual drafts stay workable at this height too). Overrides the
+   --md height only; typography stays mono/pre-wrap. */
+.sk-field__textarea--compact { min-height: 120px; }
 .sk-preview__clear {
   position: absolute; top: 8px; right: 8px;
   width: 22px; height: 22px; display: flex; align-items: center; justify-content: center;
