@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import type { SkillManifestEntry, ImportSkillRequest } from '@molio/contracts';
 import { useSkills } from '../../hooks/useSkills';
 import { useI18n } from '../../i18n';
@@ -11,6 +11,8 @@ interface ModalState {
   skill: SkillManifestEntry | null;
   /** Prefilled fields for create (duplicate) / edit. */
   initialValues?: Partial<SkillFormValues>;
+  /** Content-dir listing for the editor's folded file view (edit/duplicate). */
+  files?: { dir: string; files: { path: string; size: number }[]; truncated: boolean } | null;
 }
 
 /**
@@ -22,6 +24,7 @@ function SkillRow({
   skill,
   confirmingDelete,
   fetching,
+  highlighted,
   onToggle,
   onEdit,
   onDuplicate,
@@ -33,6 +36,8 @@ function SkillRow({
   confirmingDelete: boolean;
   /** True while this row's edit/duplicate content is loading (buttons disabled). */
   fetching: boolean;
+  /** True briefly after this skill was created/imported — row flashes to guide the eye. */
+  highlighted: boolean;
   onToggle: (enabled: boolean) => void;
   onEdit: () => void;
   onDuplicate: () => void;
@@ -43,7 +48,7 @@ function SkillRow({
   const { t } = useI18n();
 
   return (
-    <div className="sk-row" data-testid={`skill-row-${skill.id}`}>
+    <div className={`sk-row${highlighted ? ' sk-row--highlight' : ''}`} data-testid={`skill-row-${skill.id}`}>
       <label className="sk-switch" title={skill.enabled ? 'on' : 'off'}>
         <input
           type="checkbox"
@@ -54,7 +59,11 @@ function SkillRow({
         <span className="sk-switch__track" />
       </label>
 
-      <div className="sk-row__body">
+      {/* The card body IS the view/edit entry: one click opens the editor where
+          details (file listing) and editing live together. The toggle switch
+          and the action buttons sit OUTSIDE this div, so their clicks never
+          bubble into an editor open. */}
+      <div className="sk-row__body" onClick={() => { if (!fetching) onEdit(); }}>
         <div className="sk-row__header">
           <span className="sk-row__name">{skill.name}</span>
         </div>
@@ -116,6 +125,19 @@ export function SkillsPanel() {
   // opens empty then overwrites what the user already typed.
   const [fetchingId, setFetchingId] = useState<string | null>(null);
 
+  // Recently created/imported skill id — its row flashes for ~3s so the user
+  // can locate the new entry in a long list. One timer, reset on every flash.
+  const [recentlyAddedId, setRecentlyAddedId] = useState<string | null>(null);
+  const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const flashRecentlyAdded = useCallback((id: string) => {
+    setRecentlyAddedId(id);
+    if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current);
+    highlightTimerRef.current = setTimeout(() => setRecentlyAddedId(null), 3000);
+  }, []);
+  useEffect(() => () => {
+    if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current);
+  }, []);
+
   const enabledCount = skills.filter((s) => s.enabled).length;
 
   // Sequence guard for editor opens: the edit/duplicate content fetch is async
@@ -140,12 +162,18 @@ export function SkillsPanel() {
     setFormError(null);
     setFetchingId(skill.id);
     try {
-      const { instructions } = await api.getSkill(skill.id);
+      // Files fetch degrades to null on failure — the editor still opens for
+      // editing; the folded listing just doesn't render.
+      const [{ instructions }, files] = await Promise.all([
+        api.getSkill(skill.id),
+        api.listSkillFiles(skill.id).catch(() => null),
+      ]);
       if (openSeqRef.current !== seq) return; // superseded by a newer open
       setModal({
         mode: 'edit',
         skill,
         initialValues: { name: skill.name, description: skill.description, instructions },
+        files,
       });
     } catch (err) {
       if (openSeqRef.current !== seq) return;
@@ -162,6 +190,9 @@ export function SkillsPanel() {
     try {
       const { instructions } = await api.getSkill(skill.id);
       if (openSeqRef.current !== seq) return; // superseded by a newer open
+      // No `files` here: a duplicate saves a regenerated single SKILL.md
+      // (createSkill has no sourceDir), so listing the SOURCE's content dir
+      // would promise companions the copy does not carry.
       setModal({
         mode: 'create',
         skill: null,
@@ -187,7 +218,8 @@ export function SkillsPanel() {
       if (modal.mode === 'edit' && modal.skill) {
         await updateSkill(modal.skill.id, values);
       } else {
-        await createSkill(values);
+        const skill = await createSkill(values);
+        flashRecentlyAdded(skill.id);
       }
       closeModal();
     } catch (err) {
@@ -195,20 +227,21 @@ export function SkillsPanel() {
     } finally {
       setBusy(false);
     }
-  }, [modal, createSkill, updateSkill, closeModal]);
+  }, [modal, createSkill, updateSkill, flashRecentlyAdded, closeModal]);
 
   const handleImport = useCallback(async (req: ImportSkillRequest) => {
     setBusy(true);
     setFormError(null);
     try {
-      await importSkill(req);
+      const skill = await importSkill(req);
+      flashRecentlyAdded(skill.id);
       closeModal();
     } catch (err) {
       setFormError((err as Error).message);
     } finally {
       setBusy(false);
     }
-  }, [importSkill, closeModal]);
+  }, [importSkill, flashRecentlyAdded, closeModal]);
 
   const handleToggle = useCallback(async (id: string, enabled: boolean) => {
     try {
@@ -294,6 +327,7 @@ export function SkillsPanel() {
                   skill={skill}
                   confirmingDelete={confirmDeleteId === skill.id}
                   fetching={fetchingId === skill.id}
+                  highlighted={recentlyAddedId === skill.id}
                   onToggle={(enabled) => handleToggle(skill.id, enabled)}
                   onEdit={() => openEdit(skill)}
                   onDuplicate={() => openDuplicate(skill)}
@@ -321,6 +355,7 @@ export function SkillsPanel() {
         initialValues={modal?.initialValues}
         busy={busy}
         externalError={formError}
+        files={modal?.files}
         onClose={closeModal}
         onSave={handleSave}
         onImport={handleImport}

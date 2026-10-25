@@ -32,7 +32,7 @@
   </url>
   <url>
     <loc>https://molio.cn/blog/index.html</loc>
-    <lastmod>2026-10-07</lastmod>
+    <lastmod>2026-10-24</lastmod>
     <priority>0.8</priority>
     <changefreq>weekly</changefreq>
   </url>
@@ -135,6 +135,18 @@
   <url>
     <loc>https://molio.cn/blog/workbuddy-obsidian-knowledge-base.html</loc>
     <lastmod>2026-10-08</lastmod>
+    <priority>0.7</priority>
+    <changefreq>weekly</changefreq>
+  </url>
+  <url>
+    <loc>https://molio.cn/blog/knowledge-graph-building-tools.html</loc>
+    <lastmod>2026-10-24</lastmod>
+    <priority>0.7</priority>
+    <changefreq>weekly</changefreq>
+  </url>
+  <url>
+    <loc>https://molio.cn/blog/knowledge-graph-resource-sites.html</loc>
+    <lastmod>2026-10-24</lastmod>
     <priority>0.7</priority>
     <changefreq>weekly</changefreq>
   </url>
