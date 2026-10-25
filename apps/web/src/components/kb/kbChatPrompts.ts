@@ -17,10 +17,12 @@ function WIKI_INGEST_PROMPT(filePath: string, isDirectory = false): string {
  * qa 模式确定性触发：KB 问答面板里用户输入的问题包一层显式触发语，确保涉及库
  * 内容的问题走 wiki-query skill 检索而非凭记忆作答。
  *
- * 条件式而非无条件（与 vault `.claude/CLAUDE.md` 常驻规则同一措辞策略，
- * skill-installer 的 WIKI_QUERY_RULE_BLOCK）：只对「涉及本库内容」的问题要求检索，
- * 明显无关的通用问题（闲聊、天气等）允许直接回答——用户有时就是想在问答面板问
- * 通用问题，无条件「不要凭训练记忆作答」反而有害（2026-10-24 用户反馈）。
+ * 以「本库主题」为锚的条件式（与 vault `.claude/CLAUDE.md` 常驻规则同一措辞策略，
+ * skill-installer 的 buildWikiQueryRuleBlock 已注入「本库主题：X」库名片）：只对
+ * 涉及本库主题的问题要求检索，明显无关的通用问题（闲聊、天气等）允许直接回答——
+ * 无条件「不要凭训练记忆作答」反而有害（2026-10-24 用户反馈）。同时要求答案形状：
+ * 直接给内容、不叙述检索过程——通用问题不该被包成一份检索失败报告（2026-10-26
+ * 设计 §4B，实测「什么是熵」开头三段检索说明）。
  *
  * 只在会话首轮包裹（见 send）：后续多轮 follow-up（「再详细点」「继续」）的上下文
  * 里已经有首轮触发语 + agent 正在执行的 wiki-query 流程，每轮重复包裹只会让消息都
@@ -30,11 +32,15 @@ function WIKI_INGEST_PROMPT(filePath: string, isDirectory = false): string {
  * （skill-installer 注入）覆盖通用/微信场景；此处针对专用 KB 问答面板再加确定性触发。
  */
 const WIKI_QUERY_DIRECTIVE =
-  '（知识库问答：若问题涉及本库内容，请先用 wiki-query skill 读 wiki/INDEX.md 检索相关页面，基于库内材料回答；与本库明显无关的通用问题（如闲聊、天气）可直接回答，无需检索）';
+  '（知识库问答：若问题涉及本库主题，先用 wiki-query skill 检索相关页面再回答；明显无关的通用问题直接回答，无需检索。答案直接给内容，不要以检索过程或「本库没有收录」开场）';
 
-/** 2026-10-24 之前的旧版无条件触发语。已下线，仅用于识别/剥离历史会话消息里的残留前缀。 */
-const LEGACY_WIKI_QUERY_DIRECTIVE =
-  '（知识库问答：请用 wiki-query skill，先读 wiki/INDEX.md 检索相关页面再回答，不要凭训练记忆作答）';
+/** 已下线的旧版触发语（按下线时间倒序）。仅用于识别/剥离历史会话消息里的残留前缀。 */
+const LEGACY_WIKI_QUERY_DIRECTIVES = [
+  // #369（2026-10-26）引入的条件式，本文案替换前的版本
+  '（知识库问答：若问题涉及本库内容，请先用 wiki-query skill 读 wiki/INDEX.md 检索相关页面，基于库内材料回答；与本库明显无关的通用问题（如闲聊、天气）可直接回答，无需检索）',
+  // 2026-10-24 之前的无条件版
+  '（知识库问答：请用 wiki-query skill，先读 wiki/INDEX.md 检索相关页面再回答，不要凭训练记忆作答）',
+];
 
 export function WIKI_QUERY_TRIGGER(question: string): string {
   return `${WIKI_QUERY_DIRECTIVE}\n${question}`;
@@ -42,11 +48,11 @@ export function WIKI_QUERY_TRIGGER(question: string): string {
 
 /**
  * 展示层剥离：用户气泡/复制/编辑只应见到用户自己的话，触发语是发给 agent 的
- * 指令、不是用户输入。仅精确匹配行首的已知触发语（现行 + 旧版），其余原样返回。
- * 消息体不动——daemon 存的仍是包裹后的原文。
+ * 指令、不是用户输入。仅精确匹配行首的已知触发语（现行 + 两版旧文案），其余
+ * 原样返回。消息体不动——daemon 存的仍是包裹后的原文。
  */
 export function stripWikiQueryTrigger(text: string): string {
-  for (const directive of [WIKI_QUERY_DIRECTIVE, LEGACY_WIKI_QUERY_DIRECTIVE]) {
+  for (const directive of [WIKI_QUERY_DIRECTIVE, ...LEGACY_WIKI_QUERY_DIRECTIVES]) {
     if (text.startsWith(`${directive}\n`)) return text.slice(directive.length + 1);
   }
   return text;
