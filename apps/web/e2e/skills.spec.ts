@@ -339,6 +339,13 @@ test.describe('Skills library', () => {
       await page.getByTestId('skill-import-preview-clear').click();
       await expect(page.getByTestId('skill-import-check')).toHaveCount(0);
       await expect(page.getByTestId('skill-name-input')).toHaveValue(unique);
+      // Editing the path invalidates a stale preview — the verdict must never
+      // describe a folder different from what import would actually read. The
+      // primary button falls back to 保存 (the manual path), never 导入.
+      await page.getByTestId('skill-import-folder').fill(`${dir}-moved`);
+      await expect(page.getByTestId('skill-import-check')).toHaveCount(0);
+      await expect(page.getByTestId('skill-form-submit')).toHaveText('保存');
+      await page.getByTestId('skill-import-folder').fill(dir);
       // Re-preview to continue the import.
       await page.getByTestId('skill-import-preview-btn').click();
       await expect(page.getByTestId('skill-import-check')).toBeVisible({ timeout: 10_000 });
@@ -370,6 +377,33 @@ test.describe('Skills library', () => {
     }
   });
 
+  test('dropping non-file content is a silent no-op; file drops in a browser prompt the desktop hint', async ({ page }) => {
+    await gotoSkillsTab(page);
+    await page.locator('[data-testid="skill-new-btn"]').click();
+    await expect(page.getByTestId('skill-form-overlay')).toBeVisible();
+
+    // Review Focus #1: dragging text / page elements (empty files list) is a
+    // SILENT no-op — no error, no state change, never a crash.
+    await page.getByTestId('skill-import-dropzone').evaluate((el) => {
+      el.dispatchEvent(new DragEvent('drop', { dataTransfer: new DataTransfer(), bubbles: true, cancelable: true }));
+    });
+    await expect(page.getByTestId('skill-form-error')).toHaveCount(0);
+    await expect(page.getByTestId('skill-drop-notice')).toHaveCount(0);
+    await expect(page.getByTestId('skill-name-input')).toHaveValue('');
+
+    // In a plain browser (no Electron) a real file drop cannot be resolved to
+    // a path — the dropzone-adjacent notice says so instead of failing quietly.
+    await page.getByTestId('skill-import-dropzone').evaluate((el) => {
+      const dt = new DataTransfer();
+      dt.items.add(new File(['x'], 'a.md', { type: 'text/markdown' }));
+      el.dispatchEvent(new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true }));
+    });
+    await expect(page.getByTestId('skill-drop-notice')).toBeVisible();
+    // Closing the editor (nothing was imported) — no cleanup needed.
+    await page.getByTestId('skill-form-cancel').click();
+    await expect(page.getByTestId('skill-form-overlay')).toHaveCount(0);
+  });
+
   test('import preview surfaces a structure error and blocks confirmation', async ({ page }) => {
     await gotoSkillsTab(page);
     await page.locator('[data-testid="skill-new-btn"]').click();
@@ -378,7 +412,12 @@ test.describe('Skills library', () => {
     try {
       await page.getByTestId('skill-import-folder').fill(emptyDir);
       await page.getByTestId('skill-import-preview-btn').click();
+      // A hand-typed draft must survive a FAILED preview: fill-on-success only.
+      await page.getByTestId('skill-name-input').fill('手写草稿保护');
+      await page.getByTestId('skill-import-folder').fill(emptyDir);
+      await page.getByTestId('skill-import-preview-btn').click();
       await expect(page.getByTestId('skill-import-check')).toBeVisible({ timeout: 10_000 });
+      await expect(page.getByTestId('skill-name-input')).toHaveValue('手写草稿保护');
       await expect(page.getByTestId('skill-form-submit')).toBeDisabled();
       await expect(page.getByTestId('skill-import-check')).toContainText('SKILL.md');
     } finally {

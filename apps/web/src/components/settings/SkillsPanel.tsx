@@ -188,16 +188,15 @@ export function SkillsPanel() {
     setFormError(null);
     setFetchingId(skill.id);
     try {
-      const [{ instructions }, files] = await Promise.all([
-        api.getSkill(skill.id),
-        api.listSkillFiles(skill.id).catch(() => null),
-      ]);
+      const { instructions } = await api.getSkill(skill.id);
       if (openSeqRef.current !== seq) return; // superseded by a newer open
+      // No `files` here: a duplicate saves a regenerated single SKILL.md
+      // (createSkill has no sourceDir), so listing the SOURCE's content dir
+      // would promise companions the copy does not carry.
       setModal({
         mode: 'create',
         skill: null,
         initialValues: { name: `${skill.name} 副本`, description: skill.description, instructions },
-        files,
       });
     } catch (err) {
       if (openSeqRef.current !== seq) return;

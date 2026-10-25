@@ -336,6 +336,7 @@ export function skillsRoutes(db: Database.Database, runManager: RunManager): Hon
     return c.json({
       preview: {
         ok: inspected.ok,
+        sourceKind: inspected.entry?.type ?? null,
         name: inspected.name,
         nameFallback: inspected.nameFallback,
         description: inspected.description,

@@ -93,6 +93,8 @@ export interface SkillImportIssue {
 export interface SkillImportPreview {
   /** No error-level issues — import may proceed. */
   ok: boolean;
+  /** Where the source resolved to: a whole directory ('dir') or a lone file ('file'). */
+  sourceKind: 'dir' | 'file' | null;
   name: string;
   /** True when the name did NOT come from SKILL.md frontmatter (heading/basename/default fallback). */
   nameFallback: boolean;

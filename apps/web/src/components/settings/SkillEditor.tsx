@@ -121,6 +121,7 @@ export function SkillEditor({
     setPreview(null);
     setPreviewConflict(null);
     setPreviewError(null);
+    setDropNotice(null);
     setDragActive(false);
     if (mode === 'prefill' && prefillData) {
       setName(prefillData.name);
@@ -137,25 +138,32 @@ export function SkillEditor({
   // there we hide the browse buttons and let the user type the container path.
   const isDesktop = Boolean(window.__electron__?.showDirectoryPicker);
 
-  // Preview FILLS the form fields — there is no second card-form. Parsed
-  // name/description/instructions land in the one editable set; the check
-  // result (verdict/warnings/conflict) renders under the dropzone.
+  // Preview FILLS the form fields — there is no second card-form. ONLY a
+  // passing preview fills: a failed inspection must never wipe a hand-typed
+  // draft (the editor's own content-protection contract). A seq guard drops
+  // stale responses when previews overlap (drop during an in-flight preview).
+  const previewSeqRef = useRef(0);
   const runPreview = useCallback(async (src: { folderPath: string }) => {
+    const seq = ++previewSeqRef.current;
     setPreviewing(true);
     setPreviewError(null);
     try {
       const resp = await api.previewSkillImport(src);
+      if (previewSeqRef.current !== seq) return;
       setPreview(resp.preview);
       setPreviewConflict(resp.conflict);
-      setName(resp.preview.name);
-      setDescription(resp.preview.description);
-      setInstructions(resp.preview.instructions);
+      if (resp.preview.ok) {
+        setName(resp.preview.name);
+        setDescription(resp.preview.description);
+        setInstructions(resp.preview.instructions);
+      }
     } catch (err) {
+      if (previewSeqRef.current !== seq) return;
       setPreview(null);
       setPreviewConflict(null);
       setPreviewError((err as Error).message);
     } finally {
-      setPreviewing(false);
+      if (previewSeqRef.current === seq) setPreviewing(false);
     }
   }, []);
 
@@ -163,6 +171,12 @@ export function SkillEditor({
     setFolderPath(picked);
     void runPreview({ folderPath: picked });
   }, [runPreview]);
+
+  // Drop feedback lives NEXT TO the dropzone (where the user is looking), not
+  // in the bottom error strip — and outside previewError's lifecycle, which
+  // runPreview resets (the multi-drop notice used to be wiped before it could
+  // render). Re-drop replaces; × on the check strip clears.
+  const [dropNotice, setDropNotice] = useState<string | null>(null);
 
   const handleBrowseFolder = async () => {
     const picked = await window.__electron__?.showDirectoryPicker();
@@ -188,7 +202,7 @@ export function SkillEditor({
   const issueText = (issue: SkillImportPreview['issues'][number]): string =>
     issue.code === 'NAME_FALLBACK'
       ? t('skills.form.previewNameFallback', { name: name.trim() || preview?.name || '' })
-      : t(ISSUE_KEY[issue.code], {});
+      : t(ISSUE_KEY[issue.code], {}) || issue.message;
 
   // Drop zone accepts exactly ONE entry: a folder or a single .md. Dragging
   // non-files (text, page elements) yields an empty files list — a silent
@@ -196,16 +210,17 @@ export function SkillEditor({
   const handleDrop = (e: DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     setDragActive(false);
+    setDropNotice(null);
     const list = e.dataTransfer.files;
     if (!list || list.length === 0) return;
-    if (list.length > 1) setPreviewError(t('skills.form.dropOneOnly'));
     if (!isDesktop) {
-      setPreviewError(t('skills.form.dropDesktopOnly'));
+      setDropNotice(t('skills.form.dropDesktopOnly'));
       return;
     }
+    if (list.length > 1) setDropNotice(t('skills.form.dropOneOnly'));
     const dropped = window.__electron__?.getPathForFile?.(list[0]);
     if (!dropped) {
-      setPreviewError(t('skills.form.dropResolveFail'));
+      setDropNotice(t('skills.form.dropResolveFail'));
       return;
     }
     previewByPath(dropped);
@@ -271,10 +286,11 @@ export function SkillEditor({
       // no-ops here, matching the disabled primary button.
       if (!preview.ok) return;
       setFieldError(null);
-      // Single-file skills import via the raw channel so EDITED instructions
-      // are honored; multi-file skills must import the folder verbatim (the
-      // instructions box is then a read-only preview of SKILL.md).
-      const singleFile = preview.files.length === 1;
+      // LONE-FILE sources import via the raw channel so EDITED instructions are
+      // honored. A folder — even one containing only SKILL.md — must go through
+      // folderPath: the raw channel regenerates frontmatter and would silently
+      // drop extra fields (allowed-tools, license, …) a verbatim copy preserves.
+      const singleFile = preview.sourceKind === 'file';
       void onImport?.({
         ...(singleFile ? { raw: instructions } : { folderPath: folderPath.trim() }),
         ...(name.trim() ? { name: name.trim() } : {}),
@@ -374,6 +390,10 @@ export function SkillEditor({
               <span>{t(dragActive && preview ? 'skills.form.dropReplace' : 'skills.form.dropHint')}</span>
             </div>
 
+            {dropNotice && (
+              <p className="sk-form-hint sk-import-dropnotice" data-testid="skill-drop-notice">{dropNotice}</p>
+            )}
+
             <div className="sk-field">
               <span className="sk-field__label">{t('skills.form.importModeFolder')}</span>
               <div className="sk-import-row">
@@ -383,7 +403,14 @@ export function SkillEditor({
                   type="text"
                   value={folderPath}
                   placeholder={t('skills.form.folderPlaceholder')}
-                  onChange={(e) => setFolderPath(e.target.value)}
+                  onChange={(e) => {
+                    setFolderPath(e.target.value);
+                    // A stale verdict must never outlive the path it described:
+                    // editing the path invalidates the preview (submit disables
+                    // until a fresh 预览).
+                    setPreview(null);
+                    setPreviewConflict(null);
+                  }}
                 />
                 <button
                   type="button"
@@ -428,7 +455,7 @@ export function SkillEditor({
                     ? (preview.files.length > 1
                         ? t('skills.form.previewStructureOk', { count: String(preview.files.length - 1) })
                         : t('skills.form.previewStructureSingle'))
-                    : t(ISSUE_KEY[(preview.issues.find((i) => i.level === 'error'))!.code], {})}
+                    : t(ISSUE_KEY[(preview.issues.find((i) => i.level === 'error'))!.code], {}) || (preview.issues.find((i) => i.level === 'error'))!.message}
                 </div>
 
                 {preview.issues.filter((i) => i.level === 'warning').map((i) => (

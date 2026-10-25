@@ -868,7 +868,10 @@
   border: 1px solid var(--border-soft);
   border-radius: var(--radius);
   background: var(--bg-subtle);
+  /* The × clear button sits top-right; keep verdict text out from under it. */
+  padding-right: 32px;
 }
+.sk-import-dropnotice { margin: 0; }
 /* Compact instructions box for the new-skill surface (import body comes from
    SKILL.md; manual drafts stay workable at this height too). Overrides the
    --md height only; typography stays mono/pre-wrap. */
