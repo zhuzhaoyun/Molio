@@ -164,7 +164,7 @@ pnpm test:e2e     # Playwright 自动启动隔离的 daemon/cloud/web（先关�
 | `src/components/kb/` | `e2e/publish-flow.spec.ts` |
 | `src/components/graph/` | `e2e/graph.spec.ts`, `e2e/graph-settings.spec.ts`, `e2e/graph-local.spec.ts` |
 | `src/components/runtimes/` | `e2e/runtimes-page.spec.ts`, `e2e/runtime-provider-config.spec.ts` |
-| `src/components/settings/` | `e2e/runtimes-page.spec.ts`（RuntimesPanel 在此） |
+| `src/components/settings/` | `e2e/settings.spec.ts`, `e2e/skills.spec.ts`, `e2e/skill-hub.spec.ts`, `e2e/runtimes-page.spec.ts`（RuntimesPanel 在此）, `e2e/runtime-provider-config.spec.ts` |
 | `src/components/history/` | `e2e/history.spec.ts` |
 | `src/components/resources/`, `src/data/resources.ts`, `apps/landing-page/resources-data.js` | `e2e/resources.spec.ts` |
 | `src/App.tsx`（路由变更） | `e2e/navigation.spec.ts`, `e2e/bootstrap.spec.ts` |
