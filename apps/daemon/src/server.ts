@@ -1,7 +1,5 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
-import { readFileSync, existsSync, statSync } from 'node:fs';
-import { join, extname } from 'node:path';
 import type Database from 'better-sqlite3';
 import { RunManager } from './core/RunManager.js';
 import { openDatabase, closeDatabase } from './core/db.js';
@@ -23,6 +21,7 @@ import { maintenanceRoutes } from './routes/maintenance.js';
 import { quizRoutes } from './routes/quiz.js';
 import { authRoutes } from './routes/auth.js';
 import { marketRoutes } from './routes/market.js';
+import { createStaticFileMiddleware } from './static-files.js';
 import { AuthClient } from './core/auth/auth-client.js';
 import { WeixinService } from './core/weixin/service.js';
 import { FeishuService } from './core/feishu/service.js';
@@ -152,67 +151,10 @@ app.route('/api/market', marketRoutes(db, authClient));
 // Static file serving (production / desktop mode)
 const staticDir = process.env['MOLIO_STATIC_DIR'];
 
-// MIME type mapping
-const mimeTypes: Record<string, string> = {
-  '.html': 'text/html',
-  '.js': 'text/javascript',
-  '.css': 'text/css',
-  '.json': 'application/json',
-  '.png': 'image/png',
-  '.jpg': 'image/jpeg',
-  '.jpeg': 'image/jpeg',
-  '.gif': 'image/gif',
-  '.svg': 'image/svg+xml',
-  '.ico': 'image/x-icon',
-  '.woff': 'font/woff',
-  '.woff2': 'font/woff2',
-  '.ttf': 'font/ttf',
-  '.otf': 'font/otf',
-  '.webp': 'image/webp',
-  '.webm': 'video/webm',
-  '.mp4': 'video/mp4',
-  '.txt': 'text/plain',
-  '.xml': 'text/xml',
-  '.pdf': 'application/pdf',
-};
-
 if (staticDir) {
-  // Serve static files with custom middleware
-  app.use('/*', async (c, next) => {
-    const url = new URL(c.req.url);
-    let pathname = decodeURIComponent(url.pathname);
-
-    // Security: prevent directory traversal
-    if (pathname.includes('..')) {
-      return c.notFound();
-    }
-
-    // Default to index.html for root
-    if (pathname === '/') {
-      pathname = '/index.html';
-    }
-
-    const filePath = join(staticDir, pathname);
-
-    // Check if file exists
-    if (existsSync(filePath) && statSync(filePath).isFile()) {
-      const ext = extname(filePath).toLowerCase();
-      const mimeType = mimeTypes[ext] || 'application/octet-stream';
-      const content = readFileSync(filePath);
-      return c.body(content, 200, { 'Content-Type': mimeType });
-    }
-
-    // SPA fallback: serve index.html for non-API, non-asset routes
-    if (!pathname.startsWith('/api/') && !extname(pathname)) {
-      const indexPath = join(staticDir, 'index.html');
-      if (existsSync(indexPath)) {
-        const content = readFileSync(indexPath);
-        return c.body(content, 200, { 'Content-Type': 'text/html' });
-      }
-    }
-
-    await next();
-  });
+  // Serve static files with custom middleware (see static-files.ts for the
+  // cache policy: index.html is always revalidated via Cache-Control: no-cache)
+  app.use('/*', createStaticFileMiddleware(staticDir));
 }
 
 // Graceful shutdown
