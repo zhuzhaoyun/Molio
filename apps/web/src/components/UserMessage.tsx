@@ -5,6 +5,7 @@ import { useI18n } from '../i18n';
 import { MessageToolbar, type ToolbarAction } from './MessageToolbar';
 import { useSelectMode, useIsSelected } from '../stores/messageSelectionStore';
 import { MessageCheckbox } from './MessageCheckbox';
+import { stripWikiQueryTrigger } from './kb/kbChatPrompts';
 import type { ChatMessage } from '../hooks/useChatCore';
 
 interface Props {
@@ -99,20 +100,23 @@ export function UserMessage({ message, isLast, onEdit, onRequestDelete, disabled
   const selectMode = useSelectMode();
   const selected = useIsSelected(message.id);
   const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(message.content);
+  // KB 问答首轮消息体带 wiki-query 触发语（发给 agent 的指令，见 kbChatPrompts）
+  // ——展示/复制/编辑只应见到用户自己的话；消息体保持原样，不动存储与发送。
+  const displayContent = stripWikiQueryTrigger(message.content);
+  const [draft, setDraft] = useState(displayContent);
 
-  const rendered = renderContent(message.content, vaultId, t);
+  const rendered = renderContent(displayContent, vaultId, t);
 
   const startEdit = useCallback(() => {
     if (selectMode) return;
-    setDraft(message.content);
+    setDraft(displayContent);
     setEditing(true);
-  }, [message.content, selectMode]);
+  }, [displayContent, selectMode]);
 
   const cancelEdit = useCallback(() => {
-    setDraft(message.content);
+    setDraft(displayContent);
     setEditing(false);
-  }, [message.content]);
+  }, [displayContent]);
 
   const saveEdit = useCallback(() => {
     const trimmed = draft.trim();
@@ -124,7 +128,7 @@ export function UserMessage({ message, isLast, onEdit, onRequestDelete, disabled
   const actions: ToolbarAction[] = [
     {
       key: 'copy', label: '复制', testid: 'msg-copy-btn',
-      text: message.content, onClick: () => {},
+      text: displayContent, onClick: () => {},
     },
   ];
   if (onEdit && isLast) {

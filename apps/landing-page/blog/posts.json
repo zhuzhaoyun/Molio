@@ -1,5 +1,15 @@
 [
   {
+    "slug": "knowledge-graph-building-tools",
+    "title": "知识图谱构建工具有哪些？按 5 个环节选，附工具清单",
+    "date": "2026-10-24"
+  },
+  {
+    "slug": "knowledge-graph-resource-sites",
+    "title": "知识图谱资源网站有哪些？10 个入口，按数据、工具、成品选",
+    "date": "2026-10-24"
+  },
+  {
     "slug": "workbuddy-obsidian-knowledge-base",
     "title": "WorkBuddy + Obsidian 装好之后，知识库里到底放什么",
     "date": "2026-10-07"
@@ -76,7 +86,7 @@
   },
   {
     "slug": "claude-code-gui-guide",
-    "title": "Claude Code 图形界面完全指南：告别命令行，Molio 让 AI 编程触手可及",
+    "title": "Claude Code 可视化界面完全指南：告别命令行，Molio 让 AI 编程触手可及",
     "date": "2026-06-18"
   },
   {

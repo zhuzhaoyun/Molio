@@ -314,19 +314,58 @@ test.describe('Skills library', () => {
     try {
       await gotoSkillsTab(page);
 
-      // Single "新建技能" button; switch its source to "导入文件 / 文件夹".
+      // Single "新建技能" button opens ONE merged surface: dropzone (import)
+      // and the manual three-field form are visible together, no source tabs.
       await page.locator('[data-testid="skill-new-btn"]').click();
       await expect(page.getByTestId('skill-form-overlay')).toBeVisible();
-      await page.getByTestId('skill-source-import').click();
+      await expect(page.getByTestId('skill-import-dropzone')).toBeVisible();
+      await expect(page.getByTestId('skill-name-input')).toBeVisible();
+      await expect(page.getByTestId('skill-source-import')).toHaveCount(0);
       // In a plain browser there is no Electron, so the native browse buttons
       // stay hidden — type the path.
       await expect(page.getByTestId('skill-import-browse-folder')).toHaveCount(0);
+      // Preview fills THE form fields (no second card-form): parsed values
+      // land in the one and only name/description/instructions set.
       await page.getByTestId('skill-import-folder').fill(dir);
+      await page.getByTestId('skill-import-preview-btn').click();
+      const check = page.getByTestId('skill-import-check');
+      await expect(check).toBeVisible({ timeout: 10_000 });
+      await expect(page.getByTestId('skill-name-input')).toHaveValue(unique);
+      await expect(page.getByTestId('skill-instructions-input')).not.toHaveValue('');
+      // The file listing lives at the BOTTOM (same slot as the editor's).
+      await page.getByTestId('skill-import-files-toggle').click();
+      await expect(page.locator('.sk-preview__files li', { hasText: 'references/guide.md' })).toBeVisible({ timeout: 10_000 });
+      // × clears the check result; the filled fields stay editable.
+      await page.getByTestId('skill-import-preview-clear').click();
+      await expect(page.getByTestId('skill-import-check')).toHaveCount(0);
+      await expect(page.getByTestId('skill-name-input')).toHaveValue(unique);
+      // Editing the path invalidates a stale preview — the verdict must never
+      // describe a folder different from what import would actually read. The
+      // primary button falls back to 保存 (the manual path), never 导入.
+      await page.getByTestId('skill-import-folder').fill(`${dir}-moved`);
+      await expect(page.getByTestId('skill-import-check')).toHaveCount(0);
+      await expect(page.getByTestId('skill-form-submit')).toHaveText('保存');
+      await page.getByTestId('skill-import-folder').fill(dir);
+      // Re-preview to continue the import.
+      await page.getByTestId('skill-import-preview-btn').click();
+      await expect(page.getByTestId('skill-import-check')).toBeVisible({ timeout: 10_000 });
       await page.getByTestId('skill-form-submit').click();
 
       // Row appears once the import is processed (generous timeout for dev queue).
       const row = page.locator('.sk-row', { hasText: unique });
       await expect(row).toBeVisible({ timeout: 15_000 });
+      // Freshly imported row flashes for ~3s to guide the eye. Assert right
+      // after visibility — the flash window is open exactly now.
+      await expect(row).toHaveClass(/sk-row--highlight/, { timeout: 10_000 });
+      await expect(page.getByTestId('skill-form-overlay')).toHaveCount(0);
+
+      // Clicking the CARD BODY is the view/edit entry: one interaction opens
+      // the editor with details + file listing together (view/edit closure).
+      await row.locator('.sk-row__body').click();
+      await expect(page.getByTestId('skill-form-overlay')).toBeVisible();
+      await page.getByTestId('skill-editor-files-toggle').click();
+      await expect(page.locator('.sk-preview__files li', { hasText: 'references/guide.md' })).toBeVisible({ timeout: 10_000 });
+      await page.getByTestId('skill-form-cancel').click();
       await expect(page.getByTestId('skill-form-overlay')).toHaveCount(0);
 
       // Cleanup: delete the imported skill (mirrors the lifecycle test pattern).
@@ -335,6 +374,128 @@ test.describe('Skills library', () => {
       await expect(row).toHaveCount(0, { timeout: 15_000 });
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test('dropping non-file content is a silent no-op; file drops in a browser prompt the desktop hint', async ({ page }) => {
+    await gotoSkillsTab(page);
+    await page.locator('[data-testid="skill-new-btn"]').click();
+    await expect(page.getByTestId('skill-form-overlay')).toBeVisible();
+
+    // Review Focus #1: dragging text / page elements (empty files list) is a
+    // SILENT no-op — no error, no state change, never a crash.
+    await page.getByTestId('skill-import-dropzone').evaluate((el) => {
+      el.dispatchEvent(new DragEvent('drop', { dataTransfer: new DataTransfer(), bubbles: true, cancelable: true }));
+    });
+    await expect(page.getByTestId('skill-form-error')).toHaveCount(0);
+    await expect(page.getByTestId('skill-drop-notice')).toHaveCount(0);
+    await expect(page.getByTestId('skill-name-input')).toHaveValue('');
+
+    // In a plain browser (no Electron) a real file drop cannot be resolved to
+    // a path — the dropzone-adjacent notice says so instead of failing quietly.
+    await page.getByTestId('skill-import-dropzone').evaluate((el) => {
+      const dt = new DataTransfer();
+      dt.items.add(new File(['x'], 'a.md', { type: 'text/markdown' }));
+      el.dispatchEvent(new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true }));
+    });
+    await expect(page.getByTestId('skill-drop-notice')).toBeVisible();
+    // Closing the editor (nothing was imported) — no cleanup needed.
+    await page.getByTestId('skill-form-cancel').click();
+    await expect(page.getByTestId('skill-form-overlay')).toHaveCount(0);
+  });
+
+  test('import preview surfaces a structure error and blocks confirmation', async ({ page }) => {
+    await gotoSkillsTab(page);
+    await page.locator('[data-testid="skill-new-btn"]').click();
+    await expect(page.getByTestId('skill-form-overlay')).toBeVisible();
+    const emptyDir = fs.mkdtempSync(path.join(os.tmpdir(), 'molio-e2e-skill-empty-'));
+    try {
+      await page.getByTestId('skill-import-folder').fill(emptyDir);
+      await page.getByTestId('skill-import-preview-btn').click();
+      // A hand-typed draft must survive a FAILED preview: fill-on-success only.
+      await page.getByTestId('skill-name-input').fill('手写草稿保护');
+      await page.getByTestId('skill-import-folder').fill(emptyDir);
+      await page.getByTestId('skill-import-preview-btn').click();
+      await expect(page.getByTestId('skill-import-check')).toBeVisible({ timeout: 10_000 });
+      await expect(page.getByTestId('skill-name-input')).toHaveValue('手写草稿保护');
+      await expect(page.getByTestId('skill-form-submit')).toBeDisabled();
+      await expect(page.getByTestId('skill-import-check')).toContainText('SKILL.md');
+    } finally {
+      fs.rmSync(emptyDir, { recursive: true, force: true });
+      await page.getByTestId('skill-form-cancel').click();
+    }
+  });
+
+  test('import preview reports a same-name conflict; both skills coexist after confirm', async ({ page }) => {
+    const ts = Date.now();
+    const existingName = `E2E冲突${ts}`;
+    const droppedName = `e2E冲突${ts} `; // case variant + trailing space — same skill by trim+ci
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'molio-e2e-skill-conflict-'));
+    fs.writeFileSync(
+      path.join(dir, 'SKILL.md'),
+      `---\nname: ${droppedName}\ndescription: 冲突测试\n---\n\nbody\n`,
+      'utf8',
+    );
+
+    const DAEMON = `http://localhost:${process.env.MOLIO_E2E_DAEMON_PORT ?? '3100'}`;
+    // Seed the existing skill directly via API (name collides only by trim+ci).
+    const res = await page.request.post(`${DAEMON}/api/skills`, {
+      data: { name: existingName, description: '冲突测试已存在', instructions: 'body' },
+    });
+    const existing = (await res.json())['skill'] as { id: string };
+
+    try {
+      await gotoSkillsTab(page);
+      await page.locator('[data-testid="skill-new-btn"]').click();
+      await expect(page.getByTestId('skill-form-overlay')).toBeVisible();
+      await page.getByTestId('skill-import-folder').fill(dir);
+      await page.getByTestId('skill-import-preview-btn').click();
+
+      // The conflict chip appears in the check result (trim + ci hit).
+      const check = page.getByTestId('skill-import-check');
+      await expect(check).toBeVisible({ timeout: 10_000 });
+      await expect(page.getByTestId('skill-import-conflict')).toBeVisible();
+
+      // Confirm anyway — both skills are kept (the new one gets a sync suffix).
+      await page.getByTestId('skill-form-submit').click();
+      await expect(page.getByTestId('skill-form-overlay')).toHaveCount(0, { timeout: 15_000 });
+
+      const both = page.locator('.sk-row', { hasText: String(ts) });
+      await expect(both).toHaveCount(2, { timeout: 15_000 });
+    } finally {
+      // Cleanup: delete both skills (API — rows may carry sync suffixes).
+      const list = await page.request.get(`${DAEMON}/api/skills`);
+      const skills = ((await list.json())['skills'] as { id: string; name: string }[]) ?? [];
+      for (const s of skills) {
+        if (s.name.replaceAll(' ', '').toLowerCase().includes(`e2e冲突${ts}`.toLowerCase())) {
+          await page.request.delete(`${DAEMON}/api/skills/${s.id}`);
+        }
+      }
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test('import failure after preview keeps the editor open with the error', async ({ page }) => {
+    await gotoSkillsTab(page);
+    await page.locator('[data-testid="skill-new-btn"]').click();
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'molio-e2e-skill-vanish-'));
+    fs.writeFileSync(path.join(dir, 'SKILL.md'), '---\nname: 消失技能\ndescription: d\n---\n\nbody\n', 'utf8');
+    await page.route('**/api/skills/import', (route) => route.fulfill({
+      status: 404,
+      contentType: 'application/json',
+      body: JSON.stringify({ error: { code: 'NOT_FOUND', message: 'E2E模拟源已消失' } }),
+    }));
+    try {
+      await page.getByTestId('skill-import-folder').fill(dir);
+      await page.getByTestId('skill-import-preview-btn').click();
+      await expect(page.getByTestId('skill-import-check')).toBeVisible({ timeout: 10_000 });
+      await page.getByTestId('skill-form-submit').click();
+      await expect(page.getByTestId('skill-form-error')).toHaveText('E2E模拟源已消失', { timeout: 10_000 });
+      await expect(page.getByTestId('skill-form-overlay')).toBeVisible();
+    } finally {
+      await page.unroute('**/api/skills/import');
+      fs.rmSync(dir, { recursive: true, force: true });
+      await page.getByTestId('skill-form-cancel').click();
     }
   });
 });
