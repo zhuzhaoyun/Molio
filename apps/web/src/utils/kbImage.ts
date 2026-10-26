@@ -104,7 +104,11 @@ export function preprocessLocalImages(
         : notePath
           ? resolveNoteRelative(notePath, cleaned)
           : cleaned.replace(/^\.\//, '');
-      return `![${alt}](${baseUrl}/api/knowledge/vaults/${vaultId}/raw/${encodeURIComponent(resolved)}${title ?? ''})`;
+      // encodeURIComponent 保留字面 `()`，而聊天侧 renderMarkdown 的行内
+      // 正则 `\(([^)]+)\)` 会被路径里的括号截断，所以这里强制转成 %28/%29
+      // （daemon 的 raw 路由只解码一次，两种写法指向同一文件）。
+      const encoded = encodeURIComponent(resolved).replace(/[()]/g, (ch) => (ch === '(' ? '%28' : '%29'));
+      return `![${alt}](${baseUrl}/api/knowledge/vaults/${vaultId}/raw/${encoded}${title ?? ''})`;
     },
   );
 }
