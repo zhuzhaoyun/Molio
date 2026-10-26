@@ -137,8 +137,8 @@ describe('macOS path: spawnMacOSUpdater', () => {
 
   it('should open the new app', () => {
     assert.ok(
-      updaterJs.includes('open "$2"'),
-      'must launch new app with open command'
+      updaterJs.includes('open -n "$2"'),
+      'must launch new app with open -n (plain `open` only activates a lingering old instance — same bundle id — and the new version never starts)'
     );
   });
 
