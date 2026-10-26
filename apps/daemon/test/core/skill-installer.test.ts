@@ -265,6 +265,54 @@ describe('skill-installer migration', () => {
       content.includes('明显无关'),
       'should exempt clearly-unrelated tasks from wiki retrieval',
     );
+    // 库名片（2026-10-26 设计 §4A/P1）：规则开头点名库主题（vault 目录名）——
+    // 没有它，模型只能靠翻库来回答「这问题跟这个库相关吗」。
+    assert.ok(
+      content.includes(`本库主题：${path.basename(tmpVault)}`),
+      'topic card must carry this vault\'s directory name',
+    );
+    // 拿不准时的判定成本封顶：只读一次根 INDEX，不升级成全库 grep（§4A）。
+    assert.ok(
+      content.includes('不要为此全库 grep'),
+      'ambiguity check should cap at one root-INDEX read',
+    );
+    // 答案形状（§4B/P2）：先答内容，不叙述检索过程，不给无关问题挂检索失败报告。
+    assert.ok(
+      content.includes('不要以「我检索了…」开场'),
+      'should forbid retrieval-narration preambles',
+    );
+    assert.ok(
+      content.includes('不要宣告「与库无关」「本库没有收录」'),
+      'should forbid judgment-announcement preambles (2026-10-26 真机：追问轮以「这个问题与数学知识库明显无关，我直接回答」开场)',
+    );
+  });
+
+  it('wiki-query rule is generated per vault — each vault gets its own topic card', () => {
+    // MOILIO_RULES 的 wiki-query block 按 vault 生成（库名片嵌 vault 目录名），
+    // 两个不同目录名的库注入的规则块必须各自携带自己的库名，不得串库。
+    const outer = fs.mkdtempSync(path.join(os.tmpdir(), 'molio-rule-topic-'));
+    try {
+      for (const name of ['高中数学', '法考刑法']) {
+        const other = name === '高中数学' ? '法考刑法' : '高中数学';
+        const vaultPath = path.join(outer, name);
+        fs.mkdirSync(vaultPath, { recursive: true });
+        installAll(vaultPath);
+        const content = fs.readFileSync(
+          path.join(vaultPath, '.claude', 'CLAUDE.md'),
+          'utf-8',
+        );
+        assert.ok(
+          content.includes(`本库主题：${name}`),
+          `${name} 的库必须拿到自己的库名片`,
+        );
+        assert.ok(
+          !content.includes(`本库主题：${other}`),
+          '不得把别的库的库名片注进来',
+        );
+      }
+    } finally {
+      fs.rmSync(outer, { recursive: true, force: true });
+    }
   });
 
   it('should not overwrite existing user content in .claude/CLAUDE.md', () => {
