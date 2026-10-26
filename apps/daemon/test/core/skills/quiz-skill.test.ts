@@ -43,7 +43,10 @@ describe('bundled quiz-generate skill', () => {
     assert.ok(parsed.instructions.includes('![说明]('), 'must document the stem image syntax');
     assert.ok(parsed.instructions.includes('知识库根'), 'stem image paths resolve against the vault root');
     assert.ok(parsed.instructions.includes('不带前导'), 'stem image paths must not start with a slash');
+    // 配图由考点驱动 + 双向锁：不预设学科比例；「如图」必须真嵌图，嵌图必须考点依赖。
+    assert.ok(parsed.instructions.includes('考点'), 'image inclusion is driven by the test point, not a subject ratio');
+    assert.ok(parsed.instructions.includes('如图'), 'a mentioned figure must be embedded, and vice versa');
     // 版本随协议扩充递增（诊断用）。
-    assert.match(raw, /^version: 1\.2\.0$/m);
+    assert.match(raw, /^version: 1\.2\.1$/m);
   });
 });
