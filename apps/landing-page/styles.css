@@ -1539,6 +1539,57 @@ p { margin-bottom: 0; }
 
 .res-side-card .btn { width: 100%; }
 
+/* Product detail: one live CTA for desktop sidebar and mobile purchase bar. */
+.resource-product .res-main > section + section { margin-top: 44px; }
+.res-preview-hint { color: var(--ink-40); font-size: 13px; margin: -4px 0 16px; }
+.res-preview-hint span { display: none; }
+.res-community { margin-top: 24px; border-top: 1px solid var(--hair); padding-top: 16px; }
+.res-community summary { cursor: pointer; color: var(--ink-60); font-size: 14px; padding: 8px 0; }
+.res-community p { color: var(--ink-40); font-size: 13px; margin: 8px 0 12px; }
+.res-community img { display: block; max-width: 100%; }
+
+@media (max-width: 760px) {
+  .resource-product { padding-bottom: calc(160px + env(safe-area-inset-bottom, 0px)); }
+  .resource-product .page-content { padding: calc(var(--nav-h) + 24px) 20px 48px; }
+  .resource-product .breadcrumb { margin-bottom: 20px; }
+  .resource-product .res-breadcrumb-current,
+  .resource-product .res-detail-head > .res-icon,
+  .resource-product #molio-floaters { display: none; }
+  .resource-product .res-detail-head { display: block; }
+  .resource-product .res-detail-title { display: block; }
+  .resource-product .res-detail-title h1 { font-size: 26px; line-height: 1.4; overflow-wrap: anywhere; }
+  .resource-product .res-detail-title .res-price { display: inline-block; margin-top: 12px; font-size: 16px; }
+  .resource-product .res-meta-line { font-size: 13px; margin-top: 10px; }
+  .resource-product .res-tags { margin-top: 10px; }
+  .resource-product .res-detail-grid { margin-top: 24px; grid-template-columns: minmax(0, 1fr); gap: 24px; }
+  .resource-product .res-main { display: flex; flex-direction: column; }
+  .resource-product .res-main > section,
+  .resource-product .res-main > section + section { min-width: 0; margin: 0 0 28px; }
+  .resource-product .res-preview-section { order: -1; }
+  .resource-product .res-section-title { font-size: 18px; margin: 0 0 12px; }
+  .resource-product .res-preview-hint span { display: inline; }
+  .resource-product .res-preview-grid {
+    display: flex; gap: 12px; overflow-x: auto; scroll-snap-type: x mandatory;
+    padding-bottom: 12px;
+  }
+  .resource-product .res-preview-grid figure { flex: 0 0 90%; scroll-snap-align: start; }
+  .resource-product .res-preview-grid figure:only-child { flex-basis: 100%; }
+  .resource-product .res-preview-grid img { display: block; aspect-ratio: 16 / 10; object-fit: contain; background: var(--paper-2); box-shadow: none; }
+  .resource-product .res-preview-grid a:hover img { transform: none; }
+  .resource-product .article-body { font-size: 15px; line-height: 1.85; }
+  .resource-product .res-side { position: static; }
+  .resource-product .res-purchase-card {
+    position: fixed; inset: auto 0 0; z-index: 190;
+    padding: 12px 20px calc(12px + env(safe-area-inset-bottom, 0px));
+    border: 0; border-top: 1px solid var(--hair); border-radius: 0;
+    background: var(--paper); box-shadow: 0 -4px 20px rgba(0,0,0,.04);
+  }
+  .resource-product .res-purchase-card .btn { min-height: 48px; white-space: normal; }
+  .resource-product .res-purchase-card .res-side-note { margin-top: 6px; font-size: 12px; line-height: 1.6; text-align: center; }
+  /* 固定购买栏只留价格/按钮/一句交付说明；免费样例长文案在手机端收起，避免遮挡正文 */
+  .resource-product .res-purchase-card .res-sample-hint { display: none; }
+}
+
 .res-side-note {
   margin-top: 12px;
   font-size: 12.5px;
@@ -1640,6 +1691,9 @@ p { margin-bottom: 0; }
 }
 
 .pay-dl { width: 100%; }
+
+/* 重新支付（手机端 H5 支付：h5_url 仅 5 分钟有效，续接未支付时用） */
+.pay-retry { width: 100%; margin-top: 10px; }
 
 @media (max-width: 900px) {
   .res-detail-grid { grid-template-columns: 1fr; gap: 32px; }

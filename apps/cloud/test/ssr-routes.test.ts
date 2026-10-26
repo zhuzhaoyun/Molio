@@ -58,6 +58,20 @@ async function bootSsrApp() {
   return { app, appNoMarket, marketStore };
 }
 
+test('SSR 商品页：移动购买入口复用唯一按钮，预览分区与使用说明可直接读取', async () => {
+  const { app, marketStore } = await bootSsrApp();
+  await marketStore.insertListing(listing({}));
+  const html = await (await app.request('/resource/01JABCDE0000000000000001.html')).text();
+  assert.ok(html.includes('class="resource-product"'));
+  assert.equal((html.match(/id="pay-btn"/g) || []).length, 1);
+  assert.ok(html.includes('data-testid="resource-purchase"'));
+  assert.ok(html.includes('class="res-preview-section"'));
+  assert.ok(html.includes('下载后在电脑上使用'));
+  assert.ok(html.includes('<summary>使用有疑问？加入用户群</summary>'));
+  assert.ok(!html.includes('扫码支付成功后'));
+  assert.ok(!html.includes('下载链接 1 小时内有效'));
+});
+
 test('SSR 商品页：200 + SEO 要素齐全（title/canonical/OG/Product JSON-LD/正文）', async () => {
   const { app, marketStore } = await bootSsrApp();
   await marketStore.insertListing(listing({}));
@@ -96,11 +110,11 @@ test('SSR 商品页：用户提交内容做 XSS 转义（HTML 与内嵌 JSON 双
 
 test('SSR 商品页：付费形态三选一 CTA', async () => {
   const { app, marketStore } = await bootSsrApp();
-  // 微信支付（priceCents>0 且无 payUrl）
+  // 站内支付（priceCents>0 且无 payUrl）：桌面微信扫码 / 手机支付宝 WAP
   await marketStore.insertListing(listing({}));
   let html = await (await app.request('/resource/01JABCDE0000000000000001.html')).text();
-  assert.ok(html.includes('id="pay-btn"'), '微信支付按钮');
-  assert.ok(html.includes('data-auth-gate="微信支付 ¥5.9"'), '登录门槛文案承载');
+  assert.ok(html.includes('id="pay-btn"'), '站内支付按钮');
+  assert.ok(html.includes('data-auth-gate="立即购买 ¥5.9"'), '登录门槛文案承载');
   // 外链购买（有 payUrl）
   await marketStore.insertListing(listing({ id: '01JABCDE0000000000000002', payUrl: 'https://pay.example/x?a=1&b=2' }));
   html = await (await app.request('/resource/01JABCDE0000000000000002.html')).text();
