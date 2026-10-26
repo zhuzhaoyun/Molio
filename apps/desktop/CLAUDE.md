@@ -32,7 +32,7 @@ Electron 40 内置 Node.js 24.11.1。通过设置 `ELECTRON_RUN_AS_NODE=1` 环�
 ```
 src/
   main.js          Electron main process (ESM)
-  preload.cjs      Preload script (contextBridge, IPC)
+  preload.cjs      Preload script (contextBridge, IPC) —— 渲染进程唯一的桥面；拖入文件取绝对路径必须走 webUtils.getPathForFile（Electron 40 已移除 File.path，裸 File 对象上拿不到路径）
   updater.js       自动更新逻辑 (electron-updater)
   retry.js         重试退避策略
   logger.js        文件日志
