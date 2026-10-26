@@ -48,9 +48,17 @@ test('deriveChatTitle: 折叠空白并截断 24 字', () => {
 
 // ── wiki-query 触发语（2026-10-24 软化为条件式 + 气泡剥离）──
 
-test('WIKI_QUERY_TRIGGER: 条件式语义——通用问题可跳过检索', () => {
+test('WIKI_QUERY_TRIGGER: 以「本库主题」为锚的条件式 + 答案形状要求', () => {
+  assert.ok(WIKI_QUERY_TRIGGER('x').includes('本库主题'));
   assert.ok(WIKI_QUERY_TRIGGER('x').includes('明显无关'));
   assert.ok(WIKI_QUERY_TRIGGER('x').includes('无需检索'));
+  assert.ok(WIKI_QUERY_TRIGGER('x').includes('不要以检索过程'), '答案形状：不叙述检索过程');
+});
+
+test('WIKI_QUERY_TRIGGER: 文案长度不增（≤ #369 条件式的 101 字）', () => {
+  // 设计 §4B 的承诺：触发语换文案不得变长——气泡剥离与标题派生都假设前缀短。
+  const directive = WIKI_QUERY_TRIGGER('').replace(/\n$/, '');
+  assert.ok([...directive].length <= 101, `实际 ${[...directive].length} 字`);
 });
 
 test('WIKI_QUERY_TRIGGER: 触发语以换行结尾、问题在末行（标题派生/剥离都依赖）', () => {
@@ -59,6 +67,12 @@ test('WIKI_QUERY_TRIGGER: 触发语以换行结尾、问题在末行（标题派
 
 test('stripWikiQueryTrigger: 剥掉现行触发语，只剩用户问题', () => {
   assert.equal(stripWikiQueryTrigger(WIKI_QUERY_TRIGGER('什么是熵')), '什么是熵');
+});
+
+test('stripWikiQueryTrigger: #369 条件式触发语（历史会话）也剥', () => {
+  const legacy369 =
+    '（知识库问答：若问题涉及本库内容，请先用 wiki-query skill 读 wiki/INDEX.md 检索相关页面，基于库内材料回答；与本库明显无关的通用问题（如闲聊、天气）可直接回答，无需检索）\n#369 时代的会话';
+  assert.equal(stripWikiQueryTrigger(legacy369), '#369 时代的会话');
 });
 
 test('stripWikiQueryTrigger: 旧版无条件触发语（历史会话）也剥', () => {
