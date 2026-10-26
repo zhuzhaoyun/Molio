@@ -30,6 +30,7 @@ import { VaultWatcher, VAULT_TREE_CHANGED_EVENT, VAULT_WATCH_STATE_CHANGED_EVENT
 import { VaultIndexSweeper } from './core/vault-search.js';
 import { GraphCache } from './core/graph-cache.js';
 import { TreeCache } from './core/tree-cache.js';
+import { disposeVaultWorkers } from './core/vault-worker.js';
 import { createPreloadManager } from './core/preload-manager.js';
 import { preloadRoutes } from './routes/preload.js';
 
@@ -108,6 +109,7 @@ app.post('/api/shutdown', async (c) => {
   await feishuService.stop();
   void vaultWatcher.stop();
   vaultIndexSweeper.stop();
+  disposeVaultWorkers();
   runManager.cancelAll('shutdown:desktop-request');
   closeDatabase();
   // Give the HTTP response a chance to be sent before exiting
@@ -163,6 +165,7 @@ function gracefulShutdown(): void {
   weixinService.stop();
   void vaultWatcher.stop();
   vaultIndexSweeper.stop();
+  disposeVaultWorkers();
   runManager.cancelAll('shutdown:graceful');
   // Kill any in-progress preload subprocess trees so we don't orphan detached
   // pip/npm children (they'd keep downloading after the daemon is gone).

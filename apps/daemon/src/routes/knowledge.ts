@@ -7,7 +7,7 @@ import { stream } from 'hono/streaming';
 import { createReadStream, existsSync, mkdirSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import type Database from 'better-sqlite3';
-import type { CreateVaultRequest, TreeNode } from '@molio/contracts';
+import type { CreateVaultRequest } from '@molio/contracts';
 import { MAX_IMPORT_FILE_SIZE, MAX_IMPORT_BATCH_SIZE } from '@molio/contracts';
 import {
   listVaults,
@@ -20,7 +20,6 @@ import {
   setActiveVaultId,
 } from '../core/db.js';
 import {
-  scanTree,
   countFiles,
   readFile,
   resolveFilePath,
@@ -38,21 +37,13 @@ import {
   type ImportResult,
 } from '../core/knowledge.js';
 import { searchVaultFiles, indexVaultFile, removeVaultFile, removeVaultDir, ensureVaultIndexed, hasInflightBuild } from '../core/vault-search.js';
-import { annotateTreeStatus } from '../core/wiki-status.js';
+import { buildTreeInWorker } from '../core/vault-worker.js';
 import { TreeCache } from '../core/tree-cache.js';
 import { VAULT_TREE_CHANGED_EVENT, type VaultWatcher } from '../core/vault-watcher.js';
 import type { RunManager } from '../core/RunManager.js';
 import { reconcileVault } from '../core/skills/vault-config.js';
 import { FileTooLargeError } from '../core/encoding.js';
 import { createSampleVault, SampleVaultPathError } from '../core/sample-vault.js';
-
-/** 扫描 + wiki 状态标注（annotateTreeStatus 原地改树，两者必须一起重算）。 */
-async function buildAnnotatedTree(vaultPath: string): Promise<TreeNode[]> {
-  const tree = scanTree(vaultPath);
-  // Annotate with ingest status (only if the vault has a wiki).
-  await annotateTreeStatus(vaultPath, tree);
-  return tree;
-}
 
 export function knowledgeRoutes(
   db: Database.Database,
@@ -187,8 +178,8 @@ export function knowledgeRoutes(
       // 树缓存与图谱缓存（#337）同一套规矩：watcher 未就绪 → 没有失效信号 →
       // 每次重扫（= 无缓存时的行为），绝不让「没有信号」冒充「内容没变」。
       const tree = isTreeCacheable(vault.id)
-        ? await treeCache.getOrBuild(vault.id, () => buildAnnotatedTree(vault.path))
-        : await buildAnnotatedTree(vault.path);
+        ? await treeCache.getOrBuild(vault.id, () => buildTreeInWorker(vault.path))
+        : await buildTreeInWorker(vault.path);
       return c.json({ tree });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to scan vault';

@@ -15,8 +15,10 @@ import { MAX_DIR_ENTRIES } from '../../src/core/vault-prune.js';
  * wikilink-text.test.ts 已守住 codeIntervals 这一对；这里补上剩下的三面镜子，
  * 外加一个端到端对账（deadcheck CLI vs buildGraph 对同一 vault 的死链判定）：
  *
- *   1. LINK_RE             deadcheck.mjs ↔ routes/graph.ts —— 链接抽取正则
- *   2. normalizeName       deadcheck.mjs ↔ routes/graph.ts —— 模糊名归一
+ *   1. LINK_RE             deadcheck.mjs ↔ core/graph-build.ts —— 链接抽取正则
+ *   2. normalizeName       deadcheck.mjs ↔ core/graph-build.ts —— 模糊名归一
+ *      （图谱构建已从 routes/graph.ts 拆到 core/graph-build.ts——拆出去是为了能
+ *      在 worker 线程里单独加载；镜像对账跟着实现走。）
  *   3. MAX_FIGURES_PER_DIR media.mjs     ↔ core/vault-prune.ts MAX_DIR_ENTRIES
  *
  * 第 3 面的事故形态最隐蔽：目录超过 MAX_DIR_ENTRIES 时 Molio 会把整个目录从
@@ -65,9 +67,9 @@ function normalizeNameFn(source: string, label: string): (n: string) => string {
 }
 
 describe('wiki-build 跨层镜像对账', () => {
-  it('LINK_RE：deadcheck 与 graph.ts 的链接抽取正则一致', () => {
+  it('LINK_RE：deadcheck 与 graph-build.ts 的链接抽取正则一致', () => {
     const deadcheckRe = regexLiteralSource(read(path.join(SCRIPTS, 'deadcheck.mjs')), 'LINK_RE');
-    const graphRe = regexLiteralSource(read(appPath('src/routes/graph.ts')), 'linkRegex');
+    const graphRe = regexLiteralSource(read(appPath('src/core/graph-build.ts')), 'linkRegex');
     assert.equal(
       deadcheckRe, graphRe,
       '链接抽取正则漂移：deadcheck 认的链接和图谱认的链接已经不是同一批。' +
@@ -79,9 +81,9 @@ describe('wiki-build 跨层镜像对账', () => {
     assert.deepEqual(found, ['李白', 'entities/王五']);
   });
 
-  it('normalizeName：deadcheck 与 graph.ts 的模糊名归一行为一致', () => {
+  it('normalizeName：deadcheck 与 graph-build.ts 的模糊名归一行为一致', () => {
     const fromDeadcheck = normalizeNameFn(read(path.join(SCRIPTS, 'deadcheck.mjs')), 'deadcheck.mjs');
-    const fromGraph = normalizeNameFn(read(appPath('src/routes/graph.ts')), 'graph.ts');
+    const fromGraph = normalizeNameFn(read(appPath('src/core/graph-build.ts')), 'graph-build.ts');
     const names = [
       '李白', 'A B_c-d', 'MOLIO Wiki', 'kebab-case_name', '  padded  ', 'Li Bai',
       'a-b_c d', '𠀀extB', '全角　空格', '',
