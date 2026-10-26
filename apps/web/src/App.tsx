@@ -167,6 +167,25 @@ export default function App() {
     });
   }, [location.pathname]);
 
+  // Suppress the browser's default drop navigation GLOBALLY: dropping a file
+  // anywhere outside a dedicated dropzone (e.g. missing the skill import
+  // dropzone by a few pixels) would otherwise navigate the window to the
+  // file:// URL and unload the whole SPA — typed drafts and streaming runs
+  // included. Dedicated drop handlers still receive their events first;
+  // preventDefault here only cancels the fallback navigation, and only for
+  // file drags (text/element drags keep their normal behavior).
+  useEffect(() => {
+    const prevent = (e: DragEvent) => {
+      if (e.dataTransfer?.types.includes('Files')) e.preventDefault();
+    };
+    window.addEventListener('dragover', prevent);
+    window.addEventListener('drop', prevent);
+    return () => {
+      window.removeEventListener('dragover', prevent);
+      window.removeEventListener('drop', prevent);
+    };
+  }, []);
+
   // 模型 pill 的未安装 runtime 行 → SPA 内跳「设置 → 运行时」。
   // 走 router 而非 location.href：产物静态服务无 SPA history fallback，硬导航可能 404。
   useEffect(() => {

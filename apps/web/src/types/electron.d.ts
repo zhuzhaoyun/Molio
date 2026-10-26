@@ -24,6 +24,8 @@ interface DesktopAPI {
   showDirectoryPicker: () => Promise<string | null>;
   /** Open a file picker filtered to .md files (skill SKILL.md import). */
   showSkillFilePicker: () => Promise<string | null>;
+  /** Resolve a dragged-in File to an absolute local path ('' when unresolvable). */
+  getPathForFile: (file: File) => string;
   openPath: (filePath: string) => Promise<string>;
   showItemInFolder: (filePath: string) => Promise<void>;
   renameFile: (oldPath: string, newPath: string) => Promise<string>;

@@ -29,6 +29,7 @@ import {
   listSkills,
   getSkill,
   readInstructions,
+  listSkillFiles,
   createSkill,
   updateSkill,
   toggleSkill,
@@ -36,7 +37,12 @@ import {
   SkillNotFoundError,
 } from '../core/skills/store.js';
 import { afterGlobalSkillMutation } from '../core/skills/vault-config.js';
-import { importFromRaw, importFromFolder, SkillImportError } from '../core/skills/importer.js';
+import {
+  inspectSkillSource,
+  importFromRaw,
+  importFromFolder,
+  SkillImportError,
+} from '../core/skills/importer.js';
 import { prefillFromContent } from '../core/skills/prefill.js';
 import {
   fetchHubSkills,
@@ -177,6 +183,17 @@ export function skillsRoutes(db: Database.Database, runManager: RunManager): Hon
     }
   });
 
+  // GET /api/skills/:id/files — the library skill's content-dir listing (the
+  // "查看目录结构" view, mirroring the import preview's file list). Bundled
+  // skills are treated as not found, like every other by-id route.
+  app.get('/:id/files', (c) => {
+    const result = listSkillFiles(db, c.req.param('id'));
+    if (!result) {
+      return c.json({ error: { code: 'NOT_FOUND', message: 'Skill not found' } }, 404);
+    }
+    return c.json(result);
+  });
+
   // GET /api/skills/:id — one skill + its instructions (for the edit/duplicate
   // form). Bundled skills are treated as not found (hidden app functionality,
   // never shown/editable).
@@ -289,6 +306,51 @@ export function skillsRoutes(db: Database.Database, runManager: RunManager): Hon
     return c.body(null, 204);
   });
 
+  // POST /api/skills/preview-import — stateless pre-import inspection. Shares
+  // inspectSkillSource with the import handlers so the preview can never
+  // disagree with what import would do. Read-only: no DB write, no vault sync.
+  app.post('/preview-import', async (c) => {
+    const body = (await readJsonObject(c)) as ImportSkillRequest | null;
+    const hasRaw = !!body && typeof body.raw === 'string' && body.raw.trim().length > 0;
+    const hasFolder = !!body && typeof body.folderPath === 'string' && body.folderPath.trim().length > 0;
+    if (hasRaw === hasFolder) {
+      return c.json(
+        { error: { code: 'BAD_REQUEST', message: 'provide exactly one of: raw, folderPath' } },
+        400,
+      );
+    }
+    const inspected = hasRaw
+      ? inspectSkillSource({ raw: body!.raw! })
+      : inspectSkillSource({ folderPath: body!.folderPath! });
+    // Conflict vs library skills on the PARSED name (trim + case-insensitive).
+    // A name edited in the preview card is NOT re-checked here — sync's
+    // deterministic `-<id8>` suffix keeps same-name imports safe (spec §5.5).
+    let conflict: { existingId: string; existingName: string } | null = null;
+    if (inspected.ok) {
+      const needle = inspected.name.trim().toLowerCase();
+      const hit = needle
+        ? listSkills(db).find((s) => s.kind !== 'bundled' && s.name.trim().toLowerCase() === needle)
+        : undefined;
+      if (hit) conflict = { existingId: hit.id, existingName: hit.name };
+    }
+    return c.json({
+      preview: {
+        ok: inspected.ok,
+        sourceKind: inspected.entry?.type ?? null,
+        name: inspected.name,
+        nameFallback: inspected.nameFallback,
+        description: inspected.description,
+        descriptionFallback: inspected.descriptionFallback,
+        entryFile: inspected.entryFile,
+        instructions: inspected.instructions,
+        files: inspected.files,
+        truncated: inspected.truncated,
+        issues: inspected.issues,
+      },
+      conflict,
+    });
+  });
+
   // POST /api/skills/import — import from pasted SKILL.md raw text OR a local folder path
   app.post('/import', async (c) => {
     const body = (await readJsonObject(c)) as ImportSkillRequest | null;
@@ -300,10 +362,25 @@ export function skillsRoutes(db: Database.Database, runManager: RunManager): Hon
         400,
       );
     }
+    if (
+      (body?.name !== undefined && (typeof body.name !== 'string' || !body.name.trim())) ||
+      (body?.description !== undefined && typeof body.description !== 'string')
+    ) {
+      return c.json(
+        { error: { code: 'BAD_REQUEST', message: 'name must be a non-empty string; description must be a string' } },
+        400,
+      );
+    }
     try {
       // body! is safe: a null body makes hasRaw === hasFolder (both false)
       // and the guard above already returned 400.
-      const skill = hasRaw ? importFromRaw(db, body.raw!) : importFromFolder(db, body!.folderPath!);
+      const overrides = {
+        ...(typeof body?.name === 'string' ? { name: body.name } : {}),
+        ...(typeof body?.description === 'string' ? { description: body.description } : {}),
+      };
+      const skill = hasRaw
+        ? importFromRaw(db, body.raw!, undefined, overrides)
+        : importFromFolder(db, body!.folderPath!, undefined, overrides);
       await afterGlobalSkillMutation(db);
       return c.json({ skill }, 201);
     } catch (err) {
