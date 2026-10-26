@@ -2080,6 +2080,54 @@
 .quiz-btn:hover:not(:disabled) { background-color: var(--bg-subtle); }
 .quiz-btn:disabled { opacity: 0.45; cursor: not-allowed; }
 .quiz-btn-primary { background-color: var(--accent); border-color: var(--accent); color: #fff; }
+
+/* 主观题「作答」：与符号触发钮同一 .on 语法（唯一 accent 语义 = 挂着锚） */
+.quiz-subject-actions { display: flex; }
+.quiz-answer-btn.on:not(:disabled) { background-color: var(--accent-tint); border-color: var(--accent); color: var(--accent); }
+
+/* 大题作答锚 chip：与文档引用 chip 同语言（pill + × 摘除）。锚是全局单值，
+   主页与悬浮面板两处 composer 都会渲染，任一处发送都物化。 */
+.composer-anchor-row {
+  display: flex;
+  padding: 8px 10px 0;
+}
+
+.composer-anchor-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 260px;
+  padding: 3px 4px 3px 8px;
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  background-color: var(--accent-tint);
+  color: var(--accent);
+  font-size: 12px;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.composer-anchor-chip-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.composer-anchor-chip-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: none;
+  color: var(--accent);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
 .quiz-btn-primary:hover:not(:disabled) { background-color: var(--accent-hover); }
 .quiz-progress { margin-left: auto; font-size: 12px; color: var(--text-muted); }
 .quiz-saved { font-size: 12px; color: var(--green); }

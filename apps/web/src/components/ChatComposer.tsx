@@ -2,6 +2,8 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import type { SkillManifestEntry } from '@molio/contracts';
 import { useI18n } from '../i18n';
 import { vaultStore } from '../stores/vaultStore';
+import { quizAnchorStore, useQuizAnswerAnchor } from '../stores/quizAnchorStore';
+import { buildSubjectAnswerMessage, subjectAnchorLabel } from '../utils/quizAnswer';
 import { api } from '../api/client';
 import { FilePicker } from './FilePicker';
 import { SkillPalette } from './SkillPalette';
@@ -101,6 +103,9 @@ export function ChatComposer({
   composerKey,
 }: Props) {
   const { t } = useI18n();
+  // 大题作答锚（quiz 卡「作答」挂上）：chip 展示 + 发送时物化。全局单值，
+  // 主页与悬浮面板的 composer 共享——两处都渲染 chip，任一处发送都物化。
+  const quizAnchor = useQuizAnswerAnchor();
   const refsSeed = fileRefsSeed(initialFileRefs);
   const [text, setText] = useState(() => (composerKey ? drafts.get(composerKey) ?? '' : ''));
   // File references are chips in the toolbar row, NOT text in the textarea.
@@ -327,7 +332,14 @@ export function ChatComposer({
         // 那会让每次带引用的发送都多等一次 /tree，且树未就绪时引用会退化成裸 @path。
         const raw = [buildFileRefPrefix(fileRefs), text].filter((s) => s.trim().length > 0).join(' ');
         const expanded = await expandForSend(raw);
-        onSend(expanded.trim(), doneImages);
+        const trimmedExpanded = expanded.trim();
+        // 大题作答：题干 + 隐藏评分点在发送前一步物化进消息（唯一收口），
+        // 批改协议按首行【大题作答·第N题】确定性触发——所以 @引用/技能展开
+        // 的产物落在 userText 段内，消息必须以标记开头。
+        const message = quizAnchor
+          ? buildSubjectAnswerMessage(quizAnchor.anchor, trimmedExpanded)
+          : trimmedExpanded;
+        onSend(message, doneImages);
         setText('');
         // Clear the draft cache synchronously *before* the parent re-renders.
         // On the home page, the first send flips HomePage from the landing
@@ -347,6 +359,8 @@ export function ChatComposer({
         // 不能又从 initialFileRefs 播种回来。
         if (composerKey) fileRefsByKey.set(composerKey, { seededBy: refsSeed, refs: [] });
         setFileRefs([]);
+        // 作答锚同批消费：挂上即为了这一条消息。
+        quizAnchorStore.clear();
         setTriggerStartIdx(null);
         setSkillTrigger(false);
         if (textareaRef.current) textareaRef.current.style.height = 'auto';
@@ -573,6 +587,31 @@ export function ChatComposer({
 
         {/* Uploading indicator */}
         {/* Upload error */}
+
+        {/* 大题作答锚 chip：文本 = 「第N题 · 题型」，× 摘除。在 :focus-within
+            容器内，不抢 textarea 焦点；title 露出题干帮助确认锚的是哪道题。 */}
+        {quizAnchor && (
+          <div className="composer-anchor-row">
+            <span
+              className="composer-anchor-chip"
+              data-testid="composer-anchor-chip"
+              title={quizAnchor.anchor.stem}
+            >
+              <span className="composer-anchor-chip-label">
+                {subjectAnchorLabel(quizAnchor.anchor)}
+              </span>
+              <button
+                type="button"
+                className="composer-anchor-chip-remove"
+                data-testid="composer-anchor-chip-remove"
+                aria-label={t('quiz.anchorRemove')}
+                onClick={() => quizAnchorStore.clear()}
+              >
+                ×
+              </button>
+            </span>
+          </div>
+        )}
 
         {/* Textarea with trigger overlays */}
         <div className="composer-trigger-zone">

@@ -11,12 +11,16 @@ export const MAX_QUIZ_QUESTIONS = 100;
 export const MAX_QUIZ_OPTIONS = 8;
 /** fill 可接受写法个数上限（第 1 个是标准答案，其余为同义写法）。 */
 export const MAX_FILL_ANSWERS = 8;
+/** subject 评分点条数 / 单条长度上限（answer = 评分点数组）。
+ *  长度约束的是「物化进消息后脱离上下文也能读」的单点粒度，成句性由 skill 约束。 */
+export const MAX_SUBJECT_POINTS = 8;
+export const MAX_SUBJECT_POINT_CHARS = 200;
 /** 与 daemon /api/quiz/attempts 的上限保持一致：渲染放行、落库拒绝 = 答题记录静默丢失。
  *  同时约束 fill：答案写法每项 ≤64，用户输入框 maxLength 也用它。 */
 export const MAX_QUIZ_KEY_CHARS = 64;
 export const MAX_QUIZ_ID_CHARS = 200;
 
-export type QuizQuestionType = 'single' | 'multiple' | 'judge' | 'fill';
+export type QuizQuestionType = 'single' | 'multiple' | 'judge' | 'fill' | 'subject';
 
 export interface QuizOption {
   key: string;
@@ -67,6 +71,12 @@ const JUDGE_OPTIONS: QuizOption[] = [
   { key: 'A', text: '正确' },
   { key: 'B', text: '错误' },
 ];
+
+export function isSubjectQuestion(
+  question: QuizQuestion,
+): question is QuizQuestion & { type: 'subject' } {
+  return question.type === 'subject';
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -141,7 +151,10 @@ function parseQuestion(raw: unknown):
   if (raw.id.trim().length > MAX_QUIZ_ID_CHARS) {
     return { ok: false, error: `题目 id 超过 ${MAX_QUIZ_ID_CHARS} 字符上限` };
   }
-  if (raw.type !== 'single' && raw.type !== 'multiple' && raw.type !== 'judge' && raw.type !== 'fill') {
+  if (
+    raw.type !== 'single' && raw.type !== 'multiple' && raw.type !== 'judge'
+    && raw.type !== 'fill' && raw.type !== 'subject'
+  ) {
     return { ok: false, error: '不支持的题型' };
   }
   if (!nonEmptyString(raw.stem)) return { ok: false, error: '缺少题干' };
@@ -154,6 +167,12 @@ function parseQuestion(raw: unknown):
     // 不静默丢弃字段。
     if (raw.options != null && !(Array.isArray(raw.options) && raw.options.length === 0)) {
       return { ok: false, error: '填空题不应有选项' };
+    }
+    options = [];
+  } else if (raw.type === 'subject') {
+    // 主观题同样没有选项（作答走问答输入框，不走选项选择）。
+    if (raw.options != null && !(Array.isArray(raw.options) && raw.options.length === 0)) {
+      return { ok: false, error: '主观题不应有选项' };
     }
     options = [];
   } else {
@@ -190,6 +209,14 @@ function parseQuestion(raw: unknown):
     if (answers.length !== 1) return { ok: false, error: '单选题必须有且只有一个答案' };
   } else if (raw.type === 'multiple') {
     if (answers.length < 2) return { ok: false, error: '多选题至少需要两个答案' };
+  } else if (raw.type === 'subject') {
+    // subject：answer 是评分点数组（批改协议逐点判定），只管形状（条数/长度）。
+    if (answers.length > MAX_SUBJECT_POINTS) {
+      return { ok: false, error: `主观题评分点最多 ${MAX_SUBJECT_POINTS} 个` };
+    }
+    if (answers.some((answer) => answer.length > MAX_SUBJECT_POINT_CHARS)) {
+      return { ok: false, error: `主观题评分点超过 ${MAX_SUBJECT_POINT_CHARS} 字符上限` };
+    }
   } else {
     // fill：answer 是可接受写法数组（第 1 项=标准答案），判分做规范化匹配，
     // 每项长度对齐 daemon chosen 的 64 上限。
@@ -200,7 +227,7 @@ function parseQuestion(raw: unknown):
       return { ok: false, error: `填空题答案超过 ${MAX_QUIZ_KEY_CHARS} 字符上限` };
     }
   }
-  if (raw.type !== 'fill') {
+  if (raw.type !== 'fill' && raw.type !== 'subject') {
     const optionKeys = new Set(options.map((option) => option.key));
     if (answers.some((answer) => !optionKeys.has(answer))) {
       return { ok: false, error: '答案不在选项中' };
@@ -279,6 +306,11 @@ export function isFillAnswerCorrect(typed: string, answers: string[]): boolean {
 
 export function gradeQuiz(quiz: Quiz, selections: QuizSelections): QuizGrade[] {
   return quiz.questions.map((question) => {
+    if (question.type === 'subject') {
+      // 主观题不进本地判分批次：批改由模型按 skill 协议逐点进行。
+      // chosen 为空 → 提交过滤天然排除（daemon 对空 chosen 整批拒绝）。
+      return { questionId: question.id, correct: false, chosen: [] };
+    }
     if (question.type === 'fill') {
       // chosen 保留用户原文（落库即输入内容）；判分用规范化匹配。
       // 空文本不该出现（isQuizComplete 已挡），这里防御性地不产出空 chosen——
@@ -304,6 +336,10 @@ export function gradeQuiz(quiz: Quiz, selections: QuizSelections): QuizGrade[] {
 
 export function isQuizComplete(quiz: Quiz, selections: QuizSelections): boolean {
   return quiz.questions.every((question) => {
+    if (question.type === 'subject') {
+      // 主观题在问答输入框里作答（发送时物化），不算进本地提交的完成条件。
+      return true;
+    }
     if (question.type === 'fill') {
       return (selections[question.id]?.[0] ?? '').trim().length > 0;
     }

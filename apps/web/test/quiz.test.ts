@@ -18,8 +18,11 @@ const {
   quizStemOf,
   isFillAnswerCorrect,
   normalizeFillText,
+  isSubjectQuestion,
   MAX_QUIZ_RAW_CHARS,
   MAX_QUIZ_KEY_CHARS,
+  MAX_SUBJECT_POINTS,
+  MAX_SUBJECT_POINT_CHARS,
 } = await import('../src/utils/quiz.ts');
 
 const SINGLE = {
@@ -371,5 +374,88 @@ describe('fill 题型（填空）', () => {
     assert.ok(isFillAnswerCorrect('piano', ['piano']));
     assert.ok(!isFillAnswerCorrect('2pi', ['3π']));
     assert.ok(!isFillAnswerCorrect('0.5', ['1/2']));
+  });
+});
+
+describe('subject 题型（主观题）', () => {
+  const SUBJECT = {
+    id: 's1',
+    type: 'subject' as const,
+    stem: '证明二项式定理。',
+    answer: ['写出二项式定理公式', '代入 n=5 计算', '指出系数对称性'],
+    explanation: '按评分点逐步给分。',
+    sources: [{ path: 'wiki/二项式定理.md' }],
+  };
+
+  it('parses a valid subject question without options', () => {
+    const res = expectOk(JSON.stringify({ version: 1, title: '解答', questions: [SUBJECT] }));
+    const question = res.quiz.questions[0]!;
+    assert.equal(question.type, 'subject');
+    assert.deepEqual(question.options, []);
+    assert.equal(question.answer.length, 3);
+    assert.equal(isSubjectQuestion(question), true);
+    assert.equal(isSubjectQuestion(SINGLE), false);
+  });
+
+  it('rejects a subject question that carries options', () => {
+    const res = expectOk(JSON.stringify({
+      version: 1, title: '解答',
+      questions: [SUBJECT, { ...SUBJECT, id: 's2', options: [{ key: 'A', text: '是' }] }],
+    }));
+    assert.equal(res.quiz.questions.length, 1);
+    assert.equal(res.invalidQuestions.length, 1);
+    assert.match(res.invalidQuestions[0]!.reason, /主观题不应有选项/);
+  });
+
+  it('rejects subject scoring points over the count / length limits or missing', () => {
+    // 上限与 skill 1.3.0 的生成规则一致：渲染放行的形状必须与产出契约相同。
+    const tooMany = expectOk(JSON.stringify({
+      version: 1, title: '解答',
+      questions: [SUBJECT, {
+        ...SUBJECT, id: 's2',
+        answer: Array.from({ length: MAX_SUBJECT_POINTS + 1 }, (_, i) => `评分点${i}`),
+      }],
+    }));
+    assert.match(tooMany.invalidQuestions[0]!.reason, new RegExp(String(MAX_SUBJECT_POINTS)));
+
+    const tooLong = expectOk(JSON.stringify({
+      version: 1, title: '解答',
+      questions: [SUBJECT, { ...SUBJECT, id: 's2', answer: ['x'.repeat(MAX_SUBJECT_POINT_CHARS + 1)] }],
+    }));
+    assert.match(tooLong.invalidQuestions[0]!.reason, new RegExp(String(MAX_SUBJECT_POINT_CHARS)));
+
+    const missing = expectOk(JSON.stringify({
+      version: 1, title: '解答',
+      questions: [SUBJECT, { ...SUBJECT, id: 's2', answer: [] }],
+    }));
+    assert.equal(missing.invalidQuestions.length, 1);
+  });
+
+  it('still rejects improvised subjective types now that subject exists', () => {
+    // 'subject' 进了枚举，不得顺手放宽到 short_answer / essay / 简答。
+    for (const type of ['short_answer', 'essay', '简答']) {
+      const res = expectOk(JSON.stringify({
+        version: 1, title: '主观',
+        questions: [SUBJECT, { id: 'x1', type, stem: '论述。', answer: ['参考'], explanation: 'x', sources: [{ path: 'p' }] }],
+      }));
+      assert.equal(res.quiz.questions.length, 1);
+      assert.equal(res.invalidQuestions.length, 1);
+      assert.equal(res.invalidQuestions[0]!.index, 1);
+    }
+  });
+
+  it('gradeQuiz yields empty chosen for subject (excluded from submission)', () => {
+    const res = expectOk(JSON.stringify({ version: 1, title: '混合', questions: [SINGLE, SUBJECT] }));
+    const grades = gradeQuiz(res.quiz, { q1: ['B'], s1: ['写了一点'] });
+    assert.deepEqual(grades[1]!.chosen, []);
+  });
+
+  it('subject never blocks quiz completeness', () => {
+    const res = expectOk(JSON.stringify({ version: 1, title: '混合', questions: [SINGLE, SUBJECT] }));
+    assert.equal(res.quiz.questions.length, 2);
+    assert.equal(res.invalidQuestions.length, 0);
+    // 客观题未答 → 不完整；客观题答完、subject 未答 → 完整（subject 不进本地判分批次）。
+    assert.equal(isQuizComplete(res.quiz, {}), false);
+    assert.equal(isQuizComplete(res.quiz, { q1: ['B'] }), true);
   });
 });

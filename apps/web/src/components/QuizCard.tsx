@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../api/client';
 import { useI18n } from '../i18n';
 import { useActiveVaultId } from '../stores/vaultStore';
+import { quizAnchorStore, useQuizAnswerAnchor } from '../stores/quizAnchorStore';
 import { useWikiLinkClick } from '../hooks/useWikiLinkClick';
 import { CodeBlock } from './CodeBlock';
 import { renderMarkdown } from '../utils/markdown';
@@ -11,6 +12,7 @@ import {
   parseQuizBlock,
   gradeQuiz,
   isQuizComplete,
+  isSubjectQuestion,
   computeQuizFingerprint,
   quizStorageKey,
   parseStoredQuizState,
@@ -19,6 +21,7 @@ import {
   type InvalidQuestion,
   type Quiz,
   type QuizGrade,
+  type QuizQuestion,
   type QuizSelections,
 } from '../utils/quiz';
 
@@ -91,6 +94,7 @@ function QuizBody({
   const { t } = useI18n();
   const vaultId = useActiveVaultId();
   const handleWikiLinkClick = useWikiLinkClick();
+  const quizAnchor = useQuizAnswerAnchor();
 
   // 题干/选项/解析里的 ![alt](库内相对路径) 改写成 daemon raw URL 才能真正加载
   // （KB 查看器同款规则，见 utils/kbImage.ts）。无活跃库时保持原文。
@@ -115,7 +119,13 @@ function QuizBody({
     () => new Map<string, QuizGrade>(grades.map((grade) => [grade.questionId, grade])),
     [grades],
   );
-  const answeredCount = quiz.questions.filter(
+  // 主观题不进本地判分批次：进度计数与提交区只覆盖可判分题。纯 subject
+  // 围栏没有可判分题 → 整个提交区不渲染。
+  const gradableQuestions = useMemo(
+    () => quiz.questions.filter((question) => !isSubjectQuestion(question)),
+    [quiz],
+  );
+  const answeredCount = gradableQuestions.filter(
     (question) => (selections[question.id]?.length ?? 0) > 0,
   ).length;
   const ready = isQuizComplete(quiz, selections);
@@ -276,6 +286,28 @@ function QuizBody({
     }
   }, [storageKey]);
 
+  // 「作答」只负责挂/摘锚：题干与隐藏评分点在发送时物化进消息（见
+  // ChatComposer + utils/quizAnswer.ts），题卡本身不收主观题答案。
+  const toggleSubjectAnchor = useCallback(
+    (question: QuizQuestion, index: number) => {
+      if (quizAnchor?.questionId === question.id) {
+        quizAnchorStore.clear();
+        return;
+      }
+      quizAnchorStore.set(
+        {
+          questionIndex: index + 1,
+          typeLabel: t('quiz.type.subject'),
+          stem: question.stem,
+          points: question.answer,
+          sources: question.sources.map((source) => source.path),
+        },
+        question.id,
+      );
+    },
+    [quizAnchor, t],
+  );
+
   const handleSave = useCallback(async () => {
     if (!vaultId || saving) return;
     setSaving(true);
@@ -297,12 +329,13 @@ function QuizBody({
       {quiz.questions.map((question, index) => {
         const chosen = selections[question.id] ?? [];
         const grade = gradeMap.get(question.id);
+        const isSubject = isSubjectQuestion(question);
         return (
           <div className="quiz-question" data-testid="quiz-question" data-question-id={question.id} key={question.id}>
             <div className="quiz-question-head">
               <span className="quiz-index">{t('quiz.question', { n: index + 1 })}</span>
               <span className="quiz-type" data-testid="quiz-type">{t(`quiz.type.${question.type}`)}</span>
-              {grade && (
+              {grade && !isSubject && (
                 <span
                   className={`quiz-result ${grade.correct ? 'correct' : 'wrong'}`}
                   data-testid="quiz-result"
@@ -321,7 +354,23 @@ function QuizBody({
               dangerouslySetInnerHTML={{ __html: renderQuizMarkdown(question.stem) }}
             />
 
-            <div className="quiz-options">
+            {isSubject ? (
+              /* 主观题行：无选项/无本地判分/无重做——作答走问答输入框，
+               * 按钮只负责挂/摘锚（发送时物化题干+隐藏评分点）。 */
+              <div className="quiz-subject-actions">
+                <button
+                  type="button"
+                  className={`quiz-btn quiz-answer-btn${quizAnchor?.questionId === question.id ? ' on' : ''}`}
+                  data-testid="quiz-answer-btn"
+                  data-question-id={question.id}
+                  aria-pressed={quizAnchor?.questionId === question.id}
+                  onClick={() => toggleSubjectAnchor(question, index)}
+                >
+                  {t('quiz.answerButton')}
+                </button>
+              </div>
+            ) : (
+              <div className="quiz-options">
               {question.type === 'fill' ? (
                 /* 填空：文本作答。判分在 gradeQuiz 里做规范化匹配（含 ASCII 记法折叠）；
                  * 64 上限与 daemon chosen 逐项上限一致，超长会落不了库。 */
@@ -408,15 +457,16 @@ function QuizBody({
                   </button>
                 );
               })}
-            </div>
+              </div>
+            )}
 
-            {grade && (
+            {grade && !isSubject && (
               <div className="quiz-answer" data-testid="quiz-answer">
                 {t('quiz.answer', { answer: question.answer.join(' / ') })}
               </div>
             )}
 
-            {grade && (
+            {grade && !isSubject && (
               <div className="quiz-explanation" data-testid="quiz-explanation">
                 <div className="quiz-section-label">{t('quiz.explanation')}</div>
                 {/* renderMarkdown 先转义 HTML，再生成受控标签。 */}
@@ -424,7 +474,7 @@ function QuizBody({
               </div>
             )}
 
-            {grade && question.sources.length > 0 && (
+            {grade && !isSubject && question.sources.length > 0 && (
               <div className="quiz-sources" data-testid="quiz-sources" onClick={handleWikiLinkClick}>
                 <div className="quiz-section-label">{t('quiz.sources')}</div>
                 {question.sources.map((source, sourceIndex) => (
@@ -462,25 +512,27 @@ function QuizBody({
       )}
 
       <div className="quiz-foot">
-        {!submitted ? (
-          <>
-            <button
-              type="button"
-              className="quiz-btn quiz-btn-primary"
-              data-testid="quiz-submit"
-              disabled={!ready}
-              onClick={handleSubmit}
-            >
-              {t('quiz.submit')}
+        {gradableQuestions.length > 0 && (
+          !submitted ? (
+            <>
+              <button
+                type="button"
+                className="quiz-btn quiz-btn-primary"
+                data-testid="quiz-submit"
+                disabled={!ready}
+                onClick={handleSubmit}
+              >
+                {t('quiz.submit')}
+              </button>
+              <span className="quiz-progress" data-testid="quiz-progress">
+                {t('quiz.answeredProgress', { done: answeredCount, total: gradableQuestions.length })}
+              </span>
+            </>
+          ) : (
+            <button type="button" className="quiz-btn" data-testid="quiz-redo" onClick={handleRedo}>
+              {t('quiz.redo')}
             </button>
-            <span className="quiz-progress" data-testid="quiz-progress">
-              {t('quiz.answeredProgress', { done: answeredCount, total: quiz.questions.length })}
-            </span>
-          </>
-        ) : (
-          <button type="button" className="quiz-btn" data-testid="quiz-redo" onClick={handleRedo}>
-            {t('quiz.redo')}
-          </button>
+          )
         )}
 
         <button

@@ -78,6 +78,64 @@ const SCRIPT = [
   { type: 'usage', usage: { input_tokens: 100, output_tokens: 80 }, costUsd: 0.01 },
 ];
 
+/** 2 客观 + 1 subject 的混合围栏（subject: 无 options、answer=评分点数组）。 */
+const MIXED_QUIZ = `我来出 3 道题。
+
+\`\`\`quiz
+{
+  "version": 1,
+  "title": "混合 · 3 题",
+  "questions": [
+    {
+      "id": "q1",
+      "type": "single",
+      "stem": "标准番茄钟的专注时长是？",
+      "options": [
+        { "key": "A", "text": "15 分钟" },
+        { "key": "B", "text": "25 分钟" }
+      ],
+      "answer": ["B"],
+      "explanation": "标准番茄钟为 25 分钟专注。",
+      "sources": [{ "path": "notes/番茄工作法.md" }]
+    },
+    {
+      "id": "q2",
+      "type": "judge",
+      "stem": "番茄钟中途被打断时，应重新开始计时。",
+      "answer": ["B"],
+      "explanation": "被打断的番茄钟应作废。",
+      "sources": [{ "path": "notes/番茄工作法.md" }]
+    },
+    {
+      "id": "q3",
+      "type": "subject",
+      "stem": "证明：从 n 个不同元素中选 k 个的方法数满足帕斯卡法则。",
+      "answer": ["写出帕斯卡法则 C(n,k)=C(n-1,k-1)+C(n-1,k)", "把选法按是否含第 n 个元素分成两类", "指出边界情形 C(n,0)=1"],
+      "explanation": "按评分点逐步给分。",
+      "sources": [{ "path": "notes/组合数.md" }]
+    }
+  ]
+}
+\`\`\``;
+
+/** 纯 subject 围栏：没有任何可本地判分的题。 */
+const SUBJECT_ONLY_QUIZ = `\`\`\`quiz
+{
+  "version": 1,
+  "title": "解答 · 1 题",
+  "questions": [
+    {
+      "id": "s1",
+      "type": "subject",
+      "stem": "论述二项式定理的组合意义。",
+      "answer": ["指出定理左端是选 k 个元素的计数", "说明右端按「是否含某特定元素」分类求和"],
+      "explanation": "按评分点给分。",
+      "sources": [{ "path": "notes/二项式定理.md" }]
+    }
+  ]
+}
+\`\`\``;
+
 test.describe('Quiz interaction block', () => {
   test.beforeEach(async ({ page }) => {
     await page.addInitScript((vid) => {
@@ -628,6 +686,121 @@ test.describe('Quiz interaction block', () => {
     const results = card.locator('[data-testid="quiz-result"]');
     await expect(results.nth(0)).toHaveAttribute('data-correct', 'true');
     await expect(results.nth(1)).toHaveAttribute('data-correct', 'true');
+  });
+
+  test('renders subject questions with an answer button and excludes them from local submission', async ({ page }) => {
+    // 主观题：行内只有「作答」按钮（无选项/输入框），不进本地判分批次——
+    // 作答走问答输入框挂锚物化（批改协议由模型按 skill 执行）。
+    await mockChatRun(page, { runId: 'run-1', conversationId: 'conv-1', script: [
+      { type: 'status', label: 'running' },
+      { type: 'text_delta', delta: MIXED_QUIZ },
+      { type: 'turn_end', stopReason: 'end_turn' },
+    ] });
+    await gotoHome(page);
+    await sendMessage(page, '出混合题');
+
+    const card = page.locator('[data-testid="quiz-card"]');
+    await expect(card).toBeVisible({ timeout: 10_000 });
+    await expect(card.locator('[data-testid="quiz-question"]')).toHaveCount(3);
+
+    const subjectRow = card.locator('[data-testid="quiz-question"][data-question-id="q3"]');
+    await expect(subjectRow.locator('[data-testid="quiz-type"]')).toHaveText('解答题');
+    await expect(subjectRow.locator('[data-testid="quiz-answer-btn"]')).toBeVisible();
+    await expect(subjectRow.locator('[data-testid="quiz-option"]')).toHaveCount(0);
+    await expect(subjectRow.locator('[data-testid="quiz-fill-input"]')).toHaveCount(0);
+
+    // 锚开关：点「作答」挂锚（.on 强调态），再点当前题取消。
+    const answerBtn = subjectRow.locator('[data-testid="quiz-answer-btn"]');
+    await answerBtn.click();
+    await expect(answerBtn).toHaveClass(/on/);
+    await answerBtn.click();
+    await expect(answerBtn).not.toHaveClass(/on/);
+
+    // 进度只数可判分题（2 道），subject 不阻塞提交。
+    const submit = card.locator('[data-testid="quiz-submit"]');
+    await expect(card.locator('[data-testid="quiz-progress"]')).toHaveText('已作答 0/2');
+    await card.locator('[data-testid="quiz-option"][data-question-id="q1"][data-key="B"]').click();
+    await expect(submit).toBeDisabled();
+    await expect(card.locator('[data-testid="quiz-progress"]')).toHaveText('已作答 1/2');
+    await card.locator('[data-testid="quiz-option"][data-question-id="q2"][data-key="A"]').click();
+    await card.locator('[data-testid="quiz-option"][data-question-id="q2"][data-key="B"]').click();
+
+    await page.unroute('**/api/quiz/attempts');
+    let attemptBody: any = null;
+    await page.route('**/api/quiz/attempts', async (route) => {
+      attemptBody = JSON.parse(route.request().postData() || '{}');
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ ok: true, inserted: 2 }),
+      });
+    });
+    await submit.click();
+
+    // 只落库 2 道客观题；subject 行不出现判分着色，也不展开解析（评分点保密）。
+    await expect.poll(() => attemptBody?.attempts?.length).toBe(2);
+    expect(attemptBody.attempts.map((a: { questionId: string }) => a.questionId)).toEqual(['q1', 'q2']);
+    await expect(subjectRow.locator('[data-testid="quiz-result"]')).toHaveCount(0);
+    await expect(subjectRow.locator('[data-testid="quiz-explanation"]')).toHaveCount(0);
+    await expect(card.locator('[data-testid="quiz-result"]')).toHaveCount(2);
+  });
+
+  test('subject-only quiz renders stem without a submit area', async ({ page }) => {
+    // 纯 subject 围栏：提交区/进度计数整体不渲染（没有可判分题）。
+    await mockChatRun(page, { runId: 'run-1', conversationId: 'conv-1', script: [
+      { type: 'status', label: 'running' },
+      { type: 'text_delta', delta: SUBJECT_ONLY_QUIZ },
+      { type: 'turn_end', stopReason: 'end_turn' },
+    ] });
+    await gotoHome(page);
+    await sendMessage(page, '出一道解答题');
+
+    const card = page.locator('[data-testid="quiz-card"]');
+    await expect(card).toBeVisible({ timeout: 10_000 });
+    await expect(card.locator('[data-testid="quiz-question"]')).toHaveCount(1);
+    await expect(card.locator('[data-testid="quiz-answer-btn"]')).toHaveCount(1);
+    await expect(card.locator('[data-testid="quiz-submit"]')).toHaveCount(0);
+    await expect(card.locator('[data-testid="quiz-progress"]')).toHaveCount(0);
+  });
+
+  test('anchors the composer via 作答 and materializes stem and points into the sent message', async ({ page }) => {
+    await mockChatRun(page, { runId: 'run-1', conversationId: 'conv-1', script: [
+      { type: 'status', label: 'running' },
+      { type: 'text_delta', delta: MIXED_QUIZ },
+      { type: 'turn_end', stopReason: 'end_turn' },
+    ] });
+    await gotoHome(page);
+    await sendMessage(page, '出混合题');
+
+    const card = page.locator('[data-testid="quiz-card"]');
+    await expect(card).toBeVisible({ timeout: 10_000 });
+
+    const answerBtn = card.locator('[data-testid="quiz-answer-btn"][data-question-id="q3"]');
+    const chip = page.locator('[data-testid="composer-anchor-chip"]');
+
+    // 点「作答」→ composer 挂 chip 锚；× 摘除；重新挂上。
+    await answerBtn.click();
+    await expect(chip).toBeVisible();
+    await expect(chip).toContainText('第3题 · 解答题');
+    await chip.locator('[data-testid="composer-anchor-chip-remove"]').click();
+    await expect(chip).toHaveCount(0);
+    await answerBtn.click();
+    await expect(chip).toBeVisible();
+
+    await page.locator('[data-testid="composer-input"]').fill('我的解答过程：由帕斯卡法则……');
+    await page.locator('[data-testid="composer-send"]').click();
+
+    // 发出的消息 = 物化格式（题干 + 隐藏评分点 + 出处 + 用户原文）。
+    const lastUser = page.locator('[data-testid="user-message"]').last();
+    await expect(lastUser).toContainText('【大题作答·第3题】');
+    await expect(lastUser).toContainText('题干：证明：从 n 个不同元素中选 k 个的方法数满足帕斯卡法则。');
+    await expect(lastUser).toContainText('评分点：');
+    await expect(lastUser).toContainText('1. 写出帕斯卡法则 C(n,k)=C(n-1,k-1)+C(n-1,k)');
+    await expect(lastUser).toContainText('出处：notes/组合数.md');
+    await expect(lastUser).toContainText('我的解答过程：由帕斯卡法则……');
+
+    // 锚随发送一次性消费。
+    await expect(chip).toHaveCount(0);
   });
 
   test('appends a sequence number when the quiz filename already exists', async ({ page }) => {
