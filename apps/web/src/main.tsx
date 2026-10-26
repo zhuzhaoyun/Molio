@@ -14,6 +14,11 @@ import './components/SourceChips.css';
 import './components/WorkCompleteBanner.css';
 import './components/SessionOutputPanel.css';
 import { initTheme } from './utils/theme';
+import { installChunkRecovery } from './chunkRecovery';
+
+// 更新换包后旧页面引用旧 hash chunk 会 404（vite:preloadError），自动刷新一次向
+// 当前 daemon 拉 index.html 即恢复；与 AppErrorBoundary 的 chunk 判别共用冷却窗口。
+installChunkRecovery(window);
 
 // 首帧应用持久化主题，避免闪烁
 initTheme();
