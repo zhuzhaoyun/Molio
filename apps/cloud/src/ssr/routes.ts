@@ -40,8 +40,8 @@ export function ssrRoutes(deps: SsrRoutesDeps): Hono {
       const sameCategory = listing.categoryId
         ? pool.filter((l) => l.categoryId === listing.categoryId)
         : [];
-      const others = pool.filter((l) => !sameCategory.includes(l));
-      const related = sameCategory.concat(others).slice(0, 6);
+      // 只推荐同分类；不足 6 个不拿无关商品凑数。分类为空的旧数据也不跨类推荐。
+      const related = sameCategory.slice(0, 6);
       c.header('Cache-Control', PAGE_CACHE);
       return c.html(renderProductPage(listing, related));
     } catch (e) {

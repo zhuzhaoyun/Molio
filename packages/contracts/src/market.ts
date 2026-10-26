@@ -24,6 +24,78 @@ export type MarketTint = (typeof MARKET_TINTS)[number];
 export type MarketListingSource = 'official' | 'community';
 export type MarketListingStatus = 'uploading' | 'active' | 'removed';
 
+/** 商品页「关键事实」：label/value 直接展示，也写进 Product JSON-LD 的 additionalProperty。 */
+export interface MarketContentFact {
+  label: string;
+  value: string;
+}
+
+/** 商品页「内容范围」主题：名称 + 范围说明 + 真实条目名。 */
+export interface MarketContentTheme {
+  name: string;
+  summary: string;
+  items: string[];
+}
+
+/** 商品页「典型问题」：知识问题，不是购买 FAQ。 */
+export interface MarketContentQuestion {
+  question: string;
+  answer: string;
+  source?: string;
+}
+
+/** 商品页「真实样例」：从资源中摘编的一段对比、关系链或解释。 */
+export interface MarketContentSample {
+  title: string;
+  body: string;
+  source?: string;
+}
+
+/** 商品页定位：这是什么、适合谁、不是什么。 */
+export interface MarketContentPositioning {
+  what: string;
+  who: string[];
+  notFor: string[];
+}
+
+/** 交付说明：格式、包含内容、使用要求、步骤。 */
+export interface MarketContentDelivery {
+  format: string;
+  includes: string[];
+  requirements: string[];
+  steps: string[];
+}
+
+/** 来源与核对状态：公开页只展示 basis + reviewedAt；draft 会提示仍在整理。 */
+export interface MarketContentReview {
+  basis: string;
+  reviewedAt: string;
+  status: 'draft' | 'reviewed';
+}
+
+/** 可选 SEO 覆盖：标题/描述/别名，不填则回退商品 name/summary。 */
+export interface MarketContentSeo {
+  title?: string;
+  description?: string;
+  aliases?: string[];
+}
+
+/**
+ * 商品页结构化内容。管理员维护，community 发布暂不写入。
+ * null/undefined 时 SSR 回退旧的 summary + overview + highlights 渲染。
+ */
+export interface MarketContent {
+  version: 1;
+  positioning: MarketContentPositioning;
+  facts: MarketContentFact[];
+  themes: MarketContentTheme[];
+  questions: MarketContentQuestion[];
+  samples?: MarketContentSample[];
+  delivery: MarketContentDelivery;
+  review: MarketContentReview;
+  seo?: MarketContentSeo;
+}
+
 /** 公开条目（列表/详情响应） */
 export interface MarketListing {
   categoryId?: string | null;
@@ -41,6 +113,8 @@ export interface MarketListing {
   overview: string[];
   /** 亮点列表（社区条目为空数组） */
   highlights: string[];
+  /** 结构化商品内容；null/undefined 时回退 overview/highlights */
+  content?: MarketContent | null;
   tags: string[];
   /** 预览图绝对 URL（1-4 张） */
   previews: string[];
@@ -54,6 +128,8 @@ export interface MarketListing {
   fileSize: number | null;
   /** ISO 时间；未上架为 null */
   publishedAt: string | null;
+  /** ISO 时间；最近更新时间（旧数据可能没有） */
+  updatedAt?: string;
 }
 
 /** 「我的上架」条目 = 公开字段 + 状态 */
