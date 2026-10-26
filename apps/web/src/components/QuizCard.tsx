@@ -206,6 +206,12 @@ function QuizBody({
   const fillInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
   // 唤起式符号托盘：一次只开一道题的（点触发钮切换，点外部/Esc 关闭）。
   const [openSymbolsFor, setOpenSymbolsFor] = useState<string | null>(null);
+  // 符号插入超限的输入框（红边 1.2s 反馈）。
+  const [fullInputId, setFullInputId] = useState<string | null>(null);
+  const fullInputTimerRef = useRef<number | null>(null);
+  useEffect(() => () => {
+    if (fullInputTimerRef.current) clearTimeout(fullInputTimerRef.current);
+  }, []);
 
   useEffect(() => {
     if (!openSymbolsFor) return;
@@ -235,6 +241,14 @@ function QuizBody({
       const start = input.selectionStart ?? input.value.length;
       const end = input.selectionEnd ?? start;
       const next = input.value.slice(0, start) + char + input.value.slice(end);
+      // maxLength 管不住程序化 setValue：超限就拒绝插入，绝不截断——静默
+      // 截断会毁掉答案。红边 1.2s 作为「为什么没插进去」的反馈。
+      if (next.length > MAX_QUIZ_KEY_CHARS) {
+        setFullInputId(questionId);
+        if (fullInputTimerRef.current) clearTimeout(fullInputTimerRef.current);
+        fullInputTimerRef.current = window.setTimeout(() => setFullInputId(null), 1200);
+        return;
+      }
       setFillText(questionId, next);
       requestAnimationFrame(() => {
         input.focus();
@@ -378,7 +392,7 @@ function QuizBody({
                   <div className="quiz-input-row">
                     <input
                       ref={(el) => { fillInputRefs.current[question.id] = el; }}
-                      className="quiz-fill-input"
+                      className={`quiz-fill-input${fullInputId === question.id ? ' quiz-fill-input--full' : ''}`}
                       data-testid="quiz-fill-input"
                       data-question-id={question.id}
                       type="text"

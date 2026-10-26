@@ -803,6 +803,46 @@ test.describe('Quiz interaction block', () => {
     await expect(chip).toHaveCount(0);
   });
 
+  test('fill symbol insert refuses beyond the 64-char limit', async ({ page }) => {
+    // 64 上限是 daemon chosen 契约：符号插入必须拒绝（绝不截断——静默截断
+    // 会毁掉答案），输入框红一下反馈。
+    const fillQuiz = `\`\`\`quiz
+{
+  "version": 1,
+  "title": "填空 · clamp",
+  "questions": [{
+    "id": "c1",
+    "type": "fill",
+    "stem": "求值：____。",
+    "answer": ["√2"],
+    "explanation": "解析。",
+    "sources": [{ "path": "notes/番茄工作法.md" }]
+  }]
+}
+\`\`\``;
+    await mockChatRun(page, { runId: 'run-1', conversationId: 'conv-1', script: [
+      { type: 'status', label: 'running' },
+      { type: 'text_delta', delta: fillQuiz },
+      { type: 'turn_end', stopReason: 'end_turn' },
+    ] });
+    await gotoHome(page);
+    await sendMessage(page, '出填空题');
+
+    const card = page.locator('[data-testid="quiz-card"]');
+    await expect(card).toBeVisible({ timeout: 10_000 });
+    await card.locator('[data-testid="quiz-symbol-trigger"]').click();
+
+    const input = card.locator('[data-testid="quiz-fill-input"]');
+    await input.fill('a'.repeat(64));
+    await card.locator('[data-testid="quiz-symbol-btn"][data-char="√"]').click();
+
+    await expect(input).toHaveValue('a'.repeat(64));
+    await expect(input).toHaveClass(/quiz-fill-input--full/);
+    // 1.2s 后红色反馈自动消退。
+    await page.waitForTimeout(1400);
+    await expect(input).not.toHaveClass(/quiz-fill-input--full/);
+  });
+
   test('appends a sequence number when the quiz filename already exists', async ({ page }) => {
     let savedUrl: string | null = null;
 
