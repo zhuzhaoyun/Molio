@@ -333,13 +333,19 @@ export function ChatComposer({
         const raw = [buildFileRefPrefix(fileRefs), text].filter((s) => s.trim().length > 0).join(' ');
         const expanded = await expandForSend(raw);
         const trimmedExpanded = expanded.trim();
-        // 大题作答：题干 + 隐藏评分点在发送前一步物化进消息（唯一收口），
-        // 批改协议按首行【大题作答·第N题】确定性触发——所以 @引用/技能展开
-        // 的产物落在 userText 段内，消息必须以标记开头。
-        const message = quizAnchor
-          ? buildSubjectAnswerMessage(quizAnchor.anchor, trimmedExpanded)
-          : trimmedExpanded;
-        onSend(message, doneImages);
+        // 大题作答：题干 + 隐藏评分点在发送前一步物化进消息（唯一收口）。
+        // 批改协议按【大题作答·第N题】标记行确定性触发，而宿主（首页/会话
+        // 视图）会把图片附件前置到消息最前——锚激活时把图片折进物化的作答
+        // 段内、空手交出图片，保证标记行是消息第一行。
+        let message = trimmedExpanded;
+        let outImages = doneImages;
+        if (quizAnchor) {
+          const userText = [buildAttachmentPrefix(doneImages), trimmedExpanded]
+            .filter((s) => s.trim().length > 0).join('\n');
+          message = buildSubjectAnswerMessage(quizAnchor.anchor, userText);
+          outImages = [];
+        }
+        onSend(message, outImages);
         setText('');
         // Clear the draft cache synchronously *before* the parent re-renders.
         // On the home page, the first send flips HomePage from the landing
@@ -359,8 +365,9 @@ export function ChatComposer({
         // 不能又从 initialFileRefs 播种回来。
         if (composerKey) fileRefsByKey.set(composerKey, { seededBy: refsSeed, refs: [] });
         setFileRefs([]);
-        // 作答锚同批消费：挂上即为了这一条消息。
-        quizAnchorStore.clear();
+        // 作答锚同批消费：挂上即为了这一条消息。若 await 期间用户已换锚，
+        // 只放行被消费的那个，新锚保留。
+        quizAnchorStore.clearIfCurrent(quizAnchor);
         setTriggerStartIdx(null);
         setSkillTrigger(false);
         if (textareaRef.current) textareaRef.current.style.height = 'auto';

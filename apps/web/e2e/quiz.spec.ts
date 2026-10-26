@@ -838,9 +838,76 @@ test.describe('Quiz interaction block', () => {
 
     await expect(input).toHaveValue('a'.repeat(64));
     await expect(input).toHaveClass(/quiz-fill-input--full/);
+    // 红边必须真的画出来：可见边框在容器行上（输入框本身 border:none），
+    // 浅色主题 --red = #a8322e。只断言类名的版本会假绿。
+    await expect(card.locator('.quiz-input-row')).toHaveCSS('border-color', 'rgb(168, 50, 46)');
     // 1.2s 后红色反馈自动消退。
     await page.waitForTimeout(1400);
     await expect(input).not.toHaveClass(/quiz-fill-input--full/);
+    await expect(card.locator('.quiz-input-row')).not.toHaveCSS('border-color', 'rgb(168, 50, 46)');
+  });
+
+  test('keeps the grading marker first when the answer carries a pasted image', async ({ page }) => {
+    // 拍照作答（spec §3.4 点名的公式正解形态）：宿主会把图片附件前置到消息
+    // 最前——锚激活时图片必须折进物化的作答段内，保证【大题作答·第N题】
+    // 标记行是消息第一行（skill 批改协议的触发依据）。
+    await page.route('**/api/knowledge/vaults/vault-1/assets/upload', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          filePath: 'raw/feishu/2026-10-26/answer.png',
+          url: '/api/knowledge/vaults/vault-1/raw/raw%2Ffeishu%2F2026-10-26%2Fanswer.png',
+        }),
+      });
+    });
+    await mockRawImage(page);
+
+    let sentMessage: string | null = null;
+
+    await mockChatRun(page, { runId: 'run-1', conversationId: 'conv-1', script: [
+      { type: 'status', label: 'running' },
+      { type: 'text_delta', delta: MIXED_QUIZ },
+      { type: 'turn_end', stopReason: 'end_turn' },
+    ] });
+    // Playwright 路由是 LIFO：捕获层必须在 mockChatRun 之后注册才会先执行，
+    // fallback 落回 mock 的应答。首发送走 POST /api/runs；同会话追问走
+    // POST /api/runs/:id/messages——两条都拦。
+    await page.route('**/api/runs', async (route) => {
+      if (route.request().method() === 'POST') {
+        sentMessage = (JSON.parse(route.request().postData() || '{}') as { message?: string }).message ?? null;
+      }
+      await route.fallback();
+    });
+    await page.route('**/api/runs/*/messages', async (route) => {
+      if (route.request().method() === 'POST') {
+        sentMessage = (JSON.parse(route.request().postData() || '{}') as { message?: string }).message ?? null;
+      }
+      await route.fallback();
+    });
+    await gotoHome(page);
+    await sendMessage(page, '出混合题');
+
+    const card = page.locator('[data-testid="quiz-card"]');
+    await expect(card).toBeVisible({ timeout: 10_000 });
+    await card.locator('[data-testid="quiz-answer-btn"][data-question-id="q3"]').click();
+
+    await page.locator('[data-testid="composer-file-input"]').setInputFiles({
+      name: 'answer.png',
+      mimeType: 'image/png',
+      buffer: TINY_PNG,
+    });
+    await expect(page.locator('[data-testid="composer-image-thumb"]')).toBeVisible();
+
+    await page.locator('[data-testid="composer-input"]').fill('看图作答：由图可知……');
+    await page.locator('[data-testid="composer-send"]').click();
+
+    await expect.poll(() => sentMessage).not.toBeNull();
+    expect(sentMessage!.startsWith('【大题作答·第3题】')).toBe(true);
+    // 图片 markdown 在作答段内（userText），不在消息头部。
+    expect(sentMessage).toContain('![image](raw/feishu/2026-10-26/answer.png)');
+    expect(sentMessage!.indexOf('![image]')).toBeGreaterThan(sentMessage!.indexOf('出处：'));
+    expect(sentMessage).toContain('看图作答：由图可知……');
   });
 
   test('appends a sequence number when the quiz filename already exists', async ({ page }) => {

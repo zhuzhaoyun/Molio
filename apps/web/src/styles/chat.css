@@ -1939,6 +1939,7 @@
   transition: border-color 120ms ease;
 }
 .quiz-input-row:focus-within { border-color: var(--accent); }
+.quiz-input-row:has(.quiz-fill-input--full) { border-color: var(--red); }
 .quiz-fill-input {
   flex: 1;
   min-width: 0;
@@ -1951,8 +1952,8 @@
   font-size: 13px;
 }
 .quiz-fill-input:disabled { opacity: 0.7; }
-/* 符号插入超限（>64）：拒绝插入的红边反馈，1.2s 后由组件移除 */
-.quiz-fill-input--full { border-color: var(--red); }
+/* 符号插入超限（>64）：拒绝插入的红边反馈，1.2s 后由组件移除类名。
+   输入框本身 border:none，可见边框在容器行上——必须点亮行。 */
 .quiz-symbol-trigger {
   flex-shrink: 0;
   margin-right: 4px;

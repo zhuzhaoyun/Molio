@@ -44,6 +44,14 @@ export const quizAnchorStore = {
     current = null;
     emit();
   },
+
+  /** 只清「本次发送消费掉的那个锚」：发送是异步的，await 期间用户可能
+   *  已把锚换到别的题——无条件 clear 会把新锚误清掉（chip 无故消失）。 */
+  clearIfCurrent(consumed: QuizAnchor | null) {
+    if (!consumed || current !== consumed) return;
+    current = null;
+    emit();
+  },
 };
 
 export function useQuizAnswerAnchor(): QuizAnchor | null {
