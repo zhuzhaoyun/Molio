@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import { launchMolioApp, closeMolioApp, type LaunchedApp } from '../helpers/electron-app';
+import { launchMolioApp, closeMolioApp, expectAnyVisible, gotoChatSpa, type LaunchedApp } from '../helpers/electron-app';
 
 /**
  * Desktop E2E smoke tests.
@@ -36,18 +36,20 @@ test('app launches and daemon becomes healthy', async () => {
   // Window should be visible
   await expect(page.locator('body')).toBeVisible();
 
-  // Daemon health endpoint should respond
-  const res = await page.evaluate(async () => {
-    const r = await fetch('http://localhost:3100/api/health');
+  // Daemon health endpoint should respond (port is dynamic outside CI, where
+  // the installed app may already hold 3100)
+  const res = await page.evaluate(async (port) => {
+    const r = await fetch(`http://localhost:${port}/api/health`);
     return r.ok;
-  });
+  }, app.daemonPort);
   expect(res).toBe(true);
 });
 
-test('home page renders with brand or chat interface', async () => {
-  // Navigate to home first
-  await page.click('[data-view="home"]');
-  await page.waitForSelector('.home-page', { state: 'visible' });
+test('full-page chat renders with brand or chat interface', async () => {
+  // `/chat` is the full-page chat (原「首页」). It left the nav rail in #293 —
+  // navigate via SPA pushState, same as the web layer's gotoChatSpa.
+  await gotoChatSpa(page);
+  await page.waitForSelector('.home-page', { state: 'visible', timeout: 10_000 });
 
   // Either landing (hero with "Molio") or chat-active (composer)
   const hasLanding = await page.locator('.home-landing').isVisible().catch(() => false);
@@ -65,7 +67,7 @@ test('home page renders with brand or chat interface', async () => {
 });
 
 test('navigates between all main pages', async () => {
-  // Home -> Knowledge Base
+  // Knowledge Base
   await page.click('[data-view="knowledge"]');
   await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 10_000 });
 
@@ -81,9 +83,9 @@ test('navigates between all main pages', async () => {
   await page.click('[data-view="settings"]');
   await expect(page.locator('.settings-shell')).toBeVisible({ timeout: 10_000 });
 
-  // Settings -> Home
-  await page.click('[data-view="home"]');
-  await expect(page.locator('.home-page')).toBeVisible({ timeout: 10_000 });
+  // Settings -> Knowledge Base (the app entry: `/` redirects here)
+  await page.click('[data-view="knowledge"]');
+  await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 10_000 });
 });
 
 test('knowledge base page shows vault bar and content area', async () => {
@@ -93,22 +95,26 @@ test('knowledge base page shows vault bar and content area', async () => {
   // Vault bar should be present (for selecting/creating vaults)
   await expect(page.locator('.kb-vault-bar')).toBeVisible();
 
-  // Main content area: wait for any of these states to be visible
-  const emptyState = page.locator('.kb-empty-state').first();
-  const treeItem = page.locator('.kb-tree-item').first();
-  const vaultModal = page.locator('.vm-overlay');
+  // Main content area: wait for any of these states to be visible.
+  // Existence check (not specific instance) — .first() picks whichever
+  // happens to render; the test only cares that *something* is there.
+  const contentStates = [
+    page.locator('.kb-empty-state').first(),
+    page.locator('.kb-tree-item').first(),
+    page.locator('.kb-tree-group').first(), // directory node (existence only)
+    page.locator('.vm-overlay'),
+  ];
+  await expectAnyVisible(contentStates);
 
-  // Wait for at least one to be visible (with timeout)
-  await Promise.race([
-    emptyState.waitFor({ state: 'visible', timeout: 5_000 }).catch(() => {}),
-    treeItem.waitFor({ state: 'visible', timeout: 5_000 }).catch(() => {}),
-    vaultModal.waitFor({ state: 'visible', timeout: 5_000 }).catch(() => {}),
-  ]);
-
-  const hasEmpty = await emptyState.isVisible().catch(() => false);
-  const hasTree = await treeItem.isVisible().catch(() => false);
-  const hasVaultModalVisible = await vaultModal.isVisible().catch(() => false);
-  expect(hasEmpty || hasTree || hasVaultModalVisible).toBe(true);
+  // Guard: if a directory node passed the check above, verify it carries
+  // actual content (label text) — an empty <div class="kb-tree-group">
+  // would indicate the file tree failed to render its children.
+  // Timeout matches the main assertion (5s) to avoid false negatives on slow CI.
+  const treeGroup = page.locator('.kb-tree-group').first();
+  if (await treeGroup.isVisible().catch(() => false)) {
+    const label = treeGroup.locator('.kb-tree-group-label').first();
+    await expect(label).toBeVisible({ timeout: 5_000 });
+  }
 });
 
 test('runtimes panel shows agent management interface', async () => {

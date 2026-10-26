@@ -31,9 +31,9 @@ function nativeTitles(): Promise<string[]> {
 test.beforeAll(async () => {
   app = await launchMolioApp();
   // Playwright may report a DevTools window as firstWindow — prefer the page
-  // actually showing the app UI.
+  // actually showing the app UI. Port is dynamic outside CI (see pickDaemonPort).
   page =
-    app.electronApp.windows().find((p) => p.url().startsWith('http://localhost:3100')) ??
+    app.electronApp.windows().find((p) => p.url().startsWith(`http://localhost:${app.daemonPort}`)) ??
     app.page;
 });
 
@@ -43,7 +43,7 @@ test.afterAll(async () => {
 
 test('窗口标题跟随知识库名：两个库窗口各显示库名，首页回退 Molio', async () => {
   // Vault fixtures come from the app's own daemon — no hardcoded ids.
-  const res = await page.request.get('http://localhost:3100/api/knowledge/vaults');
+  const res = await page.request.get(`http://localhost:${app.daemonPort}/api/knowledge/vaults`);
   expect(res.ok()).toBeTruthy();
   const body = await res.json();
   const vaults = (Array.isArray(body.vaults) ? body.vaults : []) as Array<{

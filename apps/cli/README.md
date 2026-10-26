@@ -49,7 +49,15 @@ molio mcp                                   # 启动 stdio MCP server（7 tools�
 molio mcp
 ```
 
-stdio 传输，注册 7 个只读 tools：`molio_status`、`kb_vaults`、`kb_tree`、`kb_read`、`kb_search`、`kb_ask_start`、`kb_ask_poll`。
+stdio 传输，注册 7 个只读 tools：`molio_status`、`kb_vaults`、`kb_tree`、`kb_read`、`kb_search`、`kb_ask_start`、`kb_ask_poll`。已发布到官方 MCP Registry（`io.github.zhuzhaoyun/molio`）。
+
+**Claude Code** 一条命令注册：
+
+```bash
+claude mcp add molio -- npx -y @molio/cli mcp
+```
+
+**Pi**：本包同时是 Pi package，`pi install npm:@molio/cli` 会自动注册 MCP server 并附带 `molio-kb` 技能。
 
 - `kb_ask_start` 立即返回 `{runId, ...}`；`kb_ask_poll{runId}` 单次查询返回 `{status, answer?}`，由调用方按 ≥5s 间隔轮询（适配 MCP 30s 超时约束）。
 - 所有错误以 `isError: true` + 可读中文消息返回，不抛 JSON-RPC 异常。

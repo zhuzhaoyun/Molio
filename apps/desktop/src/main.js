@@ -38,8 +38,9 @@ const DEV_APP_ICON = path.join(__dirname, '..', 'build', 'icon.png');
 
 const PROTOCOL = 'molio';
 
-/** Local daemon port (dev and production both bind :3100). Single source — no magic copies. */
-const DAEMON_PORT = 3100;
+/** Local daemon port (dev and production both bind :3100). Single source — no magic copies.
+ *  MOLIO_PORT overrides it (E2E runs a second instance beside the installed app). */
+const DAEMON_PORT = Number(process.env.MOLIO_PORT) || 3100;
 
 /** Base URL of the local daemon. */
 const DAEMON_BASE = `http://localhost:${DAEMON_PORT}`;

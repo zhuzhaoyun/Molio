@@ -8,6 +8,7 @@ import { openDatabase, closeDatabase } from '../../../src/core/db.js';
 import {
   importFromRaw,
   importFromFolder,
+  inspectSkillSource,
   SkillImportError,
   MAX_IMPORT_BYTES,
 } from '../../../src/core/skills/importer.js';
@@ -249,6 +250,145 @@ describe('skills/importer', () => {
       });
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('skills/importer inspectSkillSource', () => {
+  it('dir with SKILL.md → ok preview, frontmatter name, sibling file list', () => {
+    const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'molio-skill-inspect-'));
+    try {
+      fs.writeFileSync(path.join(folder, 'SKILL.md'), '---\nname: 检查员\ndescription: d\n---\n\nbody\n', 'utf8');
+      fs.mkdirSync(path.join(folder, 'references'));
+      fs.writeFileSync(path.join(folder, 'references', 'guide.md'), 'g\n', 'utf8');
+      const r = inspectSkillSource({ folderPath: folder });
+      assert.equal(r.ok, true);
+      assert.equal(r.name, '检查员');
+      assert.equal(r.nameFallback, false);
+      assert.equal(r.entryFile, 'SKILL.md');
+      assert.deepEqual(r.files.map((f) => f.path), ['SKILL.md', 'references/guide.md']);
+      assert.deepEqual(r.issues, []);
+    } finally {
+      fs.rmSync(folder, { recursive: true, force: true });
+    }
+  });
+
+  it('dir without SKILL.md → NO_ENTRY error, ok=false', () => {
+    const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'molio-skill-inspect-empty-'));
+    try {
+      const r = inspectSkillSource({ folderPath: folder });
+      assert.equal(r.ok, false);
+      assert.equal(r.entry, null);
+      assert.equal(r.issues[0]?.code, 'NO_ENTRY');
+      assert.equal(r.issues[0]?.level, 'error');
+    } finally {
+      fs.rmSync(folder, { recursive: true, force: true });
+    }
+  });
+
+  it('missing path → SOURCE_UNREADABLE (also for a backslash path on this OS)', () => {
+    const r = inspectSkillSource({ folderPath: path.join(os.tmpdir(), 'molio-nope-does-not-exist') });
+    assert.equal(r.ok, false);
+    assert.equal(r.issues[0]?.code, 'SOURCE_UNREADABLE');
+    // Windows-style separators on a POSIX host: stat fails → same clean issue, never a throw.
+    const r2 = inspectSkillSource({ folderPath: 'D:\\skills\\不存在' });
+    assert.equal(r2.ok, false);
+    assert.equal(r2.issues[0]?.code, 'SOURCE_UNREADABLE');
+  });
+
+  it('frontmatter without name → NAME_FALLBACK warning + basename name; no description → DESCRIPTION_FALLBACK', () => {
+    const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'molio-skill-inspect-fb-'));
+    try {
+      fs.writeFileSync(path.join(folder, 'SKILL.md'), '---\ndescription: \n---\n\nbody\n', 'utf8');
+      const r = inspectSkillSource({ folderPath: folder });
+      assert.equal(r.ok, true);
+      assert.equal(r.name, path.basename(folder));
+      assert.equal(r.nameFallback, true);
+      assert.equal(r.descriptionFallback, true);
+      const codes = r.issues.map((i) => i.code);
+      assert.ok(codes.includes('NAME_FALLBACK'));
+      assert.ok(codes.includes('DESCRIPTION_FALLBACK'));
+      assert.ok(r.issues.every((i) => i.level === 'warning'));
+    } finally {
+      fs.rmSync(folder, { recursive: true, force: true });
+    }
+  });
+
+  it('single .md file → one-file list, entryFile = basename', () => {
+    const file = path.join(os.tmpdir(), `molio-skill-inspect-single-${Date.now()}.md`);
+    try {
+      fs.writeFileSync(file, '---\nname: 单文件\ndescription: d\n---\n\nbody\n', 'utf8');
+      const r = inspectSkillSource({ folderPath: file });
+      assert.equal(r.ok, true);
+      assert.equal(r.entryFile, path.basename(file));
+      assert.equal(r.files.length, 1);
+    } finally {
+      fs.rmSync(file, { force: true });
+    }
+  });
+
+  it('single .MD file (uppercase extension) is still a valid single-file skill', () => {
+    const file = path.join(os.tmpdir(), `molio-skill-inspect-upper-${Date.now()}.MD`);
+    try {
+      fs.writeFileSync(file, '---\nname: 大写扩展\ndescription: d\n---\n\nbody\n', 'utf8');
+      const r = inspectSkillSource({ folderPath: file });
+      assert.equal(r.ok, true);
+      assert.equal(r.entryFile, path.basename(file));
+    } finally {
+      fs.rmSync(file, { force: true });
+    }
+  });
+
+  it('single non-.md file (e.g. a .rar archive) → UNSUPPORTED_TYPE error, never a fake "single-file skill"', () => {
+    // Regression (real-machine): dragging a .rar onto the dropzone used to be
+    // accepted as a "single-file skill" — the binary junk parsed as instructions
+    // and the preview showed a green verdict. Spec §5.3: only a single .md is a
+    // valid file source; anything else must be rejected with a human-readable
+    // error (archives: extract first).
+    const file = path.join(os.tmpdir(), `molio-skill-inspect-rar-${Date.now()}.rar`);
+    try {
+      fs.writeFileSync(file, '---\nname: 压缩包\ndescription: d\n---\n\nbody\n', 'utf8');
+      const r = inspectSkillSource({ folderPath: file });
+      assert.equal(r.ok, false);
+      assert.equal(r.entry, null);
+      assert.equal(r.issues[0]?.code, 'UNSUPPORTED_TYPE');
+      assert.equal(r.issues[0]?.level, 'error');
+    } finally {
+      fs.rmSync(file, { force: true });
+    }
+  });
+
+  it('raw without instructions → EMPTY_BODY', () => {
+    const r = inspectSkillSource({ raw: '---\nname: x\n---\n\n   ' });
+    assert.equal(r.ok, false);
+    assert.equal(r.issues[0]?.code, 'EMPTY_BODY');
+  });
+
+  it('folder over the file-count limit → TOO_MANY_FILES error + truncated', () => {
+    const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'molio-skill-inspect-many-'));
+    try {
+      fs.writeFileSync(path.join(folder, 'SKILL.md'), '---\nname: 大\ndescription: d\n---\n\nbody\n', 'utf8');
+      for (let i = 0; i <= 1000; i++) {
+        fs.writeFileSync(path.join(folder, `f${i}.txt`), 'x', 'utf8');
+      }
+      const r = inspectSkillSource({ folderPath: folder });
+      assert.equal(r.ok, false);
+      assert.equal(r.truncated, true);
+      assert.equal(r.issues[0]?.code, 'TOO_MANY_FILES');
+    } finally {
+      fs.rmSync(folder, { recursive: true, force: true });
+    }
+  });
+
+  it('overrides flow through importFromFolder (name/description win over parsed values)', () => {
+    const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'molio-skill-inspect-ovr-'));
+    try {
+      fs.writeFileSync(path.join(folder, 'SKILL.md'), '---\nname: 原名\ndescription: 原描述\n---\n\nbody\n', 'utf8');
+      const entry = importFromFolder(db, folder, opts, { name: '改过的名', description: '改过的描述' });
+      assert.equal(entry.name, '改过的名');
+      assert.equal(entry.description, '改过的描述');
+    } finally {
+      fs.rmSync(folder, { recursive: true, force: true });
     }
   });
 });

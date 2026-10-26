@@ -24,6 +24,7 @@ src/
     db.ts              SQLite 数据库初始化
     transcript.ts      多轮对话 transcript 构建
     knowledge.ts       知识库管理（vault、文件树）
+    skills/            用户技能（library）管理：importer.ts 的 inspectSkillSource 是预览与导入共用的单一探测源（防两套逻辑漂移）——文件夹要求根 SKILL.md 且逐字节复制（即使只含一个 SKILL.md 也不走 raw，否则重生成 frontmatter 会丢 allowed-tools 等字段）；单独 .md 走 raw 通道；扩展名门禁（压缩包等 → UNSUPPORTED_TYPE）；名称/描述解析 + NAME_FALLBACK/DESCRIPTION_FALLBACK + 文件数/总大小上限；importFromFolder/importFromRaw 支持 name/description 覆盖（预览填表后回传）。store.ts 技能 CRUD + content dir 落盘 + listSkillFiles（已导入技能的目录清单，bundled 返回 null）；builtin.ts 内置技能镜像（源在 src/tools/skills/）；hub.ts 技能商店客户端
     preload-manager.ts 技能预下载管理（当前仅 docling：Phase 0 Python 发现→1 venv→2 pip 多镜像回退→3 HF 模型预热；进度/暂停/停止状态机）。Phase 0 找不到 Python ≥3.10 时不再报错，自动调 python-provision 供给独立解释器；buildPyProbes 把 ~/.molio/python 放探针首位（重启幂等，不重复下载）；stop 清理删 venv + docling HF 模型 + python.staging-* 残留但保留已完成的 ~/.molio/python（可复用基建）；测试钩子 __setPreloadPythonHooksForTest 注入 findPython/provision
     python-provision.ts docling 免装 Python：下载 python-build-standalone（PBS，3.12 pin、install_only_stripped ~22MB）到 ~/.molio/python。源链 MOLIO_PYTHON_MIRROR env → npmmirror（JSON 目录列表动态发现最新 tag/patch）→ GitHub pinned tag 兜底；同目录 SHA256SUMS 强校验（不匹配换源；取不到记警告继续）；系统 tar 解压（POSIX symlink 保真，Win10+ 自带 tar.exe）→ staging 试运行 --version 验证 → 原子换位；PythonProvisionDeps 全 side-effect 可注入（零真实网络单测）
     tools/skills/      Builtin Claude Code skills（wechat-article-extractor, docling, wiki-build/ingest/lint/save/query）—— wiki 操作走 skills，agent 按动词 on-demand 调用；知识库问答走 wiki-query skill（由 vault .claude/CLAUDE.md 常驻规则 + KB 面板确定性触发），不再有 system-prompt 注入。wiki-* 五件套（build/query/ingest/save/lint）同版本号共进：改任一 skill 时五个 version: 一起 bump 到同一版本，同一 PR（或一次对外发布）内的连续修订只 bump 一次（同步本身按内容哈希镜像到既有 vault，version 只作诊断/约定）。remotion 已退役（见 skill-installer.ts 的 RETIRED_BUNDLED_SKILLS）：视频创作改由技能商店 am-will/remotion 按需安装；本目录下的 remotion/ 源文件刻意保留，作为清理旧 vault 副本时的字节级权属证明
@@ -89,6 +90,7 @@ src/
     conversations.ts  CRUD /api/conversations — 会话管理
     projects.ts       CRUD /api/projects — 项目管理
     knowledge.ts      CRUD /api/knowledge — 知识库管理
+    skills.ts         /api/skills — GET 列表 / GET :id 内容 / POST 新建 / PATCH :id 编辑 / PATCH :id/toggle 启停 / DELETE；GET :id/files 已导入技能的内容目录清单（bundled 404）；POST preview-import 导入预览（folderPath|raw 二选一 XOR，返回 ok/名称描述/instructions/文件清单/sourceKind + 同库重名 conflict，探测走 inspectSkillSource 与 import 同源）；POST import（folderPath 逐字节复制 / raw 重生成 frontmatter，按 name/description 覆盖）；POST prefill 聊天页「存为技能」预填；GET /hub/skills|skill|categories + POST /hub/install 技能商店
     publish.ts        POST /api/publish — 发布到内容平台
     graph.ts          GET /api/graph/:vaultId 全量图 + /:vaultId/local 局部子图（buildLocalGraph，scope=file|dir，返回含 focusNodes）
     maintenance.ts    POST /api/maintenance/rebuild-fts — 重建 FTS 索引（灾难恢复）
@@ -98,10 +100,10 @@ src/
   publish-bridge/
     bridge-page.ts    发布桥接页面逻辑
 test/                  测试用例 (node:test)，按源码模块子目录组织
-  core/               config, db, transcript, run-event-buffer, knowledge, conversations, weixin, feishu, auth（mock-cloud.ts 是行为可编程 mock 云端）
+  core/               config, db, transcript, run-event-buffer, knowledge, skills, conversations, weixin, feishu, auth（mock-cloud.ts 是行为可编程 mock 云端）
   streams/            claude-stream, codex-stream, json-event-stream, jsonl-parser
   runtimes/           env, launch-detection, claude-permission-mode, windows-cmd-resolution
-  routes/             agent-test-multiturn, knowledge, publish, sse, feishu
+  routes/             agent-test-multiturn, knowledge, skills, publish, sse, feishu
   compat/             esm-compat, port-check
 ```
 
