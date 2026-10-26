@@ -76,14 +76,17 @@ jobs:
         run: |
           set -euo pipefail
           VERSION=$(node -p "require('./package.json').version")
+          # 服务名含 "/"，必须是路径里的单个段——只有 %2F 编码能被路由匹配
+          NAME=$(node -p "encodeURIComponent(require('./server.json').name)")
+          URL="https://registry.modelcontextprotocol.io/v0/servers/$NAME/versions/$VERSION"
           for i in $(seq 1 6); do
-            sleep 10
-            FOUND=$(curl -sf "https://registry.modelcontextprotocol.io/v0/servers/io.github.zhuzhaoyun/molio" | node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>{try{const j=JSON.parse(d);const v=(j.versions||[]).some(x=>x.version===process.argv[1])||j.version===process.argv[1];console.log(v?'yes':'no')}catch{console.log('no')}})" "$VERSION" || echo "no")
-            if [[ "$FOUND" == "yes" ]]; then
-              echo "✅ io.github.zhuzhaoyun/molio@$VERSION 已上 registry"
+            STATUS=$(curl -s -o /dev/null -w '%{http_code}' "$URL")
+            if [[ "$STATUS" == "200" ]]; then
+              echo "✅ $NAME@$VERSION 已上 registry"
               exit 0
             fi
-            echo "第 $i 次回查未命中，继续等待传播…"
+            echo "第 $i 次回查未命中（HTTP $STATUS），继续等待传播…"
+            sleep 10
           done
-          echo "❌ registry 回查超时（发布可能失败或仍在传播），请手动检查"
+          echo "❌ registry 回查超时（发布可能失败或仍在传播），请手动检查：$URL"
           exit 1
