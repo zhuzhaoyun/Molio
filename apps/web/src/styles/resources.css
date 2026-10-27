@@ -1782,3 +1782,275 @@
   .catalog-section h2 { font-size:22px; }
   .catalog-categorylist { grid-template-columns:1fr; }
 }
+
+
+/* ── 商品页结构化内容编辑器（发布表单） ── */
+.publish-content-hint {
+  margin: -2px 0 8px;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.publish-content-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-subtle);
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.publish-content-summary > span:first-child {
+  flex: 1 1 220px;
+}
+
+.publish-content-editor {
+  margin-top: 8px;
+  padding: 4px 12px;
+  max-height: 520px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-subtle);
+}
+
+.publish-content-section {
+  padding: 10px 0;
+  border-top: 1px dashed var(--border);
+}
+
+.publish-content-section:first-child {
+  border-top: 0;
+}
+
+.publish-content-section h4 {
+  margin: 0 0 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
+.publish-content-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.publish-content-editor .publish-content-field {
+  margin-bottom: 8px;
+}
+
+.publish-content-editor .publish-content-field > input,
+.publish-content-editor .publish-content-field > textarea,
+.publish-content-editor .publish-content-field > select {
+  width: 100%;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 12px;
+}
+
+.publish-content-editor .publish-content-field > input,
+.publish-content-editor .publish-content-field > select {
+  height: 30px;
+  padding: 0 8px;
+}
+
+.publish-content-editor .publish-content-field > textarea {
+  padding: 6px 8px;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.publish-content-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.publish-content-row > input {
+  flex: 1;
+  min-width: 0;
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 12px;
+}
+
+.publish-content-row > .publish-content-field {
+  flex: 1;
+  min-width: 0;
+  margin-bottom: 0;
+}
+
+.publish-content-card {
+  margin-bottom: 10px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+}
+
+.publish-content-add,
+.publish-content-remove {
+  flex: none;
+  appearance: none;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text-muted);
+  font-size: 11px;
+  padding: 3px 8px;
+  cursor: pointer;
+}
+
+.publish-content-add:hover,
+.publish-content-remove:hover {
+  color: var(--text-strong);
+  border-color: var(--text-soft);
+}
+
+.publish-content-remove {
+  margin-top: 6px;
+  color: var(--red);
+}
+
+
+/* ── 应用内资源详情：结构化商品内容 ── */
+.resources-content-section {
+  margin-top: 26px;
+}
+
+.resources-content-two-col {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px 24px;
+  margin-top: 12px;
+}
+
+.resources-content-two-col h3 {
+  margin: 0 0 6px;
+  font-size: 13px;
+  color: var(--text-strong);
+}
+
+.resources-content-two-col ul {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.resources-content-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 8px;
+  margin: 12px 0 0;
+}
+
+.resources-content-facts > div {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-subtle);
+}
+
+.resources-content-facts dt {
+  margin: 0 0 4px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.resources-content-facts dd {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
+.resources-content-themes details {
+  margin-top: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-subtle);
+}
+
+.resources-content-themes summary {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
+.resources-content-themes summary span {
+  flex: none;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
+.resources-content-themes p {
+  margin: 8px 0;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.resources-content-themes ul {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 13px;
+  columns: 2;
+  column-gap: 24px;
+}
+
+.resources-content-question,
+.resources-content-sample {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-subtle);
+}
+
+.resources-content-question h3,
+.resources-content-sample h3 {
+  margin: 0 0 6px;
+  font-size: 14px;
+  color: var(--text-strong);
+}
+
+.resources-content-question p,
+.resources-content-sample p {
+  margin: 6px 0;
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.resources-content-source {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.resources-content-draft {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+@media (max-width: 640px) {
+  .resources-content-themes ul {
+    columns: 1;
+  }
+}

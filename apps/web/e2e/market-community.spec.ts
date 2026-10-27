@@ -195,10 +195,32 @@ test.describe('社区发布 → 展示 → 下载闭环（P1，mock OSS）', () 
     await expect(page.locator('[data-testid="kb-wtab-publish"]')).toHaveClass(/is-active/);
     await expect(page.locator('[data-testid="floating-chat-btn"]')).toBeHidden();
 
+    // 商品页结构化内容同样走 AI 起草：mock 一次，验证 content 随首发落库并在详情页渲染。
+    await page.route('**/api/market/publish-suggest', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          name: 'mock', summary: 'mock', tags: [], icon: '📖', agentId: 'mock',
+          content: {
+            version: 1,
+            positioning: { what: 'E2E 结构化定位说明。', who: ['需要验证发布链路的人'], notFor: [] },
+            facts: [{ label: '内容页', value: '12 个' }],
+            themes: [{ name: 'E2E 主题', summary: 'E2E 范围说明', items: ['E2E 条目'] }],
+            questions: [{ question: 'E2E 结构化问答？', answer: 'E2E 结构化答案。', source: 'community-doc.md' }],
+            delivery: { format: 'Markdown 知识库（.zip）', includes: [], requirements: [], steps: [] },
+            review: { basis: 'E2E 目录整理', reviewedAt: '2026-10-27', status: 'draft', autoDrafted: true },
+          },
+        }),
+      }),
+    );
+    await page.locator('[data-testid="publish-content-generate"]').click();
+    await expect(page.locator('[data-testid="publish-content-block"]')).toContainText('1 条关键事实');
+
     // 名称是 input、简介是 textarea（旧版用 input 序号 [1] 填简介会误中自定义标签输入框）
     await page.locator('.publish-form .publish-field input').first().fill(resourceName);
     await page
-      .locator('.publish-form .publish-field textarea')
+      .locator('.publish-form > .publish-field > textarea')
       .fill('E2E 自动发布的社区资源，用于 P1 门禁验证');
     await page.locator('.publish-preview-add input[type="file"]').setInputFiles({
       name: 'preview-1x1.png',
@@ -234,6 +256,9 @@ test.describe('社区发布 → 展示 → 下载闭环（P1，mock OSS）', () 
     await page.locator(`[data-testid="resource-detail-link-${listingId}"]`).click();
     await expect(page).toHaveURL(new RegExp(`/resources/${listingId}$`));
     await expect(page.locator('.resources-detail-head h1')).toHaveText(resourceName);
+    // content 已随首发落库：应用内详情直接渲染结构化问答，而不是空白概述
+    await expect(page.locator('[data-testid="resources-content"]')).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText('E2E 结构化问答？')).toBeVisible();
 
     const previewImg = page.locator('.resources-preview-grid img').first();
     await previewImg.scrollIntoViewIfNeeded(); // loading=lazy，滚入视口才会加载
@@ -347,6 +372,15 @@ test.describe('社区发布 → 展示 → 下载闭环（P1，mock OSS）', () 
           tags: ['模拟标签'],
           icon: '📚',
           agentId: 'mock',
+          content: {
+            version: 1,
+            positioning: { what: 'AI 起草的商品页定位', who: ['需要整理资料的人'], notFor: [] },
+            facts: [{ label: '内容页', value: '12 个' }],
+            themes: [{ name: '主题一', summary: '主题范围说明', items: ['条目一'] }],
+            questions: [{ question: '这是什么？', answer: '这是 AI 起草的示例内容。' }],
+            delivery: { format: 'Markdown 知识库（.zip）', includes: [], requirements: [], steps: [] },
+            review: { basis: '根据目录整理', reviewedAt: '2026-10-27', status: 'draft' },
+          },
         }),
       }),
     );
@@ -355,6 +389,11 @@ test.describe('社区发布 → 展示 → 下载闭环（P1，mock OSS）', () 
       timeout: 5_000,
     });
     await expect(page.locator('[data-testid="publish-ai-regen"]')).toBeVisible();
+    // AI 同时起草商品页内容：摘要可见，展开后能编辑结构化字段
+    await expect(page.locator('[data-testid="publish-content-block"]')).toContainText('1 条关键事实');
+    await page.locator('[data-testid="publish-content-toggle"]').click();
+    await expect(page.locator('[data-testid="market-content-editor"]')).toBeVisible();
+    await expect(page.locator('[data-testid="content-positioning-what"]')).toHaveValue('AI 起草的商品页定位');
     // 不提交，到此为止（关页面即放弃，不做关 tab 断言以保持用例聚焦）
   });
 

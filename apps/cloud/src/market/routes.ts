@@ -110,6 +110,15 @@ export function marketRoutes(deps: MarketRoutesDeps, config: CloudConfig, now: (
     try { return c.json(await service.purchases(p.sub), 200); } catch (e) { return handle(c, e); }
   });
 
+  // 发布者保存自己条目的商品页内容（编辑/重新生成后单独保存，不需要重传 zip）
+  app.post('/listings/:id/content', async (c) => {
+    const denied = guardBody(c); if (denied) return denied;
+    const p = bearer(c);
+    if (!p) return c.json({ error: 'invalid_token' }, 401);
+    const body = await c.req.json().catch(() => null) as { content?: unknown } | null;
+    try { return c.json(await service.updateContent(p.sub, c.req.param('id'), body?.content), 200); } catch (e) { return handle(c, e); }
+  });
+
   app.get('/admin/listings', async (c) => {
     const p = bearer(c);
     if (!p) return c.json({ error: 'invalid_token' }, 401);

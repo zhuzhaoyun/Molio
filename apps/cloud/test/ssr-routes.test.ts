@@ -300,3 +300,33 @@ test('SSR 商品页：MarketContent 渲染事实卡/问答/范围/样例/FAQ', a
   assert.ok(html.includes('"dateModified"'), 'dateModified');
   assert.ok(!html.includes('概述</h2>'), 'content 模式不再渲染旧概述');
 });
+
+
+test('SSR 商品页：只有 AI 自动起草的 draft 显示核对提示', async () => {
+  const { app, marketStore } = await bootSsrApp();
+  const base = JSON.parse(readFileSync(
+    path.resolve(process.cwd(), '../../content/market/01M4PZPNGWR1YZ1W9GGVTJG82N.json'),
+    'utf8',
+  ));
+  await marketStore.insertListing(listing({
+    id: '01JABCDE0000000000000021',
+    name: 'AI 草稿内容商品',
+    content: { ...base, review: { ...base.review, status: 'draft', autoDrafted: true } },
+  }));
+  await marketStore.insertListing(listing({
+    id: '01JABCDE0000000000000022',
+    name: '人工草稿内容商品',
+    content: { ...base, review: { ...base.review, status: 'draft', autoDrafted: undefined } },
+  }));
+  await marketStore.insertListing(listing({
+    id: '01JABCDE0000000000000023',
+    name: '已核对内容商品',
+    content: { ...base, review: { ...base.review, status: 'reviewed', autoDrafted: true } },
+  }));
+  const autoDraft = await (await app.request('/resource/01JABCDE0000000000000021.html')).text();
+  const manualDraft = await (await app.request('/resource/01JABCDE0000000000000022.html')).text();
+  const reviewed = await (await app.request('/resource/01JABCDE0000000000000023.html')).text();
+  assert.ok(autoDraft.includes('仍在核对中'), 'AI draft 明确提示');
+  assert.ok(!manualDraft.includes('仍在核对中'), '存量人工 draft 不加提示，避免 19 个线上商品页突然降级');
+  assert.ok(!reviewed.includes('仍在核对中'), 'reviewed 不提示');
+});

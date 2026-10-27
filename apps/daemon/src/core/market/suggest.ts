@@ -12,6 +12,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { MARKET_ICONS, type MarketPublishSuggestion } from '@molio/contracts';
+import { buildContentDigest, contentPromptLines, normalizeContent, type ContentDigest } from './content.js';
 import { buildAgentEnv, getAgentConfig } from '../config.js';
 import { buildSpawnEnv } from '../runtimes/env.js';
 import { needsShellOnWindows, resolveAgentBinary } from '../runtimes/launch.js';
@@ -20,7 +21,7 @@ import { getAgentDef } from '../runtimes/registry.js';
 /** 支持一次性起草的 agent（按偏好序） */
 export const SUGGEST_AGENT_IDS = ['claude', 'codex'] as const;
 /** 首次启动/冷缓存可能较慢，给足时间；前端有 loading 态 */
-export const SUGGEST_TIMEOUT_MS = 120_000;
+export const SUGGEST_TIMEOUT_MS = 180_000;
 /** 采样上限：文件数 / 摘要文件数 / 单摘要码点数 */
 const MAX_PATHS = 200;
 const MAX_SNIPPET_FILES = 8;
@@ -54,9 +55,11 @@ function cpSlice(s: string, max: number): string {
 }
 
 /** 采样 vault：文件清单（.md 优先）+ 少量正文摘录。读取失败的文件静默跳过。 */
-export function buildVaultDigest(vaultPath: string): VaultDigest {
+export function buildVaultDigest(vaultPath: string, include?: string[]): VaultDigest {
   const mdFiles: string[] = [];
   const otherFiles: string[] = [];
+  // 与打包范围一致：选了目录就只看这些一级目录，避免商品页描述未随包交付的内容。
+  const allowedTop = include && include.length > 0 ? new Set(include) : null;
   const walk = (dir: string, prefix: string): void => {
     let entries: fs.Dirent[];
     try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
@@ -64,6 +67,7 @@ export function buildVaultDigest(vaultPath: string): VaultDigest {
       if (isExcluded(entry.name)) continue;
       const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
       if (entry.isDirectory()) {
+        if (!prefix && allowedTop && !allowedTop.has(entry.name)) continue;
         walk(path.join(dir, entry.name), rel);
       } else if (entry.isFile()) {
         (entry.name.toLowerCase().endsWith('.md') ? mdFiles : otherFiles).push(rel);
@@ -92,8 +96,8 @@ export function buildVaultDigest(vaultPath: string): VaultDigest {
   return { fileNames, snippets };
 }
 
-/** 起草提示词：只输出一个 JSON 对象 */
-export function composeSuggestPrompt(digest: VaultDigest): string {
+/** 起草提示词：只输出一个 JSON 对象（含商品页结构化内容草稿） */
+export function composeSuggestPrompt(digest: VaultDigest, contentDigest?: ContentDigest, today?: string): string {
   const lines = [
     '你是 Molio 知识库的发布助手。根据下面的知识库内容，为它撰写资源库上架信息，',
     '让浏览者一眼就想下载。',
@@ -107,7 +111,7 @@ export function composeSuggestPrompt(digest: VaultDigest): string {
     `- icon：从 ${JSON.stringify([...MARKET_ICONS])} 中选最贴切的一个`,
     '',
     '只输出一个 JSON 对象，不要 markdown 围栏，不要任何其他文字：',
-    '{"name":"...","summary":"...","tags":["...","..."],"icon":"..."}',
+    '{"name":"...","summary":"...","tags":["...","..."],"icon":"...","content":{...}}',
     '',
     '知识库文件清单：',
     ...digest.fileNames.map((f) => `- ${f}`),
@@ -116,6 +120,7 @@ export function composeSuggestPrompt(digest: VaultDigest): string {
     lines.push('', '内容摘录：');
     for (const s of digest.snippets) lines.push(`### ${s.file}`, s.text);
   }
+  if (contentDigest) lines.push(...contentPromptLines(contentDigest, today ?? new Date().toISOString().slice(0, 10)));
   return lines.join('\n');
 }
 
@@ -278,15 +283,19 @@ export interface SuggestDeps {
  * - suggest_timeout：超时
  * - suggest_failed：其余一切（空库/输出不可解析/字段缺失/进程失败）
  */
-export async function suggestPublishMeta(vaultPath: string, deps: SuggestDeps = {}): Promise<MarketPublishSuggestion> {
+export async function suggestPublishMeta(vaultPath: string, deps: SuggestDeps = {}, opts: { include?: string[] } = {}): Promise<MarketPublishSuggestion> {
   const picked = (deps.pick ?? pickSuggestAgent)();
   if (!picked) throw new Error('suggest_unavailable');
-  const digest = buildVaultDigest(vaultPath);
+  const digest = buildVaultDigest(vaultPath, opts.include);
   if (digest.fileNames.length === 0) throw new Error('suggest_failed: empty vault');
-  const prompt = composeSuggestPrompt(digest);
+  const contentDigest = buildContentDigest(vaultPath, opts.include);
+  const prompt = composeSuggestPrompt(digest, contentDigest);
   const runner = deps.runner ?? defaultOneShotRunner;
   const text = await runner(picked.agentId, prompt, deps.timeoutMs ?? SUGGEST_TIMEOUT_MS);
   const json = extractJson(text);
   if (!json) throw new Error('suggest_failed: unparseable output');
-  return normalizeSuggestion(json, picked.agentId);
+  const meta = normalizeSuggestion(json, picked.agentId);
+  // content 是加分项：解析/归一失败只丢内容草稿，不影响名称、简介等元数据。
+  const content = json['content'] !== undefined ? normalizeContent(json['content']) : null;
+  return content ? { ...meta, content } : meta;
 }

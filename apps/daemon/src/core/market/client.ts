@@ -6,6 +6,7 @@ import type {
   MarketListing,
   MarketMyResponse,
   MarketPurchasesResponse,
+  MarketContent,
 } from '@molio/contracts';
 import { AuthCloudError, type AuthClient } from '../auth/auth-client.js';
 
@@ -20,6 +21,8 @@ export interface MarketCreateInput {
   previews: { ext: string; size: number }[];
   /** 价格（分）；仅管理员可设 >0，非管理员云端强制 0 */
   priceCents?: number;
+  /** 商品页结构化内容；随首发一起提交，云端校验后落库 */
+  content?: MarketContent;
 }
 
 /**
@@ -120,6 +123,13 @@ export class MarketClient {
     return (await (
       await this.req('POST', `/listings/${id}/update`, { auth: true, body: { previews, ...extra } })
     ).json()) as MarketCreateResponse;
+  }
+
+  /** 发布者保存自己条目的商品页内容（编辑/重新生成后保存，不重传 zip） */
+  async setContent(id: string, content: MarketContent): Promise<MarketListing> {
+    return (await (
+      await this.req('POST', `/listings/${id}/content`, { auth: true, body: { content } })
+    ).json()) as MarketListing;
   }
 
   async remove(id: string): Promise<void> {

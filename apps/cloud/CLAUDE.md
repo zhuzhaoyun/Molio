@@ -7,7 +7,7 @@ Molio 用户模块的云端服务，两块职责：**身份**（第一期 = 身�
 ## 技术栈
 
 - **运行时**: Hono + `@hono/node-server`（与 daemon 一致，标准可容器化 HTTP 服务）
-- **存储**: PostgreSQL（生产 PolarDB Serverless）；无 `DATABASE_URL` 时自动降级 `MemoryAuthStore`（本地开发，重启丢登录态）
+- **存储**: PostgreSQL（生产 RDS PostgreSQL Serverless）；无 `DATABASE_URL` 时自动降级 `MemoryAuthStore`（本地开发，重启丢登录态）
 - **鉴权**: HS256 JWT（access，15min）+ 256-bit 随机 refresh（30 天滑动轮换）
 - **测试**: node:test（内存 store，不依赖真库）
 
@@ -135,7 +135,7 @@ MOLIO_AUTH_URL=http://localhost:3200 pnpm dev:daemon   # daemon 指向本地 clo
 
 ## 部署（第一期手动）
 
-- 形态：阿里云函数计算 FC（Web 函数/Custom Runtime，HTTP server 原样部署，监听 `CAPort`）+ PolarDB Serverless。**单函数 prod**（cn-shenzhen，函数名 `user`；同地域另有支付函数 `wxpay` = pay.molio.cn），自定义域名 `auth.molio.cn` 直连 LATEST 版本（无版本/别名）。
+- 形态：阿里云函数计算 FC（Web 函数/Custom Runtime，HTTP server 原样部署，监听 `CAPort`）+ RDS PostgreSQL Serverless。**单函数 prod**（cn-shenzhen，函数名 `user`；同地域另有支付函数 `wxpay` = pay.molio.cn），自定义域名 `auth.molio.cn` 直连 LATEST 版本（无版本/别名）。
 - 发布：`node apps/cloud/scripts/deploy-package.mjs` 产出 `apps/cloud/molio-cloud-deploy.zip`（内含 linux-x64 Node 运行时 + npm 扁平 node_modules），FC 控制台上传 ZIP。启动命令 `/code/runtime/node /code/dist/src/index.js`。⚠️ **仅改控制台环境变量对常驻实例不生效**，必须上传新代码包强制实例换新（2026-08-24 事故教训，细节见脚本头注释）。
 - 独立部署，**不进 Molio 应用镜像**，不走 OSS/ACR 桌面发版链路。
 - **资源市场启用条件**：OSS 凭证齐全（`MOLIO_OSS_AK` / `MOLIO_OSS_SK` / `MOLIO_OSS_BUCKET`）才装配 `/market`；缺失则 `/market` 不挂载（访问 404），prod 缺凭证启动时打 warn。

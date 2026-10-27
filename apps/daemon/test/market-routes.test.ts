@@ -13,7 +13,7 @@ import { marketRoutes } from '../src/routes/market.js';
 /** 云端 /market 与 OSS 的 fetch 替身：按 URL 分发 */
 function makeCloud(opts: { fail?: boolean } = {}) {
   const objects = new Map<string, Uint8Array>();
-  const state = { created: 0, confirmed: 0 };
+  const state = { created: 0, confirmed: 0, createdBody: null as Record<string, unknown> | null, contents: [] as unknown[] };
   const fetchImpl = (async (url: string, init?: RequestInit) => {
     const u = String(url);
     if (opts.fail) throw new Error('network down');
@@ -22,8 +22,14 @@ function makeCloud(opts: { fail?: boolean } = {}) {
       state.confirmed++;
       return new Response(JSON.stringify({ status: 'active' }), { status: 200 });
     }
+    // 内容单独保存：POST /market/listings/:id/content（必须先于 create 分支）
+    if (u.includes('/market/listings/') && u.endsWith('/content') && init?.method === 'POST') {
+      state.contents.push(JSON.parse(String(init.body ?? '{}')));
+      return new Response(JSON.stringify({ id: 'x', content: null }), { status: 200 });
+    }
     if (u.includes('/market/listings') && init?.method === 'POST') {
       state.created++;
+      state.createdBody = JSON.parse(String(init.body ?? '{}')) as Record<string, unknown>;
       const id = `01test${state.created}`;
       return new Response(JSON.stringify({
         listingId: id,
@@ -86,6 +92,52 @@ test('publish 编排：打包→创建→直传→确认→本地映射', async 
   assert.equal(zipKeys.length, 1);
   const localCount = db.prepare('SELECT count(*) AS n FROM market_local').get() as { n: number };
   assert.equal(localCount.n, 1); // 发布成功 → listing→v1 映射落库
+});
+
+test('publish 编排：商品页 content 随 create 一起提交', async () => {
+  const db = openDatabase(fs.mkdtempSync(path.join(os.tmpdir(), 'molio-db-')));
+  const vaultPath = makeVault();
+  db.prepare('INSERT INTO vaults (id, name, path, created_at) VALUES (?, ?, ?, ?)').run('v1', '测试库', vaultPath, Date.now());
+  const cloud = makeCloud();
+  const app = new Hono();
+  app.route('/api/market', marketRoutes(db, { getAccessToken: async () => 'tok' } as never, { fetchImpl: cloud.fetchImpl, baseUrl: 'https://cloud.local' }));
+  const content = {
+    version: 1,
+    positioning: { what: '测试库', who: ['读者'], notFor: [] },
+    facts: [{ label: '页面', value: '1 个' }],
+    themes: [{ name: '主题', summary: '范围', items: ['条目'] }],
+    questions: [],
+    delivery: { format: 'Markdown 知识库（.zip）', includes: [], requirements: [], steps: [] },
+    review: { basis: '目录', reviewedAt: '2026-10-27', status: 'draft' },
+  };
+  const form = new FormData();
+  form.set('vaultId', 'v1');
+  form.set('name', '测试库');
+  form.set('summary', '简介');
+  form.set('icon', '📖');
+  form.set('tags', '[]');
+  form.set('content', JSON.stringify(content));
+  form.append('previews', new File([PNG_1PX], 'p1.png', { type: 'image/png' }));
+
+  const res = await app.request('/api/market/publish', { method: 'POST', body: form });
+  assert.equal(res.status, 200);
+  assert.equal((cloud.state.createdBody?.content as { facts: unknown[] }).facts.length, 1, 'content 应随 create 提交');
+});
+
+test('POST /api/market/listings/:id/content：单独保存内容，不触发打包/上传', async () => {
+  const db = openDatabase(fs.mkdtempSync(path.join(os.tmpdir(), 'molio-db-')));
+  const cloud = makeCloud();
+  const app = new Hono();
+  app.route('/api/market', marketRoutes(db, { getAccessToken: async () => 'tok' } as never, { fetchImpl: cloud.fetchImpl, baseUrl: 'https://cloud.local' }));
+  const content = { version: 1, facts: [] };
+  const res = await app.request('/api/market/listings/01test1/content', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content }),
+  });
+  assert.equal(res.status, 200);
+  assert.equal(cloud.state.contents.length, 1);
+  assert.deepEqual(cloud.state.contents[0], { content });
+  assert.equal(cloud.state.created, 0, '保存内容不应重新创建/上传');
+  assert.equal(cloud.state.confirmed, 0);
 });
 
 // 回归（2026-10 明史升版丢 .molio）：升版表单不显示目录选择 → 不传 include。

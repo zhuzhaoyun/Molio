@@ -6,7 +6,7 @@
  * page 模式下顶部显示已上架条目选择器：选中某条目 → 切换为更新模式，
  * 用当前 vault 内容打包上传；未选中 → 首发模式。
  *
- * AI 起草（名称/简介/标签/图标）由用户**主动点击**「AI 一键配置」触发
+ * AI 起草（名称/简介/标签/图标 + 商品页结构化内容）由用户**主动点击**「AI 一键配置」触发
  * （POST /api/market/publish-suggest，见 daemon core/market/suggest.ts），
  * 打开时不自动生成；「重新生成」显式覆盖已填字段。任何失败静默回落手填，
  * 不阻断发布。图标不手选（云端要求 MARKET_ICONS 白名单值，由 AI 选定）。
@@ -25,9 +25,11 @@
  * 供关 tab 前的「放弃未发布填写」确认。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { MARKET_ICONS, type MarketMyListing, type MarketPublishSuggestion } from '@molio/contracts';
+import { MARKET_ICONS, type MarketContent, type MarketMyListing, type MarketPublishSuggestion } from '@molio/contracts';
 import { useI18n } from '../../i18n';
 import { TaxonomyFields } from './TaxonomyFields';
+import { MarketContentEditor } from './MarketContentEditor';
+import { isMarketContentComplete, sanitizeMarketContent } from './marketContent';
 import { api } from '../../api/client';
 
 export interface PublishFormData {
@@ -38,6 +40,8 @@ export interface PublishFormData {
   tags: string[];
   icon: string;
   selectedDirs: string[];
+  /** 商品页结构化内容（随 tab 持久化，避免切换页面后丢失） */
+  content?: MarketContent | null;
 }
 
 export interface PublishFormProps {
@@ -97,6 +101,10 @@ export function PublishForm(props: PublishFormProps) {
   const [icon, setIcon] = useState<string>(props.initialData?.icon ?? props.listing?.icon ?? MARKET_ICONS[0]);
   const [tags, setTags] = useState<string[]>(props.initialData?.tags ?? props.listing?.tags ?? []);
   const [tagInput, setTagInput] = useState(''); // 自定义标签输入
+  const [content, setContent] = useState<MarketContent | null>(props.initialData?.content ?? props.listing?.content ?? null);
+  const [contentPhase, setContentPhase] = useState<'idle' | 'loading' | 'done' | 'failed'>('idle');
+  const [contentOpen, setContentOpen] = useState(false);
+  const [contentSaveState, setContentSaveState] = useState<'idle' | 'saving' | 'saved' | 'failed'>('idle');
   const [previews, setPreviews] = useState<File[]>([]);
   const [agreed, setAgreed] = useState(false);
   const [phase, setPhase] = useState<'form' | 'working' | 'done'>('form');
@@ -113,6 +121,10 @@ export function PublishForm(props: PublishFormProps) {
     setResourceTypeId(selectedListing.resourceTypeId ?? 'knowledge');
     setPrice(selectedListing.priceCents > 0 ? String(selectedListing.priceCents / 100) : '');
     setPreviews([]);
+    setContent(selectedListing.content ?? null);
+    setContentPhase(selectedListing.content ? 'done' : 'idle');
+    setContentOpen(false);
+    setContentSaveState('idle');
     setAgreed(false);
     setPhase('form');
     setError(null);
@@ -152,8 +164,8 @@ export function PublishForm(props: PublishFormProps) {
   const onDataChangeRef = useRef(props.onDataChange);
   onDataChangeRef.current = props.onDataChange;
   useEffect(() => {
-    onDataChangeRef.current?.({ name, summary, tags, icon, selectedDirs, categoryId, resourceTypeId });
-  }, [name, summary, tags, icon, selectedDirs, categoryId, resourceTypeId]);
+    onDataChangeRef.current?.({ name, summary, tags, icon, selectedDirs, categoryId, resourceTypeId, content });
+  }, [name, summary, tags, icon, selectedDirs, categoryId, resourceTypeId, content]);
 
   // ── AI 起草：用户主动点「AI 一键配置」才生成；已输入的内容优先
   //    （不覆盖非空字段），「重新生成」显式覆盖。任何失败静默回落手填，
@@ -164,23 +176,33 @@ export function PublishForm(props: PublishFormProps) {
   const abortRef = useRef<AbortController | null>(null);
   useEffect(() => () => { abortRef.current?.abort(); }, []);
 
+  // 更新模式的 vault 来自 market_local 映射（/api/market/my 已回传 vaultId）。
+  const effectiveVaultId = props.vaultId ?? effectiveListing?.vaultId ?? '';
+
+  const requestSuggestion = useCallback(async (ctrl: AbortController): Promise<MarketPublishSuggestion> => {
+    const res = await fetch('/api/market/publish-suggest', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        vaultId: effectiveVaultId,
+        // 首发只按实际勾选的目录起草；升版打包整个 vault，不传 include。
+        ...(!isUpdate && selectedDirs.length > 0 ? { include: selectedDirs } : {}),
+      }),
+      signal: ctrl.signal,
+    });
+    if (!res.ok) throw new Error('suggest_failed');
+    return (await res.json()) as MarketPublishSuggestion;
+  }, [effectiveVaultId, isUpdate, selectedDirs]);
+
   const generateSuggestion = useCallback((overwrite: boolean) => {
-    if (genPhase === 'loading') return; // 防重入：一次只跑一个 agent 调用
+    if (genPhase === 'loading' || contentPhase === 'loading') return; // 一次只跑一个 agent 调用
     overwriteRef.current = overwrite;
     abortRef.current?.abort();
     const ctrl = new AbortController();
     abortRef.current = ctrl;
     setGenPhase('loading');
-    fetch('/api/market/publish-suggest', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ vaultId: props.vaultId ?? '' }),
-      signal: ctrl.signal,
-    })
-      .then(async (res) => {
-        if (!res.ok) throw new Error('suggest_failed');
-        return (await res.json()) as MarketPublishSuggestion;
-      })
+    setContentPhase('loading');
+    void requestSuggestion(ctrl)
       .then((sg) => {
         const ow = overwriteRef.current;
         overwriteRef.current = false;
@@ -188,12 +210,59 @@ export function PublishForm(props: PublishFormProps) {
         setSummary((cur) => (ow || !cur.trim() ? sg.summary : cur));
         setTags((cur) => (ow || cur.length === 0 ? sg.tags : cur));
         setIcon(sg.icon);
+        if (sg.content) { setContent(sg.content); setContentPhase('done'); setContentSaveState('idle'); }
+        else setContentPhase('failed');
         setGenPhase('done');
       })
       .catch((e: unknown) => {
-        if ((e as Error)?.name !== 'AbortError') setGenPhase('failed');
+        if ((e as Error)?.name !== 'AbortError') {
+          setGenPhase('failed');
+          setContentPhase('failed');
+        }
       });
-  }, [genPhase, props.vaultId]);
+  }, [genPhase, contentPhase, requestSuggestion]);
+
+  /** 只重新生成商品页内容（更新模式常用；不覆盖已填元数据）。 */
+  const generateContent = useCallback(() => {
+    if (genPhase === 'loading' || contentPhase === 'loading') return;
+    abortRef.current?.abort();
+    const ctrl = new AbortController();
+    abortRef.current = ctrl;
+    setContentPhase('loading');
+    void requestSuggestion(ctrl)
+      .then((sg) => {
+        if (sg.content) { setContent(sg.content); setContentPhase('done'); setContentOpen(true); setContentSaveState('idle'); }
+        else setContentPhase('failed');
+      })
+      .catch((e: unknown) => {
+        if ((e as Error)?.name !== 'AbortError') setContentPhase('failed');
+      });
+  }, [genPhase, contentPhase, requestSuggestion]);
+
+  /** 更新模式：只保存商品页内容，不重新打包/上传知识库。 */
+  const saveContentOnly = useCallback(async () => {
+    if (!content || !effectiveUpdateListingId || contentSaveState === 'saving') return;
+    const clean = sanitizeMarketContent(content);
+    if (!isMarketContentComplete(clean)) { setError(t('publish.content.required')); return; }
+    setContent(clean);
+    setContentSaveState('saving');
+    setError(null);
+    try {
+      const res = await fetch(`/api/market/listings/${effectiveUpdateListingId}/content`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: clean }),
+      });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(body.error ?? 'publish_failed');
+      }
+      setContentSaveState('saved');
+    } catch (e) {
+      setContentSaveState('failed');
+      setError(mapError((e as Error).message));
+    }
+  }, [content, effectiveUpdateListingId, contentSaveState, t]);
 
   // 效果图缩略图 Object URL：随 previews 统一派生，变化/卸载时释放
   const previewUrls = useMemo(() => previews.map((f) => URL.createObjectURL(f)), [previews]);
@@ -232,6 +301,9 @@ export function PublishForm(props: PublishFormProps) {
       const pn = Number(price);
       if (price.trim() && !Number.isFinite(pn)) { setError(t('publish.error.priceInvalid')); return; }
     }
+    const contentForSubmit = content ? sanitizeMarketContent(content) : null;
+    if (contentForSubmit && !isMarketContentComplete(contentForSubmit)) { setError(t('publish.content.required')); return; }
+    if (contentForSubmit) setContent(contentForSubmit);
     setPhase('working');
     const form = new FormData();
     if (props.vaultId) form.set('vaultId', props.vaultId);
@@ -241,6 +313,8 @@ export function PublishForm(props: PublishFormProps) {
     form.set('summary', summary.trim());
     form.set('icon', icon);
     form.set('tags', JSON.stringify(tags));
+    // 商品页结构化内容：首发随 create 落库；更新模式先单独保存再打包。
+    if (contentForSubmit) form.set('content', JSON.stringify(contentForSubmit));
     // 目录选择：仅首发传递；升版不传 include —— daemon 会兜底成「一级可发布目录」
     // （= 整个 vault，含 .molio）。不要改成升版也传 include：更新入口在 /me 侧拿不到
     // vaultId，且兜底规则与 top-dirs 同源，重复一份只会有新的漂移点。
@@ -271,7 +345,7 @@ export function PublishForm(props: PublishFormProps) {
   // ── dirty 上报：有已填内容且未完成 → true（供关 tab 前确认）──
   const dirty = !isUpdate && phase !== 'done'
     && (name.trim() !== '' || summary.trim() !== '' || tags.length > 0 || previews.length > 0
-      || price.trim() !== '' || categoryId !== '' || resourceTypeId !== 'knowledge');
+      || content !== null || price.trim() !== '' || categoryId !== '' || resourceTypeId !== 'knowledge');
   const onDirtyChangeRef = useRef(props.onDirtyChange);
   onDirtyChangeRef.current = props.onDirtyChange;
   useEffect(() => { onDirtyChangeRef.current?.(dirty); }, [dirty]);
@@ -402,6 +476,64 @@ export function PublishForm(props: PublishFormProps) {
             <textarea value={summary} maxLength={500} rows={5}
               onChange={(e) => setSummary(e.target.value)} />
           </label>
+
+          <div className="publish-field publish-content-block" data-testid="publish-content-block">
+            <span>{t('publish.content.title')}</span>
+            <p className="publish-content-hint">{isUpdate ? t('publish.content.hintUpdate') : t('publish.content.hint')}</p>
+            {content ? (
+              <>
+                <div className="publish-content-summary">
+                  <span>
+                    {t('publish.content.summary', {
+                      facts: content.facts.length,
+                      themes: content.themes.length,
+                      questions: content.questions.length,
+                    })}
+                  </span>
+                  <button type="button" className="publish-ai-regen" data-testid="publish-content-toggle"
+                    onClick={() => setContentOpen((v) => !v)}>
+                    {contentOpen ? t('publish.content.collapse') : t('publish.content.expand')}
+                  </button>
+                  <button type="button" className="publish-ai-regen" data-testid="publish-content-regen"
+                    disabled={contentPhase === 'loading' || genPhase === 'loading' || !effectiveVaultId} onClick={generateContent}>
+                    {contentPhase === 'loading' ? t('publish.content.generating') : t('publish.content.regenerate')}
+                  </button>
+                  <button type="button" className="publish-ai-regen" data-testid="publish-content-clear"
+                    disabled={contentPhase === 'loading' || genPhase === 'loading'}
+                    onClick={() => { setContent(null); setContentPhase('idle'); setContentOpen(false); }}>
+                    {t('publish.content.clear')}
+                  </button>
+                  {isUpdate && (
+                    <button type="button" className="kb-btn kb-btn-primary publish-ai-btn" data-testid="publish-content-save"
+                      disabled={contentPhase === 'loading' || contentSaveState === 'saving'}
+                      onClick={() => void saveContentOnly()}>
+                      {contentSaveState === 'saving'
+                        ? t('publish.content.saving')
+                        : contentSaveState === 'saved'
+                          ? t('publish.content.saved')
+                          : t('publish.content.saveOnly')}
+                    </button>
+                  )}
+                </div>
+                {contentOpen && (
+                  <MarketContentEditor
+                    value={content}
+                    onChange={(next) => { setContent(next); setContentSaveState('idle'); }}
+                  />
+                )}
+              </>
+            ) : (
+              <div className="publish-content-summary">
+                <span>{t('publish.content.empty')}</span>
+                <button type="button" className="kb-btn kb-btn-primary publish-ai-btn" data-testid="publish-content-generate"
+                  disabled={contentPhase === 'loading' || genPhase === 'loading' || !effectiveVaultId} onClick={generateContent}>
+                  {contentPhase === 'loading' ? t('publish.content.generating') : t('publish.content.generate')}
+                </button>
+              </div>
+            )}
+            {contentPhase === 'failed' && <p className="publish-error">{t('publish.content.failed')}</p>}
+          </div>
+
           <div className="publish-field">
             <span>{t('publish.tags')}</span>
             <div className="publish-tags" aria-label={t('publish.tags')}>

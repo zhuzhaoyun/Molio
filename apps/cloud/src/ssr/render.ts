@@ -383,11 +383,15 @@ function renderContentDelivery(d: MarketContentDelivery): string {
 }
 
 function renderContentReview(r: MarketContentReview): string {
+  const draftNote = r.status === 'draft' && r.autoDrafted === true
+    ? '<p class="res-c-source">内容由发布者整理，仍在核对中；如与资源原文有出入，以原文为准。</p>'
+    : '';
   return `<section class="res-section res-c-section" id="source">
   <div class="res-kicker">06 / 来源与核对</div>
   <h2 class="res-section-title">这份内容是怎么来的</h2>
   <p>${escapeHtml(r.basis)}</p>
-  <p class="res-c-source">核对日期：${escapeHtml(r.reviewedAt)}</p>
+  <p class="res-c-source">整理日期：${escapeHtml(r.reviewedAt)}</p>
+  ${draftNote}
 </section>`;
 }
 

@@ -255,6 +255,7 @@
       ],
       "specs": [
         "resources",
+        "resource-product-content",
         "resource-catalog-website",
         "navigation",
         "bootstrap"
@@ -299,6 +300,7 @@
         "apps/cloud/src/store/market-*",
         "apps/cloud/src/ssr/*",
         "packages/contracts/src/catalog.ts",
+        "packages/contracts/src/market.ts",
         "apps/web/e2e/fixtures/mock-oss.mjs"
       ],
       "specs": [
@@ -506,6 +508,10 @@
     "resources": {
       "priority": "P1",
       "file": "resources.spec.ts"
+    },
+    "resource-product-content": {
+      "priority": "P1",
+      "file": "resource-product-content.spec.ts"
     },
     "resource-catalog-website": {
       "priority": "P1",

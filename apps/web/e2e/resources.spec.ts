@@ -279,3 +279,35 @@ test.describe('Resources login gate', () => {
     await expect(page.locator(`[data-testid="resource-buy-${id}"]`)).not.toHaveText(/登录后/);
   });
 });
+
+
+test('detail renders structured MarketContent instead of the legacy overview', async ({ page }) => {
+  const content = {
+    version: 1,
+    positioning: { what: '这是一份结构化测试知识库。', who: ['需要核对资料的人'], notFor: ['不是题库'] },
+    facts: [{ label: '内容页', value: '12 个' }],
+    themes: [{ name: '测试主题', summary: '主题范围说明', items: ['真实条目 A'] }],
+    questions: [{ question: '结构化问答？', answer: '这是结构化答案。', source: 'wiki/a.md' }],
+    samples: [{ title: '真实样例', body: '样例正文。', source: 'wiki/a.md' }],
+    delivery: { format: 'Markdown 知识库（.zip）', includes: ['wiki'], requirements: [], steps: ['解压'] },
+    review: { basis: '根据目录整理', reviewedAt: '2026-10-27', status: 'draft', autoDrafted: true },
+  };
+  await page.route('**/api/market/listings/structured', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        id: 'structured', source: 'community', name: '结构化详情测试', icon: '📚', tint: '#eee',
+        summary: '结构化简介', overview: [], highlights: [], content, tags: [], previews: [],
+        version: 'v1.0', priceCents: 0, payUrl: '', author: 'tester', fileSize: null, publishedAt: null,
+      }),
+    }),
+  );
+  await page.goto('/resources/structured');
+  await expect(page.locator('[data-testid="resources-content"]')).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByText('结构化问答？')).toBeVisible();
+  await expect(page.getByText('真实条目 A')).toBeVisible();
+  await expect(page.getByText('这是一份结构化测试知识库。')).toBeVisible();
+  await expect(page.getByText('仍在核对中')).toBeVisible();
+  await expect(page.getByText('概述', { exact: true })).toHaveCount(0);
+});

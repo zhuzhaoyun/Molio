@@ -26,7 +26,7 @@ export interface MarketListingRecord {
   summary: string;
   overview: string[];
   highlights: string[];
-  /** 管理员维护的结构化商品内容；null/undefined = 回退 overview/highlights */
+  /** 商品页结构化内容（发布者随上架提交 / 管理员可覆盖）；null/undefined = 回退 overview/highlights */
   content?: MarketContent | null;
   tags: string[];
   previews: string[];
