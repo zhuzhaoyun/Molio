@@ -2,7 +2,7 @@
  * Vault tree-pruning predicate + hard caps.
  *
  * Shared by the vault tree scanner (scanTree, countFiles, findFileByStem,
- * searchFiles, walkWiki) and the filesystem watcher (VaultWatcher) so the two
+ * searchVaultFiles, walkWiki) and the filesystem watcher (VaultWatcher) so the two
  * never diverge on "what counts as knowledge".
  *
  * Kept in a dependency-free module on purpose: importing it (e.g. from

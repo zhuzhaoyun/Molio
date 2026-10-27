@@ -261,6 +261,42 @@ describe('Knowledge routes — file import', () => {
     assert.ok(existsSync(join(vaultDir, 'dup (1).md')));
   });
 
+  /**
+   * 改名落盘的文件必须进索引（deferred minor #7 的 import-rename 分支）。
+   * 回归背景：钩子曾直接用 renamed[].to（裸 basename，缺 targetDir 前缀）去
+   * indexVaultFile —— 永远 stat 失败静默 no-op，改名文件搜不到。
+   * 隔离手法：先搜一次让索引建成（state 非空后搜索不再触发整库重建），
+   * 再导入改名文件——此时钩子是它进索引的唯一通路。
+   */
+  it('conflict: rename — renamed file is searchable through the import hook', async () => {
+    // 用本测试专属文件名：同 suite 的 rename 测试已写过 dup.md，会撞名生成 (2)
+    writeFileSync(join(vaultDir, 'rename-idx.md'), '占位正文');
+    // 前置：索引已建成（state 非空），后续导入的文件只有钩子能送进索引
+    const pre = new Request(`http://localhost/api/knowledge/vaults/${vaultId}/search?q=${encodeURIComponent('占位正文')}`);
+    const preRes = await app.request(pre);
+    assert.equal(preRes.status, 200);
+
+    const fd = makeFormData({
+      files: [makeFile('rename-idx.md', '重命名分支独特内容')],
+      conflict: 'rename',
+    });
+    const req = new Request(`http://localhost/api/knowledge/vaults/${vaultId}/import`, {
+      method: 'POST',
+      body: fd,
+    });
+    const res = await app.request(req);
+    assert.equal(res.status, 200);
+
+    const searchRes = await app.request(
+      new Request(`http://localhost/api/knowledge/vaults/${vaultId}/search?q=${encodeURIComponent('重命名分支独特内容')}`),
+    );
+    assert.equal(searchRes.status, 200);
+    const searchData = await json(searchRes);
+    const results = searchData['results'] as Array<{ filePath: string }>;
+    assert.equal(results.length, 1);
+    assert.equal(results[0]!.filePath, 'rename-idx (1).md');
+  });
+
   it('conflict: skip — does not overwrite', async () => {
     writeFileSync(join(vaultDir, 'keep.md'), 'original');
     const fd = makeFormData({

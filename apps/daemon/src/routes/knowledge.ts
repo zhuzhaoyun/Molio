@@ -843,8 +843,11 @@ export function knowledgeRoutes(
       // success. User-facing copy for the reason is Task 8's; the route's job
       // is only to not swallow it.
       result.errors = [...perFileErrors, ...result.errors];
-      // 导入的每个落盘文件（含改名后的）即时入索引
-      for (const p of [...result.imported, ...result.renamed.map((r) => r.to)]) {
+      // 导入的每个落盘文件（含改名后的）即时入索引。renamed[].to 是裸 basename
+      // （ImportResult 的字段语义，web 直接展示文件名），缺 targetDir 前缀——
+      // 直接拿去 indexVaultFile 永远 stat 失败静默 no-op，这里与 imported 同款拼全。
+      const renamedPaths = result.renamed.map((r) => (targetDir ? `${targetDir}/${r.to}` : r.to));
+      for (const p of [...result.imported, ...renamedPaths]) {
         indexVaultFile(db, vault.id, vault.path, p);
       }
 
