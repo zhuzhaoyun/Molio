@@ -910,6 +910,126 @@ test.describe('Quiz interaction block', () => {
     expect(sentMessage).toContain('看图作答：由图可知……');
   });
 
+  /** turn_end 后的作答发送会新建 run（不走 /messages 排队），所以二轮批改
+   *  用独立 run 供帧：mock-sse 的 sseFrame 格式（id + data{seq,runId,event}）。 */
+  function sseFrames(runId: string, reply: string): string {
+    const events = [
+      { type: 'status', label: 'running' },
+      { type: 'text_delta', delta: reply },
+      { type: 'turn_end', stopReason: 'end_turn' },
+    ];
+    return events
+      .map((event, i) => `id: ${i + 1}\ndata: ${JSON.stringify({ seq: i + 1, runId, event })}\n\n`)
+      .join('');
+  }
+
+  /** 二轮批改的 mock：第二次 POST /api/runs 应答为 run-2（同会话），
+   *  其 events 供给定回复帧。mockChatRun 必须先注册（LIFO 捕获层在后）。 */
+  async function mockSecondTurn(page: import('@playwright/test').Page, reply: string): Promise<void> {
+    let runPosts = 0;
+    await page.route('**/api/runs', async (route) => {
+      if (route.request().method() === 'POST' && (runPosts += 1) === 2) {
+        await route.fulfill({
+          status: 201,
+          contentType: 'application/json',
+          body: JSON.stringify({ runId: 'run-2', conversationId: 'conv-1' }),
+        });
+        return;
+      }
+      await route.fallback();
+    });
+    await page.route('**/api/runs/run-2/events**', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'text/event-stream',
+        headers: { 'Cache-Control': 'no-cache', 'Connection': 'keep-alive' },
+        body: sseFrames('run-2', reply),
+      });
+    });
+  }
+
+  test('writes the grading back into the subject question row', async ({ page }) => {
+    // 批改回写：批改标记行（含题号+得分+逐点行）被配对到题卡，解答题行
+    // 出现得分徽标 + 可折叠的逐点评定；聊天里的批改文本照常保留。
+    const gradingReply = [
+      '【批改·第3题】得分 2/3',
+      '1. 命中｜写出帕斯卡法则，形式正确',
+      '2. 部分｜分成两类但未说明边界情形',
+      '3. 未中｜没有指出 C(n,0)=1 的意义',
+      '',
+      '**错在哪里**：第三点完全没写。',
+    ].join('\n');
+    await mockChatRun(page, {
+      runId: 'run-1',
+      conversationId: 'conv-1',
+      script: [
+        { type: 'status', label: 'running' },
+        { type: 'text_delta', delta: MIXED_QUIZ },
+        { type: 'turn_end', stopReason: 'end_turn' },
+        { type: 'status', label: 'completed' },
+      ],
+    });
+    await mockSecondTurn(page, gradingReply);
+    await gotoHome(page);
+    await sendMessage(page, '出混合题');
+
+    const card = page.locator('[data-testid="quiz-card"]');
+    await expect(card).toBeVisible({ timeout: 10_000 });
+
+    await card.locator('[data-testid="quiz-answer-btn"][data-question-id="q3"]').click();
+    await page.locator('[data-testid="composer-input"]').fill('证明过程……');
+    await page.locator('[data-testid="composer-send"]').click();
+
+    // 得分徽标出现在解答题行头。
+    const score = card.locator('[data-testid="quiz-subject-score"]');
+    await expect(score).toHaveText('2/3');
+
+    // 逐点评定默认收起，展开后 3 行：判定徽章走 i18n + 依据文本。
+    await card.locator('[data-testid="quiz-subject-points-toggle"]').click();
+    const points = card.locator('[data-testid="quiz-subject-point"]');
+    await expect(points).toHaveCount(3);
+    await expect(points.nth(0)).toContainText('命中');
+    await expect(points.nth(0)).toContainText('写出帕斯卡法则，形式正确');
+    await expect(points.nth(1)).toContainText('部分');
+    await expect(points.nth(2)).toContainText('未中');
+
+    // 聊天里的批改文本照常保留（回写是镜像，不是搬运）。
+    await expect(page.locator('[data-testid="assistant-prose"]').last()).toContainText('错在哪里');
+
+    await page.unroute('**/api/runs');
+    await page.unroute('**/api/runs/run-2/events**');
+  });
+
+  test('keeps the subject row bare when the reply has no grading marker', async ({ page }) => {
+    // 优雅降级：模型没按批改格式回（自由文本）→ 卡片无回写，聊天批改兜底。
+    await mockChatRun(page, {
+      runId: 'run-1',
+      conversationId: 'conv-1',
+      script: [
+        { type: 'status', label: 'running' },
+        { type: 'text_delta', delta: MIXED_QUIZ },
+        { type: 'turn_end', stopReason: 'end_turn' },
+        { type: 'status', label: 'completed' },
+      ],
+    });
+    await mockSecondTurn(page, '总体答得不错，第三点可以再展开说说。');
+    await gotoHome(page);
+    await sendMessage(page, '出混合题');
+
+    const card = page.locator('[data-testid="quiz-card"]');
+    await expect(card).toBeVisible({ timeout: 10_000 });
+    await card.locator('[data-testid="quiz-answer-btn"][data-question-id="q3"]').click();
+    await page.locator('[data-testid="composer-input"]').fill('证明过程……');
+    await page.locator('[data-testid="composer-send"]').click();
+
+    await expect(page.locator('[data-testid="assistant-prose"]').last()).toContainText('总体答得不错');
+    await expect(card.locator('[data-testid="quiz-subject-score"]')).toHaveCount(0);
+    await expect(card.locator('[data-testid="quiz-subject-points-toggle"]')).toHaveCount(0);
+
+    await page.unroute('**/api/runs');
+    await page.unroute('**/api/runs/run-2/events**');
+  });
+
   test('appends a sequence number when the quiz filename already exists', async ({ page }) => {
     let savedUrl: string | null = null;
 

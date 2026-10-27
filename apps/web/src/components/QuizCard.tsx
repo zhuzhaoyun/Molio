@@ -3,6 +3,8 @@ import { api } from '../api/client';
 import { useI18n } from '../i18n';
 import { useActiveVaultId } from '../stores/vaultStore';
 import { quizAnchorStore, useQuizAnswerAnchor } from '../stores/quizAnchorStore';
+import { useQuizGradings } from '../stores/quizGradingStore';
+import { gradingMapKey } from '../utils/quizAnswer';
 import { useWikiLinkClick } from '../hooks/useWikiLinkClick';
 import { CodeBlock } from './CodeBlock';
 import { renderMarkdown } from '../utils/markdown';
@@ -95,6 +97,9 @@ function QuizBody({
   const vaultId = useActiveVaultId();
   const handleWikiLinkClick = useWikiLinkClick();
   const quizAnchor = useQuizAnswerAnchor();
+  // 本会话的大题批改配对表（键 = 指纹:题号）。无批改时各解答题行维持裸行。
+  const gradings = useQuizGradings(conversationId);
+  const [openGradingFor, setOpenGradingFor] = useState<string | null>(null);
 
   // 题干/选项/解析里的 ![alt](库内相对路径) 改写成 daemon raw URL 才能真正加载
   // （KB 查看器同款规则，见 utils/kbImage.ts）。无活跃库时保持原文。
@@ -302,6 +307,29 @@ function QuizBody({
 
   // 「作答」只负责挂/摘锚：题干与隐藏评分点在发送时物化进消息（见
   // ChatComposer + utils/quizAnswer.ts），题卡本身不收主观题答案。
+  // 指纹是异步算出的：点击早于指纹就绪时，锚上 key 为空串——指纹一到
+  // 就地补齐（只刷新 key，不改锚的其他字段；属于别的卡的锚不动）。
+  useEffect(() => {
+    if (!fingerprint || !quizAnchor) return;
+    const key = fingerprint.slice(0, 8);
+    if (quizAnchor.anchor.fingerprintKey === key) return;
+    const index = quiz.questions.findIndex((q) => q.id === quizAnchor.questionId);
+    if (index < 0) return;
+    const question = quiz.questions[index]!;
+    if (!isSubjectQuestion(question)) return;
+    quizAnchorStore.set(
+      {
+        questionIndex: index + 1,
+        typeLabel: t('quiz.type.subject'),
+        stem: question.stem,
+        points: question.answer,
+        sources: question.sources.map((source) => source.path),
+        fingerprintKey: key,
+      },
+      quizAnchor.questionId,
+    );
+  }, [fingerprint, quizAnchor, quiz, t]);
+
   const toggleSubjectAnchor = useCallback(
     (question: QuizQuestion, index: number) => {
       if (quizAnchor?.questionId === question.id) {
@@ -315,6 +343,8 @@ function QuizBody({
           stem: question.stem,
           points: question.answer,
           sources: question.sources.map((source) => source.path),
+          // 物化 v2 的「题目指纹」行来源：批改回写题卡的关联键（前 8 位）。
+          fingerprintKey: fingerprint?.slice(0, 8) ?? '',
         },
         question.id,
       );
@@ -344,6 +374,9 @@ function QuizBody({
         const chosen = selections[question.id] ?? [];
         const grade = gradeMap.get(question.id);
         const isSubject = isSubjectQuestion(question);
+        const subjectGrading = isSubject && fingerprint
+          ? gradings?.get(gradingMapKey(fingerprint.slice(0, 8), index + 1)) ?? null
+          : null;
         return (
           <div className="quiz-question" data-testid="quiz-question" data-question-id={question.id} key={question.id}>
             <div className="quiz-question-head">
@@ -358,6 +391,16 @@ function QuizBody({
                   {grade.correct ? t('quiz.correct') : t('quiz.wrong')}
                 </span>
               )}
+              {/* 大题批改回写：得分徽标（数字通用，判定详情折叠在行内）。 */}
+              {isSubject && subjectGrading && (
+                <span
+                  className="quiz-subject-score"
+                  data-testid="quiz-subject-score"
+                  title={t('quiz.grading.pointsTitle')}
+                >
+                  {subjectGrading.score}/{subjectGrading.total}
+                </span>
+              )}
             </div>
 
             {/* 题干走受控 markdown（renderMarkdown 先转义 HTML）：图片/加粗/
@@ -368,7 +411,7 @@ function QuizBody({
               dangerouslySetInnerHTML={{ __html: renderQuizMarkdown(question.stem) }}
             />
 
-            {isSubject ? (
+            {isSubject && (
               /* 主观题行：无选项/无本地判分/无重做——作答走问答输入框，
                * 按钮只负责挂/摘锚（发送时物化题干+隐藏评分点）。 */
               <div className="quiz-subject-actions">
@@ -383,7 +426,37 @@ function QuizBody({
                   {t('quiz.answerButton')}
                 </button>
               </div>
-            ) : (
+            )}
+            {isSubject && subjectGrading && (
+              <div className="quiz-subject-points" data-testid="quiz-subject-points">
+                <button
+                  type="button"
+                  className="quiz-subject-points-toggle"
+                  data-testid="quiz-subject-points-toggle"
+                  aria-expanded={openGradingFor === question.id}
+                  onClick={() => setOpenGradingFor((prev) => (prev === question.id ? null : question.id))}
+                >
+                  {t('quiz.grading.pointsTitle')}
+                  <span className="quiz-subject-points-caret">{openGradingFor === question.id ? '▾' : '▸'}</span>
+                </button>
+                {openGradingFor === question.id && (
+                  <div className="quiz-subject-points-list">
+                    {subjectGrading.points.map((point, pointIndex) => (
+                      <div className="quiz-subject-point" data-testid="quiz-subject-point" key={pointIndex}>
+                        <span className={`quiz-subject-point-status ${point.status}`}>
+                          {t(`quiz.grading.${point.status}`)}
+                        </span>
+                        <span
+                          className="quiz-subject-point-text"
+                          dangerouslySetInnerHTML={{ __html: renderQuizMarkdown(point.text) }}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+            {!isSubject && (
               <div className="quiz-options">
               {question.type === 'fill' ? (
                 /* 填空：文本作答。判分在 gradeQuiz 里做规范化匹配（含 ASCII 记法折叠）；
