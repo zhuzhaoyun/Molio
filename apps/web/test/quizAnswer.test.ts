@@ -143,6 +143,116 @@ describe('parseGradingReply', () => {
     assert.equal(parseGradingReply('【批改·第2题】得分 0/0\n1. 命中｜x'), null);
     assert.equal(parseGradingReply(''), null);
   });
+
+  // 真机事故（2026-10-27）：模型对 5 个评分点给 1.5 分（部分给分），标记行写成
+  // 「得分 1.5/5」。旧正则只认整数分，整行匹配失败 → 整块批改被丢弃 → 题卡无徽标。
+  it('accepts a fractional score in the marker line', () => {
+    const parsed = parseGradingReply(
+      [
+        '【批改·第4题】得分 1.5/5',
+        '1. 未中｜没有由 Sₙ 求 aₙ 这条路',
+        '2. 部分｜必要性证到了，充分性缺失',
+        '3. 未中｜后面没再往下写',
+      ].join('\n'),
+    );
+    assert.equal(parsed?.questionIndex, 4);
+    assert.equal(parsed?.score, 1.5);
+    assert.equal(parsed?.total, 5);
+    assert.equal(parsed?.points.length, 3);
+  });
+
+  it('tolerates punctuation and spacing variations of the marker line', () => {
+    // 模型自选排版：冒号、斜杠两侧空格、行尾句号都出现过。
+    for (const line of [
+      '【批改·第4题】得分 2/5',
+      '【批改·第4题】得分：2/5',
+      '【批改·第4题】得分 2 / 5',
+      '【批改·第4题】得分 2/5。',
+    ]) {
+      const parsed = parseGradingReply(`${line}\n1. 命中｜依据`);
+      assert.equal(parsed?.score, 2, line);
+      assert.equal(parsed?.total, 5, line);
+    }
+  });
+
+  it('accepts bullet-prefixed point lines and an ascii pipe separator', () => {
+    const parsed = parseGradingReply(
+      [
+        '【批改·第4题】得分 1/3',
+        '- 命中｜依据一',
+        '- 部分 | 依据二',
+        '- 未命中｜依据三',
+      ].join('\n'),
+    );
+    assert.equal(parsed?.points.length, 3);
+    assert.equal(parsed?.points[0]!.status, 'hit');
+    assert.equal(parsed?.points[1]!.status, 'partial');
+    // 「未命中」是「未中」的同义写法，按未中计。
+    assert.equal(parsed?.points[2]!.status, 'miss');
+  });
+
+  it('stops collecting when the point-line style changes mid-block', () => {
+    // 风格必须一致：首行是编号式，后面突然变成项目符号式 → 逐点块结束。
+    const parsed = parseGradingReply(
+      ['【批改·第1题】得分 1/2', '1. 命中｜对', '- 部分｜风格变了'].join('\n'),
+    );
+    assert.equal(parsed?.points.length, 1);
+  });
+
+  it('stops collecting when the numbering is not consecutive', () => {
+    // 讲解里另起的编号列表（编号跳号）不得被并入评分点。
+    const parsed = parseGradingReply(
+      ['【批改·第1题】得分 1/2', '1. 命中｜对', '3. 未中｜跳号了'].join('\n'),
+    );
+    assert.equal(parsed?.points.length, 1);
+  });
+
+  // 真机原样：完整批改回复（标记行 + 5 条逐点行 + 空行 + 分隔线 + 讲解段落）。
+  // 讲解段落里有大量「- 」「｜」形状的句子，绝不能被收成评分点。
+  it('parses the real grading reply and stops at the prose section', () => {
+    const REAL = [
+      '【批改·第4题】得分 1.5/5',
+      '',
+      '1. 未中｜全篇没有用「由 Sₙ 求 aₙ」这条路，首项 a₁ 没有由 a₁ = S₁ = p + q + r 单独算出。',
+      '2. 未中｜没有出现 aₙ = Sₙ − Sₙ₋₁ = p(2n − 1) + q = 2pn + (q − p)（n ≥ 2）这个差分步骤。',
+      '3. 部分｜必要性方向确实证到了，且结论 r = 0 正确。',
+      '4. 未中｜最后一行「必要性证毕」之后没有再往下写，充分性方向完全缺失。',
+      '5. 部分｜结论形态「r = 0 即无常数项」抓对了。',
+      '',
+      '---',
+      '',
+      '### 错在哪、正确思路是什么',
+      '',
+      '**第一，你的路线只走了一半。**',
+      '',
+      '- 先处理首项：a₁ = S₁ = p + q（因为 r = 0），这一步必须单独做，S₀ 没有定义。',
+      '- 对 n ≥ 2：aₙ = Sₙ − Sₙ₋₁ = p(2n − 1) + q = 2pn + (q − p)。',
+    ].join('\n');
+    const parsed = parseGradingReply(REAL);
+    assert.equal(parsed?.score, 1.5);
+    assert.equal(parsed?.total, 5);
+    // 讲解段落里的 bullet 不得混进评分点。
+    assert.equal(parsed?.points.length, 5);
+    assert.deepEqual(
+      parsed?.points.map((point) => point.status),
+      ['miss', 'miss', 'partial', 'miss', 'partial'],
+    );
+  });
+
+  it('stops at the prose section even when it contains a point-shaped line', () => {
+    // 讲解段落里出现「- 命中｜…」形状的行（模型复述判定词）时不得被收成评分点。
+    const parsed = parseGradingReply(
+      [
+        '【批改·第1题】得分 1/2',
+        '1. 命中｜对',
+        '',
+        '- 命中｜这句在讲解里，不是一个评分点',
+        '- 部分｜同理',
+      ].join('\n'),
+    );
+    assert.equal(parsed?.points.length, 1);
+    assert.equal(parsed?.points[0]!.status, 'hit');
+  });
 });
 
 describe('pairQuizGradings', () => {

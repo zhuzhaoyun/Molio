@@ -1000,6 +1000,59 @@ test.describe('Quiz interaction block', () => {
     await page.unroute('**/api/runs/run-2/events**');
   });
 
+  test('writes back a fractional score grading', async ({ page }) => {
+    // 真机事故（2026-10-27）：模型给了「得分 1.5/5」（部分给分），旧解析器只认
+    // 整数分 → 整块批改被丢弃 → 题卡没有徽标，只在聊天里留下批改文本。
+    const gradingReply = [
+      '【批改·第3题】得分 1.5/5',
+      '',
+      '1. 未中｜没有按评分点逐条作答',
+      '2. 部分｜分成两类了，但没说明边界情形',
+      '3. 未中｜没有指出 C(n,0)=1 的意义',
+      '',
+      '---',
+      '',
+      '### 错在哪',
+      '',
+      '- 第一步就没接住题干。',
+    ].join('\n');
+    await mockChatRun(page, {
+      runId: 'run-1',
+      conversationId: 'conv-1',
+      script: [
+        { type: 'status', label: 'running' },
+        { type: 'text_delta', delta: MIXED_QUIZ },
+        { type: 'turn_end', stopReason: 'end_turn' },
+        { type: 'status', label: 'completed' },
+      ],
+    });
+    await mockSecondTurn(page, gradingReply);
+    await gotoHome(page);
+    await sendMessage(page, '出混合题');
+
+    const card = page.locator('[data-testid="quiz-card"]');
+    await expect(card).toBeVisible({ timeout: 10_000 });
+
+    await card.locator('[data-testid="quiz-answer-btn"][data-question-id="q3"]').click();
+    await page.locator('[data-testid="composer-input"]').fill('证明过程……');
+    await page.locator('[data-testid="composer-send"]').click();
+
+    // 小数分也要回写成功：徽标显示 1.5/5。
+    const score = card.locator('[data-testid="quiz-subject-score"]');
+    await expect(score).toHaveText('1.5/5');
+
+    // 逐点评定照常回写；讲解段落里的 bullet 不得混进评分点。
+    await card.locator('[data-testid="quiz-subject-points-toggle"]').click();
+    const points = card.locator('[data-testid="quiz-subject-point"]');
+    await expect(points).toHaveCount(3);
+    await expect(points.nth(0)).toContainText('未中');
+    await expect(points.nth(1)).toContainText('部分');
+    await expect(points.nth(2)).toContainText('未中');
+
+    await page.unroute('**/api/runs');
+    await page.unroute('**/api/runs/run-2/events**');
+  });
+
   test('keeps the subject row bare when the reply has no grading marker', async ({ page }) => {
     // 优雅降级：模型没按批改格式回（自由文本）→ 卡片无回写，聊天批改兜底。
     await mockChatRun(page, {

@@ -101,17 +101,31 @@ export interface QuizGrading {
   points: QuizGradingPoint[];
 }
 
-// 判定枚举冻结三词（skill 1.4.0 批改回复格式）；「部分命中」宽容归并到 部分。
+// 判定枚举冻结三词（skill 1.5.0 批改回复格式）；「部分命中」「未命中」是同义
+// 写法，宽容归并到 部分 / 未中。
 const STATUS_WORDS: ReadonlyArray<readonly [string, QuizGradingPointStatus]> = [
   ['部分命中', 'partial'],
+  ['未命中', 'miss'],
   ['命中', 'hit'],
   ['部分', 'partial'],
   ['未中', 'miss'],
 ];
 
+// 标记行：题号 + 得分 X/Y。X 允许小数（模型按各评分点的完成度给部分分，
+// 如 1.5/5），分隔符的空白/冒号/中文「分」/句末标点一并宽容——协议是模型
+// 侧的约定，解析侧必须能容忍模型的排版自由，否则整块批改被静默丢弃
+// （真机事故 2026-10-27：模型给了 1.5/5，旧正则只认整数，整块批改消失）。
+const MARKER_RE =
+  /^【批改·第(\d+)题】[ \t]*得分[ \t]*[:：]?[ \t]*(\d+(?:\.\d+)?)[ \t]*分?[ \t]*\/[ \t]*(\d+(?:\.\d+)?)[ \t]*分?[ \t]*[。.]?[ \t]*$/m;
+
+// 逐点行：列表前缀（编号 1. / 1) / 1、 / 1． 或项目符号 - / * / •）
+// + 判定词 + 分隔符（｜ / |）+ 依据。
+const NUMBERED_POINT_RE = /^[ \t]*(\d+)[.、．)）][ \t]*(\S+?)[ \t]*[｜|][ \t]*(.*)$/;
+const BULLET_POINT_RE = /^[ \t]*[-*•][ \t]*(\S+?)[ \t]*[｜|][ \t]*(.*)$/;
+
 /** 从助手回复解析批改回写块；无标记/格式坏/total=0 → null（优雅降级，聊天批改兜底）。 */
 export function parseGradingReply(text: string): QuizGrading | null {
-  const marker = text.match(/^【批改·第(\d+)题】得分\s+(\d+)\/(\d+)\s*$/m);
+  const marker = text.match(MARKER_RE);
   if (!marker) return null;
   const score = Number(marker[2]);
   const total = Number(marker[3]);
@@ -119,17 +133,36 @@ export function parseGradingReply(text: string): QuizGrading | null {
 
   // 逐点行从标记行之后连续收集，遇首个不匹配行为止——之后的自由文本
   // （错因/讲解）照常留在聊天里，不进卡片。
-  const afterMarker = text.slice(text.indexOf(marker[0]) + marker[0].length);
+  //
+  // 两条防误收的判据（讲解段落里常有「- 命中｜…」这种形状的行）：
+  // 1. 风格一致——首条逐点行定下风格（编号式 / 项目符号式），后续必须同风格；
+  // 2. 编号式还须序号连续（1,2,3…）——讲解里另起的编号列表会被判为不连续而终止。
+  // 空行本身不算终止（markdown 松散列表会在逐点行之间空行）。
+  const afterMarker = text.slice(marker.index! + marker[0].length);
   const points: QuizGradingPoint[] = [];
+  let style: 'numbered' | 'bullet' | null = null;
+  let expectedNumber: number | null = null;
   for (const line of afterMarker.split('\n')) {
-    const point = line.match(/^\s*\d+\.\s*(\S+?)｜(.*)$/);
-    if (!point) {
-      if (line.trim() === '' && points.length === 0) continue;
-      break;
+    if (line.trim() === '') continue;
+    const numbered = line.match(NUMBERED_POINT_RE);
+    const bullet = numbered ? null : line.match(BULLET_POINT_RE);
+    if (!numbered && !bullet) break;
+    if (style === null) style = numbered ? 'numbered' : 'bullet';
+    if (numbered) {
+      if (style !== 'numbered') break;
+      const number = Number(numbered[1]);
+      // 首行定基准（模型不必从 1 起编），其后须逐个递增——讲解里另起的
+      // 编号列表因此会被判为不连续而终止收集。
+      if (expectedNumber !== null && number !== expectedNumber) break;
+      expectedNumber = number + 1;
+    } else {
+      if (style !== 'bullet') break;
     }
-    const status = STATUS_WORDS.find(([word]) => point[1] === word);
+    const word = (numbered ? numbered[2] : bullet![1])!;
+    const detail = (numbered ? numbered[3] : bullet![2])!;
+    const status = STATUS_WORDS.find(([known]) => word === known);
     if (!status) break;
-    points.push({ status: status[1], text: point[2]!.trim() });
+    points.push({ status: status[1], text: detail.trim() });
   }
 
   return { questionIndex: Number(marker[1]), score, total, points };
