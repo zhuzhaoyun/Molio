@@ -42,6 +42,11 @@ describe('bundled quiz-generate skill', () => {
     // 批改协议：按物化消息首行【大题作答·第N题】确定性触发，不靠模型自觉。
     assert.ok(parsed.instructions.includes('大题作答'), 'grading protocol keys on the materialized message marker');
     assert.ok(parsed.instructions.includes('批改'), 'must document the grading protocol');
+    // 批改回复格式（1.4.0）：标记行 + 逐点行可被 web 确定性解析回写题卡。
+    assert.ok(parsed.instructions.includes('批改·第'), 'reply must carry the grading marker line');
+    assert.ok(parsed.instructions.includes('得分'), 'marker line must carry the score');
+    assert.ok(parsed.instructions.includes('命中'), 'point lines use the frozen status enum');
+    assert.ok(parsed.instructions.includes('题目指纹'), 'the fingerprint line is system bookkeeping — ignore it when grading');
     // 「主观题降级」（围栏外方案）已退役：客观/填空/subject 进同一个围栏。
     assert.ok(!parsed.instructions.includes('主观题降级'), 'the outside-fence fallback is retired');
     assert.ok(!parsed.instructions.includes('自评'), 'no more self-grading fallback copy');
@@ -53,6 +58,6 @@ describe('bundled quiz-generate skill', () => {
     assert.ok(parsed.instructions.includes('考点'), 'image inclusion is driven by the test point, not a subject ratio');
     assert.ok(parsed.instructions.includes('如图'), 'a mentioned figure must be embedded, and vice versa');
     // 版本随协议扩充递增（诊断用）。
-    assert.match(raw, /^version: 1\.3\.0$/m);
+    assert.match(raw, /^version: 1\.4\.0$/m);
   });
 });
