@@ -7,8 +7,8 @@ import { SessionWriteKindsProvider } from './SessionWriteKinds';
 import { findLastAssistant } from '../utils/workSteps';
 import { isNearBottom } from './chatScrollPin';
 import { useSelectMode, messageSelectionStore } from '../stores/messageSelectionStore';
-import { quizGradingStore } from '../stores/quizGradingStore';
-import { pairQuizGradings } from '../utils/quizAnswer';
+import { quizSubjectStore } from '../stores/quizSubjectStore';
+import { pairQuizGradings, pairSubjectAnswers } from '../utils/quizAnswer';
 import { SelectionConfirmBar } from './SelectionConfirmBar';
 import { RunStatusBar } from './RunStatusBar';
 import { ActivityTree } from './ActivityTree';
@@ -182,12 +182,16 @@ export function ChatSessionView({
     messageSelectionStore.pruneStale(present);
   }, [messages, pruneSelection]);
 
-  // 批改回写：按会话消息序配对「大题作答 ↔ 批改标记」，写入全局 store
-  // （QuizCard 按 conversationId + 题目指纹订阅）。纯消息序推导，历史刷新
-  // 后重算即可回写；无 quiz 会话的配对结果为空 Map，写入无害。
+  // 解答题状态：按会话消息序配对「大题作答 ↔ 批改标记」，并记录哪些解答题
+  // 已作答，写入全局 store（QuizCard 按 conversationId + 题目指纹订阅）。
+  // 纯消息序推导，历史刷新后重算即可回写；无 quiz 会话的结果为空，写入无害。
   useEffect(() => {
     if (!conversationId) return;
-    quizGradingStore.setConversation(conversationId, pairQuizGradings(messages));
+    quizSubjectStore.setConversation(
+      conversationId,
+      pairQuizGradings(messages),
+      pairSubjectAnswers(messages),
+    );
   }, [messages, conversationId]);
 
   // Find the last assistant message ID so only that card stays interactive

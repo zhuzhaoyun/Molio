@@ -2090,7 +2090,24 @@
 
 /* 大题批改回写：得分徽标（行头）+ 可折叠逐点评定。判定徽章三态走语义
    token（暗色主题由 tokens.css 的变量切换），依据文本走通用 markdown 渲染。 */
+
+/* 解答题状态徽标（交卷前）：与客观题的「正确/错误」徽标同一位置（行头
+   右侧），但用中性色——它只说「答了 / 批了」，不透露判定结果（判定随客观
+   题一起在交卷后揭晓）。 */
+.quiz-subject-status {
+  margin-left: auto;
+  flex-shrink: 0;
+  padding: 1px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background-color: var(--bg-subtle);
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
 .quiz-subject-score {
+  margin-left: auto;
   flex-shrink: 0;
   padding: 1px 8px;
   border: 1px solid var(--accent);

@@ -3,8 +3,8 @@ import { api } from '../api/client';
 import { useI18n } from '../i18n';
 import { useActiveVaultId } from '../stores/vaultStore';
 import { quizAnchorStore, useQuizAnswerAnchor } from '../stores/quizAnchorStore';
-import { useQuizGradings } from '../stores/quizGradingStore';
-import { backfillAnchorFingerprint, gradingMapKey } from '../utils/quizAnswer';
+import { useQuizSubjects } from '../stores/quizSubjectStore';
+import { anchorBelongsToQuestion, backfillAnchorFingerprint, gradingMapKey } from '../utils/quizAnswer';
 import { useWikiLinkClick } from '../hooks/useWikiLinkClick';
 import { CodeBlock } from './CodeBlock';
 import { renderMarkdown } from '../utils/markdown';
@@ -97,8 +97,9 @@ function QuizBody({
   const vaultId = useActiveVaultId();
   const handleWikiLinkClick = useWikiLinkClick();
   const quizAnchor = useQuizAnswerAnchor();
-  // 本会话的大题批改配对表（键 = 指纹:题号）。无批改时各解答题行维持裸行。
-  const gradings = useQuizGradings(conversationId);
+  // 本会话的解答题状态（键 = 指纹:题号）：已作答 + 批改结果。两者都从会话
+  // 消息序推导（作答发生在聊天输入框里，题卡本地无从得知）。
+  const subjectStates = useQuizSubjects(conversationId);
   const [openGradingFor, setOpenGradingFor] = useState<string | null>(null);
 
   // 题干/选项/解析里的 ![alt](库内相对路径) 改写成 daemon raw URL 才能真正加载
@@ -109,6 +110,8 @@ function QuizBody({
   );
 
   const [fingerprint, setFingerprint] = useState<string | null>(null);
+  // 卡片身份（内容派生的 quiz 指纹前 8 位）：答题锚的归属判定键。
+  const fingerprintKey = fingerprint?.slice(0, 8) ?? '';
   const [selections, setSelections] = useState<QuizSelections>({});
   const [submitted, setSubmitted] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -124,8 +127,9 @@ function QuizBody({
     () => new Map<string, QuizGrade>(grades.map((grade) => [grade.questionId, grade])),
     [grades],
   );
-  // 主观题不进本地判分批次：进度计数与提交区只覆盖可判分题。纯 subject
-  // 围栏没有可判分题 → 整个提交区不渲染。
+  // 主观题不进本地判分批次（本地判不了开放题），但**要进进度统计**：
+  // 统计口径 = 整张卷子的题数，否则「已作答 3/3」会漏掉解答题——用户看到
+  // 的是一张 4 题的卷子，却被告已完成 3/3。
   const gradableQuestions = useMemo(
     () => quiz.questions.filter((question) => !isSubjectQuestion(question)),
     [quiz],
@@ -133,6 +137,21 @@ function QuizBody({
   const answeredCount = gradableQuestions.filter(
     (question) => (selections[question.id]?.length ?? 0) > 0,
   ).length;
+  // 解答题已作答数：从会话消息序推导（作答发生在聊天输入框），按指纹隔离
+  // ——两张同有第 3 题的卡各自独立，互不串。
+  const subjectAnsweredCount = useMemo(() => {
+    if (!fingerprint || !subjectStates) return 0;
+    const key8 = fingerprint.slice(0, 8);
+    return quiz.questions.filter(
+      (question, index) =>
+        isSubjectQuestion(question)
+        && subjectStates.answered.has(gradingMapKey(key8, index + 1)),
+    ).length;
+  }, [quiz, fingerprint, subjectStates]);
+  const totalQuestionCount = quiz.questions.length;
+  // 有没有「交卷」这一步：有客观题 → 有「提交答案」按钮；纯主观题卡没有
+  // 客观题可交卷 → 没有这个动作（批改直接显示，否则这类卡永远揭晓不了）。
+  const hasSubmitAffordance = gradableQuestions.length > 0;
   const ready = isQuizComplete(quiz, selections);
   const storageKey =
     fingerprint && conversationId ? quizStorageKey(conversationId, fingerprint) : null;
@@ -318,7 +337,10 @@ function QuizBody({
 
   const toggleSubjectAnchor = useCallback(
     (question: QuizQuestion, index: number) => {
-      if (quizAnchor?.questionId === question.id) {
+      // 归属判定用「题号 + 卡片身份」（指纹），不能只用围栏内题号——两张卡
+      // 几乎必然撞 id（「q3」）。用 id 会把 B 卡的锚误判成「当前题」→ 点第二
+      // 张卡变成取消而不是换锚 → 作答静默失效（消息不带物化块）。
+      if (anchorBelongsToQuestion(quizAnchor?.anchor, question, fingerprintKey, index + 1)) {
         quizAnchorStore.clear();
         return;
       }
@@ -330,12 +352,12 @@ function QuizBody({
           points: question.answer,
           sources: question.sources.map((source) => source.path),
           // 物化 v2 的「题目指纹」行来源：批改回写题卡的关联键（前 8 位）。
-          fingerprintKey: fingerprint?.slice(0, 8) ?? '',
+          fingerprintKey: fingerprintKey,
         },
         question.id,
       );
     },
-    [quizAnchor, fingerprint, t],
+    [quizAnchor, fingerprintKey, t],
   );
 
   const handleSave = useCallback(async () => {
@@ -360,9 +382,23 @@ function QuizBody({
         const chosen = selections[question.id] ?? [];
         const grade = gradeMap.get(question.id);
         const isSubject = isSubjectQuestion(question);
-        const subjectGrading = isSubject && fingerprint
-          ? gradings?.get(gradingMapKey(fingerprint.slice(0, 8), index + 1)) ?? null
+        const subjectKey = fingerprintKey ? gradingMapKey(fingerprintKey, index + 1) : null;
+        const subjectGrading = isSubject && subjectKey
+          ? subjectStates?.gradings.get(subjectKey) ?? null
           : null;
+        const subjectAnswered = isSubject && subjectKey
+          ? subjectStates?.answered.has(subjectKey) ?? false
+          : false;
+        // 「作答」按钮的 .on 态：锚属于**这张卡的这道题**（题号 + 卡片身份），
+        // 不能只看围栏内题号——两张卡几乎必然撞 id。
+        const isAnchorOnThisQuestion = isSubject
+          && anchorBelongsToQuestion(quizAnchor?.anchor, question, fingerprintKey, index + 1);
+        // 揭晓门槛：批改结果与客观题判分**同批揭晓**——点「提交答案」前只显示
+        // 状态徽标（已作答/已批改），分数与逐点详情交卷后才出现。整张卷子一
+        // 次交卷、一次揭晓，与真实试卷一致。交卷后到达的批改照常显示。
+        // 纯主观题卡没有交卷动作（hasSubmitAffordance=false）→ 批改直接显示，
+        // 否则这类卡的批改永远不会出现。
+        const revealSubjectGrading = submitted || !hasSubmitAffordance;
         return (
           <div className="quiz-question" data-testid="quiz-question" data-question-id={question.id} key={question.id}>
             <div className="quiz-question-head">
@@ -377,8 +413,20 @@ function QuizBody({
                   {grade.correct ? t('quiz.correct') : t('quiz.wrong')}
                 </span>
               )}
+              {/* 解答题状态徽标：与客观题的「正确/错误」徽标同一位置、同一语义
+               * ——交卷前只说「已作答/已批改」，交卷后才给分数。批改还没到达
+               * 时也显示（否则纯解答题卡在等待期里这一行什么都不显示）。 */}
+              {isSubject && subjectAnswered && !(subjectGrading && revealSubjectGrading) && (
+                <span
+                  className="quiz-subject-status"
+                  data-testid="quiz-subject-status"
+                  data-state={subjectGrading ? 'graded' : 'answered'}
+                >
+                  {subjectGrading ? t('quiz.subjectGraded') : t('quiz.subjectAnswered')}
+                </span>
+              )}
               {/* 大题批改回写：得分徽标（数字通用，判定详情折叠在行内）。 */}
-              {isSubject && subjectGrading && (
+              {isSubject && subjectGrading && revealSubjectGrading && (
                 <span
                   className="quiz-subject-score"
                   data-testid="quiz-subject-score"
@@ -403,17 +451,17 @@ function QuizBody({
               <div className="quiz-subject-actions">
                 <button
                   type="button"
-                  className={`quiz-btn quiz-answer-btn${quizAnchor?.questionId === question.id ? ' on' : ''}`}
+                  className={`quiz-btn quiz-answer-btn${isAnchorOnThisQuestion ? ' on' : ''}`}
                   data-testid="quiz-answer-btn"
                   data-question-id={question.id}
-                  aria-pressed={quizAnchor?.questionId === question.id}
+                  aria-pressed={isAnchorOnThisQuestion}
                   onClick={() => toggleSubjectAnchor(question, index)}
                 >
                   {t('quiz.answerButton')}
                 </button>
               </div>
             )}
-            {isSubject && subjectGrading && (
+            {isSubject && subjectGrading && revealSubjectGrading && (
               <div className="quiz-subject-points" data-testid="quiz-subject-points">
                 <button
                   type="button"
@@ -585,27 +633,38 @@ function QuizBody({
       )}
 
       <div className="quiz-foot">
-        {gradableQuestions.length > 0 && (
+        {hasSubmitAffordance && (
           !submitted ? (
-            <>
-              <button
-                type="button"
-                className="quiz-btn quiz-btn-primary"
-                data-testid="quiz-submit"
-                disabled={!ready}
-                onClick={handleSubmit}
-              >
-                {t('quiz.submit')}
-              </button>
-              <span className="quiz-progress" data-testid="quiz-progress">
-                {t('quiz.answeredProgress', { done: answeredCount, total: gradableQuestions.length })}
-              </span>
-            </>
+            <button
+              type="button"
+              className="quiz-btn quiz-btn-primary"
+              data-testid="quiz-submit"
+              disabled={!ready}
+              onClick={handleSubmit}
+            >
+              {t('quiz.submit')}
+            </button>
           ) : (
-            <button type="button" className="quiz-btn" data-testid="quiz-redo" onClick={handleRedo}>
+            <button
+              type="button"
+              className="quiz-btn"
+              data-testid="quiz-redo"
+              title={t('quiz.redoTitle')}
+              onClick={handleRedo}
+            >
               {t('quiz.redo')}
             </button>
           )
+        )}
+        {/* 进度始终显示（口径 = 整张卷子：解答题答了就算已作答）。交卷后
+            按钮换成「重做」，但计数留着——交卷那一刻正是用户想看「答了几题」。 */}
+        {totalQuestionCount > 0 && (
+          <span className="quiz-progress" data-testid="quiz-progress">
+            {t('quiz.answeredProgress', {
+              done: answeredCount + subjectAnsweredCount,
+              total: totalQuestionCount,
+            })}
+          </span>
         )}
 
         <button

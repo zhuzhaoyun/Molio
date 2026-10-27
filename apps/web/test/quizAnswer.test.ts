@@ -16,9 +16,12 @@ const {
   extractSubjectAnswerMeta,
   parseGradingReply,
   pairQuizGradings,
+  pairSubjectAnswers,
   gradingMapKey,
   backfillAnchorFingerprint,
+  anchorBelongsToQuestion,
 } = await import('../src/utils/quizAnswer.ts');
+type QuizAnswerAnchor = import('../src/utils/quizAnswer.ts').QuizAnswerAnchor;
 
 const ANCHOR = {
   questionIndex: 3,
@@ -150,8 +153,8 @@ describe('parseGradingReply', () => {
     const parsed = parseGradingReply(
       [
         '【批改·第4题】得分 1.5/5',
-        '1. 未中｜没有由 Sₙ 求 aₙ 这条路',
-        '2. 部分｜必要性证到了，充分性缺失',
+        '1. 未中｜没有按题目要求的方向逐段论证',
+        '2. 部分｜方向证到了，关键的构造步骤缺失',
         '3. 未中｜后面没再往下写',
       ].join('\n'),
     );
@@ -207,17 +210,17 @@ describe('parseGradingReply', () => {
     assert.equal(parsed?.points.length, 1);
   });
 
-  // 真机原样：完整批改回复（标记行 + 5 条逐点行 + 空行 + 分隔线 + 讲解段落）。
+  // 真机同构：完整批改回复（标记行 + 5 条逐点行 + 空行 + 分隔线 + 讲解段落）。
   // 讲解段落里有大量「- 」「｜」形状的句子，绝不能被收成评分点。
-  it('parses the real grading reply and stops at the prose section', () => {
-    const REAL = [
-      '【批改·第4题】得分 1.5/5',
+  it('parses a full grading reply and stops at the prose section', () => {
+    const REPLY = [
+      '【批改·第2题】得分 1.5/4',
       '',
-      '1. 未中｜全篇没有用「由 Sₙ 求 aₙ」这条路，首项 a₁ 没有由 a₁ = S₁ = p + q + r 单独算出。',
-      '2. 未中｜没有出现 aₙ = Sₙ − Sₙ₋₁ = p(2n − 1) + q = 2pn + (q − p)（n ≥ 2）这个差分步骤。',
-      '3. 部分｜必要性方向确实证到了，且结论 r = 0 正确。',
-      '4. 未中｜最后一行「必要性证毕」之后没有再往下写，充分性方向完全缺失。',
-      '5. 部分｜结论形态「r = 0 即无常数项」抓对了。',
+      '1. 未中｜全篇没有写出本节用到的判定定理的名字，条件里的两个已知量也没有逐一核对。',
+      '2. 未中｜没有出现把通项代回递推式再移项化简的步骤，作答是从结论反推的。',
+      '3. 部分｜单调性的方向确实论证到了，但缺少端点处取值的说明。',
+      '4. 未中｜最后一行「证毕」之前没有回应题目问的第二个小问。',
+      '5. 部分｜结论的写法抓对了，但两个系数的对应关系没有写全。',
       '',
       '---',
       '',
@@ -225,12 +228,13 @@ describe('parseGradingReply', () => {
       '',
       '**第一，你的路线只走了一半。**',
       '',
-      '- 先处理首项：a₁ = S₁ = p + q（因为 r = 0），这一步必须单独做，S₀ 没有定义。',
-      '- 对 n ≥ 2：aₙ = Sₙ − Sₙ₋₁ = p(2n − 1) + q = 2pn + (q − p)。',
+      '- 先处理定义域：这一步必须单独做，否则后面的化简没有前提。',
+      '- 对其余情形：把两式相减得到差分，再逐项验证。',
     ].join('\n');
-    const parsed = parseGradingReply(REAL);
+    const parsed = parseGradingReply(REPLY);
+    assert.equal(parsed?.questionIndex, 2);
     assert.equal(parsed?.score, 1.5);
-    assert.equal(parsed?.total, 5);
+    assert.equal(parsed?.total, 4);
     // 讲解段落里的 bullet 不得混进评分点。
     assert.equal(parsed?.points.length, 5);
     assert.deepEqual(
@@ -308,6 +312,91 @@ describe('pairQuizGradings', () => {
       { role: 'assistant', content: '普通回复' },
     ]);
     assert.equal(map.size, 0);
+  });
+});
+
+describe('pairSubjectAnswers', () => {
+  // 解答题的「已作答」态不在题卡本地（作答发生在聊天输入框里），只能从
+  // 消息序推导——跟批改回写同一条路。键与批改同构（指纹:题号），因此
+  // 两张同有第 3 题的卡不会互相污染。
+  const answerFor = (index: number, key: string) =>
+    buildSubjectAnswerMessage(
+      { ...ANCHOR, questionIndex: index, fingerprintKey: key },
+      '我的作答',
+    );
+
+  it('records the answered subject questions keyed by fingerprint and index', () => {
+    const map = pairSubjectAnswers([
+      { role: 'user', content: answerFor(4, 'aaaa1111') },
+      { role: 'user', content: answerFor(2, 'aaaa1111') },
+    ]);
+    assert.deepEqual([...map.keys()].sort(), ['aaaa1111:2', 'aaaa1111:4'].sort());
+  });
+
+  it('does not leak the answered state across cards sharing the same index', () => {
+    const map = pairSubjectAnswers([
+      { role: 'user', content: answerFor(3, 'aaaa1111') },
+      { role: 'user', content: answerFor(3, 'bbbb2222') },
+    ]);
+    assert.equal(map.has('aaaa1111:3'), true);
+    assert.equal(map.has('bbbb2222:3'), true);
+  });
+
+  it('ignores ordinary messages and unmaterialized answers', () => {
+    const map = pairSubjectAnswers([
+      { role: 'user', content: '普通消息' },
+      { role: 'assistant', content: '普通回复' },
+      // v1 物化消息（无指纹行）→ 无法归属到具体卡，不得算作已作答。
+      { role: 'user', content: '【大题作答·第3题】\n题干：x\n评分点：\n1. y' },
+    ]);
+    assert.equal(map.size, 0);
+  });
+});
+
+describe('anchorBelongsToQuestion', () => {
+  // 「作答」按钮的 .on 态与「再点当前题 = 取消」判定。题目 id 只在围栏内
+  // 唯一——两张卡几乎必然撞 id（「q3」）。仅凭 id 会让 B 卡的按钮把 A 卡的锚
+  // 误判成「当前题」→ 点第二张卡变成取消而不是换锚 → 作答静默失效。
+  const QUESTION_A = { stem: '证明甲', answer: ['要点甲', '要点甲2'] };
+  const QUESTION_B = { stem: '证明乙', answer: ['要点乙'] };
+  const anchor = (over: Partial<QuizAnswerAnchor> = {}): QuizAnswerAnchor => ({
+    questionIndex: 3,
+    typeLabel: '解答题',
+    stem: '证明甲',
+    points: ['要点甲', '要点甲2'],
+    sources: ['p'],
+    fingerprintKey: 'aaaa1111',
+    ...over,
+  });
+
+  it('owns the anchor when the fingerprint and the question index match', () => {
+    assert.equal(anchorBelongsToQuestion(anchor(), QUESTION_A, 'aaaa1111', 3), true);
+  });
+
+  it('does not own an anchor from another card (same question id, different card)', () => {
+    // 同 id 不同卡：指纹不同 → 不是本题的锚。
+    assert.equal(anchorBelongsToQuestion(anchor(), QUESTION_B, 'bbbb2222', 3), false);
+  });
+
+  it('does not own an anchor for a different question index in the same card', () => {
+    assert.equal(anchorBelongsToQuestion(anchor(), QUESTION_A, 'aaaa1111', 4), false);
+  });
+
+  it('falls back to content comparison when the fingerprint is not ready yet', () => {
+    // 指纹未算出时（异步）：退到内容判定（题干 + 评分点逐项一致）。
+    const pending = anchor({ fingerprintKey: '' });
+    assert.equal(anchorBelongsToQuestion(pending, QUESTION_A, '', 3), true);
+    // 内容不同 → 不是本题的锚（指纹未就绪时也不能串卡）。
+    assert.equal(anchorBelongsToQuestion(pending, QUESTION_B, '', 3), false);
+    // 评分点不同（题干相同）→ 仍不是本题的锚。
+    assert.equal(
+      anchorBelongsToQuestion(pending, { stem: '证明甲', answer: ['别的要点'] }, '', 3),
+      false,
+    );
+  });
+
+  it('returns false for a missing anchor', () => {
+    assert.equal(anchorBelongsToQuestion(null, QUESTION_A, 'aaaa1111', 3), false);
   });
 });
 

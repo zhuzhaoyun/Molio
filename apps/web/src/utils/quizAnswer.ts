@@ -34,6 +34,42 @@ export function subjectAnchorLabel(
   return `第${anchor.questionIndex}题 · ${anchor.typeLabel}`;
 }
 
+/**
+ * 锚是否属于「某张卡的某道题」（用于「作答」按钮的 .on 态与「再点当前题 =
+ * 取消」判定）。
+ *
+ * 题目 id 只在围栏内唯一——「再来一套」的两张卡几乎必然撞 id（都是 q3）。
+ * 仅凭 id 判定会让 A 卡的按钮把 B 卡的锚误判成「当前题」：点第二张卡变成
+ * **取消**而不是换锚 → chip 无故消失 → 用户若没察觉直接发送，消息不带
+ * 物化块 → 模型不批改、进度不涨，整条作答链路静默失效。
+ *
+ * 归属按「题号 + 卡片身份」认定：
+ * - 题号：卡内唯一（1 起，与展示序号一致）；
+ * - 卡片身份：指纹（内容派生、卡级）优先；指纹未就绪时退回内容比对
+ *   （题干 + 评分点逐项一致）——与 backfillAnchorFingerprint 的归属规则同源。
+ *
+ * 已知边界：内容完全相同的两张卡指纹也相同 → 归属判定不可分（两卡互认
+ * 对方的锚）。那种卡的物化消息本就等价，属可接受边界。
+ */
+export function anchorBelongsToQuestion(
+  anchor: QuizAnswerAnchor | null | undefined,
+  question: { stem: string; answer: string[] },
+  cardFingerprintKey: string,
+  questionIndex: number,
+): boolean {
+  if (!anchor) return false;
+  if (anchor.questionIndex !== questionIndex) return false;
+  if (anchor.fingerprintKey && cardFingerprintKey) {
+    return anchor.fingerprintKey === cardFingerprintKey;
+  }
+  // 指纹未就绪（异步算出前）：退到内容判定（题干 + 评分点逐项一致）。
+  return (
+    anchor.stem === question.stem
+    && anchor.points.length === question.answer.length
+    && anchor.points.every((point, i) => point === question.answer[i])
+  );
+}
+
 export function buildSubjectAnswerMessage(anchor: QuizAnswerAnchor, userText: string): string {
   const lines = [
     `【大题作答·第${anchor.questionIndex}题】`,
@@ -65,6 +101,10 @@ export function backfillAnchorFingerprint(
   if (index < 0) return null;
   const question = quiz.questions[index]!;
   if (question.type !== 'subject') return null;
+  // 题号也必须一致：撞 id 的两张卡里，题号是卡内定位的第二道闸
+  // （id 只在围栏内唯一，题号 + 内容双重确认才认领这个锚）。题号口径与
+  // 题卡渲染一致（questions 数组下标 + 1）。
+  if (index + 1 !== current.anchor.questionIndex) return null;
   if (question.stem !== current.anchor.stem) return null;
   if (
     question.answer.length !== current.anchor.points.length
@@ -198,4 +238,26 @@ export function pairQuizGradings(
 /** 批改在 store/map 里的组合键：卡片按（自身指纹, 题号）取回。 */
 export function gradingMapKey(fingerprintKey: string, questionIndex: number): string {
   return `${fingerprintKey}:${questionIndex}`;
+}
+
+/**
+ * 已作答的解答题（键 = `指纹:题号`）。
+ *
+ * 解答题的作答发生在聊天输入框里，不在题卡的本地 state——所以「已作答」
+ * 只能像批改回写那样从消息序推导：扫到带【大题作答·第N题】标记且带
+ * 「题目指纹」行的用户消息，即认为该卡该题已作答。
+ *
+ * 键与批改同构（指纹:题号）：两张同有第 3 题的卡各自独立，互不串。
+ * 无指纹行的物化消息（v1 形态）无法归属到具体卡 → 不计入。
+ */
+export function pairSubjectAnswers(
+  messages: ReadonlyArray<{ role: string; content: string }>,
+): Set<string> {
+  const answered = new Set<string>();
+  for (const message of messages) {
+    if (message.role !== 'user') continue;
+    const meta = extractSubjectAnswerMeta(message.content);
+    if (meta) answered.add(gradingMapKey(meta.key, meta.questionIndex));
+  }
+  return answered;
 }
