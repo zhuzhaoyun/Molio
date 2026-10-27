@@ -4,7 +4,7 @@ import { useI18n } from '../i18n';
 import { useActiveVaultId } from '../stores/vaultStore';
 import { quizAnchorStore, useQuizAnswerAnchor } from '../stores/quizAnchorStore';
 import { useQuizGradings } from '../stores/quizGradingStore';
-import { gradingMapKey } from '../utils/quizAnswer';
+import { backfillAnchorFingerprint, gradingMapKey } from '../utils/quizAnswer';
 import { useWikiLinkClick } from '../hooks/useWikiLinkClick';
 import { CodeBlock } from './CodeBlock';
 import { renderMarkdown } from '../utils/markdown';
@@ -308,27 +308,13 @@ function QuizBody({
   // 「作答」只负责挂/摘锚：题干与隐藏评分点在发送时物化进消息（见
   // ChatComposer + utils/quizAnswer.ts），题卡本身不收主观题答案。
   // 指纹是异步算出的：点击早于指纹就绪时，锚上 key 为空串——指纹一到
-  // 就地补齐（只刷新 key，不改锚的其他字段；属于别的卡的锚不动）。
+  // 就地补齐。归属认定与防环规则在 backfillAnchorFingerprint（内容所有权
+  // + 只碰空 key）：不满足条件时返回 null，不做任何写入。
   useEffect(() => {
     if (!fingerprint || !quizAnchor) return;
-    const key = fingerprint.slice(0, 8);
-    if (quizAnchor.anchor.fingerprintKey === key) return;
-    const index = quiz.questions.findIndex((q) => q.id === quizAnchor.questionId);
-    if (index < 0) return;
-    const question = quiz.questions[index]!;
-    if (!isSubjectQuestion(question)) return;
-    quizAnchorStore.set(
-      {
-        questionIndex: index + 1,
-        typeLabel: t('quiz.type.subject'),
-        stem: question.stem,
-        points: question.answer,
-        sources: question.sources.map((source) => source.path),
-        fingerprintKey: key,
-      },
-      quizAnchor.questionId,
-    );
-  }, [fingerprint, quizAnchor, quiz, t]);
+    const healed = backfillAnchorFingerprint(quiz, fingerprint, quizAnchor);
+    if (healed) quizAnchorStore.set(healed, quizAnchor.questionId);
+  }, [fingerprint, quizAnchor, quiz]);
 
   const toggleSubjectAnchor = useCallback(
     (question: QuizQuestion, index: number) => {
@@ -349,7 +335,7 @@ function QuizBody({
         question.id,
       );
     },
-    [quizAnchor, t],
+    [quizAnchor, fingerprint, t],
   );
 
   const handleSave = useCallback(async () => {

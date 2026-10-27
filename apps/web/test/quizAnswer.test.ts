@@ -17,6 +17,7 @@ const {
   parseGradingReply,
   pairQuizGradings,
   gradingMapKey,
+  backfillAnchorFingerprint,
 } = await import('../src/utils/quizAnswer.ts');
 
 const ANCHOR = {
@@ -197,5 +198,63 @@ describe('pairQuizGradings', () => {
       { role: 'assistant', content: '普通回复' },
     ]);
     assert.equal(map.size, 0);
+  });
+});
+
+describe('backfillAnchorFingerprint', () => {
+  // 题目 id 只在围栏内唯一（SKILL.md 示例就是 q1/q2/q3）：两张同存的卡
+  // 几乎必然撞 id。补齐逻辑必须用内容（题干+评分点）认定归属，且只碰
+  // 「key 为空」的锚——否则卡 A 的 effect 会把卡 B 挂的锚改写成自己的题。
+  const quizA = {
+    version: 1 as const,
+    title: '第一套',
+    questions: [
+      { id: 'q1', type: 'single' as const, stem: '选择甲', options: [{ key: 'A', text: 'a' }, { key: 'B', text: 'b' }], answer: ['A'], explanation: 'x', sources: [{ path: 'p' }] },
+      { id: 'q3', type: 'subject' as const, stem: '证明甲', answer: ['要点甲'], explanation: 'x', sources: [{ path: 'p' }] },
+    ],
+  };
+  const quizB = {
+    version: 1 as const,
+    title: '第二套',
+    questions: [
+      { id: 'q2', type: 'single' as const, stem: '选择乙', options: [{ key: 'A', text: 'a' }, { key: 'B', text: 'b' }], answer: ['A'], explanation: 'x', sources: [{ path: 'p' }] },
+      { id: 'q3', type: 'subject' as const, stem: '证明乙', answer: ['要点乙'], explanation: 'x', sources: [{ path: 'p' }] },
+    ],
+  };
+  const pendingAnchor = (stem: string, points: string[]) => ({
+    anchor: { questionIndex: 2, typeLabel: '解答题', stem, points, sources: ['p'], fingerprintKey: '' },
+    questionId: 'q3',
+  });
+
+  it('fills the key for a pending anchor this quiz owns (id + stem + points match)', () => {
+    const healed = backfillAnchorFingerprint(quizA, '11111111abc', pendingAnchor('证明甲', ['要点甲']));
+    assert.equal(healed?.fingerprintKey, '11111111');
+    // 其余字段原样保留。
+    assert.equal(healed?.stem, '证明甲');
+    assert.equal(healed?.questionIndex, 2);
+  });
+
+  it('never touches an anchor whose key is already set', () => {
+    const anchor = {
+      anchor: { questionIndex: 2, typeLabel: '解答题', stem: '证明乙', points: ['要点乙'], sources: ['p'], fingerprintKey: '99999999' },
+      questionId: 'q3',
+    };
+    assert.equal(backfillAnchorFingerprint(quizA, '11111111abc', anchor), null);
+  });
+
+  it('does not hijack a sibling card pending anchor that merely shares the id', () => {
+    // 卡 B 挂的锚（stem=证明乙）：卡 A 的 effect 不得因 id 相同就改写成甲。
+    const bPending = pendingAnchor('证明乙', ['要点乙']);
+    assert.equal(backfillAnchorFingerprint(quizA, '11111111abc', bPending), null);
+  });
+
+  it('returns null when the anchor belongs to no question in this quiz', () => {
+    const stranger = { ...pendingAnchor('证明甲', ['要点甲']), questionId: 'q99' };
+    assert.equal(backfillAnchorFingerprint(quizA, '11111111abc', stranger), null);
+  });
+
+  it('returns null when the id and stem match but the points differ (content guard)', () => {
+    const forged = pendingAnchor('证明甲', ['伪造要点']);
+    assert.equal(backfillAnchorFingerprint(quizA, '11111111abc', forged), null);
   });
 });

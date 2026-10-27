@@ -12,6 +12,7 @@
  * 回写题卡的关联键，对模型惰性（skill 注明批改时忽略）。触发标记行字节
  * 不变；指纹缺失时省略该行（退回 v1 形态，仅失去回写配对能力）。
  */
+import type { Quiz } from './quiz';
 
 export interface QuizAnswerAnchor {
   /** 围栏内题号（1 起），与题卡展示序号一致。 */
@@ -43,6 +44,35 @@ export function buildSubjectAnswerMessage(anchor: QuizAnswerAnchor, userText: st
   ];
   if (anchor.fingerprintKey) lines.push(`题目指纹：${anchor.fingerprintKey}`);
   return `${lines.join('\n')}\n\n${userText}`;
+}
+
+/**
+ * 指纹晚于点击就绪时，把挂着的锚补上 key。归属认定必须用内容（题干 +
+ * 评分点逐项一致）而非题目 id——id 只在围栏内唯一，「再来一套」的两张卡
+ * 几乎必然撞 id，仅凭 id 会让 A 卡的补齐 effect 覆写 B 卡挂的锚（互写
+ * 成环）。且只碰 key 为空的锚：非空 key 恒为正确值（挂锚时的回调或本卡
+ * 的补齐写入），绝不动。不属于本卡的锚返回 null。
+ */
+export function backfillAnchorFingerprint(
+  quiz: import('./quiz').Quiz,
+  fingerprint: string,
+  current: { anchor: QuizAnswerAnchor; questionId: string },
+): QuizAnswerAnchor | null {
+  const key = fingerprint.slice(0, 8);
+  if (current.anchor.fingerprintKey === key) return null;
+  if (current.anchor.fingerprintKey !== '') return null;
+  const index = quiz.questions.findIndex((q) => q.id === current.questionId);
+  if (index < 0) return null;
+  const question = quiz.questions[index]!;
+  if (question.type !== 'subject') return null;
+  if (question.stem !== current.anchor.stem) return null;
+  if (
+    question.answer.length !== current.anchor.points.length
+    || question.answer.some((point, i) => point !== current.anchor.points[i])
+  ) {
+    return null;
+  }
+  return { ...current.anchor, fingerprintKey: key };
 }
 
 /** 从用户物化消息里取 题号 + 指纹（v1 消息无指纹行 → null）。 */

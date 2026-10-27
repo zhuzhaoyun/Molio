@@ -18,14 +18,40 @@ function emit() {
   for (const l of listeners) l();
 }
 
+function sameGradings(a: Map<string, QuizGrading>, b: Map<string, QuizGrading>): boolean {
+  if (a.size !== b.size) return false;
+  for (const [key, grading] of a) {
+    const other = b.get(key);
+    if (!other) return false;
+    if (
+      grading.questionIndex !== other.questionIndex
+      || grading.score !== other.score
+      || grading.total !== other.total
+      || grading.points.length !== other.points.length
+    ) {
+      return false;
+    }
+    for (let i = 0; i < grading.points.length; i++) {
+      const p = grading.points[i]!;
+      const q = other.points[i]!;
+      if (p.status !== q.status || p.text !== q.text) return false;
+    }
+  }
+  return true;
+}
+
 export const quizGradingStore = {
   subscribe(cb: Listener) {
     listeners.add(cb);
     return () => { listeners.delete(cb); };
   },
 
-  /** ChatSessionView 的 effect 在 messages 变化时整体重算写入。 */
+  /** ChatSessionView 的 effect 在 messages 变化（含流式每个 delta）时整体
+   *  重算写入。内容未变时短路：不换引用、不通知——否则会话里每张题卡
+   *  每个 delta 都要多渲染一次。 */
   setConversation(conversationId: string, gradings: Map<string, QuizGrading>) {
+    const existing = byConversation.get(conversationId);
+    if (existing && sameGradings(existing, gradings)) return;
     byConversation.set(conversationId, gradings);
     emit();
   },
