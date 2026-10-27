@@ -447,7 +447,7 @@ export function renderProductPage(m: MarketListing, related: MarketListing[]): s
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="icon" type="image/png" href="/images/favicon-32.png">
 <link rel="apple-touch-icon" href="/images/favicon-180.png">
-<link rel="stylesheet" href="/styles.css?v=20261027a">
+<link rel="stylesheet" href="/styles.css?v=20261027b">
 
 <!-- Open Graph -->
 <meta property="og:title" content="${escapeHtml(title)}">
@@ -548,7 +548,7 @@ export function renderNotFoundPage(): string {
 <title>资源不存在 — Molio 资源</title>
 <meta name="robots" content="noindex">
 <link rel="icon" type="image/png" href="/images/favicon-32.png">
-<link rel="stylesheet" href="/styles.css?v=20261027a">
+<link rel="stylesheet" href="/styles.css?v=20261027b">
 </head>
 <body>
 ${NAV}
@@ -684,7 +684,7 @@ export function renderListingPage(listings: MarketListing[]): string {
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="icon" type="image/png" href="/images/favicon-32.png">
 <link rel="apple-touch-icon" href="/images/favicon-180.png">
-<link rel="stylesheet" href="/styles.css?v=20261027a">
+<link rel="stylesheet" href="/styles.css?v=20261027b">
 
 <!-- Open Graph -->
 <meta property="og:title" content="${escapeHtml(title)}">
@@ -806,13 +806,22 @@ ${ANALYTICS}
 
 // ── 动态 sitemap ──
 
-/** 商品 sitemap：实时全量在售商品；lastmod 取 publishedAt（上架日） */
+/**
+ * 商品 sitemap：实时全量在售商品。
+ *
+ * lastmod 取「最近更新时间」而不是上架日 —— 老页面改内容（补结构化信息、改标题/简介）时，
+ * 只有 lastmod 变了爬虫才认为这个 URL 值得重抓；只取 publishedAt 会让改版对爬虫完全不可见。
+ * 老数据没有 updatedAt 就回落 publishedAt，两者都没有则省略 lastmod。
+ */
 export function renderProductsSitemap(listings: MarketListing[]): string {
-  const urls = listings.map((m) => `  <url>
+  const urls = listings.map((m) => {
+    const lastmod = m.updatedAt ?? m.publishedAt;
+    return `  <url>
     <loc>${productUrl(m.id)}</loc>
-    ${m.publishedAt ? `<lastmod>${formatDate(m.publishedAt)}</lastmod>` : ''}
+    ${lastmod ? `<lastmod>${formatDate(lastmod)}</lastmod>` : ''}
     <changefreq>weekly</changefreq>
-  </url>`).join('\n');
+  </url>`;
+  }).join('\n');
   return `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
 ${urls}

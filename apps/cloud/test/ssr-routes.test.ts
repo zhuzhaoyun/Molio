@@ -164,6 +164,19 @@ test('动态 sitemap：全量在售商品 + lastmod，非法/下架条目不出�
   assert.match(xml, /<lastmod>\d{4}-\d{2}-\d{2}<\/lastmod>/);
 });
 
+test('动态 sitemap：lastmod 取最近更新时间，内容改版才看得见', async () => {
+  const { app, marketStore } = await bootSsrApp();
+  // 2025 年上架、2026 年补内容：lastmod 必须是 2026。
+  // 若回落 publishedAt，老页面改版对爬虫就是隐形的（2026-10-27 商品页结构化内容上线踩过）。
+  await marketStore.insertListing(listing({
+    publishedAt: Date.parse('2025-01-02T12:00:00Z'),
+    updatedAt: Date.parse('2026-03-05T12:00:00Z'),
+  }));
+  const xml = await (await app.request('/sitemap-products.xml')).text();
+  assert.match(xml, /<lastmod>2026-03-0[56]<\/lastmod>/);
+  assert.ok(!xml.includes('2025-01-02'), 'lastmod 不应回落到上架日');
+});
+
 test('资源列表页 SSR：200 + SEO 要素 + 服务端商品卡片 + ItemList JSON-LD', async () => {
   const { app, marketStore } = await bootSsrApp();
   await marketStore.insertListing(listing({})); // 付费 ¥5.9
