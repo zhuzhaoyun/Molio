@@ -70,6 +70,38 @@ describe('TreeCache', () => {
     assert.equal(builds, 2, '被失效打断过的构建结果不许留在缓存里');
   });
 
+  it('失效之后到达的调用不复用写前的在飞构建（写后刷新必须看到新内容）', async () => {
+    const cache = new TreeCache();
+    const deferred = <T>() => {
+      let resolve!: (v: T) => void;
+      const promise = new Promise<T>((r) => (resolve = r));
+      return { promise, resolve };
+    };
+    const first = deferred<TreeNode[]>();
+    const second = deferred<TreeNode[]>();
+    let builds = 0;
+    const build = async (): Promise<TreeNode[]> => (++builds === 1 ? first.promise : second.promise);
+
+    const stale = cache.getOrBuild('v1', build); // 写前的刷新，扫描还在飞
+    cache.invalidate('v1'); // 写成功 → 就地失效
+    const fresh = cache.getOrBuild('v1', build); // 写后的刷新
+    assert.equal(builds, 2, '写后的调用必须另起构建，而不是 join 写前快照');
+
+    // 旧构建先落定（新构建还在飞）：不得删掉新构建的 in-flight 记录。
+    first.resolve(node('stale.md'));
+    assert.equal((await stale)[0]!.name, 'stale.md', '旧调用仍拿到自己的点内快照');
+    const joiner = cache.getOrBuild('v1', build);
+    assert.equal(builds, 2, '旧构建收尾不能误删新构建的 in-flight 记录');
+
+    second.resolve(node('fresh.md'));
+    assert.equal((await fresh)[0]!.name, 'fresh.md');
+    assert.equal((await joiner)[0]!.name, 'fresh.md', '后来者应 join 新的在飞构建');
+
+    const cached = await cache.getOrBuild('v1', build);
+    assert.equal(cached[0]!.name, 'fresh.md', '旧快照不许覆盖缓存里的新树');
+    assert.equal(builds, 2);
+  });
+
   it('invalidate 后同一 vault 重新构建（tree-changed / API 写的失效路径）', async () => {
     const cache = new TreeCache();
     let builds = 0;

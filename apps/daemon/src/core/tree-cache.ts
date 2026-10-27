@@ -37,10 +37,13 @@ const DEFAULT_TTL_MS = 2 * 60 * 1000;
 
 export class TreeCache {
   private entries = new Map<string, { tree: TreeNode[]; builtAt: number }>();
-  /** 构建中的 vault → 共享 Promise（single-flight）。 */
-  private inflight = new Map<string, Promise<TreeNode[]>>();
-  /** 最近一次失效的时间戳——用于识别「构建期间发生的失效」。 */
-  private invalidatedAt = new Map<string, number>();
+  /** 构建中的 vault → 共享 Promise + 构建开始时的失效代次（single-flight）。 */
+  private inflight = new Map<string, { promise: Promise<TreeNode[]>; generation: number }>();
+  /**
+   * 每个 vault 的失效代次（单调递增）。用计数而不是时间戳：同一毫秒内的
+   * invalidate 与构建开始无法按时间排序，会让「写前快照」被误当作写后。
+   */
+  private generation = new Map<string, number>();
 
   constructor(
     private readonly maxEntries: number = DEFAULT_MAX_ENTRIES,
@@ -64,21 +67,29 @@ export class TreeCache {
       return hit.tree;
     }
 
+    // 只有「同代次」的在飞构建才能 join。失效前开始的构建返回的是写前快照：
+    // API 写成功后紧跟的刷新若 join 它，刚建的文件就看不见（回归）。
+    // 代价：跨失效的窗口里同一 vault 可能短暂并行两次扫描（旧构建的等待者拿到
+    // 点内快照后即结束）。scanTree 是同步的，这个窗口通常只有毫秒级。
+    const generation = this.generation.get(vaultId) ?? 0;
     const pending = this.inflight.get(vaultId);
-    if (pending) return pending;
+    if (pending && pending.generation === generation) {
+      return pending.promise;
+    }
 
-    const startedAt = this.now();
-    const building = build()
+    // 占位 promise，先建 entry 以便 then/catch 里用身份判断「在飞的还是不是我」：
+    // 失效后可能另起一次构建，旧的落定绝不能删掉新构建的记录。
+    const entry: { promise: Promise<TreeNode[]>; generation: number } = {
+      generation,
+      promise: Promise.resolve([]),
+    };
+    entry.promise = build()
       .then((tree) => {
-        this.inflight.delete(vaultId);
+        if (this.inflight.get(vaultId) === entry) this.inflight.delete(vaultId);
         // 构建期间发生过失效（tree-changed / API 写）→ 这份树是开始扫描时的
         // 快照，失效要的正是它别被记住。照常返回给本次调用（点内快照仍有效），
         // 但不入缓存——下一次请求重新构建。
-        if ((this.invalidatedAt.get(vaultId) ?? 0) > startedAt) {
-          this.invalidatedAt.delete(vaultId);
-          return tree;
-        }
-        this.invalidatedAt.delete(vaultId);
+        if ((this.generation.get(vaultId) ?? 0) !== generation) return tree;
         this.entries.delete(vaultId); // 过期条目先摘掉，保证 set 后它在末尾
         this.entries.set(vaultId, { tree, builtAt: this.now() });
         while (this.entries.size > this.maxEntries) {
@@ -89,16 +100,16 @@ export class TreeCache {
         return tree;
       })
       .catch((err) => {
-        this.inflight.delete(vaultId);
+        if (this.inflight.get(vaultId) === entry) this.inflight.delete(vaultId);
         throw err;
       });
-    this.inflight.set(vaultId, building);
-    return building;
+    this.inflight.set(vaultId, entry);
+    return entry.promise;
   }
 
   /** 库内容变了（tree-changed / API 写成功）时调用。重复调用无害。 */
   invalidate(vaultId: string): void {
-    this.invalidatedAt.set(vaultId, this.now());
+    this.generation.set(vaultId, (this.generation.get(vaultId) ?? 0) + 1);
     this.entries.delete(vaultId);
   }
 
@@ -106,5 +117,6 @@ export class TreeCache {
   clear(): void {
     this.entries.clear();
     this.inflight.clear();
+    this.generation.clear();
   }
 }

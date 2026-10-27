@@ -48,6 +48,10 @@ interface KbFilePanelProps {
   onImportClick?: () => void;
   /** Called when a file is dragged from one directory to another within the tree. */
   onMoveFile?: (srcPath: string, destDir: string) => void;
+  /** 最近一次拉树失败的原因；null/undefined = 正常。 */
+  treeError?: string | null;
+  /** 重试拉树（错误条上的「重试」）。 */
+  onRetryTree?: () => void;
   /** Publish the current vault to the resources hub. */
   onPublishVault: () => void;
   /**
@@ -87,6 +91,8 @@ export const KbFilePanel = forwardRef<KbFilePanelHandle, KbFilePanelProps>(funct
   onImportFiles,
   onImportClick,
   onMoveFile,
+  treeError,
+  onRetryTree,
   onPublishVault,
   publishGate,
   children,
@@ -582,6 +588,7 @@ export const KbFilePanel = forwardRef<KbFilePanelHandle, KbFilePanelProps>(funct
       <div className="kb-search-bar">
         <input
           type="text"
+          data-testid="kb-tree-search"
           placeholder={t('kb.searchPlaceholder')}
           value={searchQuery}
           onChange={(e) => onSearchChange(e.target.value)}
@@ -599,12 +606,30 @@ export const KbFilePanel = forwardRef<KbFilePanelHandle, KbFilePanelProps>(funct
         </div>
       )}
 
+      {/* 拉树失败：错误条常驻到下一次成功刷新为止（以前这里完全静默） */}
+      {treeError ? (
+        <div className="kb-tree-error" role="alert" data-testid="kb-tree-error">
+          <span className="kb-tree-error__msg">目录加载失败：{treeError}</span>
+          {onRetryTree && (
+            <button
+              type="button"
+              className="kb-btn kb-btn-ghost kb-tree-error__retry"
+              data-testid="kb-tree-retry"
+              onClick={onRetryTree}
+            >
+              重试
+            </button>
+          )}
+        </div>
+      ) : null}
+
       {/* File tree */}
       <div className="kb-tree-scroll" onContextMenu={handleTreeBlankContextMenu}>
         <KbFileTree
           nodes={sortedTree}
           selectedFile={selectedFile}
           searchQuery={searchQuery}
+          onClearSearch={() => onSearchChange('')}
           expandedPaths={expandedPaths}
           revealToken={revealToken}
           revealPath={revealPath}

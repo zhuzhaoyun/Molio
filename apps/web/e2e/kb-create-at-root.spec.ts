@@ -18,8 +18,6 @@ import { createTempVault, cleanupTempVault, type TempVault } from './helpers/cle
 import * as fs from 'fs';
 import * as path from 'path';
 
-const WEB = 'http://localhost:5173';
-
 let vault: TempVault;
 
 test.describe('KB root-level folder creation', () => {
@@ -38,7 +36,7 @@ test.describe('KB root-level folder creation', () => {
   });
 
   test('toolbar "+ → 新建文件夹" creates at root even when a subfolder file is selected', async ({ page }) => {
-    await page.goto(`${WEB}/knowledge?vault=${vault.id}`);
+    await page.goto(`/knowledge?vault=${vault.id}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 10_000 });
     await expect(page.locator('.kb-file-panel')).toBeVisible({ timeout: 5_000 });
 
@@ -79,7 +77,7 @@ test.describe('KB root-level folder creation', () => {
   });
 
   test('right-click tree blank area → "新建文件夹" creates at root', async ({ page }) => {
-    await page.goto(`${WEB}/knowledge?vault=${vault.id}`);
+    await page.goto(`/knowledge?vault=${vault.id}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 10_000 });
     await expect(page.locator('.kb-file-panel')).toBeVisible({ timeout: 5_000 });
 
