@@ -1120,7 +1120,12 @@ function killDaemon() {
     requestDaemonShutdown();
 
     // Hard timeout: ensure we never block app quit indefinitely.
-    let forceTimer = setTimeout(() => forceKillDaemon(pid), 5000);
+    let forceTimer = setTimeout(() => {
+      forceKillDaemon(pid);
+      // The exit event may never fire (daemon ignores SIGKILL / already a
+      // zombie) — resolve anyway so quit can't hang forever.
+      done();
+    }, 5000);
   });
 }
 
@@ -1162,6 +1167,11 @@ app.on('before-quit', (event) => {
       // crypto-server 服务 daemon 的 token 加解密，必须等 daemon 完全退出后再关：
       // 优雅关闭窗口内 daemon 仍可能落盘 token（加密失败会降级明文基线）。
       await stopCryptoServer();
+      app.quit();
+    }).catch((err) => {
+      // 关闭链里任何一环抛错（如 stopCryptoServer）都不能让 app 永远活着：
+      // 上游更新脚本只等有限时间就开始换文件，挂死的 app 会被脚下换包。
+      log('error', 'main', `before-quit shutdown chain failed: ${err instanceof Error ? err.message : String(err)}`);
       app.quit();
     });
   } else {

@@ -1,4 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react';
+import { appChunkRecovery, isChunkLoadError } from '../chunkRecovery';
 
 interface Props {
   children: ReactNode;
@@ -27,6 +28,9 @@ export class AppErrorBoundary extends Component<Props, State> {
 
   componentDidCatch(error: Error, info: ErrorInfo) {
     console.error('[app] render error caught by boundary:', error, info.componentStack);
+    // 更新换包后旧页面对新懒路由的 import() 必 404（见 chunkRecovery.ts 头注释）：
+    // 判别为 chunk 加载失败就走自愈刷新，与 main.tsx 的 vite:preloadError 监听共用冷却窗口。
+    if (isChunkLoadError(error)) appChunkRecovery.requestReload();
   }
 
   render() {
