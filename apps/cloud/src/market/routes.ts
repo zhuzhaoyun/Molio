@@ -116,6 +116,14 @@ export function marketRoutes(deps: MarketRoutesDeps, config: CloudConfig, now: (
     try { return c.json({ listings: await service.adminList(p.email) }, 200); } catch (e) { return handle(c, e); }
   });
 
+  app.post('/admin/listings/:id/content', async (c) => {
+    const denied = guardBody(c); if (denied) return denied;
+    const p = bearer(c);
+    if (!p) return c.json({ error: 'invalid_token' }, 401);
+    const body = await c.req.json().catch(() => null) as { content?: unknown } | null;
+    try { return c.json(await service.adminUpdateContent(p.email, c.req.param('id'), body?.content), 200); } catch (e) { return handle(c, e); }
+  });
+
   app.post('/admin/listings/:id/remove', async (c) => {
     const denied = guardBody(c); if (denied) return denied;
     const p = bearer(c);

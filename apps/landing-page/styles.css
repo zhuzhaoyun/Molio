@@ -4172,3 +4172,167 @@ body.home .home-resources-more a:hover {
   .rl-section > header { flex-wrap: wrap; }
   .rl-categorylist { grid-template-columns: 1fr; }
 }
+
+/* ============================================================
+   Product content blocks (2026-10-26)
+   商品页「可引用事实源」：事实卡 / 定位 / 问答 / 内容范围 / 样例 / 交付 / 来源
+   ============================================================ */
+.res-facts {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  column-gap: 48px;
+  margin: 28px 0 0;
+  border-top: 1px solid var(--rule);
+}
+.res-fact {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 13px 0;
+  border-bottom: 1px solid var(--hair);
+}
+.res-fact dt {
+  flex: 0 0 36%;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--ink-40);
+}
+.res-fact dd {
+  flex: 1 1 auto;
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 19px;
+  line-height: 1.35;
+  text-align: right;
+  color: var(--ink);
+}
+.res-kicker {
+  margin-top: 44px;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--seal);
+}
+.res-c-section .res-section-title { margin-top: 8px; }
+.res-c-lead p {
+  margin-bottom: 12px;
+  font-size: 15px;
+  line-height: 1.9;
+  color: var(--ink-60);
+}
+.res-c-two-col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+  margin-top: 20px;
+}
+.res-c-two-col h3 {
+  margin-bottom: 8px;
+  font-family: var(--font-display);
+  font-size: 16px;
+}
+.res-c-two-col ul {
+  padding-left: 18px;
+  list-style: disc;
+  color: var(--ink-60);
+  font-size: 14px;
+  line-height: 1.8;
+}
+.res-c-two-col li { margin-bottom: 4px; }
+.res-c-question {
+  padding: 20px 0;
+  border-top: 1px solid var(--hair);
+}
+.res-c-question:first-of-type { border-top: none; }
+.res-c-question h3 {
+  margin-bottom: 8px;
+  font-family: var(--font-display);
+  font-size: 18px;
+  line-height: 1.5;
+}
+.res-c-question p {
+  margin-bottom: 10px;
+  font-size: 14.5px;
+  line-height: 1.9;
+  color: var(--ink-60);
+}
+.res-c-source {
+  font-size: 12px !important;
+  color: var(--ink-20) !important;
+  font-style: italic;
+}
+.res-c-desc {
+  margin-bottom: 14px;
+  font-size: 14px;
+  color: var(--ink-40);
+}
+.res-c-themes { display: grid; gap: 10px; }
+.res-c-theme {
+  border: 1px solid var(--hair);
+  background: rgba(255, 255, 255, 0.2);
+}
+.res-c-theme summary {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 13px 16px;
+  cursor: pointer;
+  list-style: none;
+}
+.res-c-theme summary::-webkit-details-marker { display: none; }
+.res-c-theme summary strong { font-family: var(--font-display); font-size: 15px; }
+.res-c-theme summary span { font-size: 12px; color: var(--ink-40); white-space: nowrap; }
+.res-c-theme > p {
+  padding: 0 16px 8px;
+  font-size: 13px;
+  line-height: 1.8;
+  color: var(--ink-40);
+}
+.res-c-theme > ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 16px 16px;
+}
+.res-c-theme > ul li {
+  padding: 3px 9px;
+  border: 1px solid var(--hair);
+  border-radius: 999px;
+  font-size: 12px;
+  color: var(--ink-60);
+}
+.res-c-sample {
+  padding: 22px 0;
+  border-top: 1px solid var(--hair);
+}
+.res-c-sample:first-of-type { border-top: none; }
+.res-c-sample h3 {
+  margin-bottom: 10px;
+  font-family: var(--font-display);
+  font-size: 18px;
+}
+.res-c-sample p {
+  margin-bottom: 10px;
+  font-size: 14.5px;
+  line-height: 1.9;
+  color: var(--ink-60);
+}
+.res-c-format {
+  margin-bottom: 4px;
+  font-size: 14px;
+  color: var(--ink-60);
+}
+.res-c-section .step-card { margin-top: 16px; }
+.res-c-section .step-card ol { padding-left: 20px; list-style: decimal; }
+.res-c-section .step-card li { margin-bottom: 8px; color: var(--ink-60); font-size: 14px; }
+
+@media (max-width: 720px) {
+  .res-facts { grid-template-columns: 1fr; column-gap: 0; margin-top: 22px; }
+  .res-fact { padding: 11px 0; }
+  .res-fact dt { flex-basis: 40%; }
+  .res-fact dd { font-size: 17px; }
+  .res-c-two-col { grid-template-columns: 1fr; gap: 16px; }
+  .res-kicker { margin-top: 34px; }
+  .res-c-question h3, .res-c-sample h3 { font-size: 16px; }
+}

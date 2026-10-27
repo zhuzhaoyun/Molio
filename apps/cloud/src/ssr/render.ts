@@ -11,7 +11,11 @@ import { marketCatalogView } from '@molio/contracts';
 // 安全：商品 name/summary/tags 等是用户提交内容，拼 HTML 一律过 escapeHtml；
 // 内嵌 JSON 额外把 '<' 转成 < 防 </script> 逃逸。
 
-import type { MarketListing } from '@molio/contracts';
+import type {
+  MarketContent, MarketContentDelivery, MarketContentFact, MarketContentPositioning,
+  MarketContentQuestion, MarketContentReview, MarketContentSample, MarketContentTheme,
+  MarketListing,
+} from '@molio/contracts';
 
 export const SITE_BASE = 'https://molio.cn';
 // 与官网 resources-data.js 的 MOLIO_PAY_BASE 保持一致（支付后端正式域名）
@@ -64,26 +68,27 @@ function formatDate(iso: string | null): string {
 // ── 结构化数据 ──
 
 function productJsonLd(m: MarketListing): string {
+  const content = m.content ?? null;
   const image = m.previews.length > 0 ? m.previews : [`${SITE_BASE}/images/brand.webp`];
   const ld = {
     '@context': 'https://schema.org',
     '@type': 'Product',
     name: m.name,
-    description: metaDescription(m.summary, 500),
+    description: content?.seo?.description ?? metaDescription(m.summary, 500),
     image,
     sku: m.id,
     brand: { '@type': 'Brand', name: 'Molio 墨流' },
-    // 以下三项都是**页面上已经可见**的事实（侧栏「格式 / 兼容」行与分类标签）。
-    // 结构化数据应与可见内容一致，而 AI / 搜索引擎读的正是这一层：
-    // 页面写了而 JSON-LD 没写，等于对机器隐形。2026-10-08 补。
+    // 以下都是页面上已经可见的事实（侧栏、事实卡与分类标签）。
     ...(m.category?.name ? { category: m.category.name } : {}),
+    ...(m.updatedAt ? { dateModified: m.updatedAt } : {}),
     itemCondition: 'https://schema.org/NewCondition',
     additionalProperty: [
-      { '@type': 'PropertyValue', name: '交付形式', value: 'Markdown 文件夹（.zip）' },
+      { '@type': 'PropertyValue', name: '交付形式', value: content?.delivery.format ?? 'Markdown 文件夹（.zip）' },
       { '@type': 'PropertyValue', name: '兼容', value: 'Molio / Obsidian' },
       ...(m.resourceType?.name
         ? [{ '@type': 'PropertyValue', name: '资源类型', value: m.resourceType.name }]
         : []),
+      ...(content?.facts ?? []).map((f) => ({ '@type': 'PropertyValue', name: f.label, value: f.value })),
     ],
     offers: {
       '@type': 'Offer',
@@ -105,6 +110,22 @@ function breadcrumbJsonLd(m: MarketListing): string {
       { '@type': 'ListItem', position: 2, name: '资源库', item: `${SITE_BASE}/resources.html` },
       { '@type': 'ListItem', position: 3, name: m.name, item: productUrl(m.id) },
     ],
+  };
+  return `<script type="application/ld+json">${safeJson(ld)}</script>`;
+}
+
+/** FAQPage 只表达页面上真实可见的知识问答；没有问答时不输出。 */
+function faqJsonLd(m: MarketListing): string {
+  const qs = m.content?.questions ?? [];
+  if (qs.length === 0) return '';
+  const ld = {
+    '@context': 'https://schema.org',
+    '@type': 'FAQPage',
+    mainEntity: qs.map((q) => ({
+      '@type': 'Question',
+      name: q.question,
+      acceptedAnswer: { '@type': 'Answer', text: q.answer },
+    })),
   };
   return `<script type="application/ld+json">${safeJson(ld)}</script>`;
 }
@@ -266,7 +287,7 @@ const FREE_SAMPLE_IDS = ['01M12YMV1144F4RZMX1HBK8GQ0', '01M114523M19P4J7GZMZ7E61
 
 function renderSampleHint(m: MarketListing): string {
   if (m.priceCents === 0 || FREE_SAMPLE_IDS.indexOf(m.id) >= 0) return '';
-  return `${'`'}<p class="res-side-note" style="margin-top:12px;padding-top:10px;border-top:1px solid rgba(0,0,0,.08)">想先看清到手是什么形式？可以先下载免费的两套：<a href="/resource/01M12YMV1144F4RZMX1HBK8GQ0.html">《周易》六十四卦全解</a> · <a href="/resource/01M114523M19P4J7GZMZ7E6188.html">老庄思想图谱</a>。结构与这件商品一致。${'`'}`;
+  return `<p class="res-side-note" style="margin-top:12px;padding-top:10px;border-top:1px solid rgba(0,0,0,.08)">想先看清到手是什么形式？可以先下载免费的两套：<a href="/resource/01M12YMV1144F4RZMX1HBK8GQ0.html">《周易》六十四卦全解</a> · <a href="/resource/01M114523M19P4J7GZMZ7E6188.html">老庄思想图谱</a>。结构与这件商品一致。</p>`;
 }
 
 function renderRelated(related: MarketListing[]): string {
@@ -280,6 +301,105 @@ function renderRelated(related: MarketListing[]): string {
 </section>`;
 }
 
+function contentParagraphs(text: string): string {
+  return text.split(/\n{2,}/).map((p) => p.trim()).filter(Boolean)
+    .map((p) => `<p>${escapeHtml(p)}</p>`).join('');
+}
+
+function renderContentFacts(facts: MarketContentFact[]): string {
+  if (facts.length === 0) return '';
+  return `<dl class="res-facts">${facts.map((f) => `<div class="res-fact"><dt>${escapeHtml(f.label)}</dt><dd>${escapeHtml(f.value)}</dd></div>`).join('')}</dl>`;
+}
+
+function renderContentPositioning(p: MarketContentPositioning): string {
+  const who = p.who.length > 0
+    ? `<div><h3>适合谁</h3><ul>${p.who.map((x) => `<li>${escapeHtml(x)}</li>`).join('')}</ul></div>`
+    : '';
+  const notFor = p.notFor.length > 0
+    ? `<div><h3>不是什么</h3><ul>${p.notFor.map((x) => `<li>${escapeHtml(x)}</li>`).join('')}</ul></div>`
+    : '';
+  return `<section class="res-section res-c-section" id="what">
+  <div class="res-kicker">01 / 这是什么</div>
+  <h2 class="res-section-title">先把边界说清楚</h2>
+  <div class="res-c-lead">${contentParagraphs(p.what)}</div>
+  <div class="res-c-two-col">${who}${notFor}</div>
+</section>`;
+}
+
+function renderContentQuestions(qs: MarketContentQuestion[]): string {
+  if (qs.length === 0) return '';
+  return `<section class="res-section res-c-section" id="questions">
+  <div class="res-kicker">02 / 常见问题</div>
+  <h2 class="res-section-title">你可能想先弄明白</h2>
+  ${qs.map((q) => `<article class="res-c-question">
+    <h3>${escapeHtml(q.question)}</h3>
+    ${contentParagraphs(q.answer)}
+    ${q.source ? `<p class="res-c-source">依据：${escapeHtml(q.source)}</p>` : ''}
+  </article>`).join('')}
+</section>`;
+}
+
+function renderContentThemes(themes: MarketContentTheme[]): string {
+  if (themes.length === 0) return '';
+  return `<section class="res-section res-c-section" id="scope">
+  <div class="res-kicker">03 / 内容范围</div>
+  <h2 class="res-section-title">你需要的内容，在不在里面</h2>
+  <p class="res-c-desc">以下按知识主题整理。条目名称来自真实知识库；完整正文在资源包内。</p>
+  <div class="res-c-themes">${themes.map((t, i) => `<details class="res-c-theme"${i === 0 ? ' open' : ''}>
+    <summary><strong>${escapeHtml(t.name)}</strong><span>${t.items.length} 条</span></summary>
+    <p>${escapeHtml(t.summary)}</p>
+    <ul>${t.items.map((x) => `<li>${escapeHtml(x)}</li>`).join('')}</ul>
+  </details>`).join('')}</div>
+</section>`;
+}
+
+function renderContentSamples(samples: MarketContentSample[]): string {
+  if (samples.length === 0) return '';
+  return `<section class="res-section res-c-section" id="samples">
+  <div class="res-kicker">04 / 真实样例</div>
+  <h2 class="res-section-title">先读一段，再决定</h2>
+  ${samples.map((sample) => `<article class="res-c-sample">
+    <h3>${escapeHtml(sample.title)}</h3>
+    ${contentParagraphs(sample.body)}
+    ${sample.source ? `<p class="res-c-source">摘编自：${escapeHtml(sample.source)}</p>` : ''}
+  </article>`).join('')}
+</section>`;
+}
+
+function renderContentDelivery(d: MarketContentDelivery): string {
+  const includes = d.includes.length > 0
+    ? `<div><h3>包含什么</h3><ul>${d.includes.map((x) => `<li>${escapeHtml(x)}</li>`).join('')}</ul></div>`
+    : '';
+  const requirements = d.requirements.length > 0
+    ? `<div><h3>使用要求</h3><ul>${d.requirements.map((x) => `<li>${escapeHtml(x)}</li>`).join('')}</ul></div>`
+    : '';
+  return `<section class="res-section res-c-section" id="delivery">
+  <div class="res-kicker">05 / 交付与使用</div>
+  <h2 class="res-section-title">你会拿到什么</h2>
+  <p class="res-c-format"><strong>格式：</strong>${escapeHtml(d.format)}</p>
+  <p class="res-c-format"><strong>打开方式：</strong>下载 .zip 解压后，在 Molio 中选择「打开本地仓库」；也可用 Obsidian 等 Markdown 工具打开。</p>
+  <div class="res-c-two-col">${includes}${requirements}</div>
+</section>`;
+}
+
+function renderContentReview(r: MarketContentReview): string {
+  return `<section class="res-section res-c-section" id="source">
+  <div class="res-kicker">06 / 来源与核对</div>
+  <h2 class="res-section-title">这份内容是怎么来的</h2>
+  <p>${escapeHtml(r.basis)}</p>
+  <p class="res-c-source">核对日期：${escapeHtml(r.reviewedAt)}</p>
+</section>`;
+}
+
+function renderContentSections(content: MarketContent): string {
+  return [
+    renderContentPositioning(content.positioning),
+    renderContentQuestions(content.questions),
+    renderContentThemes(content.themes),
+    renderContentSamples(content.samples ?? []),
+  ].join('\n');
+}
+
 /**
  * 渲染完整商品详情页。
  * 注意：正文内容全部服务端产出（爬虫零 JS 可读）；交互（登录门槛/支付/下载/灯箱）
@@ -287,8 +407,9 @@ function renderRelated(related: MarketListing[]): string {
  */
 export function renderProductPage(m: MarketListing, related: MarketListing[]): string {
   const url = productUrl(m.id);
-  const title = `${m.name} — 知识图谱下载 | Molio`;
-  const desc = metaDescription(m.summary);
+  const content = m.content ?? null;
+  const title = content?.seo?.title ?? `${m.name} — 知识图谱下载 | Molio`;
+  const desc = content?.seo?.description ?? metaDescription(m.summary);
   const ogImage = m.previews.length > 0 ? m.previews[0]! : `${SITE_BASE}/images/brand.webp`;
   const paid = m.priceCents > 0;
   const price = formatPriceYuan(m.priceCents);
@@ -305,6 +426,9 @@ export function renderProductPage(m: MarketListing, related: MarketListing[]): s
     ? `<div class="res-tags">${m.tags.map((t) => `<span>${escapeHtml(t)}</span>`).join('')}</div>`
     : '';
   const previews = m.previews.map((p) => `<figure><a href="${escapeHtml(p)}" target="_blank" rel="noopener noreferrer"><img src="${escapeHtml(p)}" alt="${escapeHtml(m.name)} 效果预览" loading="lazy"></a></figure>`).join('');
+
+  // 交互层只需要商品/价格/预览等字段；content 已在正文 SSR 输出，避免在 __LISTING__ 里重复一遍。
+  const hydrationListing = { ...m, content: null };
 
   return `<!DOCTYPE html>
 <html lang="zh-CN">
@@ -323,7 +447,7 @@ export function renderProductPage(m: MarketListing, related: MarketListing[]): s
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="icon" type="image/png" href="/images/favicon-32.png">
 <link rel="apple-touch-icon" href="/images/favicon-180.png">
-<link rel="stylesheet" href="/styles.css?v=20261003a">
+<link rel="stylesheet" href="/styles.css?v=20261027b">
 
 <!-- Open Graph -->
 <meta property="og:title" content="${escapeHtml(title)}">
@@ -342,6 +466,7 @@ export function renderProductPage(m: MarketListing, related: MarketListing[]): s
 
 ${productJsonLd(m)}
 ${breadcrumbJsonLd(m)}
+${faqJsonLd(m)}
 </head>
 <body>
 ${NAV}
@@ -358,19 +483,21 @@ ${NAV}
         ${tags}
       </div>
     </div>
+    ${content ? renderContentFacts(content.facts) : ''}
     <div class="res-detail-grid">
       <div class="res-main">
-        <h2 class="res-section-title">概述</h2>
-        <div class="article-body">${summaryParas}${overviewParas}${highlights}</div>
+        ${content ? renderContentSections(content) : `<h2 class="res-section-title">概述</h2>
+        <div class="article-body">${summaryParas}${overviewParas}${highlights}</div>`}
         ${previews ? `<h2 class="res-section-title">效果预览</h2>
         <div class="res-preview-grid">${previews}</div>` : ''}
-        <h2 class="res-section-title">资源包导入说明</h2>
+        ${content ? renderContentDelivery(content.delivery) : `<h2 class="res-section-title">资源包导入说明</h2>
         ${DELIVERY_BOUNDARY}
         <div class="step-card"><ol>
           <li>下载资源包 <code>.zip</code> 并解压到本地任意目录</li>
           <li>打开 Molio，在知识库管理界面选择“打开本地仓库”</li>
           <li>选择（或输入）解压后的文件夹路径，资源包立即加载</li>
-        </ol></div>
+        </ol></div>`}
+        ${content ? renderContentReview(content.review) : ''}
       </div>
       <aside class="res-side">
         <div class="res-side-card reveal">${cta}<p class="res-side-note">${escapeHtml(note)}</p>${renderSampleHint(m)}</div>
@@ -379,6 +506,7 @@ ${NAV}
           <div class="res-info-row"><span class="k">版本</span><span class="v">${escapeHtml(m.version)}</span></div>
           <div class="res-info-row"><span class="k">大小</span><span class="v">${formatSize(m.fileSize)}</span></div>
           <div class="res-info-row"><span class="k">发布时间</span><span class="v">${formatDate(m.publishedAt)}</span></div>
+          ${m.updatedAt ? `<div class="res-info-row"><span class="k">更新时间</span><span class="v">${formatDate(m.updatedAt)}</span></div>` : ''}
           <div class="res-info-row"><span class="k">格式</span><span class="v">Markdown（.zip）</span></div>
           <div class="res-info-row"><span class="k">兼容</span><span class="v">Molio / Obsidian</span></div>
           <div class="res-info-row"><span class="k">价格</span><span class="v">${paid ? '¥' + escapeHtml(price) : '免费'}</span></div>
@@ -399,7 +527,7 @@ ${NAV}
 ${FOOTER}
 
 <!-- 交互层：登录门槛 / 微信支付 / 签名下载 / 灯箱。内嵌 __LISTING__ 避免二次请求 -->
-<script>window.MOLIO_PAY_BASE = '${PAY_BASE}';window.__LISTING__ = ${safeJson(m)};</script>
+<script>window.MOLIO_PAY_BASE = '${PAY_BASE}';window.__LISTING__ = ${safeJson(hydrationListing)};</script>
 <script src="/vendor/qrcode.min.js"></script>
 <script src="/auth.js?v=20260824a"></script>
 <script src="/pay.js?v=20260905a"></script>
@@ -420,7 +548,7 @@ export function renderNotFoundPage(): string {
 <title>资源不存在 — Molio 资源</title>
 <meta name="robots" content="noindex">
 <link rel="icon" type="image/png" href="/images/favicon-32.png">
-<link rel="stylesheet" href="/styles.css?v=20261003a">
+<link rel="stylesheet" href="/styles.css?v=20261027b">
 </head>
 <body>
 ${NAV}
@@ -556,7 +684,7 @@ export function renderListingPage(listings: MarketListing[]): string {
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="icon" type="image/png" href="/images/favicon-32.png">
 <link rel="apple-touch-icon" href="/images/favicon-180.png">
-<link rel="stylesheet" href="/styles.css?v=20261003a">
+<link rel="stylesheet" href="/styles.css?v=20261027b">
 
 <!-- Open Graph -->
 <meta property="og:title" content="${escapeHtml(title)}">
@@ -678,13 +806,22 @@ ${ANALYTICS}
 
 // ── 动态 sitemap ──
 
-/** 商品 sitemap：实时全量在售商品；lastmod 取 publishedAt（上架日） */
+/**
+ * 商品 sitemap：实时全量在售商品。
+ *
+ * lastmod 取「最近更新时间」而不是上架日 —— 老页面改内容（补结构化信息、改标题/简介）时，
+ * 只有 lastmod 变了爬虫才认为这个 URL 值得重抓；只取 publishedAt 会让改版对爬虫完全不可见。
+ * 老数据没有 updatedAt 就回落 publishedAt，两者都没有则省略 lastmod。
+ */
 export function renderProductsSitemap(listings: MarketListing[]): string {
-  const urls = listings.map((m) => `  <url>
+  const urls = listings.map((m) => {
+    const lastmod = m.updatedAt ?? m.publishedAt;
+    return `  <url>
     <loc>${productUrl(m.id)}</loc>
-    ${m.publishedAt ? `<lastmod>${formatDate(m.publishedAt)}</lastmod>` : ''}
+    ${lastmod ? `<lastmod>${formatDate(lastmod)}</lastmod>` : ''}
     <changefreq>weekly</changefreq>
-  </url>`).join('\n');
+  </url>`;
+  }).join('\n');
   return `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
 ${urls}
