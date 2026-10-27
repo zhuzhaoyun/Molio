@@ -1,6 +1,50 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { citationPathFromToolUse, formatCitationBlock } from '../../src/core/citations.js';
+import { citationPathFromToolUse, citationPathsFromToolUse, formatCitationBlock } from '../../src/core/citations.js';
+
+describe('citationPathsFromToolUse（E1 对账回归：Bash 记账规则从字符串级升级为命令级）', () => {
+  test('Bash 单条命令 cat 多个文件 → 全部路径（旧口径只取第一条）', () => {
+    assert.deepEqual(
+      citationPathsFromToolUse('Bash', { command: 'cat a.md && cat b.md' }),
+      ['a.md', 'b.md'],
+    );
+  });
+  test('E1-F2：cd && 后的相对路径（旧口径完全漏记）', () => {
+    assert.deepEqual(
+      citationPathsFromToolUse('Bash', { command: 'cd /vault/wiki/刑诉 && cat 条号速查.md' }),
+      ['条号速查.md'],
+    );
+  });
+  test('sed / grep 单文件计入；grep 目录仍是搜索动作', () => {
+    assert.deepEqual(
+      citationPathsFromToolUse('Bash', { command: "sed -n '1,40p' notes/真题/zhuguan-2023.txt" }),
+      ['notes/真题/zhuguan-2023.txt'],
+    );
+    assert.deepEqual(
+      citationPathsFromToolUse('Bash', { command: 'grep -n "缺口" 法考刑法知识库总览.md' }),
+      ['法考刑法知识库总览.md'],
+    );
+    assert.deepEqual(citationPathsFromToolUse('Bash', { command: 'grep -rn "转账" wiki/' }), []);
+  });
+  test('for 循环清单计入；重定向目标是写入不计入', () => {
+    assert.deepEqual(
+      citationPathsFromToolUse('Bash', { command: 'for f in a.md b.md; do cat "$f"; done' }),
+      ['a.md', 'b.md'],
+    );
+    assert.deepEqual(citationPathsFromToolUse('Bash', { command: 'cat a.md > copy.md' }), ['a.md']);
+  });
+  test('非读命令与旧口径一致返回空', () => {
+    assert.deepEqual(citationPathsFromToolUse('Bash', { command: 'rm notes.md' }), []);
+    assert.deepEqual(citationPathsFromToolUse('Bash', { command: 'ls -la raw' }), []);
+  });
+  test('Read / Grep 走原语义（数组形态）', () => {
+    assert.deepEqual(citationPathsFromToolUse('Read', { file_path: '/v/raw/a.txt' }), ['/v/raw/a.txt']);
+    assert.deepEqual(citationPathsFromToolUse('Grep', { path: 'raw' }), []);
+    assert.deepEqual(citationPathsFromToolUse('Grep', { path: 'raw/刑法.txt' }), ['raw/刑法.txt']);
+    assert.deepEqual(citationPathsFromToolUse('Write', { file_path: 'a.md' }), []);
+    assert.deepEqual(citationPathsFromToolUse('WebFetch', { url: 'https://x.com' }), []);
+  });
+});
 
 describe('citationPathFromToolUse', () => {
   test('Read.file_path → 路径', () => {

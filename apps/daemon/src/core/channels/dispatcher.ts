@@ -3,7 +3,7 @@ import type { AgentEvent, ChatMessage } from '@molio/contracts';
 import type { RunManager } from '../RunManager.js';
 import type { ConversationService } from '../conversations/service.js';
 import { extractOutboundMedia } from './outbound-media.js';
-import { citationPathFromToolUse, formatCitationBlock } from '../citations.js';
+import { citationPathsFromToolUse, formatCitationBlock } from '../citations.js';
 import type { ChannelSink } from './types.js';
 
 const RUN_REPLY_TIMEOUT_MS = 5 * 60 * 1000;
@@ -341,8 +341,7 @@ export class ChannelDispatcher {
       // 文件投递仍走 <attach/> 显式协议（AI 写出的文件不自动投递，避免刷屏）；
       // 这里只记账「读过的文件」，收尾时拼成 IM 依据清单。
       if (event.type === 'tool_use') {
-        const p = citationPathFromToolUse(event.name, event.input);
-        if (p) cited.push(p);
+        cited.push(...citationPathsFromToolUse(event.name, event.input));
         return;
       }
 
