@@ -36,9 +36,15 @@ describe('bundled quiz-generate skill', () => {
     assert.ok(parsed.instructions.includes('考察点'), 'variants must not change what is being tested');
     // 答题区不渲染 LaTeX：题干/选项必须用纯文本记法（√ x²），禁止 $…$ 源码。
     assert.ok(parsed.instructions.includes('LaTeX'), 'must forbid LaTeX source in stems/options');
-    // 主观题降级（混合请求不得整体退化成纯文本，主观题不进围栏）。
-    assert.ok(parsed.instructions.includes('主观题'), 'must document the subjective-question fallback');
-    assert.ok(parsed.instructions.includes('围栏外'), 'subjective questions stay outside the fence');
+    // 主观题（subject）进围栏：answer 是评分点数组（web 物化进消息后脱离上下文可读）。
+    assert.ok(parsed.instructions.includes('"subject"'), 'type enum must include subject');
+    assert.ok(parsed.instructions.includes('评分点'), 'subject answer is a scoring-point array');
+    // 批改协议：按物化消息首行【大题作答·第N题】确定性触发，不靠模型自觉。
+    assert.ok(parsed.instructions.includes('大题作答'), 'grading protocol keys on the materialized message marker');
+    assert.ok(parsed.instructions.includes('批改'), 'must document the grading protocol');
+    // 「主观题降级」（围栏外方案）已退役：客观/填空/subject 进同一个围栏。
+    assert.ok(!parsed.instructions.includes('主观题降级'), 'the outside-fence fallback is retired');
+    assert.ok(!parsed.instructions.includes('自评'), 'no more self-grading fallback copy');
     // 题干配图：库内相对路径写法（答题端已支持解析成 raw URL 真实加载）。
     assert.ok(parsed.instructions.includes('![说明]('), 'must document the stem image syntax');
     assert.ok(parsed.instructions.includes('知识库根'), 'stem image paths resolve against the vault root');
@@ -47,6 +53,6 @@ describe('bundled quiz-generate skill', () => {
     assert.ok(parsed.instructions.includes('考点'), 'image inclusion is driven by the test point, not a subject ratio');
     assert.ok(parsed.instructions.includes('如图'), 'a mentioned figure must be embedded, and vice versa');
     // 版本随协议扩充递增（诊断用）。
-    assert.match(raw, /^version: 1\.2\.1$/m);
+    assert.match(raw, /^version: 1\.3\.0$/m);
   });
 });
