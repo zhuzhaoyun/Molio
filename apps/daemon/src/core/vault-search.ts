@@ -25,6 +25,8 @@ function isIndexableExt(relPath: string): boolean {
   return TEXT_EXTS.includes(path.extname(relPath).toLowerCase());
 }
 
+export { isIndexableExt };
+
 /**
  * rowid 配对约定（2026-10-16 Windows 卡死事故后引入）：FTS 行的 rowid 恒等于
  * vault_files_state 对应行的 rowid。fts 表上 vault_id/file_path 是 UNINDEXED 列，
@@ -251,34 +253,41 @@ export async function reindexVault(
  */
 const inflightBuilds = new WeakMap<SqliteDb, Map<string, Promise<void>>>();
 
-/** 该 vault 是否有正在跑的构建——搜索要先等它，别读半成品。 */
+/** 该 vault 是否有正在跑的字面构建——搜索要先等它，别读半成品。 */
 export function hasInflightBuild(db: SqliteDb, vaultId: string): Promise<void> | undefined {
-  return inflightBuilds.get(db)?.get(vaultId);
+  return getInflight(db, vaultId, 'fts');
+}
+
+/** 查某类构建的在跑 promise（vault-vec 等其它走同一单行道的层复用）。 */
+export function getInflight(db: SqliteDb, vaultId: string, buildKind: string): Promise<void> | undefined {
+  return inflightBuilds.get(db)?.get(`${buildKind}\u0000${vaultId}`);
 }
 
 /**
  * 单行道登记口：该 vault 上已有构建在跑就并入它，否则把 `run` 登记为本轮构建。
  * 所有会 walk 整库的入口都必须走这里（首搜建库 / sweep / 目录改名后重建 /
- * 灾难恢复重建），否则又会出现两个 walk 互相踩。
+ * 灾难恢复重建），否则又会出现两个 walk 互相踩。层 2 向量构建（vault-vec.ts）
+ * 同样整库 walk，共用这条单行道——令牌含 buildKind，字面与向量构建互不阻塞。
  *
  * 令牌取 vaultId 而非 (vaultId, path)：path 不是独立输入——所有调用方都从
  * vaults 行取（sweep 也每次重读），让它参与令牌反而会在「同一 vault 两个 path」
  * 这种异常态下放两个 walk 并行，正是要消灭的踩踏。宁可多等，不可并行。
  */
-function registerBuild(
-  db: SqliteDb, vaultId: string, run: () => Promise<unknown>,
+export function registerBuild(
+  db: SqliteDb, vaultId: string, buildKind: string, run: () => Promise<unknown>,
 ): Promise<void> {
+  const token = `${buildKind}\u0000${vaultId}`;
   let byVault = inflightBuilds.get(db);
   if (!byVault) {
     byVault = new Map<string, Promise<void>>();
     inflightBuilds.set(db, byVault);
   }
-  const running = byVault.get(vaultId);
+  const running = byVault.get(token);
   if (running) return running;
   const task = run().then(() => undefined);
-  byVault.set(vaultId, task);
+  byVault.set(token, task);
   // 无论成败都摘掉登记——失败要让后来的调用重新发起，而不是永远等一个已 reject 的 promise。
-  const done = (): void => { if (byVault.get(vaultId) === task) byVault.delete(vaultId); };
+  const done = (): void => { if (byVault.get(token) === task) byVault.delete(token); };
   void task.then(done, done);
   return task;
 }
@@ -287,7 +296,7 @@ function registerBuild(
 export function ensureVaultIndexed(
   db: SqliteDb, vaultId: string, vaultPath: string, opts: ReindexOpts = {},
 ): Promise<void> {
-  return registerBuild(db, vaultId, () => reindexVault(db, vaultId, vaultPath, opts));
+  return registerBuild(db, vaultId, 'fts', () => reindexVault(db, vaultId, vaultPath, opts));
 }
 
 /**
@@ -318,7 +327,7 @@ export async function rebuildVaultFtsAll(db: SqliteDb, opts: ReindexOpts = {}): 
   for (const v of vaults) {
     try {
       await hasInflightBuild(db, v.id);
-      await registerBuild(db, v.id, async () => {
+      await registerBuild(db, v.id, 'fts', async () => {
         // 清空走 rowid 配对约定（fts 上按 vault_id DELETE 是全表扫描，见函数组头注释）
         const rids = db.prepare('SELECT rowid AS rid FROM vault_files_state WHERE vault_id = ?')
           .all(v.id) as Array<{ rid: number }>;

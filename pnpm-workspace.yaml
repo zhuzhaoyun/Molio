@@ -18,4 +18,8 @@ allowBuilds:
   better-sqlite3: true
   electron: true
   esbuild: true
+  # 检索 P0 层 2：onnxruntime-node 的官方 install 脚本（平台二进制自检/补齐）。
+  # 二进制随包分发（293MB 全平台装进 node_modules，打包切片只拷本平台），
+  # 放行与 npm 安装行为一致（Task 0 实测条件）。
+  onnxruntime-node: true
   protobufjs: true
