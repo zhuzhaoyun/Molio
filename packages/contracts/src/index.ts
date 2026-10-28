@@ -189,6 +189,7 @@ export type {
   MarketCreateRequest,
   MarketCreateResponse,
   MarketMyResponse,
+  MarketRoleResponse,
   MarketDownloadResponse,
   MarketPurchase,
   MarketPurchasesResponse,

@@ -181,6 +181,18 @@ export interface MarketMyResponse {
   listings: MarketMyListing[];
 }
 
+/**
+ * 「发布到资源库」身份门禁快照（GET /api/market/role）。
+ *
+ * `isAdmin: null` 表示**暂无法判定**（云端不可达且本地没有缓存），不是「非管理员」。
+ * 调用方必须按「未决」处理：把管理员误判成非管理员会把人踢到官网联系页，
+ * 页内发布配置页永远打不开（2026-10 用户报告）。
+ */
+export interface MarketRoleResponse {
+  loggedIn: boolean;
+  isAdmin: boolean | null;
+}
+
 export interface MarketDownloadResponse {
   url: string;
   expiresAt: number;
