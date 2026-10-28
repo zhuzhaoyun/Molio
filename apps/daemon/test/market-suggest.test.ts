@@ -11,6 +11,7 @@ import { MARKET_ICONS } from '@molio/contracts';
 import { openDatabase } from '../src/core/db.js';
 import { marketRoutes } from '../src/routes/market.js';
 import {
+  appendSearchTermTags,
   buildVaultDigest,
   composeSuggestPrompt,
   extractJson,
@@ -70,6 +71,32 @@ test('normalizeSuggestion：截断/去重/白名单/必填校验', () => {
   assert.throws(() => normalizeSuggestion({ name: 'x' }, 'claude'), /suggest_failed/);
 });
 
+test('normalizeSuggestion：模型自列的检索词补进标签（站外+站内共用）', () => {
+  // 标题/简介字数有限，没覆盖到的检索词用标签兜住：标签既上公网页（抓取/结构化数据）
+  // 也参与站内逐词 AND 搜索。只补模型自己声明过的词，标签总数不超过云端上限 3。
+  const s = normalizeSuggestion({
+    queries: ['线性代数', '期末复习', '高数', '微积分'],
+    name: '线性代数 期末复习知识库',
+    summary: '覆盖同济版全部章节，适合备考',
+    tags: ['考研'],
+    icon: '📖',
+  }, 'claude');
+  assert.deepEqual(s.tags, ['考研', '高数', '微积分']);
+
+  // 已被名称/简介覆盖的词不重复补；带空格/超长的检索词放不进单个标签，跳过
+  const covered = normalizeSuggestion({
+    queries: ['线性代数', '期末 复习', '这是一个非常非常长的检索词'],
+    name: '线性代数',
+    summary: '适合期末复习',
+    tags: [],
+    icon: '📖',
+  }, 'claude');
+  assert.deepEqual(covered.tags, []);
+
+  assert.deepEqual(appendSearchTermTags(['数学'], '线性代数', 'x', ['数学', '高数']), ['数学', '高数']);
+  assert.deepEqual(appendSearchTermTags([], 'x', 'y', 'not-an-array'), []);
+});
+
 test('composeSuggestPrompt：含清单/摘录/JSON 指令', () => {
   const digest = buildVaultDigest(makeVault());
   const prompt = composeSuggestPrompt(digest);
@@ -77,10 +104,18 @@ test('composeSuggestPrompt：含清单/摘录/JSON 指令', () => {
   assert.ok(prompt.includes('内容摘录'));
   assert.ok(prompt.includes('"name"'));
   assert.ok(prompt.includes('只输出一个 JSON 对象'));
+  // 检索意图优先（站外：Google/Bing + AI 搜索，不是站内搜索）：
+  // 提示词必须要求模型先列 queries，并把「实体正式名 + 可核对数字」写进名称/简介
+  // （2026-10 用户反馈：生成的标题简介只像广告语，站外搜不到）。
+  assert.ok(prompt.includes('站外'));
+  assert.ok(prompt.includes('queries'));
+  assert.ok(prompt.includes('检索规则'));
+  assert.ok(prompt.includes('可核对的具体事实'));
   const withContent = composeSuggestPrompt(digest, buildContentDigest(makeVault()), '2026-10-27');
   assert.ok(withContent.includes('"content"'));
   assert.ok(withContent.includes('目录统计'));
   assert.ok(withContent.includes('review'));
+  assert.ok(withContent.includes('seo.aliases'), '商品页 SEO 也要按检索词给别名');
 });
 
 test('buildContentDigest：按一级目录聚合，摘录真实正文且排除隐藏目录', () => {

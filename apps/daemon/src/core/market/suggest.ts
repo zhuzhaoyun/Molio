@@ -35,6 +35,8 @@ const MAX_SUMMARY_CP = 100;
 const MAX_TAG_CP = 10;
 /** 自动起草标签数（上限仍是 3，留 1 个给用户自定义） */
 export const AUTO_TAG_COUNT = 2;
+/** 标签总数上限（与云端 MAX_TAGS/发布表单同口径）：模型给 2 个 + 最多 1 个检索词补位 */
+const MAX_TAGS_TOTAL = 3;
 // 排除规则与 packager 同源（隐藏文件/目录 + 系统垃圾）
 const JUNK_FILES = new Set(['thumbs.db', 'desktop.ini']);
 
@@ -99,19 +101,35 @@ export function buildVaultDigest(vaultPath: string, include?: string[]): VaultDi
 /** 起草提示词：只输出一个 JSON 对象（含商品页结构化内容草稿） */
 export function composeSuggestPrompt(digest: VaultDigest, contentDigest?: ContentDigest, today?: string): string {
   const lines = [
-    '你是 Molio 知识库的发布助手。根据下面的知识库内容，为它撰写资源库上架信息，',
-    '让浏览者一眼就想下载。',
+    '你是 Molio 知识库的发布助手。根据下面的知识库内容，为它撰写资源库上架信息。',
+    '这份资源会作为独立页面发布到公网（molio.cn/resource/…），首要目标是',
+    '**在站外被搜到、被引用**：先过 Google/Bing 与 ChatGPT/Perplexity 这类搜索和',
+    'AI 问答这一关，再考虑卡片好不好看。',
+    '',
+    '站外检索规则（决定有没有人搜得到，必须照做）：',
+    '- 搜索引擎和 AI 主要靠「实体正式名 + 可核对的具体事实」来做匹配和引用。',
+    '  标题里必须出现内容的正式名（学科/教材/作品/人物），简介里必须给出数字或范围',
+    '  （多少页、多少人物、覆盖哪几册/哪几章）。没有数字和实体名的文案，搜索侧等于没写。',
+    '- 写之前先想：用户会在 Google 或 ChatGPT 里怎么输入？把那个说法原样写进名称或简介，',
+    '  不要换成意译、比喻或口号。',
+    '- 简介第一句要能单独被摘出来当结果摘要：主语明确，不用「你/我们」这类指代，不堆形容词。',
     '',
     '要求：',
-    `- name：吸引人的中文标题，不超过 ${MAX_NAME_CP} 字。不要泛泛的"某某知识库"，`,
-    '  要突出内容独特价值（如"红楼梦人物关系全解"而非"红楼梦笔记"）',
-    `- summary：一句中文简介，不超过 ${MAX_SUMMARY_CP} 字。用"包含/覆盖/适合"开头，`,
-    '  说清三件事：里面有什么、能用来做什么、适合谁',
-    `- tags：恰好 ${AUTO_TAG_COUNT} 个中文标签，每个不超过 ${MAX_TAG_CP} 字，概括内容领域`,
+    `- queries：3-6 个用户真的会输入的搜索词或问法（每个 ${2}-${MAX_TAG_CP} 个字、不带空格），`,
+    '  按「最可能被搜到」排序；后面几个字段要覆盖它们',
+    `- name：≤${MAX_NAME_CP} 字（同时是页面 H1、面包屑和结构化数据的 name），`,
+    '  格式「内容主体 + 范围/用途」，主体词必须放在最前面，例：',
+    '  「人教版高中数学 五册知识图谱」「封神演义 人物关系全解」；',
+    '  不要「终极」「一站式」「必看」「大全」这类没有检索价值的营销词占字数',
+    `- summary：≤${MAX_SUMMARY_CP} 字的一句事实陈述（也是 meta description 的兜底）：`,
+    '  开头就出现主体名与用途，中间给 1-2 个可核对数字（页数/条目数/覆盖范围），',
+    '  不要口号，不要「重磅」「干货」这类修饰',
+    `- tags：恰好 ${AUTO_TAG_COUNT} 个中文标签（每个 ≤${MAX_TAG_CP} 字）：补名称/简介没覆盖到的`,
+    '  检索词——同义词、简称、英文名（如「高数」「微积分」「Calculus」），不要泛词',
     `- icon：从 ${JSON.stringify([...MARKET_ICONS])} 中选最贴切的一个`,
     '',
     '只输出一个 JSON 对象，不要 markdown 围栏，不要任何其他文字：',
-    '{"name":"...","summary":"...","tags":["...","..."],"icon":"...","content":{...}}',
+    '{"queries":["...","..."],"name":"...","summary":"...","tags":["...","..."],"icon":"...","content":{...}}',
     '',
     '知识库文件清单：',
     ...digest.fileNames.map((f) => `- ${f}`),
@@ -132,6 +150,32 @@ export function extractJson(text: string): Record<string, unknown> | null {
   try { return JSON.parse(text.slice(start, end + 1)) as Record<string, unknown>; } catch { return null; }
 }
 
+/**
+ * 把模型自列的检索词（queries）里**还没出现在名称/简介/标签中**的词补进标签。
+ * 标签既上公网页（站外抓取/结构化数据）也参与站内搜索，且是唯一不占标题/简介字数的
+ * 检索位，所以缺哪个词就补哪个——只补模型自己声明过的词，不臆造。
+ */
+export function appendSearchTermTags(
+  tags: string[],
+  name: string,
+  summary: string,
+  rawQueries: unknown,
+): string[] {
+  const out = [...tags];
+  if (!Array.isArray(rawQueries)) return out;
+  const haystack = (): string => [name, summary, ...out].join(' ').toLowerCase();
+  for (const raw of rawQueries) {
+    if (out.length >= MAX_TAGS_TOTAL) break;
+    if (typeof raw !== 'string') continue;
+    const term = raw.trim();
+    // 带空格的检索词放不进单个标签（用户输入的多词查询仍会逐词命中，不需要整串）
+    if (!term || /\s/.test(term) || cpLen(term) > MAX_TAG_CP) continue;
+    if (haystack().includes(term.toLowerCase())) continue;
+    out.push(term);
+  }
+  return out;
+}
+
 /** 硬校验 + 截断；名称/简介缺失视为不可用（throw suggest_failed） */
 export function normalizeSuggestion(raw: Record<string, unknown>, agentId: string): MarketPublishSuggestion {
   const name = typeof raw['name'] === 'string' ? cpSlice(raw['name'].trim(), MAX_NAME_CP) : '';
@@ -148,7 +192,7 @@ export function normalizeSuggestion(raw: Record<string, unknown>, agentId: strin
   }
   const icon = typeof raw['icon'] === 'string' && (MARKET_ICONS as readonly string[]).includes(raw['icon'])
     ? raw['icon'] : MARKET_ICONS[0]!;
-  return { name, summary, tags, icon, agentId };
+  return { name, summary, tags: appendSearchTermTags(tags, name, summary, raw['queries']), icon, agentId };
 }
 
 export interface PickedAgent { agentId: string; binary: string; }

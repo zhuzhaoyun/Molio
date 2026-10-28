@@ -139,12 +139,20 @@ export function contentPromptLines(digest: ContentDigest, today: string): string
     '- positioning.notFor：1-3 条，明确不适合什么，不要贬低',
     '- facts：2-6 条可核对的关键事实（label ≤20 字，value ≤60 字）；数量必须与下方目录统计一致',
     '- themes：按实际内容 2-8 个知识主题（name ≤20 字，summary 40-120 字，items 3-12 个真实条目名，不带 .md）',
-    '- questions：2-5 个用户会搜索或问 AI 的知识问题，不是购买/下载 FAQ；question ≤40 字，',
-    '  answer 120-500 字、可独立理解，source 写真实来源文件',
+    // questions 会渲染成页面问答区块 + FAQPage 结构化数据，是 AI 搜索最主要的引用面：
+    // 问句要写成用户真实提问的样子，答案首句必须是结论（AI 摘录的就是这一句）。
+    '- questions：2-5 个用户会真的在搜索引擎或 AI 里问的问题（写成问句，不是购买/下载 FAQ）；',
+    '  question ≤40 字；answer 120-500 字，**第一句就给出结论**（30 字内，能独立看懂），',
+    '  其余再展开依据；source 写真实来源文件',
     '- samples：1-2 段从正文摘编的真实样例（title ≤30 字，body 150-600 字，source 写来源文件）',
     '- delivery.format 固定写 "Markdown 知识库（.zip）"；includes / requirements / steps 各 2-4 条',
     '- review：{"basis":"根据知识库目录结构与正文摘编整理","reviewedAt":"' + today + '","status":"draft"}',
-    '- seo.title ≤40 字，包含资源名与核心主题；seo.description ≤80 字',
+    // 商品页是站外（Google/Bing + AI 搜索）的落地页，这三个字段直接决定搜索结果里
+    // 长什么样（SSR 出 <title> / meta description / JSON-LD description），按检索意图写。
+    '- seo.title ≤40 字，搜索结果标题：主体 + 关键事实 + 用途，可用「｜」分段，',
+    '  例「高中数学知识点体系｜200 个概念 · 27 组对比｜Molio 知识库」；不要照抄 name',
+    '- seo.description ≤80 字，搜索结果摘要：主体 + 2-3 个检索词 + 一个具体数字 + 格式/适用人群',
+    '- seo.aliases：2-5 个同义词/别称/简称/英文名（只写词，不加解释），会进结构化数据 alternateName',
     '',
     '目录统计（主题与事实的唯一数量依据）：',
     ...digest.groups.map((g) => '- ' + g.dir + '：' + g.count + ' 篇；条目示例：' + g.files.join('、')),
