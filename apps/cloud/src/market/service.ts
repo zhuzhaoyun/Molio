@@ -178,9 +178,12 @@ export class MarketService {
       req.tags.some((t) => typeof t !== 'string' || cpLen(t.trim()) < 1 || cpLen(t.trim()) > MAX_TAG_CP) ||
       !Array.isArray(req.previews) || req.previews.length < 1 || req.previews.length > MAX_PREVIEWS ||
       req.previews.some((p) => !(p.ext in PREVIEW_EXT_CT) || !(p.size > 0) || p.size > MAX_PREVIEW_BYTES) ||
-      typeof req.vaultSize !== 'number' || !(req.vaultSize > 0) || req.vaultSize > this.maxZipBytes ||
+      typeof req.vaultSize !== 'number' || !(req.vaultSize > 0) ||
       (req.priceCents !== undefined && (!Number.isInteger(req.priceCents) || req.priceCents < 0 || req.priceCents > MAX_PRICE_CENTS));
     if (bad) throw new MarketServiceError('invalid_metadata', 400);
+    // 包体上限的唯一权威是云端配置 MOLIO_MARKET_MAX_ZIP_MB（本地 daemon 只做 OOM 安全阀）。
+    // 单独报 size_exceeded，客户端才能提示「超过云端大小上限」而不是笼统的元数据非法。
+    if (req.vaultSize > this.maxZipBytes) throw new MarketServiceError('size_exceeded', 413);
   }
 
   private signUploads(rec: MarketListingRecord): MarketUploadTarget[] {

@@ -73,7 +73,7 @@ pnpm typecheck    # tsc --noEmit
 | `MOLIO_OSS_BUCKET` | 资源市场需要 | 市场文件 OSS 桶名；缺失则 `/market` 不挂载 |
 | `MOLIO_OSS_REGION` | 否 | OSS 地域，默认 `cn-guangzhou` |
 | `MOLIO_MARKET_OSS_ENDPOINT` | 否 | OSS endpoint 显式覆盖（缺省按 `{bucket}.oss-{region}.aliyuncs.com` 推导；本地测试可指向 mock） |
-| `MOLIO_MARKET_MAX_ZIP_MB` | 否 | 单个资源包大小上限（MB），默认 50 |
+| `MOLIO_MARKET_MAX_ZIP_MB` | 否 | 资源包大小上限（MB），默认 512。**唯一权威**：daemon 只在打包时留 1GB OOM 安全阀、不做业务校验；调整上限只需改这个配置（改完需重传云端代码包强制实例换新） |
 | `MOLIO_MARKET_ADMIN_EMAILS` | 否 | 市场管理员邮箱（逗号分隔），命中后可调 `/market/admin/*` |
 | `MOLIO_MARKET_MAX_ACTIVE_PER_USER` | 否 | 单用户在架条目上限，默认 10 |
 | `MOLIO_MARKET_MAX_DAILY_CREATES` | 否 | 单用户每日创建条目上限，默认 5 |

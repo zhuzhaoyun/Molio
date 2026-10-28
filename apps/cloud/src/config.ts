@@ -201,7 +201,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): CloudConfig {
           accessKeyId: ossAk, accessKeySecret: ossSk, bucket: ossBucket, region: ossRegion,
           endpointOverride: (env.MOLIO_MARKET_OSS_ENDPOINT ?? '').trim() || undefined,
         },
-        maxZipMb: intEnv(env, 'MOLIO_MARKET_MAX_ZIP_MB', 50),
+        maxZipMb: intEnv(env, 'MOLIO_MARKET_MAX_ZIP_MB', 512),
         adminEmails: (env.MOLIO_MARKET_ADMIN_EMAILS ?? '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean),
         maxActivePerUser: intEnv(env, 'MOLIO_MARKET_MAX_ACTIVE_PER_USER', 10),
         maxDailyCreates: intEnv(env, 'MOLIO_MARKET_MAX_DAILY_CREATES', 5),
