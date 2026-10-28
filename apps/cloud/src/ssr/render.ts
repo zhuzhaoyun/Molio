@@ -75,6 +75,12 @@ function productJsonLd(m: MarketListing): string {
     '@type': 'Product',
     name: m.name,
     description: content?.seo?.description ?? metaDescription(m.summary, 500),
+    // 同义/别称（如「高中数学知识图谱」）：schema.org Thing 的标准属性，
+    // Google 与 AI 搜索用它把用户的另一种说法映射到这份资源上。
+    ...(content?.seo?.aliases?.length ? { alternateName: content.seo.aliases } : {}),
+    // 检索词（同义词/简称）也让结构化数据能读到，而不只是页面上一个可见标签：
+    // AI 摘录与 Google 实体匹配都会用到 Product.keywords。
+    ...(m.tags.length > 0 ? { keywords: m.tags.join(', ') } : {}),
     image,
     sku: m.id,
     brand: { '@type': 'Brand', name: 'Molio 墨流' },
@@ -383,11 +389,15 @@ function renderContentDelivery(d: MarketContentDelivery): string {
 }
 
 function renderContentReview(r: MarketContentReview): string {
+  const draftNote = r.status === 'draft' && r.autoDrafted === true
+    ? '<p class="res-c-source">内容由发布者整理，仍在核对中；如与资源原文有出入，以原文为准。</p>'
+    : '';
   return `<section class="res-section res-c-section" id="source">
   <div class="res-kicker">06 / 来源与核对</div>
   <h2 class="res-section-title">这份内容是怎么来的</h2>
   <p>${escapeHtml(r.basis)}</p>
-  <p class="res-c-source">核对日期：${escapeHtml(r.reviewedAt)}</p>
+  <p class="res-c-source">整理日期：${escapeHtml(r.reviewedAt)}</p>
+  ${draftNote}
 </section>`;
 }
 

@@ -47,20 +47,28 @@ test('create：凭证第一个恒为 zip；tint 缺省轮转', async () => {
   assert.equal(res.uploads[1]!.contentType, 'image/png');
 });
 
-test('create：元数据非法（超长名/缺效果图/效果图超 5MB/zip 超上限）→ 400', async () => {
+test('create：元数据非法（超长名/缺效果图/效果图超 5MB）→ 400', async () => {
   const { svc, users } = makeService({ maxZipMb: 50 });
   const u = await users.createActiveUser({ id: 'u1', email: 'a@x.com', nickname: 'n', now: 1 });
   const cases = [
     { ...VALID, name: 'x'.repeat(31) },
     { ...VALID, previews: [] },
     { ...VALID, previews: [{ ext: '.png', size: 6 * 1024 * 1024 }] },
-    { ...VALID, vaultSize: 51 * 1024 * 1024 },
     { ...VALID, icon: '🚀' }, // 不在预设集
     { ...VALID, tags: ['x'.repeat(11)] }, // 单标签超 10 字
   ];
   for (const c of cases) {
     await assert.rejects(svc.create(u.id, c), (e: unknown) => (e as MarketServiceError).code === 'invalid_metadata');
   }
+});
+
+test('create：zip 声明大小超云端上限 → 413 size_exceeded（本地不校验，云端配置为唯一权威）', async () => {
+  const { svc, users } = makeService({ maxZipMb: 50 });
+  const u = await users.createActiveUser({ id: 'u1', email: 'a@x.com', nickname: 'n', now: 1 });
+  await assert.rejects(
+    svc.create(u.id, { ...VALID, vaultSize: 51 * 1024 * 1024 }),
+    (e: unknown) => (e as MarketServiceError).code === 'size_exceeded' && (e as MarketServiceError).status === 413,
+  );
 });
 
 test('confirm：暂存齐全 → active + 效果图转正公共读 + 署名为昵称', async () => {

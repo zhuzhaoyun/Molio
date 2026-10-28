@@ -195,10 +195,32 @@ test.describe('社区发布 → 展示 → 下载闭环（P1，mock OSS）', () 
     await expect(page.locator('[data-testid="kb-wtab-publish"]')).toHaveClass(/is-active/);
     await expect(page.locator('[data-testid="floating-chat-btn"]')).toBeHidden();
 
+    // 商品页结构化内容同样走 AI 起草：mock 一次，验证 content 随首发落库并在详情页渲染。
+    await page.route('**/api/market/publish-suggest', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          name: 'mock', summary: 'mock', tags: [], icon: '📖', agentId: 'mock',
+          content: {
+            version: 1,
+            positioning: { what: 'E2E 结构化定位说明。', who: ['需要验证发布链路的人'], notFor: [] },
+            facts: [{ label: '内容页', value: '12 个' }],
+            themes: [{ name: 'E2E 主题', summary: 'E2E 范围说明', items: ['E2E 条目'] }],
+            questions: [{ question: 'E2E 结构化问答？', answer: 'E2E 结构化答案。', source: 'community-doc.md' }],
+            delivery: { format: 'Markdown 知识库（.zip）', includes: [], requirements: [], steps: [] },
+            review: { basis: 'E2E 目录整理', reviewedAt: '2026-10-27', status: 'draft', autoDrafted: true },
+          },
+        }),
+      }),
+    );
+    await page.locator('[data-testid="publish-content-generate"]').click();
+    await expect(page.locator('[data-testid="publish-content-block"]')).toContainText('1 条关键事实');
+
     // 名称是 input、简介是 textarea（旧版用 input 序号 [1] 填简介会误中自定义标签输入框）
     await page.locator('.publish-form .publish-field input').first().fill(resourceName);
     await page
-      .locator('.publish-form .publish-field textarea')
+      .locator('.publish-form > .publish-field > textarea')
       .fill('E2E 自动发布的社区资源，用于 P1 门禁验证');
     await page.locator('.publish-preview-add input[type="file"]').setInputFiles({
       name: 'preview-1x1.png',
@@ -234,6 +256,9 @@ test.describe('社区发布 → 展示 → 下载闭环（P1，mock OSS）', () 
     await page.locator(`[data-testid="resource-detail-link-${listingId}"]`).click();
     await expect(page).toHaveURL(new RegExp(`/resources/${listingId}$`));
     await expect(page.locator('.resources-detail-head h1')).toHaveText(resourceName);
+    // content 已随首发落库：应用内详情直接渲染结构化问答，而不是空白概述
+    await expect(page.locator('[data-testid="resources-content"]')).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText('E2E 结构化问答？')).toBeVisible();
 
     const previewImg = page.locator('.resources-preview-grid img').first();
     await previewImg.scrollIntoViewIfNeeded(); // loading=lazy，滚入视口才会加载
@@ -347,6 +372,15 @@ test.describe('社区发布 → 展示 → 下载闭环（P1，mock OSS）', () 
           tags: ['模拟标签'],
           icon: '📚',
           agentId: 'mock',
+          content: {
+            version: 1,
+            positioning: { what: 'AI 起草的商品页定位', who: ['需要整理资料的人'], notFor: [] },
+            facts: [{ label: '内容页', value: '12 个' }],
+            themes: [{ name: '主题一', summary: '主题范围说明', items: ['条目一'] }],
+            questions: [{ question: '这是什么？', answer: '这是 AI 起草的示例内容。' }],
+            delivery: { format: 'Markdown 知识库（.zip）', includes: [], requirements: [], steps: [] },
+            review: { basis: '根据目录整理', reviewedAt: '2026-10-27', status: 'draft' },
+          },
         }),
       }),
     );
@@ -355,6 +389,11 @@ test.describe('社区发布 → 展示 → 下载闭环（P1，mock OSS）', () 
       timeout: 5_000,
     });
     await expect(page.locator('[data-testid="publish-ai-regen"]')).toBeVisible();
+    // AI 同时起草商品页内容：摘要可见，展开后能编辑结构化字段
+    await expect(page.locator('[data-testid="publish-content-block"]')).toContainText('1 条关键事实');
+    await page.locator('[data-testid="publish-content-toggle"]').click();
+    await expect(page.locator('[data-testid="market-content-editor"]')).toBeVisible();
+    await expect(page.locator('[data-testid="content-positioning-what"]')).toHaveValue('AI 起草的商品页定位');
     // 不提交，到此为止（关页面即放弃，不做关 tab 断言以保持用例聚焦）
   });
 
@@ -378,13 +417,15 @@ test.describe('社区发布 → 展示 → 下载闭环（P1，mock OSS）', () 
     await myListingsSettled;
     await expect(page.locator('[data-testid="me-tab-listings"]')).toHaveCount(0);
 
-    // 同用例 1：等门禁状态落定再点（也顺带等 vault 解析，防 activeVault 未决早退）
-    const mySettled = page
-      .waitForResponse((r) => r.url().includes('/api/market/my'), { timeout: 10_000 })
-      .catch(() => null);
+    // 同用例 1：等门禁状态落定再点（也顺带等 vault 解析，防 activeVault 未决早退）。
+    // 门禁现走 GET /api/market/role（本地缓存即答），不再等 /my 的云端往返。
     await page.goto(`http://localhost:5173/knowledge?vault=${vaultId}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 15_000 }); // vite dev 冷转换可超 5s（Windows 本地）
-    await mySettled;
+    await expect(page.locator('[data-testid="kb-btn-publish-vault"]')).toHaveAttribute(
+      'data-publish-gate',
+      'contact',
+      { timeout: 10_000 },
+    );
 
     // 官网联系页（外部真实网络不可依赖）→ context 级 route mock（window.open 的新
     // 页也在同一 context）；断言新开页指向联系页，且应用页未离开、未打开发布 tab
@@ -400,5 +441,35 @@ test.describe('社区发布 → 展示 → 下载闭环（P1，mock OSS）', () 
     expect(page.url()).toContain('/knowledge');
     await expect(page.locator('[data-testid="kb-publish-pane"]')).toHaveCount(0);
     await popup.close().catch(() => {});
+  });
+
+  test('管理员：门禁未决时点击不会开浏览器，判定后进入发布 tab', async ({ page, request }) => {
+    test.setTimeout(60_000);
+    // 回归（2026-10 用户报告）：门禁未落定时点「发布到资源库」，管理员被当成非管理员
+    // 丢进系统浏览器（官网联系页），页内发布配置页永远打不开。现在未决窗口里的点击
+    // 必须**等判定**再分流，绝不能先开浏览器。
+    await ensureLoggedOut(request);
+    await gotoHome(page);
+    await loginViaDevCode(page, 'admin@test.local');
+    await expect(page.locator('[data-testid="me-tab-listings"]')).toBeVisible({ timeout: 5_000 });
+
+    // 人为拖慢身份判定：把「未决 → 已判定」的窗口拉长，模拟云端慢/首装首次判定
+    await page.route('**/api/market/role', async (route) => {
+      await new Promise((resolve) => setTimeout(resolve, 2_000));
+      await route.continue();
+    });
+
+    const popups: string[] = [];
+    page.context().on('page', (p) => popups.push(p.url()));
+
+    await page.goto(`http://localhost:5173/knowledge?vault=${vaultId}`);
+    const publishBtn = page.locator('[data-testid="kb-btn-publish-vault"]');
+    await expect(publishBtn).toBeVisible({ timeout: 15_000 });
+    await expect(publishBtn).toHaveAttribute('data-publish-gate', 'pending', { timeout: 5_000 });
+
+    // 未决时点击：不得开新页；判定落定后应直接打开页内发布 tab
+    await publishBtn.click();
+    await expect(page.locator('[data-testid="kb-wtab-publish"]')).toHaveClass(/is-active/, { timeout: 15_000 });
+    expect(popups).toEqual([]);
   });
 });

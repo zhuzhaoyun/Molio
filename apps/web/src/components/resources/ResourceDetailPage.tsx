@@ -22,6 +22,7 @@ import { useResourcePay } from '../../hooks/useResourcePay';
 import { useAuthStatus } from '../../stores/authStore';
 import { ResourcePayModal } from './ResourcePayModal';
 import { startResourcePurchase } from './resourceAction';
+import { ResourceContentSections } from './ResourceContentSections';
 
 /** ISO 时间 → YYYY-MM-DD（发布时间展示；解析失败原样返回） */
 function formatPublishedAt(iso: string): string {
@@ -191,15 +192,18 @@ export function ResourceDetailPage() {
 
         <div className="resources-detail-grid">
           <div className="resources-main">
-            <h2 className="resources-section-title">{t('resources.overview')}</h2>
+            {!market?.content && (
+              <h2 className="resources-section-title">{t('resources.overview')}</h2>
+            )}
             <div className="resources-article">
               {descParas.map((p, i) => (
                 <p key={`d${i}`} className={i === 0 ? 'resources-article__lead' : undefined}>{p}</p>
               ))}
-              {overviewParas.map((p, i) => (
+              {/* 结构化内容优先：社区条目 overview/highlights 为空，旧渲染会只剩简介。 */}
+              {!market?.content && overviewParas.map((p, i) => (
                 <p key={i}>{p}</p>
               ))}
-              {r.highlights.length > 0 && (
+              {!market?.content && r.highlights.length > 0 && (
                 <ul>
                   {r.highlights.map((h, i) => (
                     <li key={i}>
@@ -209,6 +213,8 @@ export function ResourceDetailPage() {
                 </ul>
               )}
             </div>
+
+            {market?.content && <ResourceContentSections content={market.content} />}
 
             {previews.length > 0 && (
               <>

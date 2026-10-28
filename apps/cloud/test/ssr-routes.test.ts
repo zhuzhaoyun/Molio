@@ -287,6 +287,7 @@ test('SSR 商品页：MarketContent 渲染事实卡/问答/范围/样例/FAQ', a
   await marketStore.insertListing(listing({
     id: '01M4PZPNGWR1YZ1W9GGVTJG82N',
     name: '人教版高中数学五册知识图谱',
+    tags: ['高中数学', '高数', '知识图谱'],
     content,
     updatedAt: 1_760_000_000_000,
   }));
@@ -297,6 +298,43 @@ test('SSR 商品页：MarketContent 渲染事实卡/问答/范围/样例/FAQ', a
   assert.ok(html.includes('集合与逻辑'), '内容范围主题');
   assert.ok(html.includes('先读一段，再决定'), '真实样例');
   assert.ok(html.includes('"@type":"FAQPage"'), 'FAQPage JSON-LD');
+  // 别称进结构化数据：AI/Google 才能把「高中数学知识图谱」这类另一种说法
+  // 映射到同一份资源（content.seo.aliases → Product.alternateName）。
+  assert.ok(html.includes('"alternateName"'), 'Product alternateName 来自 seo.aliases');
+  assert.ok(html.includes('高中数学知识图谱'), '别名值原样输出');
+  // 标签是检索词（同义词/简称）的另一条通道：进 Product.keywords，
+  // AI 摘录与 Google 实体匹配能直接读到，而不只是页面上的可见 span。
+  assert.ok(html.includes('"keywords":"高中数学, 高数, 知识图谱"'), 'Product keywords 来自 tags');
   assert.ok(html.includes('"dateModified"'), 'dateModified');
   assert.ok(!html.includes('概述</h2>'), 'content 模式不再渲染旧概述');
+});
+
+
+test('SSR 商品页：只有 AI 自动起草的 draft 显示核对提示', async () => {
+  const { app, marketStore } = await bootSsrApp();
+  const base = JSON.parse(readFileSync(
+    path.resolve(process.cwd(), '../../content/market/01M4PZPNGWR1YZ1W9GGVTJG82N.json'),
+    'utf8',
+  ));
+  await marketStore.insertListing(listing({
+    id: '01JABCDE0000000000000021',
+    name: 'AI 草稿内容商品',
+    content: { ...base, review: { ...base.review, status: 'draft', autoDrafted: true } },
+  }));
+  await marketStore.insertListing(listing({
+    id: '01JABCDE0000000000000022',
+    name: '人工草稿内容商品',
+    content: { ...base, review: { ...base.review, status: 'draft', autoDrafted: undefined } },
+  }));
+  await marketStore.insertListing(listing({
+    id: '01JABCDE0000000000000023',
+    name: '已核对内容商品',
+    content: { ...base, review: { ...base.review, status: 'reviewed', autoDrafted: true } },
+  }));
+  const autoDraft = await (await app.request('/resource/01JABCDE0000000000000021.html')).text();
+  const manualDraft = await (await app.request('/resource/01JABCDE0000000000000022.html')).text();
+  const reviewed = await (await app.request('/resource/01JABCDE0000000000000023.html')).text();
+  assert.ok(autoDraft.includes('仍在核对中'), 'AI draft 明确提示');
+  assert.ok(!manualDraft.includes('仍在核对中'), '存量人工 draft 不加提示，避免 19 个线上商品页突然降级');
+  assert.ok(!reviewed.includes('仍在核对中'), 'reviewed 不提示');
 });

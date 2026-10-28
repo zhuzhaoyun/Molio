@@ -18,6 +18,7 @@ import { OnboardingChecklist } from './OnboardingChecklist';
 import { kbChatSessionsStore } from '../../stores/kbChatSessionsStore';
 import { navigationHistoryStore } from '../../stores/navigationHistoryStore';
 import { useAuthStatus } from '../../stores/authStore';
+import { useMarketRole } from '../../stores/marketRoleStore';
 import { KbFilePanel, type KbFilePanelHandle } from './KbFilePanel';
 import { KbTabBar } from './KbTabBar';
 import { KbMainContent } from './KbMainContent';
@@ -816,30 +817,40 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
   }, [tabs, showToast, t]);
 
   // 发布到资源库门禁（前端拦截，后端不设门槛）：仅管理员可打开发布 tab，未登录/
-  // 非管理员在系统浏览器打开官网联系页（顾问微信上架，人工审核）。管理员身份在
-  // 登录态变化时预取缓存——点击必须同步判定：window.open 在异步续体里会丢用户
-  // 手势、被浏览器弹窗拦截器挡住。预取未决/失败时保守按非管理员处理。
+  // 非管理员在系统浏览器打开官网联系页（顾问微信上架，人工审核）。
+  // 身份判定走 marketRoleStore（daemon /api/market/role 本地即答）：已判定才能同步
+  // 分流，因为 window.open 必须留在用户手势里。**未判定**（首装首次判定 / 云端不可达）
+  // 绝不能当成非管理员——那会把管理员丢进浏览器，页内发布配置页永远打不开。
   const auth = useAuthStatus();
   const loggedIn = auth?.loggedIn === true;
-  const [isMarketAdmin, setIsMarketAdmin] = useState(false);
-  useEffect(() => {
-    if (!loggedIn) { setIsMarketAdmin(false); return; }
-    let alive = true;
-    fetch('/api/market/my')
-      .then((r) => (r.ok ? r.json() : null))
-      .then((m: { isAdmin?: boolean } | null) => { if (alive) setIsMarketAdmin(m?.isAdmin === true); })
-      .catch(() => { if (alive) setIsMarketAdmin(false); });
-    return () => { alive = false; };
-  }, [loggedIn]);
+  const { role: marketRole, failed: marketRoleFailed, ensure: ensureMarketRole } = useMarketRole();
+
+  type PublishGate = 'admin' | 'contact' | 'pending' | 'error';
+  const publishGate: PublishGate = (() => {
+    if (auth === null) return 'pending';            // 登录态还没取回
+    if (!loggedIn) return 'contact';                // 确定未登录
+    if (marketRole === 'admin') return 'admin';
+    if (marketRole === 'member' || marketRole === 'signed-out') return 'contact';
+    return marketRoleFailed ? 'error' : 'pending';  // 未判定：等，不猜
+  })();
 
   const handlePublishActive = useCallback(() => {
     // 用同步的 activeVaultId 判定，而非 kb.activeVault（对象要等 vault 列表异步拉回）。
     // 否则冷启动 / E2E 直接 goto 时，列表未到位的窗口里点击会被 !vault 吞掉：管理员的
     // 发布 tab 打不开、非管理员的联系页弹窗也不触发（window.open 还会因异步续体丢手势）。
     if (!activeVaultId) return;
-    if (loggedIn && isMarketAdmin) openPublishTab(activeVaultId);
-    else openPublishContactPage();
-  }, [activeVaultId, loggedIn, isMarketAdmin, openPublishTab]);
+    const vaultId = activeVaultId;
+    // 已判定：同步分流（window.open 必须在用户手势里）
+    if (publishGate === 'admin') { openPublishTab(vaultId); return; }
+    if (publishGate === 'contact') { openPublishContactPage(); return; }
+    // 未决 / 上次判定失败：先把身份问清楚，再按结果分流。
+    showToast(t(publishGate === 'error' ? 'vault.publishRoleRetry' : 'vault.publishRolePending'));
+    void ensureMarketRole(publishGate === 'error').then((role) => {
+      if (role === 'admin') openPublishTab(vaultId);
+      else if (role === null) showToast(t('vault.publishRoleFailed'));
+      else openPublishContactPage();
+    });
+  }, [activeVaultId, publishGate, openPublishTab, ensureMarketRole, showToast, t]);
   const handleIngestFile = useCallback((filePath: string, isDirectory = false) => {
     if (!agentId) return;
     panelRef.current?.runWikiOp({ mode: 'ingest', filePath, isDirectory });
@@ -1453,7 +1464,7 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
         treeError={kb.treeError}
         onRetryTree={() => { void handleRefreshTree(); }}
         onPublishVault={handlePublishActive}
-        publishGate={loggedIn && isMarketAdmin ? 'admin' : 'contact'}
+        publishGate={publishGate}
       >
         <div className="kb-resize-handle" onMouseDown={handleResizeStart} />
       </KbFilePanel>

@@ -131,6 +131,8 @@ export class MarketService {
     const { store, config: { market } } = this.deps;
     this.validateMetadata(req);
     await this.validateTaxa(req);
+    // 结构化内容随首发一起校验落库：非法内容在创建阶段就拒绝，避免先占上传凭证再失败。
+    const content = req.content === undefined || req.content === null ? null : validateMarketContent(req.content);
     const user = await this.deps.users.findActiveUserById(userId);
     const admin = user !== null && this.isAdminEmail(user.email);
     if (!admin) {
@@ -155,7 +157,7 @@ export class MarketService {
       categoryId: req.categoryId ?? null, resourceTypeId: req.resourceTypeId ?? 'knowledge',
       name: req.name.trim(), icon: req.icon, tint,
       summary: req.summary.trim(),
-      overview: [], highlights: [], content: null,
+      overview: [], highlights: [], content,
       tags: [...new Set(req.tags.map((t) => t.trim()))].slice(0, MAX_TAGS), // 自定义允许，去重截断
       previews: req.previews.map((p, i) => `next/${id}-p${i + 1}${p.ext}`), // uploading 期存暂存键
       version: 'v1.0', priceCents, payUrl: '', authorDisplay: null,
@@ -176,9 +178,12 @@ export class MarketService {
       req.tags.some((t) => typeof t !== 'string' || cpLen(t.trim()) < 1 || cpLen(t.trim()) > MAX_TAG_CP) ||
       !Array.isArray(req.previews) || req.previews.length < 1 || req.previews.length > MAX_PREVIEWS ||
       req.previews.some((p) => !(p.ext in PREVIEW_EXT_CT) || !(p.size > 0) || p.size > MAX_PREVIEW_BYTES) ||
-      typeof req.vaultSize !== 'number' || !(req.vaultSize > 0) || req.vaultSize > this.maxZipBytes ||
+      typeof req.vaultSize !== 'number' || !(req.vaultSize > 0) ||
       (req.priceCents !== undefined && (!Number.isInteger(req.priceCents) || req.priceCents < 0 || req.priceCents > MAX_PRICE_CENTS));
     if (bad) throw new MarketServiceError('invalid_metadata', 400);
+    // 包体上限的唯一权威是云端配置 MOLIO_MARKET_MAX_ZIP_MB（本地 daemon 只做 OOM 安全阀）。
+    // 单独报 size_exceeded，客户端才能提示「超过云端大小上限」而不是笼统的元数据非法。
+    if (req.vaultSize > this.maxZipBytes) throw new MarketServiceError('size_exceeded', 413);
   }
 
   private signUploads(rec: MarketListingRecord): MarketUploadTarget[] {
@@ -420,6 +425,15 @@ export class MarketService {
     return out;
   }
 
+  /** 发布者更新自己条目的商品页内容（编辑/重新生成后保存，不触发 zip 重传） */
+  async updateContent(userId: string, listingId: string, input: unknown): Promise<MarketMyListing> {
+    const rec = await this.mustFind(listingId);
+    if (rec.userId !== userId) throw new MarketServiceError('not_owner', 403);
+    const content = validateMarketContent(input);
+    const updated = await this.deps.store.updateListing(listingId, { content }, this.now);
+    return this.toMy(updated!);
+  }
+
   /** 管理员维护商品页结构化内容（JSONB） */
   async adminUpdateContent(adminEmail: string, listingId: string, input: unknown): Promise<MarketMyListing> {
     this.assertAdmin(adminEmail);
@@ -540,7 +554,8 @@ function validateMarketContent(input: unknown): MarketContent {
   const review = c.review as Record<string, unknown>;
   if (!isContentString(review.basis, 1, 600)
     || !isContentString(review.reviewedAt, 1, 40)
-    || (review.status !== 'draft' && review.status !== 'reviewed')) fail();
+    || (review.status !== 'draft' && review.status !== 'reviewed')
+    || (review.autoDrafted !== undefined && typeof review.autoDrafted !== 'boolean')) fail();
 
   if (c.seo !== undefined) {
     if (!isRecord(c.seo)) fail();

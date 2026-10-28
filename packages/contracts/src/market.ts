@@ -66,11 +66,13 @@ export interface MarketContentDelivery {
   steps: string[];
 }
 
-/** 来源与核对状态：公开页只展示 basis + reviewedAt；draft 会提示仍在整理。 */
+/** 来源与核对状态：公开页展示 basis + reviewedAt；AI 自动草稿（draft + autoDrafted）会提示仍在核对。 */
 export interface MarketContentReview {
   basis: string;
   reviewedAt: string;
   status: 'draft' | 'reviewed';
+  /** true = AI 自动起草；公开页仅在 draft + autoDrafted 时提示「仍在核对」 */
+  autoDrafted?: boolean;
 }
 
 /** 可选 SEO 覆盖：标题/描述/别名，不填则回退商品 name/summary。 */
@@ -162,6 +164,8 @@ export interface MarketCreateRequest {
   previews: { ext: string; size: number }[];
   /** 价格（分）；仅管理员可设 >0，非管理员服务端强制 0（§六 定价规则） */
   priceCents?: number;
+  /** 商品页结构化内容；随首发一起落库，云端校验失败返回 invalid_metadata */
+  content?: MarketContent;
 }
 
 export interface MarketCreateResponse {
@@ -175,6 +179,18 @@ export interface MarketCreateResponse {
 export interface MarketMyResponse {
   isAdmin: boolean;
   listings: MarketMyListing[];
+}
+
+/**
+ * 「发布到资源库」身份门禁快照（GET /api/market/role）。
+ *
+ * `isAdmin: null` 表示**暂无法判定**（云端不可达且本地没有缓存），不是「非管理员」。
+ * 调用方必须按「未决」处理：把管理员误判成非管理员会把人踢到官网联系页，
+ * 页内发布配置页永远打不开（2026-10 用户报告）。
+ */
+export interface MarketRoleResponse {
+  loggedIn: boolean;
+  isAdmin: boolean | null;
 }
 
 export interface MarketDownloadResponse {
@@ -212,6 +228,8 @@ export interface MarketPublishSuggestion {
   icon: string;
   /** 起草所用 agent id（前端提示用） */
   agentId: string;
+  /** 结构化商品页内容草稿；生成失败时缺省，不阻断发布 */
+  content?: MarketContent;
 }
 
 /** 云端注册表，ID 是开放字符串；新增项不要求客户端升级。 */

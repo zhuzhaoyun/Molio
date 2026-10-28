@@ -8,24 +8,34 @@ import { AuthCloudError, type AuthClient } from '../core/auth/auth-client.js';
 import { MarketClient, putToSignedUrl } from '../core/market/client.js';
 import { packVaultToZip } from '../core/market/packager.js';
 import { listPublishableTopDirs } from '../core/knowledge.js';
+import { getKv, setKv } from '../core/db.js';
 import { denyCrossOrigin } from './auth.js';
-import type { MarketPublishSuggestion } from '@molio/contracts';
+import type { MarketContent, MarketPublishSuggestion } from '@molio/contracts';
 import { suggestPublishMeta } from '../core/market/suggest.js';
 
 /** multipart body 闸门（效果图 1-4×≤5MB + 表单字段，32MB 已宽裕） */
 const MAX_MULTIPART_BYTES = 32 * 1024 * 1024;
 /** 单张效果图上限 */
 const MAX_PREVIEW_BYTES = 5 * 1024 * 1024;
-/** 打包后 zip 上限（与云端 MOLIO_MARKET_MAX_ZIP_MB 保持一致的声明值约束；2026-10 50→200） */
-const MAX_ZIP_BYTES = 200 * 1024 * 1024;
+/**
+ * 打包安全上限：**不是业务上限**，只防打包时把内存撑爆（packVaultToZip 全程在内存里压）。
+ * 资源包大小的业务上限唯一来源是云端 `MOLIO_MARKET_MAX_ZIP_MB`（create 声明校验 + confirm
+ * 按 OSS 实际大小复核）——以后调整上限只改云端配置，不需要重新发桌面版。
+ * 超过 1GB 需要先把 packager 改成流式（当前实现会占用数倍于 zip 的内存）。
+ */
+const SAFETY_MAX_ZIP_BYTES = 1024 * 1024 * 1024;
 /** Plan 2 预留：管理员直传 zip 的 body 闸门（当前未启用） */
 export const MAX_ADMIN_DIRECT_ZIP_BYTES = 70 * 1024 * 1024;
 /** publish-suggest 的 JSON body 闸门（仅 vaultId 字段，64KB 已宽裕） */
 const MAX_SUGGEST_BODY_BYTES = 64 * 1024;
+/** 商品页内容单独保存的 JSON body 闸门（云端上限 60KB，留包装余量） */
+const MAX_CONTENT_BODY_BYTES = 96 * 1024;
 /** 无缓存冷启动时同步等云端的上限：云端 FC 冷启动 + 慢网络可拖到十几秒，超时降级空目录 */
 export const LISTINGS_COLD_TIMEOUT_MS = 8_000;
 /** SWR 后台刷新最小间隔：缓存比这新就不再打云端（连续进出资源页时防抖） */
 const LISTINGS_REFRESH_MIN_AGE_MS = 30_000;
+/** 管理员身份缓存 TTL：过期后台刷新（调用方永远先拿本地值，不等云端） */
+const MARKET_ROLE_TTL_MS = 10 * 60_000;
 
 /** 表单 price（元字符串）→ 分；空/非法/≤0 → undefined（免费）。云端对非管理员再强制 0。 */
 function parsePriceCents(raw: unknown): number | undefined {
@@ -33,12 +43,23 @@ function parsePriceCents(raw: unknown): number | undefined {
   return Number.isFinite(v) && v > 0 ? Math.round(v * 100) : undefined;
 }
 
+/** multipart 里的 content 字段：空 = 不写内容；非法 JSON = null（客户端按 invalid_metadata 处理） */
+function parseContentField(raw: string): MarketContent | null | undefined {
+  if (!raw.trim()) return undefined;
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as MarketContent : null;
+  } catch { return null; }
+}
+
 export interface MarketRoutesOptions {
   /** 测试注入：覆盖云端请求与 OSS 直传的 fetch */
   fetchImpl?: typeof fetch;
   baseUrl?: string;
+  /** 测试注入：管理员身份缓存的有效期（默认 MARKET_ROLE_TTL_MS） */
+  roleTtlMs?: number;
   /** 测试注入：覆盖发布元数据起草（默认走真实一次性 agent 调用） */
-  suggestImpl?: (vaultPath: string) => Promise<MarketPublishSuggestion>;
+  suggestImpl?: (vaultPath: string, include?: string[]) => Promise<MarketPublishSuggestion>;
   /** 测试注入：listings 冷启动同步等待上限（默认 LISTINGS_COLD_TIMEOUT_MS） */
   listingsTimeoutMs?: number;
 }
@@ -47,7 +68,7 @@ export function marketRoutes(db: Database.Database, auth: AuthClient, opts: Mark
   const client = new MarketClient(auth, opts.baseUrl, opts.fetchImpl);
   const putDirect = (t: { url: string; contentType: string }, b: Uint8Array) => putToSignedUrl(t, b, opts.fetchImpl);
   const app = new Hono();
-  const suggestFn = opts.suggestImpl ?? ((vaultPath: string) => suggestPublishMeta(vaultPath));
+  const suggestFn = opts.suggestImpl ?? ((vaultPath: string, include?: string[]) => suggestPublishMeta(vaultPath, {}, { include }));
 
   // 云端错误归一（同 routes/auth.ts 纪律）：
   // 断网/无会话（status=0）→ 502 cloud_unreachable；白名单 4xx 原样透传；其余 → 502。
@@ -169,6 +190,64 @@ export function marketRoutes(db: Database.Database, auth: AuthClient, opts: Mark
     } catch (e) { return cloudError(c, e); }
   });
 
+  // ── 身份门禁（/role）：本地即答 + 后台刷新 ──
+  // 为什么单独开一个端点：KB「发布到资源库」按钮点击时必须**同步**判定管理员身份
+  // （window.open 在异步续体里会丢用户手势），而 /my 要等云端往返——实测 1~4s，
+  // 冷启动更久。门禁落定前点击，管理员会被当成非管理员丢进系统浏览器，页内发布
+  // 配置页永远打不开（2026-10 用户报告）。这里把判定结果按用户 id 落 kv：
+  // 首次判定才等云端，之后本地即答；超过 TTL 后台刷新（管理员被撤权后最多滞后一个 TTL，
+  // 且云端写接口本身仍强制校验，缓存只影响 UI 门禁）。
+  const roleTtlMs = opts.roleTtlMs ?? MARKET_ROLE_TTL_MS;
+  const roleKey = (userId: string): string => `market_role:${userId}`;
+  const roleRefreshInFlight = new Set<string>();
+
+  const readRoleCache = (userId: string): { isAdmin: boolean; fetchedAt: number } | null => {
+    const raw = getKv(db, roleKey(userId));
+    if (!raw) return null;
+    try {
+      const parsed = JSON.parse(raw) as { isAdmin?: unknown; fetchedAt?: unknown };
+      if (typeof parsed.isAdmin !== 'boolean' || typeof parsed.fetchedAt !== 'number') return null;
+      return { isAdmin: parsed.isAdmin, fetchedAt: parsed.fetchedAt };
+    } catch { return null; } // 缓存损坏视同无缓存
+  };
+
+  const writeRoleCache = (userId: string, isAdmin: boolean): void => {
+    setKv(db, roleKey(userId), JSON.stringify({ isAdmin, fetchedAt: Date.now() }));
+  };
+
+  /** 后台单飞刷新：失败静默保留旧值（下次请求再试） */
+  const refreshRoleInBackground = (userId: string): void => {
+    const key = roleKey(userId);
+    if (roleRefreshInFlight.has(key)) return;
+    roleRefreshInFlight.add(key);
+    void client.my()
+      .then((body) => writeRoleCache(userId, body.isAdmin === true))
+      .catch(() => {})
+      .finally(() => { roleRefreshInFlight.delete(key); });
+  };
+
+  app.get('/role', async (c) => {
+    let userId: string | null = null;
+    try {
+      const status = await auth.getStatus();
+      if (status.loggedIn) userId = status.user.id;
+    } catch { /* 本地快照读取失败按未登录处理 */ }
+    if (!userId) return c.json({ loggedIn: false, isAdmin: null });
+    const cached = readRoleCache(userId);
+    if (cached) {
+      if (Date.now() - cached.fetchedAt >= roleTtlMs) refreshRoleInBackground(userId);
+      return c.json({ loggedIn: true, isAdmin: cached.isAdmin });
+    }
+    try {
+      const body = await client.my();
+      writeRoleCache(userId, body.isAdmin === true);
+      return c.json({ loggedIn: true, isAdmin: body.isAdmin === true });
+    } catch {
+      // 未决 ≠ 非管理员：前端必须保持 pending，绝不能落「联系页」分支
+      return c.json({ loggedIn: true, isAdmin: null });
+    }
+  });
+
   // ── 写侧：multipart 编排 ──
 
   /** 效果图本地预检：魔数 + 单张 ≤5MB + 张数 1-4（设计 §7.1） */
@@ -213,15 +292,18 @@ export function marketRoutes(db: Database.Database, auth: AuthClient, opts: Mark
     try {
       let include: string[] | undefined;
       try { include = JSON.parse(str('include') || '[]') as string[]; } catch { /* 非法 include 按空 */ }
-      pack = await packVaultToZip(vaultPath, { maxBytes: MAX_ZIP_BYTES, include: include?.length ? include : undefined });
+      pack = await packVaultToZip(vaultPath, { maxBytes: SAFETY_MAX_ZIP_BYTES, include: include?.length ? include : undefined });
       let tags: string[] = [];
       try { tags = JSON.parse(str('tags') || '[]') as string[]; } catch { /* 非法 tags 按空，云端再兜底 */ }
+      const content = parseContentField(str('content'));
+      if (content === null) return c.json({ error: 'invalid_metadata' }, 400);
       const created = await client.create({
         ...(str('categoryId') ? {categoryId:str('categoryId')} : {}),
         ...(str('resourceTypeId') ? {resourceTypeId:str('resourceTypeId')} : {}),
         name: str('name'), summary: str('summary'), icon: str('icon'), tags,
         vaultSize: pack.size, previews: previews.map((p) => ({ ext: p.ext, size: p.size })),
         priceCents: parsePriceCents(parsed['price']),
+        ...(content ? { content } : {}),
       });
       listingId = created.listingId;
       await putDirect(created.uploads[0]!, new Uint8Array(fs.readFileSync(pack.zipPath)));
@@ -246,12 +328,16 @@ export function marketRoutes(db: Database.Database, auth: AuthClient, opts: Mark
   app.post('/publish-suggest', async (c) => {
     const denied = denyCrossOrigin(c) ?? denyOversized(c, MAX_SUGGEST_BODY_BYTES);
     if (denied) return denied;
-    const body = await c.req.json().catch(() => null) as { vaultId?: unknown } | null;
+    const body = await c.req.json().catch(() => null) as { vaultId?: unknown; include?: unknown } | null;
     const vaultId = body && typeof body['vaultId'] === 'string' ? body['vaultId'] : '';
     const vaultPath = vaultId ? vaultPathOf(vaultId) : null;
     if (!vaultPath) return c.json({ error: 'vault_not_found' }, 400);
+    // 只按实际打包的一级目录起草，避免商品页描述未交付的内容。
+    const include = body && Array.isArray(body['include'])
+      ? body['include'].filter((x): x is string => typeof x === 'string' && x.trim() !== '').slice(0, 50)
+      : undefined;
     try {
-      return c.json(await suggestFn(vaultPath));
+      return c.json(await suggestFn(vaultPath, include));
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'suggest_failed';
       if (msg.startsWith('suggest_unavailable')) return c.json({ error: 'suggest_unavailable' }, 503);
@@ -271,9 +357,13 @@ export function marketRoutes(db: Database.Database, auth: AuthClient, opts: Mark
     const vaultPath = vaultId ? vaultPathOf(vaultId) : null;
     if (!vaultId || !vaultPath) return c.json({ error: 'vault_not_found' }, 400);
     const previewFiles = parsed ? ((Array.isArray(parsed['previews']) ? parsed['previews'] : parsed['previews'] ? [parsed['previews']] : []) as File[]) : [];
+    const content = parseContentField(parsed && typeof parsed['content'] === 'string' ? parsed['content'] : '');
+    if (content === null) return c.json({ error: 'invalid_metadata' }, 400);
 
     let pack: Awaited<ReturnType<typeof packVaultToZip>> | null = null;
     try {
+      // 内容先保存：校验失败就中止，不浪费一次整包上传；成功保存也不触发 zip 重传。
+      if (content) await client.setContent(id, content);
       let include: string[] | undefined;
       try { include = JSON.parse(parsed && typeof parsed['include'] === 'string' ? parsed['include'] : '[]') as string[]; } catch { /* ignore */ }
       // 升版表单不显示目录选择、也就不传 include，语义是「整个 vault」。但打包器缺省
@@ -283,7 +373,7 @@ export function marketRoutes(db: Database.Database, auth: AuthClient, opts: Mark
       if (!include?.length) {
         try { include = listPublishableTopDirs(vaultPath); } catch { include = undefined; }
       }
-      pack = await packVaultToZip(vaultPath, { maxBytes: MAX_ZIP_BYTES, include: include?.length ? include : undefined });
+      pack = await packVaultToZip(vaultPath, { maxBytes: SAFETY_MAX_ZIP_BYTES, include: include?.length ? include : undefined });
       const previews = previewFiles.length > 0 ? await checkPreviews(previewFiles) : []; // 不传 = 沿用旧图
       const upd = await client.update(
         id,
@@ -323,6 +413,19 @@ export function marketRoutes(db: Database.Database, auth: AuthClient, opts: Mark
       db.prepare('DELETE FROM market_local WHERE listing_id = ?').run(id);
       invalidateListingsCache(); // 下架立即反映到目录页
       return c.json({ ok: true });
+    } catch (e) { return cloudError(c, e); }
+  });
+
+  // 商品页内容单独保存（编辑/重新生成后调用）：只写 content，不重传 zip。
+  app.post('/listings/:id/content', async (c) => {
+    const denied = denyCrossOrigin(c) ?? denyOversized(c, MAX_CONTENT_BODY_BYTES);
+    if (denied) return denied;
+    const body = await c.req.json().catch(() => null) as { content?: unknown } | null;
+    if (!body || typeof body !== 'object' || !body.content) return c.json({ error: 'invalid_metadata' }, 400);
+    try {
+      const listing = await client.setContent(c.req.param('id'), body.content as MarketContent);
+      invalidateListingsCache();
+      return c.json({ listing });
     } catch (e) { return cloudError(c, e); }
   });
 
