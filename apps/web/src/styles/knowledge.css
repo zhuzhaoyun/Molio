@@ -261,6 +261,37 @@
   padding: 6px 8px 6px 6px;
 }
 
+/* 拉树失败：常驻错误条（不是一闪而过的 toast）——刷新失败必须先被看见。 */
+.kb-tree-error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 8px 0;
+  padding: 6px 8px;
+  border: 1px solid var(--red-border);
+  border-radius: 6px;
+  background: var(--red-bg);
+  color: var(--red);
+  font-size: 11.5px;
+  line-height: 1.4;
+}
+
+.kb-tree-error__msg {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.kb-tree-error__retry {
+  flex: 0 0 auto;
+  font-size: 11.5px;
+  color: var(--red);
+  border-color: var(--red-border);
+}
+
+.kb-tree-search-empty h3 { margin-bottom: 6px; }
+.kb-tree-search-empty p { margin-bottom: 10px; }
+
 .kb-tree-group { margin-bottom: 2px; }
 
 .kb-tree-group-label {

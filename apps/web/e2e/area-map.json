@@ -128,7 +128,9 @@
         "kb-terminology",
         "kb-search",
         "kb-export",
-        "market-community"
+        "market-community",
+        "kb-create-at-root",
+        "kb-tree-refresh-search"
       ]
     },
     "publish": {
@@ -610,6 +612,14 @@
     "sandbox": {
       "priority": "P0",
       "file": "sandbox.spec.ts"
+    },
+    "kb-create-at-root": {
+      "priority": "P1",
+      "file": "kb-create-at-root.spec.ts"
+    },
+    "kb-tree-refresh-search": {
+      "priority": "P1",
+      "file": "kb-tree-refresh-search.spec.ts"
     }
   }
 }
