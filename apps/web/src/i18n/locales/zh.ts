@@ -971,6 +971,9 @@ const zh: Record<string, string> = {
   'resources.pay.download': '下载资源包',
   // ── 社区资源市场：发布向导 / 我的上架 / 知识库入口（Task 10） ──
   'vault.publish': '发布到资源库',
+  'vault.publishRolePending': '正在校验发布权限…',
+  'vault.publishRoleRetry': '正在重新校验发布权限…',
+  'vault.publishRoleFailed': '暂时无法校验管理员身份，请检查网络后重试',
   // ── 知识库列表：行内 ⋯ 菜单（复制 ID / 定位文件 / 移除） ──
   'vault.listHeader': '全部知识库',
   'vault.listEmpty': '还没有知识库',
@@ -1012,7 +1015,7 @@ const zh: Record<string, string> = {
   'publish.error.previewRequired': '请至少提供一张效果图',
   'publish.error.previewInvalid': '效果图仅支持 PNG/JPEG/WebP 且 ≤5MB',
   'publish.error.agreement': '请先勾选公开分享声明',
-  'publish.error.zip_too_large': '知识库打包后超过 200MB，请精简后再发布',
+  'publish.error.zip_too_large': '知识库打包后超过本地安全上限（1GB），请精简后再发布',
   'publish.error.too_many_active': '上架数量已达上限（10 条）',
   'publish.error.rate_limited': '今日上架次数已用完（5 次）',
   'publish.error.cloud_unreachable': '网络异常，请稍后再试',

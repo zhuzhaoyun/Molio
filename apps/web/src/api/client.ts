@@ -7,6 +7,7 @@ import type {
   WikiStatusResponse,
   GraphData, GraphScope, SearchResult, SearchResponse,
   AuthStatus, SendCodeResponse, User, MeResponse,
+  MarketRoleResponse,
   SkillManifestEntry, SkillDetailResponse, CreateSkillRequest, UpdateSkillRequest,
   ImportSkillRequest, PrefillResult, SkillImportPreviewResponse,
   HubSkillsQuery, HubSkillsListResponse, HubCategoriesResponse,
@@ -573,6 +574,16 @@ export const api = {
   /** 注销账号（个保法）：云端软删除 + 吊销全部 session。云端不可达会抛错且本地保留。 */
   async authDeleteAccount(): Promise<void> {
     await authFetch('account', { method: 'DELETE' });
+  },
+
+  /**
+   * 「发布到资源库」身份门禁快照。daemon 侧本地缓存即答（首次判定才走云端），
+   * 用于点击瞬间同步分流管理员 / 非管理员，见 stores/marketRoleStore。
+   */
+  async getMarketRole(): Promise<MarketRoleResponse> {
+    const res = await fetch(`${BASE}/market/role`);
+    if (!res.ok) throw new Error(`Failed to fetch market role: ${res.status}`);
+    return res.json();
   },
 
   // ─── Knowledge Base ───

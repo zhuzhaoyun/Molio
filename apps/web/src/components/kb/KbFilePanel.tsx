@@ -51,12 +51,13 @@ interface KbFilePanelProps {
   /** Publish the current vault to the resources hub. */
   onPublishVault: () => void;
   /**
-   * 「发布到资源库」门禁的当前判定结果（管理员=页内发布 tab / 其他=系统浏览器打开
-   * 官网联系页）。门禁是**异步**落定的（登录态 → GET /api/market/my → setState），
-   * 而按钮首帧就可点；把它渲染成属性，调用方/E2E 才能等门禁落定后再点，否则会在
-   * 未决窗口里误走联系页分支。undefined = 调用方未提供（不渲染该属性）。
+   * 「发布到资源库」门禁的当前判定结果：
+   * - admin：页内发布 tab；contact：系统浏览器打开官网联系页；
+   * - pending / error：身份还没判定出来（登录态或管理员身份未决 / 判定失败）。
+   *   这两种状态下点击不会直接分流，调用方会等判定结果（见 KnowledgeBasePage）。
+   * 渲染成属性，调用方/E2E 才能等门禁落定后再点。undefined = 调用方未提供。
    */
-  publishGate?: 'admin' | 'contact';
+  publishGate?: 'admin' | 'contact' | 'pending' | 'error';
   children?: ReactNode;
 }
 
@@ -563,7 +564,9 @@ export const KbFilePanel = forwardRef<KbFilePanelHandle, KbFilePanelProps>(funct
           <button
             type="button"
             className="kb-btn kb-btn-publish"
-            title={t('vault.publish')}
+            title={publishGate === 'pending' ? t('vault.publishRolePending')
+              : publishGate === 'error' ? t('vault.publishRoleFailed')
+                : t('vault.publish')}
             onClick={onPublishVault}
             data-testid="kb-btn-publish-vault"
             data-publish-gate={publishGate}

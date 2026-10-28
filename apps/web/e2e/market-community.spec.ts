@@ -417,13 +417,15 @@ test.describe('社区发布 → 展示 → 下载闭环（P1，mock OSS）', () 
     await myListingsSettled;
     await expect(page.locator('[data-testid="me-tab-listings"]')).toHaveCount(0);
 
-    // 同用例 1：等门禁状态落定再点（也顺带等 vault 解析，防 activeVault 未决早退）
-    const mySettled = page
-      .waitForResponse((r) => r.url().includes('/api/market/my'), { timeout: 10_000 })
-      .catch(() => null);
+    // 同用例 1：等门禁状态落定再点（也顺带等 vault 解析，防 activeVault 未决早退）。
+    // 门禁现走 GET /api/market/role（本地缓存即答），不再等 /my 的云端往返。
     await page.goto(`http://localhost:5173/knowledge?vault=${vaultId}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 15_000 }); // vite dev 冷转换可超 5s（Windows 本地）
-    await mySettled;
+    await expect(page.locator('[data-testid="kb-btn-publish-vault"]')).toHaveAttribute(
+      'data-publish-gate',
+      'contact',
+      { timeout: 10_000 },
+    );
 
     // 官网联系页（外部真实网络不可依赖）→ context 级 route mock（window.open 的新
     // 页也在同一 context）；断言新开页指向联系页，且应用页未离开、未打开发布 tab
@@ -439,5 +441,35 @@ test.describe('社区发布 → 展示 → 下载闭环（P1，mock OSS）', () 
     expect(page.url()).toContain('/knowledge');
     await expect(page.locator('[data-testid="kb-publish-pane"]')).toHaveCount(0);
     await popup.close().catch(() => {});
+  });
+
+  test('管理员：门禁未决时点击不会开浏览器，判定后进入发布 tab', async ({ page, request }) => {
+    test.setTimeout(60_000);
+    // 回归（2026-10 用户报告）：门禁未落定时点「发布到资源库」，管理员被当成非管理员
+    // 丢进系统浏览器（官网联系页），页内发布配置页永远打不开。现在未决窗口里的点击
+    // 必须**等判定**再分流，绝不能先开浏览器。
+    await ensureLoggedOut(request);
+    await gotoHome(page);
+    await loginViaDevCode(page, 'admin@test.local');
+    await expect(page.locator('[data-testid="me-tab-listings"]')).toBeVisible({ timeout: 5_000 });
+
+    // 人为拖慢身份判定：把「未决 → 已判定」的窗口拉长，模拟云端慢/首装首次判定
+    await page.route('**/api/market/role', async (route) => {
+      await new Promise((resolve) => setTimeout(resolve, 2_000));
+      await route.continue();
+    });
+
+    const popups: string[] = [];
+    page.context().on('page', (p) => popups.push(p.url()));
+
+    await page.goto(`http://localhost:5173/knowledge?vault=${vaultId}`);
+    const publishBtn = page.locator('[data-testid="kb-btn-publish-vault"]');
+    await expect(publishBtn).toBeVisible({ timeout: 15_000 });
+    await expect(publishBtn).toHaveAttribute('data-publish-gate', 'pending', { timeout: 5_000 });
+
+    // 未决时点击：不得开新页；判定落定后应直接打开页内发布 tab
+    await publishBtn.click();
+    await expect(page.locator('[data-testid="kb-wtab-publish"]')).toHaveClass(/is-active/, { timeout: 15_000 });
+    expect(popups).toEqual([]);
   });
 });
