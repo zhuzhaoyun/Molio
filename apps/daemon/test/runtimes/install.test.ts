@@ -856,11 +856,18 @@ describe('native prebuild repair', () => {
   it('should install the platform prebuild and retry once after a native failure', async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'molio-prebuild-'));
     try {
+      // The repair picks the platform package for the running platform/arch,
+      // so the fixture must describe this machine (CI runs macOS too).
+      const prebuildName = `@koromix/koffi-${process.platform}-${process.arch}`;
+      const prebuildSpec = `${prebuildName}@3.1.1`;
+      const prebuildDir = path.join('node_modules', ...prebuildName.split('/'));
+      const markerFile = '.installed';
+
       const koffiDir = path.join(root, 'node_modules', 'koffi');
       fs.mkdirSync(koffiDir, { recursive: true });
       fs.writeFileSync(path.join(koffiDir, 'package.json'), JSON.stringify({
         name: 'koffi',
-        optionalDependencies: { '@koromix/koffi-win32-x64': '3.1.1' },
+        optionalDependencies: { [prebuildName]: '3.1.1' },
       }));
 
       // Fake npm: the full install fails with koffi's real signature until the
@@ -869,9 +876,10 @@ describe('native prebuild repair', () => {
         const fs = require('fs');
         const args = process.argv.join(' ');
         fs.appendFileSync('calls.log', args + '\\n');
-        const marker = 'node_modules/@koromix/koffi-win32-x64/.installed';
-        if (args.includes('@koromix/koffi-win32-x64@3.1.1')) {
-          fs.mkdirSync('node_modules/@koromix/koffi-win32-x64', { recursive: true });
+        const dir = ${JSON.stringify(prebuildDir)};
+        const marker = dir + '/' + ${JSON.stringify(markerFile)};
+        if (args.includes(${JSON.stringify(prebuildSpec)})) {
+          fs.mkdirSync(dir, { recursive: true });
           fs.writeFileSync(marker, '1');
           process.exit(0);
         }
@@ -895,7 +903,7 @@ describe('native prebuild repair', () => {
       assert.equal(res.installed, true, 'retry must succeed after the prebuild lands');
       const calls = fs.readFileSync(path.join(root, 'calls.log'), 'utf8').trim().split('\n');
       assert.equal(calls.length, 3, `expected install → prebuild → install, got:\n${calls.join('\n')}`);
-      assert.match(calls[1]!, /@koromix\/koffi-win32-x64@3\.1\.1/);
+      assert.ok(calls[1]!.includes(prebuildSpec), `targeted install must request ${prebuildSpec}`);
       assert.ok(events.some((e) => e.type === 'log' && /could not load its prebuilt binary/i.test(e.message)));
       assert.ok(events.some((e) => e.type === 'log' && /retrying npm install/i.test(e.message)));
     } finally {
