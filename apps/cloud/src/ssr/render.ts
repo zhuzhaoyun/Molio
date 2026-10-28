@@ -75,6 +75,12 @@ function productJsonLd(m: MarketListing): string {
     '@type': 'Product',
     name: m.name,
     description: content?.seo?.description ?? metaDescription(m.summary, 500),
+    // 同义/别称（如「高中数学知识图谱」）：schema.org Thing 的标准属性，
+    // Google 与 AI 搜索用它把用户的另一种说法映射到这份资源上。
+    ...(content?.seo?.aliases?.length ? { alternateName: content.seo.aliases } : {}),
+    // 检索词（同义词/简称）也让结构化数据能读到，而不只是页面上一个可见标签：
+    // AI 摘录与 Google 实体匹配都会用到 Product.keywords。
+    ...(m.tags.length > 0 ? { keywords: m.tags.join(', ') } : {}),
     image,
     sku: m.id,
     brand: { '@type': 'Brand', name: 'Molio 墨流' },
