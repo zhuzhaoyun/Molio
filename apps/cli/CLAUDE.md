@@ -40,6 +40,8 @@ src/
     tools/          common.ts（toolOk/toolText/toolError/runTool）+ 7 个 registerXxx
 connector/          WorkBuddy 提交资产（见下节）
 pi/                 Pi Coding Agent 插件资产（Pi package，见下节）
+mcpb/               MCPB 扩展 manifest + stdio 入口（Smithery / Claude Desktop 本地分发）
+scripts/            build-mcpb.mjs：esbuild 单文件打包 + mcpb validate/pack
 test/               fake-daemon.ts + helpers.ts + sse-parser/vault-resolver/daemon-client/ask-service/commands/mcp-tools/pi-assets 测试
 ```
 
@@ -124,7 +126,7 @@ pi/
 ## npm 发布（.github/workflows/cli-publish.yml）
 
 - **触发**：push tag `cli-v*`（如 `cli-v0.1.0`）或手动 workflow_dispatch。与桌面端 `v*`（release.yml）互不干扰。
-- **版本校验**：tag 版本 == `apps/cli/package.json` version == `src/version.ts` CLI_VERSION，三者不一致直接 fail。**发版先改两处版本号、commit，再打 tag**。
+- **版本校验**：tag 版本 == `apps/cli/package.json` version == `src/version.ts` CLI_VERSION，三者不一致直接 fail。**发版先改两处版本号、commit，再打 tag**。`mcpb/manifest.json` 的 version 也保持同步（打包脚本会用 package.json 覆盖，但 `test/mcpb-assets.test.ts` 校验两者一致）。
 - **预发布**：version 含 `-`（如 `0.2.0-beta.1`）自动发到 `beta` dist-tag，latest 只留正式版（`npx -y @molio/cli` 装 latest）。
 - **流水线步骤**：install → 版本校验 → build contracts → `pnpm --filter @molio/cli test`（自带 rebuild dist）→ NPM_TOKEN guard → 拷根 LICENSE 进包 → `npm pack --dry-run` 公示内容 → `pnpm publish` → registry 回查。
 - **一次性人工前置**：① npm 注册 `@molio` scope（组织）；② 仓库 Settings → Secrets 加 `NPM_TOKEN`（automation token，需 @molio 发布权限）。
@@ -143,11 +145,25 @@ git tag cli-v0.1.0 && git push origin cli-v0.1.0
 - **server.json（包根，不进 npm tarball）**：`name` 必须 == `mcpName`；version 两处 == package.json（发版同步改）；description ≤100 字符；⚠️ `mcp` 子命令放 **packageArguments**（传给 molio 二进制），不是 runtimeArguments（传给 npx）——放错则客户端装完启动的是 CLI 主命令而非 MCP server。结构校验在 `test/registry-assets.test.ts`。
 - **发布后**：`curl "https://registry.modelcontextprotocol.io/v0.1/servers?search=io.github.zhuzhaoyun/molio"` 回查；精确版本用 `GET /v0/servers/{name}/versions/{version}`——名字里的 `/` 必须编码成 `%2F`（不编码或改用 `/v0/servers/{name}` 都会 404，workflow 首发时踩过）；Glama/PulseMCP 等目录自动爬取官方 Registry。
 
+## MCPB 分发（Smithery / Claude Desktop）
+
+Smithery 现在只收两种发布形态：公网 HTTPS 的 Streamable HTTP，或本地 stdio 的 **MCPB 扩展包**（Claude Desktop 也是同一格式）。`@molio/cli mcp` 依赖 `@modelcontextprotocol/sdk` + `zod`，客户端不会替用户装 npm 依赖，所以先 esbuild 打成单文件再打包：
+
+```bash
+pnpm build:mcpb   # → dist/molio-kb-<version>.mcpb（不进 npm tarball）
+```
+
+- `mcpb/manifest.json`：`server.type=node`，入口 `server/index.js`；daemon 地址通过 `user_config` 注入 `MOLIO_PORT` / `MOLIO_DAEMON_URL`（默认 3100，空 URL 退回 `127.0.0.1`）。
+- 图标取 `apps/desktop/build/icon.png`（512×512）；构建脚本用 package.json 覆盖 manifest 版本。
+- **禁止把 `mcpb/server/index.js` 提交进仓**（构建产物）；`test/mcpb-assets.test.ts` 校验版本/入口/env 映射/图标尺寸，避免"打包成功但客户端装不上"。
+- Smithery 发布：**首次创建**必须网页登录（Publish → MCP → `/servers/new`）上传产物——创建 server 的 API 已下线（`PUT /servers/{q}` 返回 403 `Updating servers has been removed`），release 端点在记录不存在时 404；创建成功后可用 `npx @smithery/cli mcp publish <bundle> -n <namespace>/molio` 更新。
+
 ## 命令
 
 ```bash
 pnpm dev          # tsx src/index.ts（本地跑命令）
 pnpm build        # tsc → dist/
+pnpm build:mcpb   # esbuild 单文件 + mcpb 校验/打包 → dist/molio-kb-<version>.mcpb
 pnpm start        # node dist/src/index.js
 pnpm test         # rm dist && tsc && node --test dist/test/**/*.test.js（--test-timeout=30000）
 pnpm typecheck    # tsc --noEmit
