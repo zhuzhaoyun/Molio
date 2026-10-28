@@ -1898,8 +1898,14 @@ async function installFromNpmJs(
     return;
   }
 
-  const installFlags = ['--no-save', '--no-package-lock', '--no-audit', '--no-fund'];
-  const npmRes = await installNpmDeps(runner, source.registries, installFlags, runtimeRoot, onEvent, signal);
+  // --include=optional: prebuild-based native addons (koffi) ship their
+  // binary as an optional platform package. A user-level npmrc with
+  // `omit=optional` silently drops it and the addon then tries to compile
+  // from source (real failure, 2026-10-28).
+  const installFlags = ['--no-save', '--no-package-lock', '--no-audit', '--no-fund', '--include=optional'];
+  const npmRes = await installNpmWithPrebuildRepair(
+    runner, source.registries, installFlags, runtimeRoot, onEvent, signal,
+  );
   if (npmRes.aborted) {
     onEvent({ type: 'error', message: 'Installation cancelled during npm install', category: 'unknown', retryable: true });
     return;
@@ -1911,12 +1917,15 @@ async function installFromNpmJs(
     return;
   }
   if (!installed) {
+    const nativeFailure = isNativeInstallFailure(lastFailure);
     onEvent({
       type: 'error',
-      message: `npm install failed for ${source.pkgName}@${source.version}. ${lastFailure}`.trim(),
-      category: 'network',
+      message: `npm install failed for ${source.pkgName}@${source.version}. ${lastFailure.slice(-600)}`.trim(),
+      category: nativeFailure ? 'runtime' : 'network',
       retryable: true,
-      hint: 'Check your network connection and try again. If it persists, the package version may be unavailable on the configured registries.',
+      hint: nativeFailure
+        ? 'A native dependency could not load its prebuilt binary even after Molio installed the platform-specific package and retried. Check that antivirus is not blocking ~/.molio, or install the Microsoft Visual C++ Redistributable, then retry.'
+        : 'Check your network connection and try again. If it persists, the package version may be unavailable on the configured registries.',
     });
     return;
   }
@@ -2258,6 +2267,7 @@ export async function installNpmDeps(
   cwd: string,
   onEvent: (event: InstallEvent) => void,
   signal?: AbortSignal,
+  packages: string[] = [],
 ): Promise<{ installed: boolean; lastFailure: string; aborted: boolean }> {
   let installed = false;
   let lastFailure = '';
@@ -2267,7 +2277,7 @@ export async function installNpmDeps(
     onEvent({ type: 'log', message: `Installing dependencies from ${registry}...` });
     const res = await runNpm(
       runner,
-      ['install', '--registry', registry, ...installFlags],
+      ['install', ...packages, '--registry', registry, ...installFlags],
       cwd,
       onEvent,
       signal,
@@ -2277,11 +2287,145 @@ export async function installNpmDeps(
       installed = true;
       break;
     }
-    lastFailure = (res.stderr || res.stdout || '').trim().slice(-600);
+    // Keep the full stderr: the repair path needs npm's `npm error path` line,
+    // which sits at the top and falls outside the 600-char tail shown to users.
+    lastFailure = (res.stderr || res.stdout || '').trim();
     onEvent({ type: 'log', message: `Registry ${registry} failed (exit ${res.code}); trying next...` });
   }
   if (signal?.aborted) aborted = true;
   return { installed, lastFailure, aborted };
+}
+
+// ─── Native prebuild repair ────────────────────────────────────────────────
+
+/**
+ * npm output for a native addon whose install script could not load its
+ * prebuilt binary and then hit a missing C++ toolchain. koffi's cnoke is the
+ * concrete case (real machine, 2026-10-28): the platform prebuild lives in an
+ * optional dependency, and when that package is missing the script falls back
+ * to a source build that dies on "CMake does not seem to be available".
+ * @internal exported for testing
+ */
+const NATIVE_SCRIPT_FAILURE_RE =
+  /Failed to load prebuilt binary|CMake does not seem to be available|cnoke\.cjs|node-gyp|gyp ERR!|prebuild-install/i;
+
+/** @internal exported for testing */
+export function isNativeInstallFailure(stderr: string): boolean {
+  return NATIVE_SCRIPT_FAILURE_RE.test(stderr);
+}
+
+/**
+ * Extract the package directory npm reported via its `npm error path <dir>`
+ * line (older npm: `npm ERR! path`). Returns null when the line is absent.
+ * @internal exported for testing
+ */
+export function parseFailedPackageDir(stderr: string): string | null {
+  const m = stderr.match(/^npm (?:error|ERR!) path (.+?)\r?$/m);
+  const dir = m?.[1]?.trim();
+  return dir ? dir : null;
+}
+
+/**
+ * Pick the optionalDependencies entry npm should have installed for this
+ * platform/arch. Prebuild packages (koffi → @koromix/koffi-win32-x64) name
+ * themselves `<base>-<platform>-<arch>`.
+ * @internal exported for testing
+ */
+export function findPlatformPrebuildDep(
+  optionalDeps: Record<string, unknown> | undefined,
+  platform: string = process.platform,
+  arch: string = process.arch,
+): { name: string; version: string } | null {
+  if (!optionalDeps) return null;
+  const suffix = `-${platform}-${arch}`;
+  for (const [name, version] of Object.entries(optionalDeps)) {
+    if (name.endsWith(suffix) && typeof version === 'string') {
+      return { name, version };
+    }
+  }
+  return null;
+}
+
+/**
+ * Install the platform prebuild package of the addon npm failed on.
+ * Returns true when it landed in node_modules.
+ */
+async function installFailedPackagePrebuild(
+  runner: NpmRunner,
+  registries: string[],
+  runtimeRoot: string,
+  stderr: string,
+  onEvent: (event: InstallEvent) => void,
+  signal?: AbortSignal,
+): Promise<boolean> {
+  const dir = parseFailedPackageDir(stderr);
+  if (!dir) return false;
+
+  let manifest: any;
+  try {
+    manifest = JSON.parse(readFileSync(path.join(dir, 'package.json'), 'utf8'));
+  } catch {
+    return false;
+  }
+  const dep = findPlatformPrebuildDep(manifest?.optionalDependencies);
+  if (!dep) return false;
+
+  onEvent({
+    type: 'log',
+    message: `${manifest?.name ?? path.basename(dir)} could not load its prebuilt binary — installing ${dep.name}@${dep.version}...`,
+  });
+  const res = await installNpmDeps(
+    runner,
+    registries,
+    ['--no-save', '--no-package-lock', '--no-audit', '--no-fund'],
+    runtimeRoot,
+    onEvent,
+    signal,
+    [`${dep.name}@${dep.version}`],
+  );
+  if (res.aborted || !res.installed) {
+    onEvent({ type: 'log', message: `Could not install ${dep.name}@${dep.version} — keeping the original failure.` });
+    return false;
+  }
+  return true;
+}
+
+/**
+ * `npm install` with one repair attempt for prebuild-based native addons.
+ *
+ * Why: these addons work without any C++ toolchain as long as npm installs
+ * their optional platform package. When that package is dropped (transient
+ * mirror failure, antivirus, or a user npmrc `omit=optional`), the addon's
+ * install script falls back to a source build and the whole install dies on
+ * a bare "CMake does not seem to be available" — which the user cannot act
+ * on. Installing the platform package explicitly and retrying once turns
+ * that dead end into a normal install.
+ *
+ * @internal exported for testing
+ */
+export async function installNpmWithPrebuildRepair(
+  runner: NpmRunner,
+  registries: string[],
+  installFlags: string[],
+  runtimeRoot: string,
+  onEvent: (event: InstallEvent) => void,
+  signal?: AbortSignal,
+): Promise<{ installed: boolean; lastFailure: string; aborted: boolean }> {
+  const first = await installNpmDeps(runner, registries, installFlags, runtimeRoot, onEvent, signal);
+  if (first.installed || first.aborted || !isNativeInstallFailure(first.lastFailure)) {
+    return first;
+  }
+
+  const repaired = await installFailedPackagePrebuild(
+    runner, registries, runtimeRoot, first.lastFailure, onEvent, signal,
+  );
+  if (signal?.aborted) {
+    return { installed: false, lastFailure: first.lastFailure, aborted: true };
+  }
+  if (!repaired) return first;
+
+  onEvent({ type: 'log', message: 'Prebuilt binary restored — retrying npm install...' });
+  return installNpmDeps(runner, registries, installFlags, runtimeRoot, onEvent, signal);
 }
 
 /**

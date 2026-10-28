@@ -12,6 +12,8 @@ import {
   parseLatestVersionFromPackument, matchPlatformArgs, classifyScriptExitError,
   parseShaForFile, writeShim, nodeDistInfo,
   probeHostNode, ensureManagedNode, installNpmDeps, managedNodeBin, managedNpmCli,
+  isNativeInstallFailure, parseFailedPackageDir, findPlatformPrebuildDep,
+  installNpmWithPrebuildRepair,
 } from '../../src/core/runtimes/install.js';
 import { claudeAgentDef } from '../../src/core/runtimes/claude.js';
 import { codexAgentDef } from '../../src/core/runtimes/codex.js';
@@ -791,6 +793,140 @@ describe('installNpmDeps', () => {
       assert.equal(res.installed, false);
       assert.ok(Date.now() - started < 5000, 'should not wait for the 30s child — abort kills it');
     }));
+});
+
+// ─── Native prebuild repair (error-driven) ──────────────────────────────────
+//
+// Bug (2026-10-28, real machine): dsh install died with
+//   npm error path ...\node_modules\koffi
+//   npm error Failed to load prebuilt binary, rebuilding from source
+//   npm error Error: CMake does not seem to be available
+// koffi ships its binary in an optional platform package; when that package is
+// dropped, cnoke falls back to a source build and the user hits a dead end.
+// Fix: install the failed package's platform prebuild explicitly and retry.
+
+describe('native prebuild repair', () => {
+  function koffiStderr(pkgDir: string): string {
+    return [
+      'npm error code 1',
+      `npm error path ${pkgDir}`,
+      'npm error command failed',
+      'npm error command C:\\WINDOWS\\system32\\cmd.exe /d /s /c node ./cnoke.cjs -P . -D src/koffi --prebuild --release',
+      'npm error Failed to load prebuilt binary, rebuilding from source',
+      'npm error Error: CMake does not seem to be available',
+      'npm error     at checkCMake (…/koffi/cnoke.cjs:576:17)',
+      'npm error     at Builder.build (…/koffi/cnoke.cjs:496:5)',
+      'npm error A complete log of this run can be found in: C:\\npm-cache\\_logs\\2026-10-28T11_44_41_825Z-debug-0.log',
+    ].join('\n');
+  }
+
+  it('should recognise a native script failure but not a network failure', () => {
+    assert.equal(isNativeInstallFailure(koffiStderr('/x/node_modules/koffi')), true);
+    assert.equal(
+      isNativeInstallFailure('npm error code ECONNRESET\nnpm error network request failed'),
+      false,
+    );
+  });
+
+  it('should parse the failing package directory from npm output', () => {
+    assert.equal(
+      parseFailedPackageDir(koffiStderr('C:\\Users\\u\\.molio\\runtimes\\dsh\\node_modules\\koffi')),
+      'C:\\Users\\u\\.molio\\runtimes\\dsh\\node_modules\\koffi',
+    );
+    assert.equal(
+      parseFailedPackageDir('npm ERR! path /home/u/.molio/runtimes/dsh/node_modules/@koromix/koffi-win32-x64'),
+      '/home/u/.molio/runtimes/dsh/node_modules/@koromix/koffi-win32-x64',
+    );
+    assert.equal(parseFailedPackageDir('npm error code 1\nnpm error command failed'), null);
+  });
+
+  it('should pick the optional dependency matching the current platform', () => {
+    const deps = {
+      '@koromix/koffi-win32-x64': '3.1.1',
+      '@koromix/koffi-darwin-arm64': '3.1.1',
+    };
+    assert.deepEqual(findPlatformPrebuildDep(deps, 'win32', 'x64'),
+      { name: '@koromix/koffi-win32-x64', version: '3.1.1' });
+    assert.deepEqual(findPlatformPrebuildDep(deps, 'darwin', 'arm64'),
+      { name: '@koromix/koffi-darwin-arm64', version: '3.1.1' });
+    assert.equal(findPlatformPrebuildDep(deps, 'linux', 'x64'), null);
+    assert.equal(findPlatformPrebuildDep(undefined, 'win32', 'x64'), null);
+  });
+
+  it('should install the platform prebuild and retry once after a native failure', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'molio-prebuild-'));
+    try {
+      const koffiDir = path.join(root, 'node_modules', 'koffi');
+      fs.mkdirSync(koffiDir, { recursive: true });
+      fs.writeFileSync(path.join(koffiDir, 'package.json'), JSON.stringify({
+        name: 'koffi',
+        optionalDependencies: { '@koromix/koffi-win32-x64': '3.1.1' },
+      }));
+
+      // Fake npm: the full install fails with koffi's real signature until the
+      // platform prebuild package is present; the targeted install creates it.
+      const script = `
+        const fs = require('fs');
+        const args = process.argv.join(' ');
+        fs.appendFileSync('calls.log', args + '\\n');
+        const marker = 'node_modules/@koromix/koffi-win32-x64/.installed';
+        if (args.includes('@koromix/koffi-win32-x64@3.1.1')) {
+          fs.mkdirSync('node_modules/@koromix/koffi-win32-x64', { recursive: true });
+          fs.writeFileSync(marker, '1');
+          process.exit(0);
+        }
+        if (!fs.existsSync(marker)) {
+          process.stderr.write(${JSON.stringify(koffiStderr(koffiDir))});
+          process.exit(1);
+        }
+        process.exit(0);
+      `;
+      const runner = { cmd: process.execPath, baseArgs: ['-e', script], shell: false };
+      const events: InstallEvent[] = [];
+
+      const res = await installNpmWithPrebuildRepair(
+        runner,
+        ['https://registry.npmmirror.com'],
+        ['--no-save', '--no-package-lock', '--include=optional'],
+        root,
+        (e) => events.push(e),
+      );
+
+      assert.equal(res.installed, true, 'retry must succeed after the prebuild lands');
+      const calls = fs.readFileSync(path.join(root, 'calls.log'), 'utf8').trim().split('\n');
+      assert.equal(calls.length, 3, `expected install → prebuild → install, got:\n${calls.join('\n')}`);
+      assert.match(calls[1]!, /@koromix\/koffi-win32-x64@3\.1\.1/);
+      assert.ok(events.some((e) => e.type === 'log' && /could not load its prebuilt binary/i.test(e.message)));
+      assert.ok(events.some((e) => e.type === 'log' && /retrying npm install/i.test(e.message)));
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('should not retry on plain network failures', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'molio-netfail-'));
+    try {
+      const script = `
+        const fs = require('fs');
+        fs.appendFileSync('calls.log', 'call\\n');
+        process.stderr.write('npm error code ECONNRESET');
+        process.exit(1);
+      `;
+      const runner = { cmd: process.execPath, baseArgs: ['-e', script], shell: false };
+      const res = await installNpmWithPrebuildRepair(
+        runner,
+        ['https://registry.npmmirror.com'],
+        ['--no-save'],
+        root,
+        () => {},
+      );
+      assert.equal(res.installed, false);
+      const calls = fs.readFileSync(path.join(root, 'calls.log'), 'utf8').trim().split('\n');
+      assert.equal(calls.length, 1, 'no repair attempt for a non-native failure');
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
 });
 
 describe('PATH update duplication guard (error-driven)', () => {
