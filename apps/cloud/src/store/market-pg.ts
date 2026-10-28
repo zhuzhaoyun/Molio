@@ -1,4 +1,4 @@
-import type { MarketTaxon } from '@molio/contracts';
+import type { MarketContent, MarketTaxon } from '@molio/contracts';
 // apps/cloud/src/store/market-pg.ts
 // PgMarketStore：语义与 MemoryMarketStore 逐条对齐（§资源市场设计）。
 // JSONB 列（overview/highlights/tags/previews）出入参均为字符串数组；
@@ -9,7 +9,7 @@ import type { MarketListingRecord, MarketPendingUpdate, MarketStore } from './ma
 type Row = {
   category_id: string | null; resource_type_id: string | null;
   id: string; user_id: string; source: string; name: string; icon: string; tint: string;
-  summary: string; overview: string[]; highlights: string[]; tags: string[]; previews: string[];
+  summary: string; content: MarketContent | null; overview: string[]; highlights: string[]; tags: string[]; previews: string[];
   version: string; price_cents: number; pay_url: string; author_display: string | null;
   oss_key: string; file_size: string | null; status: string; removed_reason: string | null;
   pending_update: MarketPendingUpdate | null;
@@ -20,7 +20,7 @@ function fromRow(r: Row): MarketListingRecord {
   return {
     categoryId: r.category_id, resourceTypeId: r.resource_type_id,
     id: r.id, userId: r.user_id, source: r.source as MarketListingRecord['source'],
-    name: r.name, icon: r.icon, tint: r.tint, summary: r.summary,
+    name: r.name, icon: r.icon, tint: r.tint, summary: r.summary, content: r.content ?? null,
     overview: r.overview ?? [], highlights: r.highlights ?? [], tags: r.tags ?? [], previews: r.previews ?? [],
     version: r.version, priceCents: r.price_cents, payUrl: r.pay_url, authorDisplay: r.author_display,
     ossKey: r.oss_key, fileSize: r.file_size === null ? null : Number(r.file_size),
@@ -31,7 +31,7 @@ function fromRow(r: Row): MarketListingRecord {
   };
 }
 
-const SELECT_COLS = `category_id, resource_type_id, id, user_id, source, name, icon, tint, summary, overview, highlights, tags,
+const SELECT_COLS = `category_id, resource_type_id, id, user_id, source, name, icon, tint, summary, content, overview, highlights, tags,
   previews, version, price_cents, pay_url, author_display, oss_key, file_size, status,
   removed_reason, pending_update, created_at, updated_at, published_at`;
 
@@ -51,15 +51,15 @@ export class PgMarketStore implements MarketStore {
     await this.pool.query(
       `INSERT INTO market_listings (id, user_id, source, name, icon, tint, summary, overview,
         highlights, tags, previews, version, price_cents, pay_url, author_display, oss_key,
-        file_size, status, removed_reason, created_at, updated_at, published_at, pending_update, category_id, resource_type_id)
+        file_size, status, removed_reason, created_at, updated_at, published_at, pending_update, category_id, resource_type_id, content)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,
         to_timestamp($20/1000.0), to_timestamp($21/1000.0),
-        CASE WHEN $22::bigint IS NULL THEN NULL ELSE to_timestamp($22/1000.0) END, $23, $24, $25)`,
+        CASE WHEN $22::bigint IS NULL THEN NULL ELSE to_timestamp($22/1000.0) END, $23, $24, $25, $26)`,
       [rec.id, rec.userId, rec.source, rec.name, rec.icon, rec.tint, rec.summary,
         JSON.stringify(rec.overview), JSON.stringify(rec.highlights), JSON.stringify(rec.tags),
         JSON.stringify(rec.previews), rec.version, rec.priceCents, rec.payUrl, rec.authorDisplay,
         rec.ossKey, rec.fileSize, rec.status, rec.removedReason, rec.createdAt, rec.updatedAt, rec.publishedAt,
-        rec.pendingUpdate ? JSON.stringify(rec.pendingUpdate) : null, rec.categoryId ?? null, rec.resourceTypeId ?? 'knowledge'],
+        rec.pendingUpdate ? JSON.stringify(rec.pendingUpdate) : null, rec.categoryId ?? null, rec.resourceTypeId ?? 'knowledge', rec.content ? JSON.stringify(rec.content) : null],
     );
   }
 
@@ -72,7 +72,7 @@ export class PgMarketStore implements MarketStore {
     id: string,
     patch: Partial<Pick<MarketListingRecord,
       'status' | 'removedReason' | 'fileSize' | 'version' | 'previews' | 'ossKey' | 'publishedAt' | 'pendingUpdate'
-      | 'categoryId' | 'resourceTypeId' | 'priceCents' | 'payUrl' | 'name' | 'summary' | 'icon' | 'tags'>>,
+      | 'categoryId' | 'resourceTypeId' | 'priceCents' | 'payUrl' | 'name' | 'summary' | 'icon' | 'tags' | 'content'>>,
     now: number,
   ): Promise<MarketListingRecord | null> {
     // 动态 SET 拼接：字段白名单固定，参数化防注入
@@ -91,6 +91,7 @@ export class PgMarketStore implements MarketStore {
     if (patch.summary !== undefined) add('summary', patch.summary);
     if (patch.icon !== undefined) add('icon', patch.icon);
     if (patch.tags !== undefined) add('tags', JSON.stringify(patch.tags));
+    if (patch.content !== undefined) add('content', patch.content === null ? null : JSON.stringify(patch.content));
     if (patch.previews !== undefined) add('previews', JSON.stringify(patch.previews));
     if (patch.ossKey !== undefined) add('oss_key', patch.ossKey);
     if (patch.pendingUpdate !== undefined) {

@@ -45,6 +45,13 @@ import type { RunManager } from '../core/RunManager.js';
 import { reconcileVault } from '../core/skills/vault-config.js';
 import { FileTooLargeError } from '../core/encoding.js';
 import { createSampleVault, SampleVaultPathError } from '../core/sample-vault.js';
+import { ThrottledWarn } from '../core/throttled-warn.js';
+
+/**
+ * 树扫描失败是**静默**的（前端 refreshTree 的 catch 吞掉），日志是唯一线索。
+ * 按 vault 限频——扫描失败通常成串出现（同一个坏路径被反复重试）。
+ */
+const treeErrorWarn = new ThrottledWarn();
 
 /** 扫描 + wiki 状态标注（annotateTreeStatus 原地改树，两者必须一起重算）。 */
 async function buildAnnotatedTree(vaultPath: string): Promise<TreeNode[]> {
@@ -192,6 +199,10 @@ export function knowledgeRoutes(
       return c.json({ tree });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to scan vault';
+      treeErrorWarn.warn(
+        `tree:${vault.id}`,
+        `[knowledge] GET /vaults/${vault.id}/tree failed (${vault.path}): ${message}`,
+      );
       return c.json({ error: { code: 'INTERNAL', message } }, 500);
     }
   });

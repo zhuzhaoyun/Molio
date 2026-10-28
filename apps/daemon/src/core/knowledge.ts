@@ -107,7 +107,15 @@ function scanTreeInner(vaultPath: string, relBase: string, ctx: ScanCtx): ScanRe
         break;
       }
       const absFile = path.join(absDir, entry.name);
-      const stat = fs.statSync(absFile);
+      // readdir 与 stat 之间文件可能已被删/移走（agent 直写、回收站删除、外部
+      // 编辑器）：单个文件消失不该让整棵树的请求 500 —— 跳过它即可，下一次扫描
+      // 自然收敛。前端刷新失败是静默的，500 会让用户看到一棵不动的旧树。
+      let stat: fs.Stats;
+      try {
+        stat = fs.statSync(absFile);
+      } catch {
+        continue;
+      }
       nodes.push({
         name: entry.name,
         path: relPath,

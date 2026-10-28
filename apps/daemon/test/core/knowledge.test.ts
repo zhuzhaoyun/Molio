@@ -2,7 +2,7 @@ import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { tmpdir } from 'node:os';
 import { join, basename } from 'node:path';
-import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import fs, { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import {
   writeFile,
   readFile,
@@ -348,6 +348,32 @@ describe('knowledge filesystem operations', () => {
         const tree = scanTree(cleanVault);
         assert.deepEqual(tree, []);
       } finally {
+        rmSync(cleanVault, { recursive: true, force: true });
+      }
+    });
+
+    it('跳过 readdir 与 stat 之间消失的文件，不整棵树抛错（并发删除竞态）', () => {
+      // 回归：agent 直写 / 回收站删除 / 导入与扫描并发时，readdir 看到了文件、
+      // stat 时它已经没了 → ENOENT 以前会打穿整条 GET /tree（500），前端静默吞掉，
+      // 用户看到一棵不动的旧树。
+      const cleanVault = mkdtempSync(join(tmpdir(), 'molio-vanish-'));
+      const origStatSync = fs.statSync;
+      try {
+        writeFileSync(join(cleanVault, 'kept.md'), 'k');
+        writeFileSync(join(cleanVault, 'vanished.md'), 'v');
+        (fs as { statSync: typeof fs.statSync }).statSync = ((p: fs.PathLike, ...rest: unknown[]) => {
+          if (String(p).endsWith('vanished.md')) {
+            const err = new Error(`ENOENT: no such file or directory, stat '${String(p)}'`) as NodeJS.ErrnoException;
+            err.code = 'ENOENT';
+            throw err;
+          }
+          return (origStatSync as (...args: unknown[]) => fs.Stats)(p, ...rest);
+        }) as typeof fs.statSync;
+
+        const tree = scanTree(cleanVault);
+        assert.deepEqual(tree.map((n) => n.name), ['kept.md']);
+      } finally {
+        (fs as { statSync: typeof fs.statSync }).statSync = origStatSync;
         rmSync(cleanVault, { recursive: true, force: true });
       }
     });

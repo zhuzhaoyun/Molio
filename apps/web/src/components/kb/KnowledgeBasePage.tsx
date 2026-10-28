@@ -315,6 +315,12 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
     saveToastTimer.current = setTimeout(() => setSaveToast(null), 2000);
   }, []);
 
+  /** 显式刷新目录树（右键「刷新目录」/ 错误条「重试」）：成功失败都给反馈。 */
+  const handleRefreshTree = useCallback(async () => {
+    const ok = await kb.refreshTree();
+    showToast(ok ? '目录已刷新' : '刷新目录失败，请重试');
+  }, [kb.refreshTree, showToast]);
+
   const vaultsLoaded = useVaultsLoaded();
   // 计数必须与「已取回」标志取自同一个 store 快照：`kb.vaults` 是 useKnowledge 的
   // 本地 state，它的提交可能晚于 vaultStore 的 emit 一帧——用它会读到「已加载但空」，
@@ -1001,6 +1007,12 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
           testid: 'kb-ctx-new-folder-root',
           onClick: () => handleNewFolder(),
         },
+        { divider: true },
+        {
+          label: '刷新目录',
+          testid: 'kb-ctx-refresh-tree',
+          onClick: () => { void handleRefreshTree(); },
+        },
       ];
     }
 
@@ -1126,7 +1138,7 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
     }
 
     return items;
-  }, [ctxMenu, kb, showToast, handleNewFile, handleNewFolder, handleSelectFile, handleOpenInNewTab, handleDeleteFile, handleDeleteFolder, openGraphTab]);
+  }, [ctxMenu, kb, showToast, handleNewFile, handleNewFolder, handleSelectFile, handleOpenInNewTab, handleDeleteFile, handleDeleteFolder, openGraphTab, handleRefreshTree]);
 
   // ─── Inline rename ───
 
@@ -1438,6 +1450,8 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
         onImportFiles={handleImportFiles}
         onImportClick={() => kb.setShowImport(true)}
         onMoveFile={handleMoveFile}
+        treeError={kb.treeError}
+        onRetryTree={() => { void handleRefreshTree(); }}
         onPublishVault={handlePublishActive}
         publishGate={loggedIn && isMarketAdmin ? 'admin' : 'contact'}
       >
@@ -1723,7 +1737,7 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
         vaultId={kb.activeVault?.id ?? ''}
         onClose={() => kb.setShowImport(false)}
         onImportComplete={(result, importFiles, targetDir, oversizedCount = 0) => {
-          kb.refreshTree();
+          void kb.refreshTree();
 
           // Build pre-flight errors so they can be merged into toasts
           const preflightErrors: string[] = [];

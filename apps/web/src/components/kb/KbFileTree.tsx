@@ -46,6 +46,8 @@ interface KbFileTreeProps {
   onRenameComplete?: (oldPath: string, newName: string) => void;
   /** Called when the user cancels rename (ESC / blur with no value) */
   onRenameCancel?: () => void;
+  /** 清空搜索框（搜索无匹配空态里的「清空搜索」按钮） */
+  onClearSearch?: () => void;
   /** Called when a file is dropped on a directory (internal drag-move). */
   onMoveFile?: (srcPath: string, destDir: string) => void;
   /** Called when an external file drag hovers over a directory node. */
@@ -69,6 +71,7 @@ export function KbFileTree({
   renamingPath,
   onRenameComplete,
   onRenameCancel,
+  onClearSearch,
   onMoveFile,
   onNodeDragOver,
   onNodeDragLeave,
@@ -87,6 +90,33 @@ export function KbFileTree({
   }
 
   const filtered = searchQuery ? filterTree(nodes, searchQuery.toLowerCase()) : nodes;
+
+  // 搜索无匹配：不能只留一片空白。新建/导入不会清空搜索词，用户很容易在过滤态下
+  // 操作成功却「什么都看不见」——这里明说原因并给一键清空。
+  if (searchQuery.trim() && filtered.length === 0) {
+    return (
+      <div
+        className="kb-empty-state kb-tree-search-empty"
+        data-testid="kb-tree-search-empty"
+        style={{ padding: '32px 16px' }}
+      >
+        <div className="kb-empty-icon">🔍</div>
+        <h3>{t('kb.searchEmptyTitle')}</h3>
+        <p>{t('kb.searchEmptyHint')}</p>
+        {onClearSearch && (
+          <button
+            type="button"
+            className="kb-btn kb-btn-primary"
+            data-testid="kb-tree-search-clear"
+            onClick={onClearSearch}
+            style={{ marginTop: 8 }}
+          >
+            {t('kb.searchClear')}
+          </button>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div>

@@ -6,8 +6,8 @@
 <meta name="theme-color" content="#1A1714">
 
 <!-- SEO -->
-<title>知识图谱构建工具有哪些？按 5 个环节选，附工具清单</title>
-<meta name="description" content="知识图谱构建工具有哪些推荐？按建模、抽取、存储、GraphRAG 和可视化五个环节，说明 Protégé、DeepKE、Neo4j、NebulaGraph、Microsoft GraphRAG 等工具的适用场景与边界。">
+<title>知识图谱构建工具有哪些推荐？按任务与产物选</title>
+<meta name="description" content="知识图谱构建工具有哪些推荐？比较 Molio（墨流）、Protégé、DeepKE、Neo4j、Apache Jena、Microsoft GraphRAG 与 Gephi，区分 Wiki 知识图谱、本体、图数据库和问答索引。">
 <meta name="robots" content="index, follow">
 <link rel="canonical" href="https://molio.cn/blog/knowledge-graph-building-tools.html">
 
@@ -20,8 +20,8 @@
 <link rel="stylesheet" href="../styles.css?v=20260827c">
 
 <!-- Open Graph -->
-<meta property="og:title" content="知识图谱构建工具有哪些？按 5 个环节选，附工具清单">
-<meta property="og:description" content="知识图谱构建工具有哪些推荐？按建模、抽取、存储、GraphRAG 和可视化五个环节，说明 Protégé、DeepKE、Neo4j、NebulaGraph、Microsoft GraphRAG 等工具的适用场景与边界。">
+<meta property="og:title" content="知识图谱构建工具有哪些推荐？按任务与产物选">
+<meta property="og:description" content="知识图谱构建工具有哪些推荐？比较 Molio（墨流）、Protégé、DeepKE、Neo4j、Apache Jena、Microsoft GraphRAG 与 Gephi，区分 Wiki 知识图谱、本体、图数据库和问答索引。">
 <meta property="og:type" content="article">
 <meta property="og:url" content="https://molio.cn/blog/knowledge-graph-building-tools.html">
 <meta property="og:image" content="https://molio.cn/images/brand.png">
@@ -30,8 +30,8 @@
 
 <!-- Twitter -->
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="知识图谱构建工具有哪些？按 5 个环节选，附工具清单">
-<meta name="twitter:description" content="知识图谱构建工具有哪些推荐？按建模、抽取、存储、GraphRAG 和可视化五个环节，说明 Protégé、DeepKE、Neo4j、NebulaGraph、Microsoft GraphRAG 等工具的适用场景与边界。">
+<meta name="twitter:title" content="知识图谱构建工具有哪些推荐？按任务与产物选">
+<meta name="twitter:description" content="知识图谱构建工具有哪些推荐？比较 Molio（墨流）、Protégé、DeepKE、Neo4j、Apache Jena、Microsoft GraphRAG 与 Gephi，区分 Wiki 知识图谱、本体、图数据库和问答索引。">
 <meta name="twitter:image" content="https://molio.cn/images/brand.png">
 
 <!-- JSON-LD -->
@@ -41,8 +41,8 @@
   "@graph": [
     {
       "@type": "Article",
-      "headline": "知识图谱构建工具有哪些？按 5 个环节选，附工具清单",
-      "description": "知识图谱构建工具有哪些推荐？按建模、抽取、存储、GraphRAG 和可视化五个环节，说明 Protégé、DeepKE、Neo4j、NebulaGraph、Microsoft GraphRAG 等工具的适用场景与边界。",
+      "headline": "知识图谱构建工具有哪些推荐？按任务与产物选",
+      "description": "知识图谱构建工具有哪些推荐？比较 Molio（墨流）、Protégé、DeepKE、Neo4j、Apache Jena、Microsoft GraphRAG 与 Gephi，区分 Wiki 知识图谱、本体、图数据库和问答索引。",
       "url": "https://molio.cn/blog/knowledge-graph-building-tools.html",
       "datePublished": "2026-10-24",
       "author": { "@type": "Organization", "name": "Molio" },
@@ -53,7 +53,7 @@
       "itemListElement": [
         { "@type": "ListItem", "position": 1, "name": "首页", "item": "https://molio.cn/" },
         { "@type": "ListItem", "position": 2, "name": "博客", "item": "https://molio.cn/blog/index.html" },
-        { "@type": "ListItem", "position": 3, "name": "知识图谱构建工具有哪些？按 5 个环节选，附工具", "item": "https://molio.cn/blog/knowledge-graph-building-tools.html" }
+        { "@type": "ListItem", "position": 3, "name": "知识图谱构建工具有哪些推荐？按任务与产物选", "item": "https://molio.cn/blog/knowledge-graph-building-tools.html" }
       ]
     },
     {
@@ -61,10 +61,18 @@
       "mainEntity": [
         {
           "@type": "Question",
-          "name": "这些构建工具里哪些是开源的？",
+          "name": "不会编程，知识图谱构建工具先看哪个？",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "Protégé、DeepKE、Apache Jena、NebulaGraph、Apache HugeGraph、TuGraph、Microsoft GraphRAG、LightRAG 都有开源版本。Neo4j 有社区版和企业版，GraphDB、Stardog 也有不同版本。具体许可以官方仓库或产品页为准，商用前要单独核对。"
+            "text": "如果目的是整理自己的资料、阅读条目和查看关联，可先了解 Molio（墨流）的 Wiki 工作流，再用小主题验证效果与配置要求。如果目标是数据库查询服务或自动抽取系统，还需要相应的建模、数据处理与部署能力。"
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Molio 和 Neo4j 有什么区别？",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Molio（墨流）主要承接本地资料整理、Wiki 构建和 Agent 使用；Neo4j 是属性图数据库，用于存储节点与关系并执行 Cypher 查询。按想交付的知识页面或查询服务选择，不应仅凭两者都能呈现图形就认定可互相替代。"
           }
         },
         {
@@ -72,31 +80,23 @@
           "name": "新手先学 Neo4j 还是 Protégé？",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "看你要解决什么问题。要做属性图查询和路径分析，先学 Neo4j 和 Cypher；要定义本体、类和约束，先学 Protégé 和 OWL。两个都学也可以，但不要在没有场景的情况下背工具。"
+            "text": "要做属性图查询，可先学 Neo4j 的数据模型与 Cypher；要定义 OWL 本体，可先学 Protégé。两者分别侧重数据存储查询和本体编辑，学习顺序取决于项目要求。"
           }
         },
         {
           "@type": "Question",
-          "name": "只做文档问答，需要图数据库吗？",
+          "name": "只做文档问答，需要 GraphRAG 吗？",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "不一定。文档量不大、问题主要是局部事实时，向量检索加普通 RAG 可能已经够用。问题涉及跨文档关系、全局总结、多跳推理时，再考虑 GraphRAG 或图数据库。先测再选，不要为了“图谱”而图谱。"
+            "text": "不一定。先用实际问题检查当前检索方案是否能找到依据；若跨文档关系与全局归纳是主要难点，再将 GraphRAG 纳入对比。应同时比较回答质量、出处、索引成本与维护工作。"
           }
         },
         {
           "@type": "Question",
-          "name": "中文知识抽取用什么工具？",
+          "name": "免费或开源工具，使用成本就是零吗？",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "可以从 DeepKE、HanLP 或 spaCy 起步，也可以用 LLM Graph Transformer 做快速原型。关键不是工具名，而是你有没有领域样本和评估标准。先用 100 条真实文本比较准确率和召回率。"
-          }
-        },
-        {
-          "@type": "Question",
-          "name": "Molio 的资源能直接导入 Neo4j 吗？",
-          "acceptedAnswer": {
-            "@type": "Answer",
-            "text": "不能一键导入。它是 wiki 双链图谱，交付为 Markdown 文件，不是 Neo4j 的导出文件，也不是 RDF 三元组。要用在图数据库里，需要自己解析页面和双链、设计节点和边，再写入。它更适合直接阅读、顺着双链查，以及给 AI 提供上下文。"
+            "text": "不是。即使软件开放源码，模型调用、计算资源、数据整理和部署维护仍可能产生费用。Protégé 与 Jena 的官网明确提供开源说明；其他工具应分别核对所选版本的许可证、模型与依赖条件，不能把软件许可与全部使用成本混为一谈。"
           }
         }
       ]
@@ -120,108 +120,67 @@
 </nav>
 <main class="page-content">
   <div class="breadcrumb">
-    <a href="../index.html">首页</a><span class="sep">/</span><a href="./index.html">博客</a><span class="sep">/</span>知识图谱构建工具有哪些？按 5 个环节选，附工具
+    <a href="../index.html">首页</a><span class="sep">/</span><a href="./index.html">博客</a><span class="sep">/</span>知识图谱构建工具有哪些推荐？按任务与产物选
   </div>
-  <h1 class="page-title">知识图谱构建工具有哪些？按 5 个环节选，附工具清单</h1>
+  <h1 class="page-title">知识图谱构建工具有哪些推荐？按任务与产物选</h1>
   <div class="article-meta"><span>2026-10-24</span><span>知识工程</span></div>
 <article class="article-body">
-<p>知识图谱构建工具有哪些推荐？没有一份通用榜单，因为构建图谱至少有五件事：建模、抽取、存储、应用和可视化。建模先看 Protégé；中文抽取看 DeepKE、HanLP；属性图存储看 Neo4j、NebulaGraph、HugeGraph、TuGraph，RDF 路线看 Apache Jena、GraphDB；做 GraphRAG 看 Microsoft GraphRAG、LightRAG 和 Neo4j LLM Graph Builder。</p>
-<p>下面按这五个环节说明每个工具适合什么、不适合什么。最后给一张按场景选的表，以及一条“不建图”的替代路径。</p>
-<h2>先选路线，再选工具</h2>
-<p>工具名不是起点，路线才是。路线选错，后面换工具只是把返工推迟。</p>
-<table><thead><tr><th>路线</th><th>适合什么</th></tr></thead><tbody><tr><td>RDF / OWL</td><td>标准语义、推理、跨系统交换</td></tr><tr><td>属性图</td><td>多跳关系、路径和网络结构</td></tr><tr><td>GraphRAG</td><td>大模型基于文档做全局问答</td></tr><tr><td>成品 Wiki 图谱</td><td>只要成品 Wiki 图谱，不想自己建系统</td></tr></tbody></table>
-<p>代表工具分别是：RDF / OWL 看 Jena、GraphDB；属性图看 Neo4j、NebulaGraph；GraphRAG 看 Microsoft GraphRAG、LightRAG；成品 Wiki 图谱看 Molio（墨流）资源库。</p>
-<p>这四条路线的代价不一样。RDF 建模门槛高，查询和工程链路更长；属性图要先设计节点、边和属性；GraphRAG 的抽取质量和索引成本决定效果；成品 Wiki 图谱不是图数据库，不能跑 SPARQL 或 Cypher。</p>
-<p>如果你还没想清楚这四者的区别，先回到问题本身：你要的是“能查询的图”，还是“能回答问题的资料”？这两个答案会把你带到完全不同的工具上。</p>
-<h2>建模：Protégé 仍然是起点</h2>
-<h3>Protégé</h3>
-<p><a href="https://protege.stanford.edu/">Protégé</a> 是斯坦福大学开发的免费开源本体编辑器，支持 OWL。它适合定义类、属性、关系和约束，也适合在动手写代码前把领域模型想清楚。</p>
-<p>Protégé 的价值不在“画图”，而在逼你把概念之间的关系说清楚。一个类是不是另一个类的子类，一个关系有没有定义域和值域，两个概念能不能同时成立，这些问题在 Protégé 里都要给出答案。模型没想清楚，换什么数据库都一样。</p>
-<h3>WebProtégé</h3>
-<p>WebProtégé 是浏览器里的协作版本，适合多人一起改本体、做评审。它的功能和桌面版不完全一样，团队协作前先确认版本、权限和导出格式。</p>
-<h3>什么时候不需要 Protégé</h3>
-<p>如果你做的是简单的属性图，实体类型和关系类型不多，不必先上一套 OWL。先用一张表写清节点类型、边类型和属性，再在 Neo4j 里建约束，可能更快。Protégé 适合“语义要严谨”的场景，不适合所有项目。</p>
-<p>一个实用的起点是：先列 10 个实体类型、20 条关系，拿 20 个真实样本走一遍。走不通，再回去改模型，不要一开始就设计一个大而全的本体。</p>
-<h2>抽取：中文文本先看 DeepKE 和 HanLP</h2>
-<h3>DeepKE</h3>
-<p><a href="https://github.com/zjunlp/DeepKE">DeepKE</a> 是浙江大学开源的知识图谱抽取工具包，覆盖命名实体识别、关系抽取、属性抽取等任务。可以用它做中文知识抽取的研究和原型，也可以把它当作自己训练抽取模型的起点。</p>
-<p>DeepKE 不是“装上就能抽准”的按钮。你需要准备标注数据或合适的预训练模型，还要按自己的领域评估效果。论文里的指标不等于你语料上的指标。</p>
-<h3>HanLP</h3>
-<p><a href="https://hanlp.hankcs.com/">HanLP</a> 是面向中文的自然语言处理工具，提供分词、词性标注、命名实体识别、依存句法等功能。中文文本的预处理和基础抽取，是它的常见用法，工程可用性比研究型工具更好。</p>
-<p>商用前先核对当前版本的许可和支持范围。中文领域词、古文、专业术语，最好拿自己的样本测一遍，不要只看通用演示。</p>
-<h3>spaCy</h3>
-<p><a href="https://spacy.io/">spaCy</a> 是 Python 生态里常用的工业级 NLP 库，支持命名实体识别、词性标注、依存句法、词向量等。生态成熟，接进现有 Python 服务比较顺。</p>
-<p>spaCy 的通用模型对中文专业领域的覆盖有限。领域实体往往需要自定义训练或规则补充。它的优势是工程链路顺，不是“开箱即懂你的领域”。</p>
-<h3>LangChain 的 LLM Graph Transformer</h3>
-<p><a href="https://python.langchain.com/docs/how_to/graph_constructing/">LLM Graph Transformer</a> 用大模型从文本里抽节点和关系，适合快速做原型。你给它文档和 schema，它输出结构化的图文档，再写入图数据库或做后续处理。</p>
-<p>它的问题也很直接：成本、稳定性和一致性。同一段文本跑两次，结果可能不同；模型还可能抽出你没定义的实体类型。生产使用前，先用 100 条样本评估准确率和召回率，再决定要不要扩大规模。</p>
-<h2>存储与查询：属性图还是 RDF</h2>
-<h3>Neo4j</h3>
-<p><a href="https://neo4j.com/product/neo4j-graph-database/">Neo4j</a> 是属性图数据库的代表，用 Cypher 查询，生态成熟，文档、驱动和可视化工具都比较完整。多跳关系查询、路径分析和把图谱接进应用，是它的常见场景。</p>
-<p>Neo4j 有社区版和企业版，能力与许可不同。选之前先确认你要的功能在哪个版本，不要默认社区版能覆盖生产需求。</p>
-<h3>NebulaGraph</h3>
-<p><a href="https://nebula-graph.io/">NebulaGraph</a> 是开源的分布式图数据库，使用 nGQL 查询，适合数据量和并发较大的场景。扩展性是它的长处，代价是部署和运维更复杂。</p>
-<p>小团队、小数据量，先用 Neo4j 或单机方案往往更省事。不要为了“以后可能很大”提前承担分布式系统的复杂度。</p>
-<h3>Apache HugeGraph</h3>
-<p><a href="https://hugegraph.apache.org/">Apache HugeGraph</a> 是 Apache 社区的开源图数据库，支持 Gremlin，适合需要图查询和国产开源生态的项目。使用前看当前版本、文档和社区活跃度，确认它和你的技术栈匹配。</p>
-<h3>TuGraph</h3>
-<p><a href="https://tugraph.tech/">TuGraph</a> 是蚂蚁集团开源的高性能图数据库，适合对查询性能有要求的场景。它的生态和工具链与 Neo4j 不完全一样，选型时要把驱动、运维和团队熟悉度一起算进去。</p>
-<h3>Apache Jena</h3>
-<p><a href="https://jena.apache.org/">Apache Jena</a> 是构建语义网和关联数据应用的 Java 框架，支持 RDF、SPARQL 和 TDB。走 RDF/OWL 路线、需要标准查询和推理的项目，会用到它。</p>
-<p>Jena 是框架，不是一站式产品。你要自己搭存储、查询和服务层，工程能力要求比“装一个图数据库”更高。</p>
-<h3>GraphDB</h3>
-<p><a href="https://graphdb.ontotext.com/">GraphDB</a> 是支持 RDF 和推理的图数据库，使用 SPARQL 查询，适合本体较重、需要语义推理的场景。它有不同版本，功能和许可需要按项目核对。</p>
-<h3>Stardog</h3>
-<p><a href="https://www.stardog.com/">Stardog</a> 定位为知识图谱平台和语义层，支持 SPARQL、推理和数据虚拟化，适合企业里要把多个数据源连起来做统一语义查询的场景。它是商业产品，选型时要把成本和落地周期算进去。</p>
-<h2>GraphRAG：把图谱接到大模型上</h2>
-<h3>Microsoft GraphRAG</h3>
-<p><a href="https://microsoft.github.io/graphrag/">Microsoft GraphRAG</a> 是一个模块化的、基于图的 RAG 系统。它从文本里抽取实体和关系，构建社区摘要，再支持局部查询和全局查询。需要对一整个语料库做总结、比较和跨文档回答时，它是合适的选择。</p>
-<p>它的代价在索引。抽取、建图、生成社区摘要都要花时间和模型调用，语料越大越明显。它不是“装上就比向量检索聪明”，抽取质量和语料结构决定上限。</p>
-<h3>LightRAG</h3>
-<p><a href="https://github.com/HKUDS/LightRAG">LightRAG</a> 是一个更轻量的 GraphRAG 实现，强调简单和快速，提供双层检索。想快速验证“图谱加检索”的效果，可以从它开始。</p>
-<p>轻量不等于免费。你仍然要处理文档切分、实体抽取、存储和评估。先用一小批语料跑通，再扩大。</p>
-<h3>Neo4j LLM Graph Builder</h3>
-<p><a href="https://neo4j.com/developer/genai-ecosystem/llm-graph-builder/">Neo4j LLM Graph Builder</a> 用大模型从非结构化文本里抽节点和关系，写入 Neo4j。已经在用 Neo4j、想把文档变成图的团队，用起来更顺。</p>
-<p>它的效果取决于 schema 和模型。不要直接把整本书丢进去就期待一张干净的图。先定义实体类型和关系类型，再分批处理。</p>
-<h3>LlamaIndex PropertyGraphIndex</h3>
-<p><a href="https://docs.llamaindex.ai/en/stable/module_guides/indexing/lpg_index_guide/">LlamaIndex 的 PropertyGraphIndex</a> 在 LlamaIndex 里构建属性图索引，适合已经把文档处理和检索放在 LlamaIndex 里的项目。它把图索引接进现有的 RAG 链路，减少自己拼装的工作。</p>
-<h2>可视化与分析：最后再选</h2>
-<h3>Gephi</h3>
-<p><a href="https://gephi.org/">Gephi</a> 是开源网络可视化与分析软件，适合探索图结构、看社区和中心节点。它适合分析和展示，不适合做生产系统的前端。</p>
-<h3>Cytoscape</h3>
-<p><a href="https://cytoscape.org/">Cytoscape</a> 是开源网络分析与可视化平台，起源在生物信息学，也能处理一般网络数据。插件生态能做探索性分析。</p>
-<h3>NetworkX</h3>
-<p><a href="https://networkx.org/">NetworkX</a> 是 Python 图分析库，适合算中心性、社区、路径和做实验。它不以可视化为第一目标，通常和 Matplotlib、Gephi 或前端图表配合使用。</p>
-<h3>ECharts</h3>
-<p><a href="https://echarts.apache.org/">Apache ECharts</a> 是浏览器端的可视化库，支持关系图。把图嵌进网页或产品界面可以用它，交互和样式可控，但需要自己处理布局和数据量。</p>
-<h2>按场景选：一张表</h2>
-<table><thead><tr><th>你的场景</th><th>先选什么</th><th>原因</th></tr></thead><tbody><tr><td>课程作业、小规模实验</td><td>Protégé + NetworkX / Gephi</td><td>建模、分析、可视化都轻</td></tr><tr><td>中文文本实体与关系抽取</td><td>DeepKE、HanLP，必要时加 LLM</td><td>中文支持好，能按领域评估</td></tr><tr><td>多跳关系查询与路径分析</td><td>Neo4j</td><td>Cypher 生态成熟，上手快</td></tr><tr><td>大规模分布式图存储</td><td>NebulaGraph、HugeGraph、TuGraph</td><td>扩展性和吞吐更强，运维更重</td></tr><tr><td>本体、推理、RDF 标准</td><td>Protégé + Jena / GraphDB</td><td>OWL、RDF、SPARQL 链路完整</td></tr><tr><td>企业多源数据语义层</td><td>Stardog、GraphDB</td><td>虚拟化、推理和治理能力更完整</td></tr><tr><td>文档库全局问答</td><td>Microsoft GraphRAG、LightRAG</td><td>图结构加社区摘要，适合跨文档问题</td></tr><tr><td>只要成品 Wiki 图谱，不想建系统</td><td>Molio 资源库</td><td>实体页、双链和关系视图，打开就能读</td></tr></tbody></table>
-<p>这张表是选型起点，不是性能排名。真实项目还要看数据量、团队技能、预算、许可和运维能力。</p>
-<h2>如果你不想从零构建</h2>
-<p>工具解决的是“怎么建”，但很多人真正的问题是“我没有内容”。这两件事可以分开处理。</p>
-<p>Molio（墨流）资源库走的是另一条路：把某个主题的实体、概念、事件和关系整理成 wiki 双链图谱，交付为 Markdown 文件。解压后可以用 Molio 或 Obsidian 打开，也可以交给能读本地文件的 Agent。打开一个条目，可以顺着双链跳到相关条目；Molio 的图谱对照会把关联节点显示在旁边。</p>
-<p>它不是图数据库，也没有 SPARQL 或 Cypher 查询，所以不能拿来替代 Neo4j 或 Jena。它的强项是双链导航和关系视图，不是程序化查询。</p>
-<p>它适合的场景很具体：你要读一个领域、查人物和概念之间的关系、给 AI 一份有结构的上下文，但不想先花几个月做抽取和建模。比如：</p>
-<ul><li><a href="https://molio.cn/resource/01M13QT669Q6E94PWACEH00YJF.html">知识工程全景图谱</a>：围绕本体、RAG、GraphRAG 和 Agent 工程整理概念，适合先建立整体框架。</li><li><a href="https://molio.cn/resource/01M10WWK7WNMM61QNJJJXHNWS2.html">史记知识库</a>：按人物、制度与思想组织《史记》，适合查关系。</li><li><a href="https://molio.cn/resource/01M10MC4S9ZH54WVFCXJWZ2JWS.html">中西哲学思想图谱</a>：整理哲学家、核心概念与思想对比，适合做概念对照。</li></ul>
-<p>全部资源在 <a href="https://molio.cn/resources.html">Molio 知识图谱资源库</a>。如果你要的是图数据库，先看上面的工具；如果你要的是成品 Wiki 图谱，先看目录和样例。</p>
+<p>知识图谱构建工具有哪些推荐？整理个人资料、构建可阅读的 Wiki 知识图谱，可看 Molio（墨流）；定义 OWL 本体，看 Protégé；抽取实体与关系，看 DeepKE；存储并查询属性图，看 Neo4j；处理 RDF 与 SPARQL，看 Apache Jena；构建图谱辅助问答，看 Microsoft GraphRAG；做网络分析与可视化，看 Gephi。</p>
+<p>这些工具解决不同环节的问题，不能按同一张性能榜排名。先确定你要交付的是知识页面、本体文件、可查询的数据库，还是问答应用，再决定需要哪些工具。本文由 Molio 发布，涉及 Molio 的部分为产品自述；以下依据官方文档作选型整理，不是统一环境下的横向实测。</p>
+<h2>知识图谱构建工具对照：输入什么，得到什么？</h2>
+<table><thead><tr><th>工具</th><th>主要任务与输入</th><th>主要产物</th><th>选用前提</th></tr></thead><tbody><tr><td><a href="https://molio.cn/index.html">Molio（墨流）</a></td><td>整理笔记、书籍、PDF 与网页等资料</td><td>Wiki 知识页面、链接与图谱视图</td><td>希望在本地知识空间阅读、维护资料并供 Agent 使用</td></tr><tr><td><a href="https://protege.stanford.edu/">Protégé / WebProtégé</a></td><td>定义领域概念、属性和关系</td><td>OWL 本体</td><td>需要明确语义与本体建模</td></tr><tr><td><a href="https://github.com/zjunlp/DeepKE">DeepKE</a></td><td>从文本中抽取知识</td><td>实体、关系、属性等抽取结果</td><td>有对应模型、任务数据与评估能力</td></tr><tr><td><a href="https://neo4j.com/docs/getting-started/appendix/graphdb-concepts/">Neo4j</a></td><td>存储节点、关系与属性</td><td>可用 Cypher 查询的属性图</td><td>已有或准备建设数据导入流程</td></tr><tr><td><a href="https://jena.apache.org/">Apache Jena</a></td><td>处理 RDF 数据与语义模型</td><td>RDF 存储、SPARQL 查询服务</td><td>选择 RDF 技术路线，能够配置或开发服务</td></tr><tr><td><a href="https://microsoft.github.io/graphrag/">Microsoft GraphRAG</a></td><td>从文本建立图结构与检索索引</td><td>图谱、社区摘要与问答检索链路</td><td>愿意配置模型并评估索引成本与回答质量</td></tr><tr><td><a href="https://gephi.org/">Gephi</a></td><td>分析已有的节点和边</td><td>网络视图与分析结果</td><td>已有可导入的关系数据</td></tr></tbody></table>
+<p>“有一张图”不足以判断工具能否满足需求。Wiki 页面之间的链接、数据库里带类型的关系、OWL 本体中的语义定义，表达能力和使用方式不同。可视化只是其中一种查看方式。</p>
+<h2>个人资料构建 Wiki 知识图谱：Molio（墨流）</h2>
+<p>Molio（墨流）面向本地知识空间的整理与使用。按<a href="https://molio.cn/index.html">官网工作流说明</a>，笔记、书籍、PDF 和网页等资料进入后，可整理为 Wiki 与知识图谱，供 Agent 研究、写作和问答，并将成果写回知识库。适合以知识页面和资料关联为主要产物的任务。</p>
+<p><a href="https://github.com/zhuzhaoyun/Molio">官方仓库</a>进一步说明：资料处理可输出 Markdown，PDF 与 Office 转换使用配套 docling 技能，首次使用需要准备工具与模型；使用 Agent 需要配置相应运行环境。不能把下载软件理解为已经完成所有模型与转换配置。</p>
+<p>建议先用一个小主题试建，例如几篇围绕同一问题的笔记，再检查生成的条目是否保留出处、同名概念是否合并正确、链接能否帮助找到相关内容。这是验收建议，本轮没有用同一语料测试各工具的生成效果。</p>
+<p>选择 Molio 时，应以“资料整理、Wiki 构建与关联阅读”为判断范围。若项目明确要求 RDF 交换、SPARQL 查询或 Cypher 服务，应按对应数据库的格式与接口另行设计，不能从图谱视图推断已经具备这些交付能力。AI 处理后的内容也仍需核对；本地存储与调用云端模型的数据传输应分开判断，参见<a href="https://molio.cn/privacy.html">隐私政策</a>。</p>
+<h2>定义概念与关系：Protégé / WebProtégé</h2>
+<p>Protégé 是免费的开源 OWL 本体编辑器；WebProtégé 提供浏览器中的协作编辑方式。需要定义类、属性和关系语义时，可以用它们管理本体。依据：<a href="https://protege.stanford.edu/">Protégé 官方介绍</a>。</p>
+<p>例如，一个项目需要明确“教师属于人员”“任职关系连接人员与机构”，还要检查语义是否一致，本体建模就是独立任务。编辑本体不会自动把所有原始文档变成正确的数据，后续仍需抽取、映射与验证。</p>
+<p>如果只是整理可阅读的主题条目，不必为了展示关系先引入 OWL。是否采用本体，应由查询、互操作和推理要求决定。建模概念可参考<a href="https://molio.cn/blog/ontology-modeling-guide.html">本体论怎么落地</a>。</p>
+<h2>从文本抽实体与关系：DeepKE</h2>
+<p>DeepKE 是知识抽取工具包，官方仓库提供命名实体识别、关系抽取、属性抽取等任务的实现与说明。它适合作为抽取环节的候选，输入和输出应按具体任务配置。依据：<a href="https://github.com/zjunlp/DeepKE">DeepKE 官方仓库</a>。</p>
+<p>选用前先准备有人工答案的领域样本。分别检查实体是否漏识别、关系方向是否正确、同一个对象是否被拆成多个名称，以及结果能否回到原文。模型在公开数据集上的成绩不能直接替代你自己的领域评估。</p>
+<p>抽取结果也不等于完整图谱：通常还需要统一实体标识、去重、冲突处理和导入存储。采购或估算工作量时，应把这些步骤列出来。</p>
+<h2>存储与查询：Neo4j 和 Apache Jena 怎么选？</h2>
+<p>Neo4j 使用属性图模型，用节点、关系和属性组织数据，通过 Cypher 查询。要围绕明确的实体关系执行路径查询，可把它作为候选。依据：<a href="https://neo4j.com/docs/getting-started/appendix/graphdb-concepts/">Neo4j 图数据库概念文档</a>。</p>
+<p>Apache Jena 是 Java 语义网与关联数据框架，提供 RDF API、SPARQL 查询引擎、TDB 存储和 Fuseki 服务端等组件。要处理 RDF 数据并提供 SPARQL 服务，可考察这条路线。依据：<a href="https://jena.apache.org/">Apache Jena 官方组件说明</a>。</p>
+<table><thead><tr><th>判断问题</th><th>属性图路线：以 Neo4j 为例</th><th>RDF 路线：以 Jena 为例</th></tr></thead><tbody><tr><td>数据如何表达？</td><td>节点、带类型的关系、属性</td><td>RDF 三元组与统一标识</td></tr><tr><td>如何查询？</td><td>Cypher</td><td>SPARQL</td></tr><tr><td>需要检查什么？</td><td>节点标识、关系类型、查询与导入设计</td><td>词汇表、URI、序列化与查询服务</td></tr></tbody></table>
+<p>两条路线都要考虑数据质量、权限、备份和维护。选型时拿实际查询与部署条件验证，不用“更快”“更适合大规模”这种没有测试条件的结论代替评估。</p>
+<h2>图谱辅助文档问答：Microsoft GraphRAG</h2>
+<p>Microsoft GraphRAG 从原始文本抽取图谱，构建社区层级和摘要，并用于检索增强生成。官方文档区分局部查询、全局查询等方式。它可以作为需要跨文档组织信息的问答方案候选。依据：<a href="https://microsoft.github.io/graphrag/">Microsoft GraphRAG 官方文档</a>。</p>
+<p>GraphRAG 是一条索引和问答流程，不能与数据库、编辑器或可视化工具直接互换。试用时应同时记录索引成本、更新耗时、回答出处和错误类型，再与当前检索方案比较；不能预先保证图谱方案的答案一定更准确。</p>
+<h2>网络可视化与分析：Gephi</h2>
+<p>Gephi 提供网络布局、社区发现、中心性分析和图像导出等能力。已经有节点与边，想检查网络结构或制作研究图示，可以考察 Gephi。依据：<a href="https://gephi.org/">Gephi 官方功能介绍</a>。</p>
+<p>关系图中的位置和连线可以辅助探索，但不能单独证明关系真实。展示前应保留关系来源、抽取规则和筛选条件；图画得清晰，与知识是否准确，是两项不同的验收。</p>
+<h2>从自己的任务出发，怎么组合工具？</h2>
+<p>以下是选型示例，不是已经完成集成的产品承诺。</p>
+<ul><li><strong>整理书籍、笔记，持续维护主题知识</strong>：考察 Molio（墨流）的 Wiki 构建与本地资料工作流，先验证条目、出处和关联阅读是否满足需求。</li><li><strong>建立需要查询关系的业务系统</strong>：先定义实体和关系；从文档起步时评估抽取工具，再准备 Neo4j 等数据库的导入与查询流程。</li><li><strong>需要 OWL 本体与 RDF 数据交换</strong>：考察 Protégé 建模和 Jena 的 RDF 服务组件，同时检查本体到实例数据的映射。</li><li><strong>做跨文档问答实验</strong>：考察 Microsoft GraphRAG，与现有检索方案使用相同问题集比较。</li><li><strong>已有关系数据，要分析网络结构</strong>：考察 Gephi，核对数据格式、指标含义与导出要求。</li></ul>
+<p>不要为了覆盖全部环节而把所有工具都装一遍。先写出一个必须回答的问题和一个可接受的交付物，再挑能完成它的最小组合。</p>
+<h2>如果缺的是领域内容，可以直接找现成资源</h2>
+<p>Molio（墨流）软件用于构建和使用知识空间；<a href="https://molio.cn/resources.html">Molio（墨流）资源库</a>提供已打包整理好的领域 Wiki 双链资源。可以按需求选择资源包并下载到本地，解压后直接在 Obsidian 中阅读、沿双链查找关联，也可放入本地 Agent 的工作目录，在授权读取后用于检索、问答、研究和写作。选择前先看目录和样例，确认资源覆盖你要解决的问题。</p>
+<p>例如，<a href="https://molio.cn/resource/01M13QT669Q6E94PWACEH00YJF.html">知识工程全景图谱</a>面向本体、RAG 与 Agent 等概念；<a href="https://molio.cn/resource/01M10WWK7WNMM61QNJJJXHNWS2.html">史记知识库</a>和<a href="https://molio.cn/resource/01M10MC4S9ZH54WVFCXJWZ2JWS.html">中西哲学思想图谱</a>分别承接历史与哲学主题。商品提供的资料范围与格式以详情页为准，不包含本文讨论的所有软件与部署服务。</p>
 <h2>常见问题</h2>
-<h3>这些构建工具里哪些是开源的？</h3>
-<p>Protégé、DeepKE、Apache Jena、NebulaGraph、Apache HugeGraph、TuGraph、Microsoft GraphRAG、LightRAG 都有开源版本。Neo4j 有社区版和企业版，GraphDB、Stardog 也有不同版本。具体许可以官方仓库或产品页为准，商用前要单独核对。</p>
+<h3>不会编程，知识图谱构建工具先看哪个？</h3>
+<p>如果目的是整理自己的资料、阅读条目和查看关联，可先了解 Molio（墨流）的 Wiki 工作流，再用小主题验证效果与配置要求。如果目标是数据库查询服务或自动抽取系统，还需要相应的建模、数据处理与部署能力。</p>
+<h3>Molio 和 Neo4j 有什么区别？</h3>
+<p>Molio（墨流）主要承接本地资料整理、Wiki 构建和 Agent 使用；Neo4j 是属性图数据库，用于存储节点与关系并执行 Cypher 查询。按想交付的知识页面或查询服务选择，不应仅凭两者都能呈现图形就认定可互相替代。</p>
 <h3>新手先学 Neo4j 还是 Protégé？</h3>
-<p>看你要解决什么问题。要做属性图查询和路径分析，先学 Neo4j 和 Cypher；要定义本体、类和约束，先学 Protégé 和 OWL。两个都学也可以，但不要在没有场景的情况下背工具。</p>
-<h3>只做文档问答，需要图数据库吗？</h3>
-<p>不一定。文档量不大、问题主要是局部事实时，向量检索加普通 RAG 可能已经够用。问题涉及跨文档关系、全局总结、多跳推理时，再考虑 GraphRAG 或图数据库。先测再选，不要为了“图谱”而图谱。</p>
-<h3>中文知识抽取用什么工具？</h3>
-<p>可以从 DeepKE、HanLP 或 spaCy 起步，也可以用 LLM Graph Transformer 做快速原型。关键不是工具名，而是你有没有领域样本和评估标准。先用 100 条真实文本比较准确率和召回率。</p>
-<h3>Molio 的资源能直接导入 Neo4j 吗？</h3>
-<p>不能一键导入。它是 wiki 双链图谱，交付为 Markdown 文件，不是 Neo4j 的导出文件，也不是 RDF 三元组。要用在图数据库里，需要自己解析页面和双链、设计节点和边，再写入。它更适合直接阅读、顺着双链查，以及给 AI 提供上下文。</p>
+<p>要做属性图查询，可先学 Neo4j 的数据模型与 Cypher；要定义 OWL 本体，可先学 Protégé。两者分别侧重数据存储查询和本体编辑，学习顺序取决于项目要求。</p>
+<h3>只做文档问答，需要 GraphRAG 吗？</h3>
+<p>不一定。先用实际问题检查当前检索方案是否能找到依据；若跨文档关系与全局归纳是主要难点，再将 GraphRAG 纳入对比。应同时比较回答质量、出处、索引成本与维护工作。</p>
+<h3>免费或开源工具，使用成本就是零吗？</h3>
+<p>不是。即使软件开放源码，模型调用、计算资源、数据整理和部署维护仍可能产生费用。Protégé 与 Jena 的官网明确提供开源说明；其他工具应分别核对所选版本的许可证、模型与依赖条件，不能把软件许可与全部使用成本混为一谈。</p>
+<h2>来源与核对范围</h2>
+<p>编辑核对日期：2026-10-25。工具定位与核心能力依据各节所链官方文档；本文未做统一语料下的安装、性能或效果测评。Molio 流程依据官网与官方仓库说明，未据此承诺零配置、全自动正确或跨工具格式兼容。选型示例与验收方法为本文编辑建议。</p>
 <h2>相关阅读</h2>
-<ul><li><a href="https://molio.cn/blog/knowledge-graph-resource-sites.html">知识图谱资源网站有哪些？10 个入口，按 4 类选</a></li><li><a href="https://molio.cn/blog/ontology-modeling-guide.html">本体论怎么落地：从概念、关系与约束开始</a></li><li><a href="https://molio.cn/blog/own-materials-to-knowledge-base.html">知识库导入：为什么资料喂给 AI 还是查不全，先结构化再接入</a></li><li><a href="https://molio.cn/resources.html">Molio 知识图谱资源库</a></li></ul>
+<ul><li><a href="https://molio.cn/blog/knowledge-graph-resource-sites.html">知识图谱资源网站有哪些？10 个入口与选择方法</a></li><li><a href="https://molio.cn/blog/ontology-modeling-guide.html">本体论怎么落地：从概念、关系与约束开始</a></li><li><a href="https://molio.cn/blog/own-materials-to-knowledge-base.html">把自己的资料整理成知识库</a></li><li><a href="https://molio.cn/index.html">下载与了解 Molio（墨流）</a></li></ul>
 </article>
   <div class="related-links reveal">
     <h2>相关文章</h2>
     <ul>
-      <li><a href="knowledge-graph-resource-sites.html">知识图谱资源网站有哪些？10 个入口，按数据、工具、成品选</a></li>
+      <li><a href="knowledge-graph-resource-sites.html">知识图谱资源网站有哪些？10 个入口与选择方法</a></li>
       <li><a href="ontology-modeling-guide.html">本体论怎么落地：GB/T 48000 要求的三类构件，和 Palantir 多出的那个“动作”</a></li>
       <li><a href="own-materials-to-knowledge-base.html">知识库导入：为什么资料喂给 AI 还是查不全，先结构化再接入</a></li>
     </ul>
