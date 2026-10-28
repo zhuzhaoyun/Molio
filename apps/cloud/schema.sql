@@ -89,6 +89,7 @@ CREATE TABLE IF NOT EXISTS market_listings (
   icon           TEXT NOT NULL,
   tint           TEXT NOT NULL,
   summary        TEXT NOT NULL,
+  content        JSONB,                              -- 管理员维护的结构化商品页内容（MarketContent）
   overview       JSONB NOT NULL DEFAULT '[]',
   highlights     JSONB NOT NULL DEFAULT '[]',
   tags           JSONB NOT NULL DEFAULT '[]',
@@ -127,6 +128,7 @@ INSERT INTO market_taxa (id,kind,name) VALUES
  ('knowledge','type','知识库') ON CONFLICT DO NOTHING;
 ALTER TABLE market_listings ADD COLUMN IF NOT EXISTS category_id TEXT REFERENCES market_taxa(id);
 ALTER TABLE market_listings ADD COLUMN IF NOT EXISTS resource_type_id TEXT REFERENCES market_taxa(id) DEFAULT 'knowledge';
+ALTER TABLE market_listings ADD COLUMN IF NOT EXISTS content JSONB;
 CREATE INDEX IF NOT EXISTS market_listings_category_idx ON market_listings(category_id) WHERE status = 'active';
 CREATE TABLE IF NOT EXISTS market_migrations (id TEXT PRIMARY KEY, applied_at TIMESTAMPTZ DEFAULT now());
 -- One-time explicit ID assignment, never reclassify resources on subsequent deployments.

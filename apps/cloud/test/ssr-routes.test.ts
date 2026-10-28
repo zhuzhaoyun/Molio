@@ -4,6 +4,8 @@
 // 相关商品互链与 sitemap 内容 —— 这些是收录效果的核心契约，回归必须挡住。
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import { createApp } from '../src/app.js';
 import { MarketService } from '../src/market/service.js';
 import { OssSigner } from '../src/market/signer.js';
@@ -115,12 +117,14 @@ test('SSR 商品页：付费形态三选一 CTA', async () => {
 
 test('SSR 商品页：相关商品互链排除自身、链接指向新格式', async () => {
   const { app, marketStore } = await bootSsrApp();
-  await marketStore.insertListing(listing({}));
-  await marketStore.insertListing(listing({ id: '01JABCDE0000000000000002', name: '唐诗三百首知识图谱' }));
+  await marketStore.insertListing(listing({ categoryId: 'history-literature' }));
+  await marketStore.insertListing(listing({ id: '01JABCDE0000000000000002', name: '唐诗三百首知识图谱', categoryId: 'history-literature' }));
+  await marketStore.insertListing(listing({ id: '01JABCDE0000000000000003', name: '光伏电站知识库', categoryId: 'engineering' }));
   const html = await (await app.request('/resource/01JABCDE0000000000000001.html')).text();
   const relatedBlock = html.slice(html.indexOf('相关资源'));
-  assert.ok(relatedBlock.includes('/resource/01JABCDE0000000000000002.html'), '互链指向新格式');
+  assert.ok(relatedBlock.includes('/resource/01JABCDE0000000000000002.html'), '同类商品互链指向新格式');
   assert.ok(relatedBlock.includes('唐诗三百首知识图谱'));
+  assert.ok(!relatedBlock.includes('光伏电站知识库'), '不拿跨类商品凑数');
   assert.ok(!relatedBlock.includes('/resource/01JABCDE0000000000000001.html'), '相关区不含自身');
 });
 
@@ -158,6 +162,19 @@ test('动态 sitemap：全量在售商品 + lastmod，非法/下架条目不出�
   assert.ok(xml.includes('<loc>https://molio.cn/resource/01JABCDE0000000000000002.html</loc>'));
   assert.ok(!xml.includes('01JABCDE0000000000000003'), 'uploading 不进 sitemap');
   assert.match(xml, /<lastmod>\d{4}-\d{2}-\d{2}<\/lastmod>/);
+});
+
+test('动态 sitemap：lastmod 取最近更新时间，内容改版才看得见', async () => {
+  const { app, marketStore } = await bootSsrApp();
+  // 2025 年上架、2026 年补内容：lastmod 必须是 2026。
+  // 若回落 publishedAt，老页面改版对爬虫就是隐形的（2026-10-27 商品页结构化内容上线踩过）。
+  await marketStore.insertListing(listing({
+    publishedAt: Date.parse('2025-01-02T12:00:00Z'),
+    updatedAt: Date.parse('2026-03-05T12:00:00Z'),
+  }));
+  const xml = await (await app.request('/sitemap-products.xml')).text();
+  assert.match(xml, /<lastmod>2026-03-0[56]<\/lastmod>/);
+  assert.ok(!xml.includes('2025-01-02'), 'lastmod 不应回落到上架日');
 });
 
 test('资源列表页 SSR：200 + SEO 要素 + 服务端商品卡片 + ItemList JSON-LD', async () => {
@@ -259,4 +276,27 @@ test('catalog upstream failure returns 503, not an empty successful catalog', as
   const res=await app.request('/resources.html');
   assert.equal(res.status,503);
   assert.equal(res.headers.get('cache-control'),'no-store');
+});
+
+test('SSR 商品页：MarketContent 渲染事实卡/问答/范围/样例/FAQ', async () => {
+  const { app, marketStore } = await bootSsrApp();
+  const content = JSON.parse(readFileSync(
+    path.resolve(process.cwd(), '../../content/market/01M4PZPNGWR1YZ1W9GGVTJG82N.json'),
+    'utf8',
+  ));
+  await marketStore.insertListing(listing({
+    id: '01M4PZPNGWR1YZ1W9GGVTJG82N',
+    name: '人教版高中数学五册知识图谱',
+    content,
+    updatedAt: 1_760_000_000_000,
+  }));
+  const html = await (await app.request('/resource/01M4PZPNGWR1YZ1W9GGVTJG82N.html')).text();
+  assert.ok(html.includes('res-facts'), '事实卡');
+  assert.ok(html.includes('200 个'), '事实值');
+  assert.ok(html.includes('互斥事件和对立事件有什么区别？'), '知识问答');
+  assert.ok(html.includes('集合与逻辑'), '内容范围主题');
+  assert.ok(html.includes('先读一段，再决定'), '真实样例');
+  assert.ok(html.includes('"@type":"FAQPage"'), 'FAQPage JSON-LD');
+  assert.ok(html.includes('"dateModified"'), 'dateModified');
+  assert.ok(!html.includes('概述</h2>'), 'content 模式不再渲染旧概述');
 });

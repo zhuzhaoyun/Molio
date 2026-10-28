@@ -2,7 +2,7 @@
 // 资源市场服务：校验/限频/状态机/签发（设计 §五§六）。限频走 store 查询（同 auth 哲学）。
 // 价格 Plan 1 恒 0；管理员定价为 Plan 2。
 import {
-  MARKET_ICONS, MARKET_TINTS, type MarketTaxon, type MarketTaxonomy,
+  MARKET_ICONS, MARKET_TINTS, type MarketContent, type MarketTaxon, type MarketTaxonomy,
   type MarketCreateRequest, type MarketCreateResponse, type MarketDownloadResponse,
   type MarketListing, type MarketMyListing, type MarketMyResponse,
   type MarketPurchase, type MarketPurchasesResponse, type MarketUploadTarget,
@@ -40,6 +40,12 @@ const MAX_SUMMARY_CP = 500;
 const MAX_TAGS = 3;
 const MAX_PREVIEWS = 4;
 const MAX_PREVIEW_BYTES = 5 * 1024 * 1024;
+const MAX_CONTENT_JSON_BYTES = 60_000;
+const MAX_CONTENT_FACTS = 30;
+const MAX_CONTENT_THEMES = 30;
+const MAX_CONTENT_QUESTIONS = 20;
+const MAX_CONTENT_SAMPLES = 10;
+const MAX_CONTENT_ITEMS = 60;
 const UPLOAD_TTL_SEC = 60 * 60;
 const DOWNLOAD_TTL_SEC = 60 * 60;
 
@@ -149,7 +155,7 @@ export class MarketService {
       categoryId: req.categoryId ?? null, resourceTypeId: req.resourceTypeId ?? 'knowledge',
       name: req.name.trim(), icon: req.icon, tint,
       summary: req.summary.trim(),
-      overview: [], highlights: [],
+      overview: [], highlights: [], content: null,
       tags: [...new Set(req.tags.map((t) => t.trim()))].slice(0, MAX_TAGS), // 自定义允许，去重截断
       previews: req.previews.map((p, i) => `next/${id}-p${i + 1}${p.ext}`), // uploading 期存暂存键
       version: 'v1.0', priceCents, payUrl: '', authorDisplay: null,
@@ -414,6 +420,15 @@ export class MarketService {
     return out;
   }
 
+  /** 管理员维护商品页结构化内容（JSONB） */
+  async adminUpdateContent(adminEmail: string, listingId: string, input: unknown): Promise<MarketMyListing> {
+    this.assertAdmin(adminEmail);
+    const content = validateMarketContent(input);
+    await this.mustFind(listingId);
+    const updated = await this.deps.store.updateListing(listingId, { content }, this.now);
+    return this.toMy(updated!);
+  }
+
   private assertAdmin(email: string): void {
     if (!this.isAdminEmail(email)) throw new MarketServiceError('not_owner', 403);
   }
@@ -432,11 +447,12 @@ export class MarketService {
       category: taxa.find(t => t.kind === "category" && t.id === rec.categoryId) ?? null,
       resourceType: taxa.find(t => t.kind === "type" && t.id === (rec.resourceTypeId ?? "knowledge")) ?? null,
       id: rec.id, source: rec.source, name: rec.name, icon: rec.icon, tint: rec.tint,
-      summary: rec.summary, overview: rec.overview, highlights: rec.highlights, tags: rec.tags,
+      summary: rec.summary, overview: rec.overview, highlights: rec.highlights, content: rec.content, tags: rec.tags,
       previews: rec.previews, version: rec.version, priceCents: rec.priceCents, payUrl: rec.payUrl,
       author: rec.authorDisplay ?? u?.nickname ?? '墨友',
       fileSize: rec.fileSize,
       publishedAt: rec.publishedAt === null ? null : new Date(rec.publishedAt).toISOString(),
+      updatedAt: new Date(rec.updatedAt).toISOString(),
     };
   }
 
@@ -448,6 +464,93 @@ export class MarketService {
       status: rec.status, removedReason: rec.removedReason,
     };
   }
+}
+
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return !!v && typeof v === 'object' && !Array.isArray(v);
+}
+
+function isContentString(v: unknown, min: number, max: number): v is string {
+  return typeof v === 'string' && cpLen(v.trim()) >= min && cpLen(v.trim()) <= max;
+}
+
+function isContentStringArray(v: unknown, maxItems: number, maxLen: number): v is string[] {
+  return Array.isArray(v) && v.length <= maxItems && v.every((x) => isContentString(x, 1, maxLen));
+}
+
+/** 校验管理员提交的 MarketContent；非法一律 invalid_metadata 400。 */
+function contentArray(v: unknown, max: number, min = 0): unknown[] {
+  if (!Array.isArray(v) || v.length < min || v.length > max) {
+    throw new MarketServiceError('invalid_metadata', 400);
+  }
+  return v;
+}
+
+/** 校验管理员提交的 MarketContent；非法一律 invalid_metadata 400。 */
+function validateMarketContent(input: unknown): MarketContent {
+  const fail = (): never => { throw new MarketServiceError('invalid_metadata', 400); };
+  if (!isRecord(input) || input.version !== 1) fail();
+  const c = input as Record<string, unknown>;
+  if (JSON.stringify(c).length > MAX_CONTENT_JSON_BYTES) fail();
+
+  if (!isRecord(c.positioning)) fail();
+  const p = c.positioning as Record<string, unknown>;
+  if (!isContentString(p.what, 1, 2000)
+    || !isContentStringArray(p.who, 12, 200)
+    || !isContentStringArray(p.notFor, 12, 200)) fail();
+
+  const facts = contentArray(c.facts, MAX_CONTENT_FACTS, 1);
+  for (const f of facts) {
+    if (!isRecord(f) || !isContentString(f.label, 1, 40) || !isContentString(f.value, 1, 120)) fail();
+  }
+
+  const themes = contentArray(c.themes, MAX_CONTENT_THEMES);
+  for (const t of themes) {
+    if (!isRecord(t) || !isContentString(t.name, 1, 80)
+      || !isContentString(t.summary, 1, 600)
+      || !isContentStringArray(t.items, MAX_CONTENT_ITEMS, 100)) fail();
+  }
+
+  const questions = contentArray(c.questions, MAX_CONTENT_QUESTIONS);
+  for (const q of questions) {
+    if (!isRecord(q) || !isContentString(q.question, 1, 200)
+      || !isContentString(q.answer, 1, 3000)) fail();
+    const qObj = q as Record<string, unknown>;
+    if (qObj.source !== undefined && !isContentString(qObj.source, 1, 200)) fail();
+  }
+
+  if (c.samples !== undefined) {
+    const samples = contentArray(c.samples, MAX_CONTENT_SAMPLES);
+    for (const sample of samples) {
+      if (!isRecord(sample) || !isContentString(sample.title, 1, 200)
+        || !isContentString(sample.body, 1, 8000)) fail();
+      const sampleObj = sample as Record<string, unknown>;
+      if (sampleObj.source !== undefined && !isContentString(sampleObj.source, 1, 200)) fail();
+    }
+  }
+
+  if (!isRecord(c.delivery)) fail();
+  const delivery = c.delivery as Record<string, unknown>;
+  if (!isContentString(delivery.format, 1, 200)
+    || !isContentStringArray(delivery.includes, 30, 300)
+    || !isContentStringArray(delivery.requirements, 30, 300)
+    || !isContentStringArray(delivery.steps, 30, 300)) fail();
+
+  if (!isRecord(c.review)) fail();
+  const review = c.review as Record<string, unknown>;
+  if (!isContentString(review.basis, 1, 600)
+    || !isContentString(review.reviewedAt, 1, 40)
+    || (review.status !== 'draft' && review.status !== 'reviewed')) fail();
+
+  if (c.seo !== undefined) {
+    if (!isRecord(c.seo)) fail();
+    const seo = c.seo as Record<string, unknown>;
+    if (seo.title !== undefined && !isContentString(seo.title, 1, 200)) fail();
+    if (seo.description !== undefined && !isContentString(seo.description, 1, 300)) fail();
+    if (seo.aliases !== undefined && !isContentStringArray(seo.aliases, 20, 80)) fail();
+  }
+
+  return c as unknown as MarketContent;
 }
 
 function bumpVersion(v: string): string {

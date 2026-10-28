@@ -1,0 +1,122 @@
+{
+  "01M5MRDBHGE1QGF57EDJVQ0N6S": {
+    "name": "《封神演义》全本结构化知识库",
+    "category": "历史与文学",
+    "wikiDir": "封神演義",
+    "overview": "封神演義總覽.md"
+  },
+  "01M5GT5BA205VXBP3GT7PWK91T": {
+    "name": "光伏电站运维全链路知识库",
+    "category": "工程技术",
+    "wikiDir": "电力行业培训资料",
+    "overview": "光伏电站运维培训体系概览.md"
+  },
+  "01M4PZPNGWR1YZ1W9GGVTJG82N": {
+    "name": "人教版高中数学五册知识图谱",
+    "category": "K12",
+    "wikiDir": "高中数学手册",
+    "overview": "高中数学知识体系总览.md"
+  },
+  "01M111M5CSYX96FTKGC3V1QC2T": {
+    "name": "《明史》帝国兴衰知识图谱",
+    "category": "历史与文学",
+    "wikiDir": "明史",
+    "overview": "INDEX.md"
+  },
+  "01M3VY2DZXW6KN1X5AFP7PXJ05": {
+    "name": "中国古典诗文集全景图谱",
+    "category": "历史与文学",
+    "wikiDir": "诗文集",
+    "overview": "诗文集总览.md"
+  },
+  "01M3VX66XMG5NHQ5HP9TK0Q2DC": {
+    "name": "PCB 柔性制造全景图谱",
+    "category": "工程技术",
+    "wikiDir": "互联网柔性制造",
+    "overview": "INDEX.md"
+  },
+  "01M10MC4S9ZH54WVFCXJWZ2JWS": {
+    "name": "中西哲学思想图谱",
+    "category": "哲学",
+    "wikiDir": "西方哲学史",
+    "overview": "西方哲学史脉络.md"
+  },
+  "01M35RVX9S3TQK6ZE0QT9J6NG4": {
+    "name": "三国人物关系图",
+    "category": "历史与文学",
+    "wikiDir": "三国",
+    "overview": "三国演义总览.md"
+  },
+  "01M35QEB3RMK46SGCQ6WSZ3GZR": {
+    "name": "图纸数据提取",
+    "category": "工程技术",
+    "wikiDir": "工程图纸数字化应用",
+    "overview": "AI图纸数据处理总览.md"
+  },
+  "01M112AA9MV91T3FJD5Z2GSPY8": {
+    "name": "中医经典辨证体系",
+    "category": "医学",
+    "wikiDir": "诊验医方歌括",
+    "overview": "清代珍稀医籍四种总览.md"
+  },
+  "01M10WWK7WNMM61QNJJJXHNWS2": {
+    "name": "史记知识库",
+    "category": "历史与文学",
+    "wikiDir": "史记-rebuild",
+    "overview": "史记总览.md"
+  },
+  "01M2QAYVBMH2YCF68BEA393BY4": {
+    "name": "法考刑法·131考点与主观题观点训练知识图谱",
+    "category": "法律",
+    "wikiDir": "法考-刑法",
+    "overview": "法考刑法知识库总览.md"
+  },
+  "01M2GAA83Q83CMQZPN40T9GQZ8": {
+    "name": "《金瓶梅》人物·商业·社会运行全景知识图谱",
+    "category": "历史与文学",
+    "wikiDir": "金瓶梅",
+    "overview": "INDEX.md"
+  },
+  "01M2DFJ9E66FARK5SEBMPT92K0": {
+    "name": "广东高考志愿填报·高校专业全景知识库",
+    "category": "教育",
+    "wikiDir": "广东高校wiki",
+    "overview": "广东高校总览.md"
+  },
+  "01M13QT669Q6E94PWACEH00YJF": {
+    "name": "知识工程全景图谱-RAG-本体-Agent工程",
+    "category": "工程技术",
+    "wikiDir": "知识工程",
+    "overview": "全库总览.md"
+  },
+  "01M12YMV1144F4RZMX1HBK8GQ0": {
+    "name": "《周易》六十四卦全解",
+    "category": "哲学",
+    "wikiDir": "易经研读·样章七卦",
+    "overview": "INDEX.md"
+  },
+  "01M1152PE8YE365S9ZXDMNYCW6": {
+    "name": "妇产超声知识图谱",
+    "category": "医学",
+    "wikiDir": "妇产超声",
+    "overview": "胎儿超声与产前诊断知识体系总览.md"
+  },
+  "01M114523M19P4J7GZMZ7E6188": {
+    "name": "老庄思想图谱",
+    "category": "哲学",
+    "wikiDir": "道德经",
+    "overview": "INDEX.md"
+  },
+  "01M110NNMKNWXKBXT01HVJ06ZW": {
+    "name": "《红楼梦》人物与意象关系图谱",
+    "category": "历史与文学",
+    "wikiDir": "红楼梦-fixed",
+    "overview": "红楼梦.md"
+  },
+  "01M10RZP9118BA6YRBZ1D4FKM2": {
+    "name": "《资治通鉴》千年兴亡",
+    "category": "历史与文学",
+    "wikiDir": "资质通鉴",
+    "overview": "INDEX.md"
+  }
+}

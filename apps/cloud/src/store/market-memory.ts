@@ -31,7 +31,7 @@ export class MemoryMarketStore implements MarketStore {
     id: string,
     patch: Partial<Pick<MarketListingRecord,
       'status' | 'removedReason' | 'fileSize' | 'version' | 'previews' | 'ossKey' | 'publishedAt' | 'pendingUpdate'
-      | 'categoryId' | 'resourceTypeId' | 'priceCents' | 'payUrl' | 'name' | 'summary' | 'icon' | 'tags'>>,
+      | 'categoryId' | 'resourceTypeId' | 'priceCents' | 'payUrl' | 'name' | 'summary' | 'icon' | 'tags' | 'content'>>,
     now: number,
   ): Promise<MarketListingRecord | null> {
     const r = this.listings.get(id);

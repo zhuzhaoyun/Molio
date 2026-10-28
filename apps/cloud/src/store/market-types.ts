@@ -1,7 +1,7 @@
 // apps/cloud/src/store/market-types.ts
 // MarketStore 持久层抽象：PgMarketStore（生产）+ MemoryMarketStore（node:test）。
 // 时间戳接口层统一 epoch 毫秒（与 AuthStore 约定一致）。
-import type { MarketTaxon, MarketListingSource, MarketListingStatus } from '@molio/contracts';
+import type { MarketContent, MarketTaxon, MarketListingSource, MarketListingStatus } from '@molio/contracts';
 
 /** 更新流程暂存声明（confirm 消费后清空） */
 export interface MarketPendingUpdate {
@@ -26,6 +26,8 @@ export interface MarketListingRecord {
   summary: string;
   overview: string[];
   highlights: string[];
+  /** 管理员维护的结构化商品内容；null/undefined = 回退 overview/highlights */
+  content?: MarketContent | null;
   tags: string[];
   previews: string[];
   version: string;
@@ -51,7 +53,7 @@ export interface MarketStore {
   /** 部分字段更新；不存在返回 null */
   updateListing(id: string, patch: Partial<Pick<MarketListingRecord,
     'status' | 'removedReason' | 'fileSize' | 'version' | 'previews' | 'ossKey' | 'publishedAt' | 'pendingUpdate'
-    | 'categoryId' | 'resourceTypeId' | 'priceCents' | 'payUrl' | 'name' | 'summary' | 'icon' | 'tags'
+    | 'categoryId' | 'resourceTypeId' | 'priceCents' | 'payUrl' | 'name' | 'summary' | 'icon' | 'tags' | 'content'
   >>, now: number): Promise<MarketListingRecord | null>;
   /** active 列表，published_at DESC */
   listActiveListings(limit?: number): Promise<MarketListingRecord[]>;
