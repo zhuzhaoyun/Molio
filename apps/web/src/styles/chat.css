@@ -2088,6 +2088,74 @@
 .quiz-subject-actions { display: flex; }
 .quiz-answer-btn.on:not(:disabled) { background-color: var(--accent-tint); border-color: var(--accent); color: var(--accent); }
 
+/* 大题批改回写：得分徽标（行头）+ 可折叠逐点评定。判定徽章三态走语义
+   token（暗色主题由 tokens.css 的变量切换），依据文本走通用 markdown 渲染。 */
+
+/* 解答题状态徽标（交卷前）：与客观题的「正确/错误」徽标同一位置（行头
+   右侧），但用中性色——它只说「答了 / 批了」，不透露判定结果（判定随客观
+   题一起在交卷后揭晓）。 */
+.quiz-subject-status {
+  margin-left: auto;
+  flex-shrink: 0;
+  padding: 1px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background-color: var(--bg-subtle);
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.quiz-subject-score {
+  margin-left: auto;
+  flex-shrink: 0;
+  padding: 1px 8px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-pill);
+  background-color: var(--accent-tint);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.quiz-subject-points { margin-top: 8px; }
+.quiz-subject-points-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.quiz-subject-points-toggle:hover { background-color: var(--bg-subtle); color: var(--text); }
+.quiz-subject-points-caret { font-size: 10px; }
+.quiz-subject-points-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  background-color: var(--bg-subtle);
+}
+.quiz-subject-point { display: flex; align-items: baseline; gap: 8px; font-size: 13px; }
+.quiz-subject-point-status {
+  flex-shrink: 0;
+  padding: 0 6px;
+  border-radius: var(--radius-pill);
+  font-size: 11px;
+  line-height: 1.6;
+}
+.quiz-subject-point-status.hit { background-color: var(--accent-tint); color: var(--accent); }
+.quiz-subject-point-status.partial { background-color: var(--bg-elevated); color: var(--text-muted); border: 1px solid var(--border); }
+.quiz-subject-point-status.miss { background-color: var(--red-bg); color: var(--red); }
+
 /* 大题作答锚 chip：与文档引用 chip 同语言（pill + × 摘除）。锚是全局单值，
    主页与悬浮面板两处 composer 都会渲染，任一处发送都物化。 */
 .composer-anchor-row {

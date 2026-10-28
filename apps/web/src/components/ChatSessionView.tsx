@@ -7,6 +7,8 @@ import { SessionWriteKindsProvider } from './SessionWriteKinds';
 import { findLastAssistant } from '../utils/workSteps';
 import { isNearBottom } from './chatScrollPin';
 import { useSelectMode, messageSelectionStore } from '../stores/messageSelectionStore';
+import { quizSubjectStore } from '../stores/quizSubjectStore';
+import { pairQuizGradings, pairSubjectAnswers } from '../utils/quizAnswer';
 import { SelectionConfirmBar } from './SelectionConfirmBar';
 import { RunStatusBar } from './RunStatusBar';
 import { ActivityTree } from './ActivityTree';
@@ -179,6 +181,18 @@ export function ChatSessionView({
     const present = new Set(messages.map((m) => m.id));
     messageSelectionStore.pruneStale(present);
   }, [messages, pruneSelection]);
+
+  // 解答题状态：按会话消息序配对「大题作答 ↔ 批改标记」，并记录哪些解答题
+  // 已作答，写入全局 store（QuizCard 按 conversationId + 题目指纹订阅）。
+  // 纯消息序推导，历史刷新后重算即可回写；无 quiz 会话的结果为空，写入无害。
+  useEffect(() => {
+    if (!conversationId) return;
+    quizSubjectStore.setConversation(
+      conversationId,
+      pairQuizGradings(messages),
+      pairSubjectAnswers(messages),
+    );
+  }, [messages, conversationId]);
 
   // Find the last assistant message ID so only that card stays interactive
   const lastAssistant = useMemo(() => findLastAssistant(messages), [messages]);
