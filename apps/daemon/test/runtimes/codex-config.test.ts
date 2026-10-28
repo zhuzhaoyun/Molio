@@ -116,6 +116,31 @@ base_url = "https://other.example"
     assert.equal(auth['OPENAI_API_KEY'], 'sk-new');
   });
 
+  it('writes SiliconFlow with OpenAI-compatible endpoint and chat wire api', () => {
+    applyCodexProvider(
+      { presetId: 'siliconflow', model: 'Qwen/Qwen3-8B', apiKey: 'sk-sf' },
+      codexDir, backupDir,
+    );
+
+    const table = parse(fs.readFileSync(path.join(codexDir, 'config.toml'), 'utf8')) as Record<string, any>;
+    assert.equal(table['model'], 'Qwen/Qwen3-8B');
+    assert.equal(table['model_provider'], 'custom');
+    assert.equal(table['model_providers']['custom']['name'], 'siliconflow');
+    assert.equal(table['model_providers']['custom']['base_url'], 'https://api.siliconflow.cn/v1');
+    assert.equal(table['model_providers']['custom']['wire_api'], 'chat');
+
+    const auth = JSON.parse(fs.readFileSync(path.join(codexDir, 'auth.json'), 'utf8'));
+    assert.equal(auth['OPENAI_API_KEY'], 'sk-sf');
+
+    // Round-trip: the state reader must map the endpoint back to the preset.
+    const state = getCodexProviderState(codexDir);
+    assert.equal(state.presetHint, 'siliconflow');
+    assert.equal(state.baseUrl, 'https://api.siliconflow.cn/v1');
+    assert.equal(state.model, 'Qwen/Qwen3-8B');
+    assert.equal(state.wireApi, 'chat');
+    assert.equal(state.hasKey, true);
+  });
+
   it('auth merge preserves other fields and writes 0600 on POSIX', () => {
     fs.writeFileSync(path.join(codexDir, 'auth.json'), JSON.stringify({ tokens: { refresh: 'r1' } }));
     applyCodexProvider({ presetId: 'deepseek', model: 'deepseek-v4-flash', apiKey: 'sk-k' }, codexDir, backupDir);

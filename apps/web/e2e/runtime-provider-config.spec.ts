@@ -92,7 +92,7 @@ test.describe('Runtime provider config', () => {
     await expect(configPanel).toBeVisible();
 
     // Provider selector dropdown should be present
-    const providerSelect = configPanel.locator('.rt-provider-form__select');
+    const providerSelect = configPanel.locator('[data-testid="provider-select"]');
     await expect(providerSelect).toBeVisible();
 
     // Select DeepSeek
@@ -127,7 +127,7 @@ test.describe('Runtime provider config', () => {
     await expect(configPanel).toBeVisible();
 
     // Select DeepSeek
-    await configPanel.locator('.rt-provider-form__select').selectOption('deepseek');
+    await configPanel.locator('[data-testid="provider-select"]').selectOption('deepseek');
 
     // Enter a test API key
     const apiKeyInput = configPanel.locator('.rt-provider-form__input[type="password"]');
@@ -154,7 +154,7 @@ test.describe('Runtime provider config', () => {
     await claudeCard.locator('.rt-provider-config__header .rt-btn').click(); // close
     await claudeCard.locator('.rt-provider-toggle').click(); // reopen
 
-    const reopenedSelect = claudeCard.locator('.rt-provider-config .rt-provider-form__select');
+    const reopenedSelect = claudeCard.locator('.rt-provider-config [data-testid="provider-select"]');
     await expect(reopenedSelect).toHaveValue('deepseek');
   });
 
@@ -166,11 +166,11 @@ test.describe('Runtime provider config', () => {
     const configPanel = claudeCard.locator('.rt-provider-config');
 
     // Select DeepSeek and enter key
-    await configPanel.locator('.rt-provider-form__select').selectOption('deepseek');
+    await configPanel.locator('[data-testid="provider-select"]').selectOption('deepseek');
     await configPanel.locator('.rt-provider-form__input[type="password"]').fill('sk-some-key');
 
     // Switch to OpenRouter
-    await configPanel.locator('.rt-provider-form__select').selectOption('openrouter');
+    await configPanel.locator('[data-testid="provider-select"]').selectOption('openrouter');
 
     // API key should be cleared
     const apiKeyInput = configPanel.locator('.rt-provider-form__input[type="password"]');
@@ -178,6 +178,45 @@ test.describe('Runtime provider config', () => {
 
     // Should show OpenRouter-specific hint
     await expect(configPanel.locator('.rt-provider-form__hint')).toContainText('sk-or-');
+  });
+
+  test('select SiliconFlow and persist the Anthropic-compatible endpoint', async ({ page }) => {
+    const claudeCard = page.locator('.rt-agent-card').filter({ hasText: 'Claude Code' });
+    await claudeCard.locator('.rt-provider-toggle').click();
+    const configPanel = claudeCard.locator('.rt-provider-config');
+    await expect(configPanel).toBeVisible();
+
+    await configPanel.locator('[data-testid="provider-select"]').selectOption('siliconflow');
+
+    // Primary model selector is visible and defaults to the free Qwen3 8B.
+    const modelSelect = configPanel.locator('[data-testid="claude-model-field"]');
+    await expect(modelSelect).toBeVisible();
+    await expect(modelSelect).toHaveValue('Qwen/Qwen3-8B');
+    await expect(modelSelect.locator('option').first()).toContainText(/免费|free/i);
+
+    // Free-model hint + model catalog link.
+    await expect(configPanel).toContainText(/免费|free/i);
+    await expect(configPanel.locator('.rt-provider-form__link').filter({ hasText: /模型广场|catalog/i }))
+      .toBeVisible();
+
+    // API key link points at the SiliconFlow console.
+    const apiKeyLink = configPanel.locator('.rt-provider-form__link').filter({ hasText: 'API Key' });
+    await expect(apiKeyLink).toHaveAttribute('href', 'https://cloud.siliconflow.cn/account/ak');
+
+    await configPanel.locator('.rt-provider-form__input[type="password"]').fill('sk-test-e2e-siliconflow');
+    await configPanel.locator('.rt-provider-form__actions .rt-btn').first().click();
+    await expect(configPanel.locator('.rt-provider-form__status--ok')).toBeVisible({ timeout: 5000 });
+
+    // Claude Code must receive the Anthropic-compatible root, NOT the /v1 path.
+    const response = await page.evaluate(async (api) => {
+      const res = await fetch(`${api}/config/agents/claude`);
+      return res.json();
+    }, DAEMON_API);
+    expect(response.env.ANTHROPIC_BASE_URL).toBe('https://api.siliconflow.cn/');
+    expect(response.env.ANTHROPIC_API_KEY).toBe('sk-test-e2e-siliconflow');
+    expect(response.env.ANTHROPIC_DEFAULT_SONNET_MODEL).toBe('Qwen/Qwen3-8B');
+    expect(response.env.ANTHROPIC_DEFAULT_OPUS_MODEL).toBe('Qwen/Qwen3-8B');
+    expect(response.env.ANTHROPIC_DEFAULT_HAIKU_MODEL).toBe('Qwen/Qwen3-8B');
   });
 
   test('clean up: reset to Anthropic default', async ({ page }) => {

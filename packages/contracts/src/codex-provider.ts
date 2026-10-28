@@ -10,8 +10,10 @@
  * drift between daemon and web was the reason this moved to contracts).
  */
 
+import { SILICONFLOW, SILICONFLOW_MODELS } from './siliconflow.js';
+
 export type CodexWireApi = 'responses' | 'chat';
-export type CodexPresetId = 'deepseek' | 'dashscope' | 'official' | 'custom';
+export type CodexPresetId = 'deepseek' | 'siliconflow' | 'dashscope' | 'official' | 'custom';
 
 export interface CodexProviderPreset {
   id: CodexPresetId;
@@ -20,10 +22,12 @@ export interface CodexProviderPreset {
   baseUrl: string;
   wireApi: CodexWireApi;
   /** Model list for the UI dropdown. Empty = free-form input or not needed. */
-  models: { id: string; label: string }[];
+  models: { id: string; label: string; free?: boolean }[];
   apiKeyHint?: string;
   apiKeyUrl?: string;
   docsUrl?: string;
+  /** Optional link to the provider's model catalog (e.g. SiliconFlow 模型广场). */
+  modelsUrl?: string;
   /** Official = clear Molio's override and restore Codex defaults. */
   isOfficial?: boolean;
   isCustom?: boolean;
@@ -41,6 +45,18 @@ export const CODEX_PROVIDER_PRESETS: CodexProviderPreset[] = [
     ],
     apiKeyUrl: 'https://platform.deepseek.com/api_keys',
     docsUrl: 'https://api-docs.deepseek.com/',
+  },
+  {
+    id: 'siliconflow',
+    name: SILICONFLOW.name,
+    baseUrl: SILICONFLOW.openaiBaseUrl,
+    // SiliconFlow 的 OpenAI 兼容端点只提供 Chat Completions，不支持 /responses。
+    wireApi: 'chat',
+    models: SILICONFLOW_MODELS,
+    apiKeyHint: 'sk-...',
+    apiKeyUrl: SILICONFLOW.apiKeyUrl,
+    docsUrl: SILICONFLOW.docsUrl,
+    modelsUrl: SILICONFLOW.modelPlazaUrl,
   },
   {
     id: 'dashscope',
