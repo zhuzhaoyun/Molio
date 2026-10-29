@@ -194,6 +194,22 @@ function matchPreset(provider: string | null, baseUrl: string | null): HermesPre
   // user-chosen custom endpoint — return a neutral default, never 'custom'.
   if (provider === 'auto') return HERMES_PROVIDER_PRESETS[0]!.id;
 
+  // Several presets can share hermes's generic 'custom' profile (siliconflow
+  // and the free-form custom entry). The endpoint is the only thing that tells
+  // them apart, so resolve it BEFORE the providerValue match — otherwise the
+  // first preset with providerValue 'custom' would swallow every custom setup.
+  if (provider === 'custom') {
+    const norm = baseUrl ? normalizeBaseUrl(baseUrl) : null;
+    if (norm) {
+      const byEndpoint = HERMES_PROVIDER_PRESETS.find(
+        (p) => p.providerValue === 'custom' && p.defaultBaseUrl
+          && normalizeBaseUrl(p.defaultBaseUrl) === norm,
+      );
+      if (byEndpoint) return byEndpoint.id;
+    }
+    return 'custom';
+  }
+
   if (provider) {
     for (const preset of HERMES_PROVIDER_PRESETS) {
       if (preset.providerValue === provider) return preset.id;
@@ -205,6 +221,11 @@ function matchPreset(provider: string | null, baseUrl: string | null): HermesPre
   // Nothing configured at all → neutral UI default. `configured:false` tells the
   // UI this is not a saved choice.
   return HERMES_PROVIDER_PRESETS[0]!.id;
+}
+
+/** Trailing-slash tolerant comparison key for preset endpoint matching. */
+function normalizeBaseUrl(url: string): string {
+  return url.trim().replace(/\/+$/, '').toLowerCase();
 }
 
 export function getHermesProviderState(hermesHome?: string): HermesProviderState {
@@ -417,7 +438,9 @@ export function applyHermesProvider(
   // Validate custom requirements up front (before any backup/write).
   let effectiveBaseUrl: string | undefined;
   if (preset.isCustom) {
-    const bu = opts.baseUrl?.trim();
+    // Custom-profile presets may ship a default endpoint (siliconflow); the
+    // free-form custom entry has none and still requires the user to supply one.
+    const bu = opts.baseUrl?.trim() || preset.defaultBaseUrl;
     if (!bu) throw new HermesConfigError('baseUrl is required for the custom provider');
     effectiveBaseUrl = bu;
   } else {
