@@ -1,8 +1,8 @@
 /**
  * 硅基流动（SiliconFlow）共享常量与模型清单。
  *
- * 单一来源：Claude Code 预设（web）与 Codex 预设（contracts）都从这里取
- * 端点、链接和模型列表，避免两边漂移。
+ * 单一来源：Claude Code 预设（web）、Codex 预设与 Hermes 预设（contracts）
+ * 都从这里取端点、链接和模型列表，避免漂移。
  *
  * 两个协议的地址不同，不要混用：
  * - Anthropic Messages 兼容（Claude Code 用）：https://api.siliconflow.cn/

@@ -178,6 +178,10 @@ export function ProviderConfig({ agentId }: ProviderConfigProps) {
       // endpoint); presets without one clear the field.
       const p = HERMES_PROVIDERS.find((x) => x.id === id);
       setCustomBaseUrl(p?.defaultBaseUrl ?? '');
+      // Presets with a model list (siliconflow) pre-fill its first — usually a
+      // free model. hermes cannot discover a custom endpoint's catalog, so a
+      // blank field would leave the user guessing.
+      if (p && p.models.length > 0) setHermesModel(p.models[0]!.id);
       return;
     }
     if (isDsh) {
@@ -339,18 +343,29 @@ export function ProviderConfig({ agentId }: ProviderConfigProps) {
 
         {isHermes && (
           <>
-            {/* Model — free-form; blank = hermes default (session/new returns
-                the live model list, so no per-preset suggestions here) */}
+            {/* Model — free-form; blank = hermes default. Presets that ship a
+                model list (siliconflow) only offer suggestions: the field stays
+                editable and blank still means "let hermes decide". */}
             <label className="rt-provider-form__field">
               <span className="rt-provider-form__label">{t('runtimes.model')}</span>
               <input
                 data-testid="hermes-model-field"
                 type="text"
                 className="rt-provider-form__input"
+                list={hermesPreset && hermesPreset.models.length > 0 ? 'hermes-model-suggestions' : undefined}
                 value={hermesModel}
                 onChange={(e) => { setHermesModel(e.target.value); markTouched(); }}
                 placeholder="deepseek-chat"
               />
+              {hermesPreset && hermesPreset.models.length > 0 && (
+                <datalist id="hermes-model-suggestions">
+                  {hermesPreset.models.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.label}{m.free ? t('runtimes.freeSuffix') : ''}
+                    </option>
+                  ))}
+                </datalist>
+              )}
               <span className="rt-provider-form__hint">{t('runtimes.hermesModelHint')}</span>
             </label>
 

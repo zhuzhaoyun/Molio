@@ -3,13 +3,14 @@ import assert from 'node:assert/strict';
 import {
   CLAUDE_PROVIDERS,
   CODEX_PROVIDERS,
+  HERMES_PROVIDERS,
   buildProviderEnv,
   detectProvider,
   getPrimaryModel,
   applyPrimaryModel,
   EMPTY_CLAUDE_MODEL_MAPPING,
 } from './providers.ts';
-import { SILICONFLOW, SILICONFLOW_DEFAULT_MODEL } from '@molio/contracts';
+import { SILICONFLOW, SILICONFLOW_DEFAULT_MODEL, SILICONFLOW_MODELS } from '@molio/contracts';
 
 describe('SiliconFlow Claude Code preset', () => {
   const sf = CLAUDE_PROVIDERS.find((p) => p.id === 'siliconflow');
@@ -63,6 +64,25 @@ describe('SiliconFlow Codex preset', () => {
     assert.equal(sf.models[0]?.id, SILICONFLOW_DEFAULT_MODEL);
     assert.ok(sf.models.some((m) => m.free));
     assert.equal(sf.modelsUrl, SILICONFLOW.modelPlazaUrl);
+  });
+});
+
+describe('SiliconFlow Hermes preset', () => {
+  const sf = HERMES_PROVIDERS.find((p) => p.id === 'siliconflow');
+
+  it('复用 hermes 的 custom OpenAI 兼容 profile（hermes 没有 siliconflow 原生 profile）', () => {
+    assert.ok(sf);
+    assert.equal(sf.providerValue, 'custom');
+    assert.equal(sf.isCustom, true);
+    assert.equal(sf.defaultBaseUrl, SILICONFLOW.openaiBaseUrl);
+  });
+
+  it('预填免费模型清单与申请链接', () => {
+    assert.ok(sf);
+    assert.equal(sf.models, SILICONFLOW_MODELS);
+    assert.equal(sf.models[0]?.id, SILICONFLOW_DEFAULT_MODEL);
+    assert.ok(sf.models.some((m) => m.free));
+    assert.equal(sf.apiKeyUrl, SILICONFLOW.apiKeyUrl);
   });
 });
 

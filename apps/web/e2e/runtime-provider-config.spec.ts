@@ -542,6 +542,44 @@ test.describe('Hermes provider config', () => {
     expect(JSON.stringify(state)).not.toContain('sk-e2e-deepseek');
   });
 
+  test('save siliconflow provider and verify hermes native files', async ({ page }) => {
+    const hermesCard = page.locator('.rt-agent-card').filter({ hasText: 'Hermes' });
+    await hermesCard.locator('.rt-provider-toggle').click();
+    const panel = hermesCard.locator('.rt-provider-config');
+    await expect(panel.locator('.rt-provider-form__select').first()).toHaveValue('anthropic');
+
+    await panel.locator('.rt-provider-form__select').first().selectOption('siliconflow');
+
+    // hermes has no native siliconflow profile → the preset reuses the generic
+    // custom profile, with the OpenAI-compatible endpoint + a free model
+    // pre-filled so the user only needs to paste a key.
+    await expect(panel.locator('[data-testid="hermes-baseurl-field"]'))
+      .toHaveValue('https://api.siliconflow.cn/v1');
+    await expect(panel.locator('[data-testid="hermes-model-field"]'))
+      .toHaveValue('Qwen/Qwen3-8B');
+
+    await panel.locator('.rt-provider-form__input[type="password"]').fill('sk-e2e-siliconflow');
+    await panel.locator('.rt-provider-form__actions .rt-btn').first().click();
+    await expect(panel.locator('.rt-provider-form__status--ok')).toBeVisible({ timeout: 5_000 });
+
+    // Everything lands in config.yaml (custom profile: key = model.api_key)
+    const yaml = fs.readFileSync(configYaml, 'utf8');
+    expect(yaml).toMatch(/provider:\s*"?custom"?/);
+    expect(yaml).toMatch(/base_url:\s*"?https:\/\/api\.siliconflow\.cn\/v1"?/);
+    expect(yaml).toMatch(/api_key:\s*"?sk-e2e-siliconflow"?/);
+    expect(yaml).toMatch(/default:\s*"?Qwen\/Qwen3-8B"?/);
+
+    // GET provider reports the siliconflow preset (endpoint disambiguates it
+    // from the free-form custom entry), never the key itself
+    const state = await page.evaluate(async (api) => {
+      const res = await fetch(`${api}/agents/hermes/provider`);
+      return res.json();
+    }, DAEMON_API);
+    expect(state.presetHint).toBe('siliconflow');
+    expect(state.hasKey).toBe(true);
+    expect(JSON.stringify(state)).not.toContain('sk-e2e-siliconflow');
+  });
+
   test('shows saved-key hint when .env already has a key', async ({ page }) => {
     // beforeEach seeded anthropic + apiKey BEFORE mount → mount-load sees hasKey=true
     const hermesCard = page.locator('.rt-agent-card').filter({ hasText: 'Hermes' });
