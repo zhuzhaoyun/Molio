@@ -1,5 +1,6 @@
 // apps/web/src/components/kb/KbChatSessionsPanel.tsx
 import { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, forwardRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
   kbChatSessionsStore, useKbChatSessions, useKbChatActiveSessionId, useKbChatPanelOpen,
@@ -26,6 +27,12 @@ export interface KbChatSessionsPanelHandle {
    * 历史页勾选删除 / 主页输入框历史下拉 / 面板历史下拉 共用。
    */
   resetConversations: (ids: string[]) => void;
+  /**
+   * 请求关闭一个会话标签（全屏页头的标签栏用）：运行中 → 弹「中断/后台继续」确认框
+   * （与面板内关闭同一条流程，守卫只此一份）；空闲 → 直接关。确认框经 portal 渲染，
+   * 全屏态（面板 DOM 让位）下同样可见。
+   */
+  requestCloseSession: (id: string) => void;
 }
 
 interface WikiOpOpts { mode: 'build' | 'lint' | 'ingest'; filePath?: string; isDirectory?: boolean }
@@ -792,7 +799,43 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
 
   useImperativeHandle(ref, () => ({
     runWikiOp, openQa, openConversation: handleOpenConversation, resetConversations,
-  }), [runWikiOp, openQa, handleOpenConversation, resetConversations]);
+    requestCloseSession: handleCloseTab,
+  }), [runWikiOp, openQa, handleOpenConversation, resetConversations, handleCloseTab]);
+
+  // toast 与两个确认框（wiki 三选一 / 关闭运行中会话）：面板与「全屏态 portal」共用同一份，
+  // 关闭守卫（handleCloseTab）只此一份实现。
+  const overlays = (
+    <>
+      {toast && <div className="kb-save-toast" data-testid="kb-notice">{toast}</div>}
+
+      {/* wiki 三选一 */}
+      <ConfirmDialog
+        show={confirmDialog.show}
+        title={confirmDialog.title}
+        message={confirmDialog.message}
+        confirmLabel="中断并立即执行"
+        tertiaryLabel="排队等当前完成"
+        danger
+        onConfirm={() => handleConfirmDialog('interrupt')}
+        onTertiary={() => handleConfirmDialog('queue')}
+        onCancel={() => { setConfirmDialog((p) => ({ ...p, show: false })); pendingWikiRef.current = null; }}
+      />
+      {/* 关闭运行中会话：qa 会话 → 中断并关闭 / 后台继续并关闭；wiki 会话 → 只有中断并关闭/取消（#1） */}
+      <ConfirmDialog
+        show={closePendingOpen}
+        title="任务正在运行"
+        message={closePendingIsWikiRef.current
+          ? '关闭该会话将中断正在运行的 Wiki 任务，Wiki 任务不支持后台继续。'
+          : '关闭该会话前，请选择对正在运行任务的处理：'}
+        confirmLabel="中断并关闭"
+        tertiaryLabel={closePendingIsWikiRef.current ? undefined : '后台继续并关闭'}
+        danger
+        onConfirm={() => handleCloseConfirm(true)}
+        onTertiary={closePendingIsWikiRef.current ? undefined : () => handleCloseConfirm(false)}
+        onCancel={() => { closePendingRef.current = null; closePendingIsWikiRef.current = false; setClosePendingOpen(false); }}
+      />
+    </>
+  );
 
   // **全屏态让位**（L2b 裁决）：`/chat` 由全屏 shell 渲染活动会话，面板整体不渲染任何 DOM。
   // 否则同一个会话会同时出现在两个视图 → 输入框/消息列表/删除确认条在 DOM 里都是两份
@@ -803,7 +846,13 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
   // 就是错的。判据与 `App.tsx` 的两处例外共用 `isFullscreenRoute`，避免各说各话。
   // 控制器在 App 层 Provider 常驻，面板 DOM 缺席不影响后台会话存活（面板渲染已退化为纯呈现层）。
   // 用 location（与路由同步）而非 currentContext.page：后者在 effect 里更新，会有一帧的滞后窗口。
-  if (isFullscreenRoute(location.pathname)) return null;
+  //
+  // 例外：overlay 不随面板缺席 —— 全屏页头的标签栏「关闭运行中会话」要走这里的确认框，
+  // 历史加载失败 toast 也从这里出。经 portal 渲染到 body（.kb-overlay / .kb-save-toast
+  // 均为 fixed 定位，宿主是谁无所谓）；这也是 L2a 时代「/chat 上提示没有宿主」的收口。
+  if (isFullscreenRoute(location.pathname)) {
+    return createPortal(overlays, document.body);
+  }
 
   // 面板头部活动会话的模式标签
   return (
@@ -888,34 +937,7 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
           ))
         )}
       </div>
-      {toast && <div className="kb-save-toast" data-testid="kb-notice">{toast}</div>}
-
-      {/* wiki 三选一 */}
-      <ConfirmDialog
-        show={confirmDialog.show}
-        title={confirmDialog.title}
-        message={confirmDialog.message}
-        confirmLabel="中断并立即执行"
-        tertiaryLabel="排队等当前完成"
-        danger
-        onConfirm={() => handleConfirmDialog('interrupt')}
-        onTertiary={() => handleConfirmDialog('queue')}
-        onCancel={() => { setConfirmDialog((p) => ({ ...p, show: false })); pendingWikiRef.current = null; }}
-      />
-      {/* 关闭运行中会话：qa 会话 → 中断并关闭 / 后台继续并关闭；wiki 会话 → 只有中断并关闭/取消（#1） */}
-      <ConfirmDialog
-        show={closePendingOpen}
-        title="任务正在运行"
-        message={closePendingIsWikiRef.current
-          ? '关闭该会话将中断正在运行的 Wiki 任务，Wiki 任务不支持后台继续。'
-          : '关闭该会话前，请选择对正在运行任务的处理：'}
-        confirmLabel="中断并关闭"
-        tertiaryLabel={closePendingIsWikiRef.current ? undefined : '后台继续并关闭'}
-        danger
-        onConfirm={() => handleCloseConfirm(true)}
-        onTertiary={closePendingIsWikiRef.current ? undefined : () => handleCloseConfirm(false)}
-        onCancel={() => { closePendingRef.current = null; closePendingIsWikiRef.current = false; setClosePendingOpen(false); }}
-      />
+      {overlays}
     </div>
   );
 });
