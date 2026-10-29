@@ -570,7 +570,9 @@ test.describe('History', () => {
       // 打开该对话 → 跳回主页并显示其消息。
       await rowByTitle(page, 'Stale Conv').locator('.history-row__main').click();
       await expect(page.locator('.home-page.chat-active')).toBeVisible({ timeout: 5_000 });
-      await expect(page.getByText('stale content marker')).toBeVisible();
+      // 全屏页头现在也有会话标签栏，标签标题取自首条用户消息 —— 全页 getByText 会
+      // 同时命中标签标题与气泡。断言收窄到消息气泡（本用例验证的是主页显示其消息）。
+      await expect(page.getByTestId('user-message').filter({ hasText: 'stale content marker' })).toBeVisible();
 
       // 回历史页，经勾选模式删除该对话。
       await clickNav(page, 'history');
@@ -586,7 +588,9 @@ test.describe('History', () => {
       // landing 只服务「一条会话都没有」，这里标签保留，所以 shell 继续承载。
       await gotoChatSpa(page);
       await expect(page.locator('.home-page.chat-active')).toBeVisible({ timeout: 5_000 });
-      await expect(page.getByText('stale content marker')).toHaveCount(0);
+      // 标签保留（标题也保留——resetConversations 只清消息与绑定），清掉的是消息：
+      // 断言同样收窄到气泡，而不是全页无此文本。
+      await expect(page.getByTestId('user-message').filter({ hasText: 'stale content marker' })).toHaveCount(0);
     } finally {
       await deleteProject(project.id);
     }
@@ -610,7 +614,8 @@ test.describe('History', () => {
       // 主页加载该会话（经历史页打开 → 跳回主页显示其消息）。
       await rowByTitle(page, 'Composer Sync Conv').locator('.history-row__main').click();
       await expect(page.locator('.home-page.chat-active')).toBeVisible({ timeout: 5_000 });
-      await expect(page.getByText('csync content marker')).toBeVisible();
+      // 断言收窄到气泡（页头标签栏的标签标题同文，见上条用例注释）
+      await expect(page.getByTestId('user-message').filter({ hasText: 'csync content marker' })).toBeVisible();
 
       // 主页输入框历史下拉 → 悬停目标会话 → 两步确认删除。
       await page.locator('[data-testid=composer-history-btn]').click();
@@ -622,7 +627,7 @@ test.describe('History', () => {
 
       // 聊天已清空但标签还在 → 空的全屏 shell，旧内容不可见。
       await expect(page.locator('.home-page.chat-active')).toBeVisible({ timeout: 5_000 });
-      await expect(page.getByText('csync content marker')).toHaveCount(0);
+      await expect(page.getByTestId('user-message').filter({ hasText: 'csync content marker' })).toHaveCount(0);
     } finally {
       await deleteProject(project.id);
     }
@@ -650,7 +655,8 @@ test.describe('History', () => {
       await page.waitForTimeout(500);
       await rowByTitle(page, 'KB Sync Conv').locator('.history-row__main').click();
       await expect(page.locator('.home-page.chat-active')).toBeVisible({ timeout: 5_000 });
-      await expect(page.getByText('kbsync content marker')).toBeVisible();
+      // 断言收窄到气泡（页头标签栏的标签标题同文，见上条用例注释）
+      await expect(page.getByTestId('user-message').filter({ hasText: 'kbsync content marker' })).toBeVisible();
 
       // 回 KB 页 → 文件标签恢复 → 💬问答 打开会话面板。
       await clickNav(page, 'knowledge');
@@ -669,7 +675,7 @@ test.describe('History', () => {
       // 回主页 → 聊天已清空，标签还在 → 空的全屏 shell，旧内容不可见。
       await gotoChatSpa(page);
       await expect(page.locator('.home-page.chat-active')).toBeVisible({ timeout: 5_000 });
-      await expect(page.getByText('kbsync content marker')).toHaveCount(0);
+      await expect(page.getByTestId('user-message').filter({ hasText: 'kbsync content marker' })).toHaveCount(0);
     } finally {
       await deleteProject(project.id);
       await cleanupTempVault(vault);

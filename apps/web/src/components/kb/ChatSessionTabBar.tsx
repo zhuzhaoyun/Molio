@@ -17,10 +17,15 @@ interface Props {
   onOpenConversation: (conversationId: string) => void;
   /** 历史下拉删除成功后通知 App（清空主页已加载会话） */
   onDeleteConversations?: (ids: string[]) => void;
-  /** 收起面板（保留标签，后台任务继续） */
-  onClosePanel: () => void;
-  /** 进入全屏态（`/chat`）——面板让位，由全屏 shell 承担同一会话（L2b） */
+  /** 收起面板（保留标签，后台任务继续）。不传 = header 变体不渲染此按钮。 */
+  onClosePanel?: () => void;
+  /** 进入全屏态（`/chat`）——面板让位，由全屏 shell 承担同一会话（L2b）。不传 = 已在全屏，不渲染。 */
   onEnterFullscreen?: () => void;
+  /**
+   * 渲染形态：panel = 面板/停靠顶栏（带壳层控件与拖拽）；header = 嵌入 `/chat` 页头中段
+   * ——壳层控件不渲染（被页头「最小化」替代，不重复），自带 padding/底线清零交给宿主。
+   */
+  variant?: 'panel' | 'header';
   /** 是否停靠侧边栏形态（驱动停靠/悬浮切换按钮的图标与 pressed 态） */
   docked?: boolean;
   /** 停靠 ⇄ 悬浮 切换（按钮，带过渡动画） */
@@ -67,7 +72,7 @@ function ExpandIcon() {
  * 横向滚动容器；溢出时显示 ‹ › 左右翻页箭头（无原生滚动条）；历史 / + 新建 / 收起
  * 三个按钮钉在栏尾始终可见；激活标签变化时自动滚入可见区。运行中的会话标签显示指示点。
  */
-export function ChatSessionTabBar({ sessions, activeSessionId, runningSessionIds, onActivate, onClose, onNewSession, onRename, onOpenConversation, onDeleteConversations, onClosePanel, onEnterFullscreen, docked = false, onToggleDock, onHeaderDragStart, onHeaderDragMove, onHeaderDragEnd }: Props) {
+export function ChatSessionTabBar({ sessions, activeSessionId, runningSessionIds, onActivate, onClose, onNewSession, onRename, onOpenConversation, onDeleteConversations, onClosePanel, onEnterFullscreen, variant = 'panel', docked = false, onToggleDock, onHeaderDragStart, onHeaderDragMove, onHeaderDragEnd }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const activeRef = useRef<HTMLDivElement>(null);
   const [canLeft, setCanLeft] = useState(false);
@@ -120,7 +125,7 @@ export function ChatSessionTabBar({ sessions, activeSessionId, runningSessionIds
 
   return (
     <div
-      className="chat-session-tabbar"
+      className={`chat-session-tabbar${variant === 'header' ? ' chat-session-tabbar--in-header' : ''}`}
       data-testid="kb-chat-session-tabbar"
       onPointerDown={(e) => {
         // 标签/按钮不触发面板移动，保持各自点击语义；其余空白处开始拖拽移动
@@ -238,8 +243,9 @@ export function ChatSessionTabBar({ sessions, activeSessionId, runningSessionIds
         </svg>
       </button>
       {/* 「全屏」只在有会话时可用：没有任何标签时全屏 = 落到一个无头 landing，
-          用户会被困在没有最小化按钮的页面里（2026-10-10 用户实测踩中） */}
-      {sessions.length > 0 && (
+          用户会被困在没有最小化按钮的页面里（2026-10-10 用户实测踩中）。
+          未接 onEnterFullscreen（header 变体）不渲染——已在全屏，由页头「最小化」承担逆操作。 */}
+      {sessions.length > 0 && onEnterFullscreen && (
         <button
           type="button"
           className="chat-session-tab-fullscreen"
@@ -251,30 +257,34 @@ export function ChatSessionTabBar({ sessions, activeSessionId, runningSessionIds
           <ExpandIcon />
         </button>
       )}
-      <button
-        type="button"
-        className="chat-session-tab-dock"
-        data-testid="kb-chat-dock-toggle"
-        aria-label={docked ? '切换为悬浮' : '停靠到侧边栏'}
-        aria-pressed={docked}
-        title={docked ? '切换为悬浮' : '停靠到侧边栏'}
-        onClick={onToggleDock}
-      >
-        {docked ? <FloatIcon /> : <DockIcon />}
-      </button>
-      <button
-        type="button"
-        className="chat-session-tab-close-panel"
-        data-testid="kb-chat-close"
-        aria-label="收起面板"
-        title="收起面板"
-        onClick={onClosePanel}
-      >
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-          <line x1="18" y1="6" x2="6" y2="18" />
-          <line x1="6" y1="6" x2="18" y2="18" />
-        </svg>
-      </button>
+      {onToggleDock && (
+        <button
+          type="button"
+          className="chat-session-tab-dock"
+          data-testid="kb-chat-dock-toggle"
+          aria-label={docked ? '切换为悬浮' : '停靠到侧边栏'}
+          aria-pressed={docked}
+          title={docked ? '切换为悬浮' : '停靠到侧边栏'}
+          onClick={onToggleDock}
+        >
+          {docked ? <FloatIcon /> : <DockIcon />}
+        </button>
+      )}
+      {onClosePanel && (
+        <button
+          type="button"
+          className="chat-session-tab-close-panel"
+          data-testid="kb-chat-close"
+          aria-label="收起面板"
+          title="收起面板"
+          onClick={onClosePanel}
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+            <line x1="18" y1="6" x2="6" y2="18" />
+            <line x1="6" y1="6" x2="18" y2="18" />
+          </svg>
+        </button>
+      )}
     </div>
   );
 }

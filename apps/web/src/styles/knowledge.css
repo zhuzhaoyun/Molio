@@ -3349,6 +3349,23 @@
   flex-shrink: 0;
   position: relative; /* 历史下拉的定位容器（向下展开横跨标签栏） */
 }
+
+/* header 内嵌变体（全屏态 /chat）：嵌入 home-header 中段。自带的 padding 与底线清零
+   ——几何（高度/分隔线/内边距）由宿主 header 负责；flex:1 吃掉 logo 与动作区之间的
+   空间，标签溢出时仍走本组件自带的 ‹ › 箭头滚动。 */
+.chat-session-tabbar--in-header {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0;
+  border-bottom: none;
+}
+
+/* 栏尾「历史 / +」在面板紧凑条里是 4px 节奏（gap 2px + margin 2px）；进了 header 就
+   加入页头动作按钮的 8px 节奏（strip gap 2px + margin 6px = 8px），四个按钮等距 */
+.chat-session-tabbar--in-header .chat-session-tab-history,
+.chat-session-tabbar--in-header .chat-session-tab-add {
+  margin-left: 6px;
+}
 .chat-session-tabs {
   display: flex;
   align-items: center;

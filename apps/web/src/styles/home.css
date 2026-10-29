@@ -164,7 +164,9 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  /* 8px：与标签栏栏尾按钮（历史/+）及 header-right 的节奏统一——三段此前是
+     4px（面板紧凑条余留）/12px/8px 三种间距，四个按钮看起来忽远忽近 */
+  gap: 8px;
   padding: 10px 16px;
   border-bottom: 1px solid var(--border);
   background: var(--bg-panel);

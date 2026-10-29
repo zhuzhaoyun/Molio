@@ -7,10 +7,11 @@ import { PanelIcon } from './icons';
 import { NoRuntimeCard } from './NoRuntimeCard';
 import { AgentsUnavailableCard } from './AgentsUnavailableCard';
 import { messageSelectionStore } from '../stores/messageSelectionStore';
+import { ChatSessionTabBar } from './kb/ChatSessionTabBar';
 
 import {
   kbChatSessionsStore, useKbChatActiveSessionId, useKbChatSessions,
-  sessionComposerKey, sessionComposerMountKey,
+  sessionComposerKey, sessionComposerMountKey, MAX_CHAT_SESSIONS,
 } from '../stores/kbChatSessionsStore';
 import { useKbChatSessionState, useKbChatSessionApi } from './kb/KbChatSessionsProvider';
 
@@ -45,8 +46,11 @@ interface Props {
   onRetryAgents: () => void;
   /** 无可用代理时跳转「设置 → 运行时」的回调。 */
   onOpenRuntimes: () => void;
-  /** 页头「+」：新建一个会话标签。 */
-  onNewChat: () => void;
+  /**
+   * 页头标签栏「关闭会话」：转交面板的 requestCloseSession —— 运行中的会话弹
+   * 「中断/后台继续」确认框（守卫只此一份，经 portal 渲染、全屏可见），空闲直接关。
+   */
+  onRequestCloseSession: (id: string) => void;
   /** 页头「最小化」：会话降级回悬浮面板，并返回用户来的地方（L2b）。 */
   onMinimize: () => void;
   /** 输入框历史下拉：打开某个历史会话（就地切换活动会话）。 */
@@ -71,7 +75,7 @@ export function HomePage({
   agentsUnavailable,
   onRetryAgents,
   onOpenRuntimes,
-  onNewChat,
+  onRequestCloseSession,
   onMinimize,
   onOpenConversation,
   onDeleteConversations,
@@ -86,7 +90,26 @@ export function HomePage({
     [sessions, activeSessionId],
   );
   const state = useKbChatSessionState(activeSessionId);
-  const { getApi } = useKbChatSessionApi();
+  const { getApi, runningMap } = useKbChatSessionApi();
+
+  // 标签栏：哪些会话在运行（驱动标签上的运行指示点——后台任务在全屏态的可见性）
+  const runningSessionIds = useMemo(
+    () => new Set(Object.entries(runningMap).filter(([, v]) => v).map(([k]) => k)),
+    [runningMap],
+  );
+
+  // 页头标签栏「+」：新建会话标签。达上限给 toast（与面板同文案）——不做静默 no-op。
+  // 不再带「运行中隐藏」的门：run 按标签隔离（面板里运行中照样能 +），那是单会话时代残留。
+  const [capToast, setCapToast] = useState<string | null>(null);
+  const handleNewSession = useCallback(() => {
+    const res = kbChatSessionsStore.openSession({
+      mode: 'qa', title: '新会话', conversationId: null, filePath: null,
+    });
+    if (!res.opened && res.reason === 'limit') {
+      setCapToast(`已达 ${MAX_CHAT_SESSIONS} 个会话标签上限`);
+      window.setTimeout(() => setCapToast(null), 2000);
+    }
+  }, []);
 
   const [dockOpen, setDockOpen] = useState<boolean>(readDockOpen);
   const toggleDock = useCallback(() => {
@@ -173,26 +196,22 @@ export function HomePage({
             <img className="home-header-logo" src={LOGO_MAIN_URL} alt="Molio" />
             <span className="home-header-title">Molio</span>
           </div>
+          {/* 会话标签栏（header 变体）：与面板同一个组件——会话管理能力对齐面板
+              （切换/重命名/关闭/运行点/历史/+），壳层控件（收起/停靠/全屏）不渲染，
+              由右侧「最小化」承担。chrome 高度不变：52px 一行。 */}
+          <ChatSessionTabBar
+            variant="header"
+            sessions={sessions}
+            activeSessionId={activeSessionId}
+            runningSessionIds={runningSessionIds}
+            onActivate={kbChatSessionsStore.activateSession}
+            onClose={onRequestCloseSession}
+            onNewSession={handleNewSession}
+            onRename={(id, title) => kbChatSessionsStore.updateSession(id, { title })}
+            onOpenConversation={(cid) => onOpenConversation?.(cid)}
+            onDeleteConversations={onDeleteConversations}
+          />
           <div className="home-header-right">
-            {state && !state.isRunning && (
-              <button type="button" data-testid="new-chat-btn" className="icon-only" onClick={onNewChat} title={t('home.newChat')}>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <line x1="12" y1="5" x2="12" y2="19" />
-                  <line x1="5" y1="12" x2="19" y2="12" />
-                </svg>
-              </button>
-            )}
-            <button
-              type="button"
-              data-testid="home-output-toggle"
-              className="icon-only"
-              aria-pressed={dockOpen}
-              aria-label={t('output.toggle')}
-              title={t('output.toggle')}
-              onClick={toggleDock}
-            >
-              <PanelIcon size={16} />
-            </button>
             {/* 与面板头部的「全屏」互逆：这里把会话降级回悬浮面板并离开全屏态 */}
             <button
               type="button"
@@ -208,6 +227,17 @@ export function HomePage({
                 <path d="M9 21v-4a2 2 0 0 0-2-2H3" />
                 <path d="M15 21v-4a2 2 0 0 1 2-2h4" />
               </svg>
+            </button>
+            <button
+              type="button"
+              data-testid="home-output-toggle"
+              className="icon-only"
+              aria-pressed={dockOpen}
+              aria-label={t('output.toggle')}
+              title={t('output.toggle')}
+              onClick={toggleDock}
+            >
+              <PanelIcon size={16} />
             </button>
           </div>
         </div>
@@ -248,6 +278,9 @@ export function HomePage({
           <SessionOutputPanel messages={state.messages} />
         </Suspense>
       )}
+
+      {/* 标签达上限的一次性提示（复用面板同款 toast 语言；fixed 定位，宿主无关） */}
+      {capToast && <div className="kb-save-toast" data-testid="kb-notice">{capToast}</div>}
       </div>
     );
   }

@@ -54,7 +54,7 @@ test.describe('Chat — multi-turn', () => {
     await expect(page.locator('.chat-active')).toBeVisible({ timeout: 10_000 });
 
     // Click new chat button
-    await page.locator('[data-testid="new-chat-btn"]').click();
+    await page.locator('[data-testid="kb-chat-session-new"]').click();
 
     // 清空后仍留在全屏 shell：landing 只服务「真的一条会话都没有」的情况，
     // 而这里活动标签还在（只是没有消息），所以 shell 继续承载。
@@ -72,7 +72,7 @@ test.describe('Chat — multi-turn', () => {
     await expect(page.locator('[data-testid="usage-footer"]')).toBeVisible({ timeout: 10_000 });
 
     // Click new chat
-    await page.locator('[data-testid="new-chat-btn"]').click();
+    await page.locator('[data-testid="kb-chat-session-new"]').click();
     await expect(page.locator('.home-page.chat-active')).toBeVisible();
 
     // Composer should be focused and ready
