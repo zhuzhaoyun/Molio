@@ -32,6 +32,7 @@
         "apps/web/src/utils/workSteps.*",
         "apps/web/src/utils/sessionSources.*",
         "apps/web/src/utils/toolRefs.*",
+        "apps/web/src/utils/inlineSources.*",
         "apps/web/src/utils/diff.*",
         "apps/web/src/api/sse.ts",
         "apps/web/src/hooks/useChat*",
@@ -68,6 +69,7 @@
         "chat-repairing",
         "chat-timeout-fallback",
         "chat-work-visibility",
+        "source-chips-ledger",
         "chat-fullscreen",
         "file-ref-navigation",
         "model-switcher",
@@ -574,6 +576,10 @@
     "chat-work-visibility": {
       "priority": "P1",
       "file": "chat-work-visibility.spec.ts"
+    },
+    "source-chips-ledger": {
+      "priority": "P1",
+      "file": "source-chips-ledger.spec.ts"
     },
     "session-output": {
       "priority": "P1",

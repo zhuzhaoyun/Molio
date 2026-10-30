@@ -201,6 +201,13 @@ const en: Record<string, string> = {
 
   // ── SourceChips ──
   'source.title': 'Sources',
+  'source.count': '{n} items',
+  'source.showAll': 'Show all {n}',
+  'source.more': '{n} more',
+  'source.bucket.media': 'Media & data',
+  'source.bucket.meta': 'Indexes & logs',
+  'source.bucket.outside': 'Outside vault',
+  'source.bucket.pattern': 'Search paths',
 
   // ── WorkCompleteBanner ──
   'complete.title': 'Artifacts',

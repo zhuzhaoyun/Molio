@@ -1,5 +1,14 @@
 /* 引用来源 —— 助手回复底部的地基证据条（引用文件 / 外部 URL）。
-   静默元数据：发丝边框 token、弱化字级，terracotta 只在 hover/focus 兑现交互。 */
+   静默元数据：发丝边框 token、弱化字级，terracotta 只在 hover/focus 兑现交互。
+
+   两种形态：
+   - .source-chips（平铺）—— 一行 chip，≤8 项时使用，与旧形态一致。
+   - .source-chips--ledger（台账）—— >8 项时使用：
+       标题行「引用 N 项」可整条折叠；下面分「可查证层」（chip）与「其余层」
+       （媒体数据 / 索引日志 / 库外 / 检索模式），其余层各项一行计数、按需展开。
+     视觉上用**排版层级**区分两层（chip = 可点击的证据，文字条目 = 过程痕迹），
+     不再给每项套一个边框 —— 一百个边框就是「杂乱」的来源。 */
+
 .source-chips {
   display: flex;
   align-items: center;
@@ -60,4 +69,162 @@
 .source-chip:disabled {
   cursor: default;
   opacity: 0.55;
+}
+
+/* ─── 台账形态 ───────────────────────────────────────────────────── */
+
+/* 标题行：整条可点。数字用等宽表格数字，读起来像「引用了多少」的账目 */
+.source-chips--ledger {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0;
+}
+.source-ledger-head {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  user-select: none;
+}
+.source-ledger-head:hover .source-ledger-count {
+  color: var(--accent, #c96442);
+}
+.source-ledger-head:focus-visible {
+  outline: 2px solid var(--accent-soft, #f5d8cb);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+.source-ledger-count {
+  font-size: 11px;
+  line-height: 1;
+  color: var(--text-muted, #6b6964);
+  font-variant-numeric: tabular-nums;
+  transition: color 0.15s ease;
+}
+.source-ledger-caret {
+  flex: none;
+  color: var(--text-soft, #9a9894);
+  transition: transform 0.15s ease;
+}
+.source-ledger-caret.is-folded {
+  transform: rotate(-90deg);
+}
+
+.source-ledger-body {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  width: 100%;
+  margin-top: 8px;
+}
+.source-ledger-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+}
+/* 可查证层：chip 列表 */
+.source-ledger-items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* 「显示全部 / 还有 N 项」—— 纯文字动作，弱到不与 chip 争视线 */
+.source-ledger-more {
+  align-self: flex-start;
+  padding: 0;
+  border: none;
+  background: transparent;
+  font: inherit;
+  font-size: 11px;
+  line-height: 1;
+  color: var(--text-soft, #9a9894);
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-color: var(--border-strong, #d6d4cf);
+  text-underline-offset: 2px;
+}
+.source-ledger-more:hover {
+  color: var(--accent, #c96442);
+  text-decoration-color: var(--accent, #c96442);
+}
+
+/* 其余层：每类一行计数，点开是一列文字条目（无边框 —— 过程痕迹不该有按钮的重量） */
+.source-ledger-group--minor {
+  gap: 6px;
+  padding-top: 7px;
+  border-top: 1px solid var(--border-soft, #edebe8);
+}
+.source-ledger-bucket {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.source-ledger-bucket-head {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  align-self: flex-start;
+  padding: 0;
+  border: none;
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+  user-select: none;
+}
+/* 小节标题比它自己的条目更重一档 —— 否则标题看着比内容还轻，层级就反了 */
+.source-ledger-bucket-name {
+  font-size: 11px;
+  line-height: 1;
+  color: var(--text-muted, #6b6964);
+}
+.source-ledger-bucket-count {
+  font-size: 11px;
+  line-height: 1;
+  color: var(--text-faint, #b8b6b1);
+  font-variant-numeric: tabular-nums;
+}
+.source-ledger-bucket-head:hover .source-ledger-bucket-name {
+  color: var(--accent, #c96442);
+}
+.source-ledger-bucket-head:focus-visible {
+  outline: 2px solid var(--accent-soft, #f5d8cb);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* 其余层的文字条目：弱化到接近正文里的引注，可点的那些给 terracotta 兑现 */
+.source-ledger-items--minor {
+  gap: 3px 12px;
+  padding-left: 2px;
+}
+.source-minor-item {
+  padding: 0;
+  border: none;
+  background: transparent;
+  font: inherit;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-muted, #6b6964);
+  cursor: pointer;
+  text-align: left;
+}
+.source-minor-item:hover {
+  color: var(--accent, #c96442);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.source-minor-item.is-static {
+  color: var(--text-faint, #b8b6b1);
+  cursor: default;
+}
+.source-minor-item.is-static:hover {
+  color: var(--text-faint, #b8b6b1);
+  text-decoration: none;
 }

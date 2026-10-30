@@ -200,6 +200,13 @@ const zh: Record<string, string> = {
 
   // ── SourceChips ──
   'source.title': '引用',
+  'source.count': '{n} 项',
+  'source.showAll': '显示全部 {n} 项',
+  'source.more': '还有 {n} 项',
+  'source.bucket.media': '媒体与数据',
+  'source.bucket.meta': '索引与日志',
+  'source.bucket.outside': '库外文件',
+  'source.bucket.pattern': '检索路径',
 
   // ── WorkCompleteBanner ──
   'complete.title': '产出文件',

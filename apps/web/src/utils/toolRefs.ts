@@ -114,6 +114,23 @@ export interface ExtractSourcesOptions {
 }
 
 /**
+ * shell 残渣 —— 命令解析出的碎片不是路径：`=`、`n:')`、`b1-*'.md` 这类来自
+ * 命令里的引号/运算符被当成了文件名。
+ *
+ * 只在 Bash 口径上生效：Read/Grep 的 target 是 agent 直接报的路径，不经命令解析。
+ * 保留 `&`（"R&D.md" 合法），其余 shell 元字符一律视为残渣。
+ *
+ * 为什么不放在 bashReadPaths 里：那个函数是 daemon citations.ts 的**镜像实现**
+ * （改一处必须同步另一处），而它的口径是「命令级读取记账」—— 残渣进了它就会
+ * 污染 IM 出站的依据清单与 E1 对账实验的基线。记账保持原样，**展示层**过滤。
+ */
+const BASH_RESIDUE_RE = /["'=<>|;`]/;
+
+function isBashResidue(target: string): boolean {
+  return BASH_RESIDUE_RE.test(target);
+}
+
+/**
  * 从一条 assistant 消息的 tools 抽取「引用」：Read/Grep/Bash(cat) → 文件，WebFetch → URL，
  * Glob → 搜索 pattern（不可跳转），WebSearch → result 文本内每条 URL 一个 chip。
  * 仅保留完成（done）的工具 —— running 中的等完成后再显示，
@@ -154,6 +171,8 @@ export function extractSources(tools: ToolEvent[], opts: ExtractSourcesOptions =
         : typeof input === 'string' ? input : undefined;
       if (typeof cmd !== 'string') continue;
       for (const p of bashReadPaths(cmd)) {
+        // 命令解析残渣不是文件，不进引用（见 BASH_RESIDUE_RE 注释）
+        if (isBashResidue(p)) continue;
         if (dedupe) {
           if (seen.has(p)) continue;
           seen.add(p);
