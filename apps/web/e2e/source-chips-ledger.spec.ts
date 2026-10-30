@@ -80,14 +80,44 @@ test.describe('引用区 — 台账形态', () => {
     await expect(media).toBeVisible();
     await expect(media).toContainText('20');
 
-    // 展开媒体层 → 20 个文字条目（不是 chip：过程痕迹不该有按钮的重量）
+    // 展开媒体层 → 先铺一批（其余由「还有 N 项」铺开）
     await media.click();
-    await expect(msg.locator('[data-testid="source-minor-item"]')).toHaveCount(20);
+    const items = msg.locator('[data-testid="source-minor-item"]');
+    await expect(items).toHaveCount(12);
+    const more = msg.locator('[data-testid="source-ledger-more-bucket"]');
+    await expect(more).toBeVisible();
+    await expect(more).toContainText('8');
+    await more.click();
+    await expect(items).toHaveCount(20);
 
     // 折叠整条 → 全部内容收起，只剩标题行
     await head.click();
     await expect(msg.locator('[data-testid="source-chip"]')).toHaveCount(0);
     await expect(msg.locator('[data-testid="source-minor-item"]')).toHaveCount(0);
     await expect(head).toBeVisible();
+  });
+
+  test('条目过多时：先铺一批，「还有 N 项」铺开剩下的', async ({ page }) => {
+    await mockChatRun(page, { script: readScript(2, 30) });
+    await page.goto(`/knowledge?vault=${vault.id}&file=test.md`);
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+
+    await page.locator('[data-testid="kb-btn-ask"]').click();
+    await page.locator('[data-testid="kb-chat-panel"] [data-testid="composer-input"]').fill('读更多文件');
+    await page.locator('[data-testid="composer-send"]').click();
+
+    const msg = page.locator('[data-testid="assistant-message"]').last();
+    await expect(msg.locator('[data-testid="source-ledger-head"]')).toBeVisible({ timeout: 10_000 });
+
+    // 媒体层展开 → 先铺一批，其余由「还有 N 项」铺开
+    await msg.locator('[data-testid="source-ledger-bucket-media"]').click();
+    const items = msg.locator('[data-testid="source-minor-item"]');
+    const shownBefore = await items.count();
+    expect(shownBefore).toBeLessThan(30);
+
+    const more = msg.locator('[data-testid="source-ledger-more-bucket"]');
+    await expect(more).toBeVisible();
+    await more.click();
+    await expect(items).toHaveCount(30);
   });
 });

@@ -44,6 +44,7 @@ export function SourceChips({ tools }: Props) {
   const [folded, setFolded] = useState(false);
   const [allPrimary, setAllPrimary] = useState(false);
   const [openBuckets, setOpenBuckets] = useState<Set<InlineBucket>>(new Set());
+  const [fullBuckets, setFullBuckets] = useState<Set<InlineBucket>>(new Set());
 
   if (sources.total === 0) return null;
 
@@ -136,8 +137,9 @@ export function SourceChips({ tools }: Props) {
             <div className="source-ledger-group source-ledger-group--minor">
               {buckets.map(({ bucket, items }) => {
                 const isOpen = openBuckets.has(bucket);
-                const shown = isOpen ? items : items.slice(0, PAGE_LIMIT);
-                const hidden = items.length - shown.length;
+                // 展开后先铺 PAGE_LIMIT 条，再由「还有 N 项」铺开剩下的
+                const shown = isOpen && fullBuckets.has(bucket) ? items : items.slice(0, PAGE_LIMIT);
+                const hidden = isOpen ? items.length - shown.length : 0;
                 return (
                   <div key={bucket} className="source-ledger-bucket">
                     <button
@@ -181,7 +183,7 @@ export function SourceChips({ tools }: Props) {
                             type="button"
                             className="source-ledger-more"
                             data-testid="source-ledger-more-bucket"
-                            onClick={() => setOpenBuckets((prev) => new Set(prev).add(bucket))}
+                            onClick={() => setFullBuckets((prev) => new Set(prev).add(bucket))}
                           >
                             {t('source.more', { n: hidden })}
                           </button>
