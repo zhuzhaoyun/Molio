@@ -114,6 +114,27 @@ export interface ExtractSourcesOptions {
 }
 
 /**
+ * shell 残渣 —— 命令解析出的碎片不是路径：`=`、`n:')`、`b1-*'.md`、`media-$f.md`
+ * 这类来自命令里的引号/运算符/未展开的变量被当成了文件名。
+ *
+ * 只在 Bash 口径上生效：Read/Grep 的 target 是 agent 直接报的路径，不经命令解析。
+ * 保留 `&`（"R&D.md" 合法），其余 shell 元字符一律视为残渣。
+ *
+ * `$` 为什么算残渣：bashReadPaths 不做变量展开，`for f in a b; do cat media-$f.md; done`
+ * 会把 `media-$f.md` 当成一个真实文件名读进来。真实路径里出现 `$` 极罕见（要转义才能建），
+ * 而漏掉它的代价是每轮 wiki 构建都混进几个假文档（实测见过 `media-$f.md` 混进可查证层）。
+ *
+ * 为什么不放在 bashReadPaths 里：那个函数是 daemon citations.ts 的**镜像实现**
+ * （改一处必须同步另一处），而它的口径是「命令级读取记账」—— 残渣进了它就会
+ * 污染 IM 出站的依据清单与 E1 对账实验的基线。记账保持原样，**展示层**过滤。
+ */
+const BASH_RESIDUE_RE = /["'=<>|;`$]/;
+
+function isBashResidue(target: string): boolean {
+  return BASH_RESIDUE_RE.test(target);
+}
+
+/**
  * 从一条 assistant 消息的 tools 抽取「引用」：Read/Grep/Bash(cat) → 文件，WebFetch → URL，
  * Glob → 搜索 pattern（不可跳转），WebSearch → result 文本内每条 URL 一个 chip。
  * 仅保留完成（done）的工具 —— running 中的等完成后再显示，
@@ -154,6 +175,8 @@ export function extractSources(tools: ToolEvent[], opts: ExtractSourcesOptions =
         : typeof input === 'string' ? input : undefined;
       if (typeof cmd !== 'string') continue;
       for (const p of bashReadPaths(cmd)) {
+        // 命令解析残渣不是文件，不进引用（见 BASH_RESIDUE_RE 注释）
+        if (isBashResidue(p)) continue;
         if (dedupe) {
           if (seen.has(p)) continue;
           seen.add(p);
@@ -254,6 +277,35 @@ export function classifyWritePath(key: string): WriteLayer {
   const base = segments[segments.length - 1] ?? '';
   if (META_BASENAMES.has(base.toLowerCase())) return 'other';
   return MARKDOWN_RE.test(base) ? 'product' : 'other';
+}
+
+/**
+ * 引用来源的「库内 / 库外 / 库内过程目录」三分（展示层专用）。
+ *
+ * 为什么不用 classifyWritePath：它的 hidden 层把两件事混为一谈 ——
+ * ①路径根本不在库里（真库外）②路径在库里但落在点开头目录
+ * （`.molio/wiki-build/`、`.claude/`、`.drafts/`）。第②类在 wiki 构建里是**主力**：
+ * 转写中间产物（transcode-*.txt / segments-*.json / census-*.json）全在
+ * `.molio/wiki-build/` 下（见 wiki-build SKILL.md），把它们标成「库外文件」是误标。
+ *
+ * 判据（按顺序）：
+ * - 相对路径 → **恒在库内**：run 的 cwd 就是库根（KB 面板发 run 时传 vaultPath，
+ *   见 KbChatSessionController），agent 报的相对路径必相对库根。
+ * - 绝对路径 → 剥掉库前缀后仍在库内；剥不掉（仍是绝对路径）才是**真库外**。
+ * - 库内但任一段以点开头 → **过程目录**（在库里、可导航，但不是用户内容）。
+ */
+export type SourceLocation = 'inside' | 'outside' | 'process-dir';
+
+/** 判断一个**已归一化**的路径（writeKey 输出）落在库的哪一层。 */
+export function classifySourceLocation(key: string): SourceLocation {
+  const p = key.replace(/\\/g, '/');
+  // 归一化后仍是绝对路径 / 家目录 / 盘符 → vault 前缀没命中 = 真库外
+  if (p.startsWith('/') || p.startsWith('~') || /^[A-Za-z]:\//.test(p)) return 'outside';
+  const segments = p.split('/').filter((s) => s !== '' && s !== '.');
+  if (segments.includes('..')) return 'outside';
+  // 库内点开头目录（.molio / .claude / .drafts）= 过程目录
+  if (segments.some((s) => s.length > 1 && s.startsWith('.'))) return 'process-dir';
+  return 'inside';
 }
 
 export type WriteKind = 'create' | 'update';

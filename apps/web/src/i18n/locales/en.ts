@@ -201,9 +201,18 @@ const en: Record<string, string> = {
 
   // ── SourceChips ──
   'source.title': 'Sources',
+  'source.count': '{n} items',
+  'source.showAll': 'Show all {n}',
+  'source.more': '{n} more',
+  'source.bucket.media': 'Media & data',
+  'source.bucket.meta': 'Indexes & logs',
+  'source.bucket.outside': 'Outside vault',
+  'source.bucket.pattern': 'Search paths',
+  'source.bucket.process-dir': 'Build artifacts',
 
   // ── WorkCompleteBanner ──
   'complete.title': 'Artifacts',
+  'complete.count': '{n} items',
   'complete.reveal': 'Show in folder',
 
   // ── Session output panel (Home dock) ──
@@ -235,6 +244,8 @@ const en: Record<string, string> = {
   'output.sourcesOmittedHint': 'Files outside the vault, hidden folders and search paths are not listed here — you can still see them in the inline source chips',
   'output.sourcesMeta': 'Indexes & logs {n}',
   'output.sourcesMetaHint': 'Registry files the wiki skill reads on every operation (indexes, logs, cache) — click to preview',
+  'output.sourcesMedia': 'Media & build artifacts {n}',
+  'output.sourcesMediaHint': 'Process artifacts (images, tables, transcription files) — not the basis of the answer, click to preview',
   'output.changeKind.create': 'New file',
   'output.changeKind.update': 'Edited',
   'output.changeKind.append': 'Appended',

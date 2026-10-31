@@ -21,8 +21,8 @@ function msg(id: string, tools: Array<{ name: string; input: unknown }>): ChatMe
 
 describe('aggregateSessionSources', () => {
   test('空输入 → 空结果', () => {
-    assert.deepEqual(aggregateSessionSources([]), { refs: [], meta: [], omitted: [] });
-    assert.deepEqual(aggregateSessionSources([msg('m1', [])]), { refs: [], meta: [], omitted: [] });
+    assert.deepEqual(aggregateSessionSources([]), { refs: [], meta: [], media: [], omitted: [] });
+    assert.deepEqual(aggregateSessionSources([msg('m1', [])]), { refs: [], meta: [], media: [], omitted: [] });
   });
 
   /**
@@ -46,6 +46,41 @@ describe('aggregateSessionSources', () => {
     assert.equal(meta.length, 3);
     const labels = meta.map((m) => m.label).sort();
     assert.deepEqual(labels, ['INDEX.md', 'hot.md', 'log.md']);
+  });
+
+  /**
+   * 媒体与数据文件（png / tsv / .mis）：过程产物，不是「依据」。
+   * 一次 wiki 构建能读几百个，全灌进主列表会决堤 —— 与消息内联引用区同构折起来。
+   */
+  test('库内非文档（媒体/数据）归 media 组，不进主列表', () => {
+    const messages = [
+      msg('m1', [
+        { name: 'Read', input: { file_path: '/v/media/023.png' } },
+        { name: 'Read', input: { file_path: '/v/batch-01.tsv' } },
+        { name: 'Read', input: { file_path: '/v/wiki/正数与负数.md' } },
+      ]),
+    ];
+    const { refs, media } = aggregateSessionSources(messages, '/v');
+    assert.equal(refs.length, 1);
+    assert.equal(refs[0]!.label, '正数与负数.md');
+    assert.equal(media.length, 2);
+    const labels = media.map((m) => m.label).sort();
+    assert.deepEqual(labels, ['023.png', 'batch-01.tsv']);
+  });
+
+  test('media 组的计数与消歧独立进行', () => {
+    const messages = [
+      msg('m1', [
+        { name: 'Read', input: { file_path: '/v/a/fig.png' } },
+        { name: 'Read', input: { file_path: '/v/a/fig.png' } },
+        { name: 'Read', input: { file_path: '/v/b/fig.png' } },
+      ]),
+    ];
+    const { media } = aggregateSessionSources(messages, '/v');
+    assert.equal(media.length, 2);
+    const byTarget = new Map(media.map((m) => [m.target, m.count]));
+    assert.equal(byTarget.get('/v/a/fig.png'), 2);
+    assert.equal(byTarget.get('/v/b/fig.png'), 1);
   });
 
   test('meta 组内同名消歧与计数独立进行', () => {
@@ -124,7 +159,9 @@ describe('aggregateSessionSources', () => {
     assert.equal(omitted[0]!.target, '**/*.md');
   });
 
-  test('库外路径与隐藏目录（.molio/.claude）引用被过滤', () => {
+  test('真库外路径被过滤；库内点开头目录（.molio/）归 media 组而非 omitted', () => {
+    // 回归：`.molio/` 是**库内**路径（wiki 的过程产物就写在那儿），
+    // 之前被 classifyWritePath 的 hidden 层（库外 ∨ 点目录 混为一谈）当成库外丢进 omitted。
     const messages = [
       msg('m1', [
         { name: 'Read', input: { file_path: '/outside/memory/MEMORY.md' } },
@@ -132,7 +169,14 @@ describe('aggregateSessionSources', () => {
         { name: 'Read', input: { file_path: '/v/wiki/keep.md' } },
       ]),
     ];
-    const { refs } = aggregateSessionSources(messages, '/v');
+    const { refs, media, omitted } = aggregateSessionSources(messages, '/v');
+    // 真库外 → omitted（点不开）
+    assert.equal(omitted.length, 1);
+    assert.equal(omitted[0]!.target, '/outside/memory/MEMORY.md');
+    // 库内点目录 → media 组（过程产物），不是 omitted
+    assert.equal(media.length, 1);
+    assert.equal(media[0]!.target, '/v/.molio/cache/x.md');
+    // 真实内容留在主列表
     assert.equal(refs.length, 1);
     assert.equal(refs[0]!.target.endsWith('keep.md'), true);
   });
@@ -142,7 +186,7 @@ describe('aggregateSessionSources', () => {
    * 这条差值是面板唯一会骗人的地方：用户在同一屏看到 8 个引用标签、面板只列 5 个，
    * 少的那几个会让人以为面板漏了 —— 必须在面板上明说，而不是让人自己数。
    */
-  test('被过滤的引用计入 omitted（库外文件 / 隐藏目录 / 检索目录）', () => {
+  test('被过滤的引用计入 omitted（真库外文件 / 检索目录）', () => {
     const messages = [
       msg('m1', [
         { name: 'Read', input: { file_path: '/outside/memory/MEMORY.md' } },
@@ -151,11 +195,15 @@ describe('aggregateSessionSources', () => {
         { name: 'Read', input: { file_path: '/v/wiki/keep.md' } },
       ]),
     ];
-    const { refs, omitted } = aggregateSessionSources(messages, '/v');
+    const { refs, media, omitted } = aggregateSessionSources(messages, '/v');
     assert.equal(refs.length, 1);
-    assert.equal(omitted.length, 3);
+    // 真库外 + 检索目录 → omitted（点不开，得在面板上说明）
+    assert.equal(omitted.length, 2);
     const labels = omitted.map((o) => o.label).sort();
-    assert.deepEqual(labels, ['MEMORY.md', 'wiki', 'x.md']);
+    assert.deepEqual(labels, ['MEMORY.md', 'wiki']);
+    // 库内点目录 → media 组（过程产物，能预览）
+    assert.equal(media.length, 1);
+    assert.equal(media[0]!.label, 'x.md');
   });
 
   test('omitted 跨消息去重：同一库外文件被多次引用只算 1 条（次数照记）', () => {
