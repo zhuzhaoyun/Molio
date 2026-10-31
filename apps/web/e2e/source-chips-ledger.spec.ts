@@ -7,7 +7,9 @@
  * 形态契约：
  *   - ≤ 8 项 → 平铺（与旧形态一致，chip 直接排开）
  *   - \> 8 项 → 台账：标题行带计数（整条可折叠）+ 可查证层（文档 chip）
- *     + 其余层（媒体数据 / 索引日志 / 库外 / 检索路径，各一行计数、按需展开）
+ *     + 其余层（媒体数据 / 过程产物 / 索引日志 / 库外 / 检索路径，各一行计数、按需展开）
+ *
+ * 产出区（WorkCompleteBanner）同构：> 8 项也走台账形态。
  *
  * Prerequisites: `pnpm dev`.
  */
@@ -29,6 +31,19 @@ function readScript(nDocs: number, nMedia: number) {
     script.push({ type: 'tool_result', toolUseId: `m${i}`, content: 'PNG', isError: false });
   }
   script.push({ type: 'text_delta', delta: '已完成。' });
+  script.push({ type: 'turn_end', stopReason: 'end_turn' });
+  script.push({ type: 'usage', usage: { input_tokens: 400, output_tokens: 60 }, costUsd: 0.02 });
+  return script;
+}
+
+/** 造一条「写了 N 个文件」的脚本（产出区用） */
+function writeScript(nWrites: number) {
+  const script: unknown[] = [{ type: 'status', label: 'running' }];
+  for (let i = 0; i < nWrites; i++) {
+    script.push({ type: 'tool_use', id: `w${i}`, name: 'Write', input: { file_path: `产出/页面${i}.md` } });
+    script.push({ type: 'tool_result', toolUseId: `w${i}`, content: 'written', isError: false });
+  }
+  script.push({ type: 'text_delta', delta: '已写入。' });
   script.push({ type: 'turn_end', stopReason: 'end_turn' });
   script.push({ type: 'usage', usage: { input_tokens: 400, output_tokens: 60 }, costUsd: 0.02 });
   return script;
@@ -119,5 +134,63 @@ test.describe('引用区 — 台账形态', () => {
     await expect(more).toBeVisible();
     await more.click();
     await expect(items).toHaveCount(30);
+  });
+
+  test('库内点开头目录算「过程产物」，不是「库外文件」', async ({ page }) => {
+    // 回归：wiki 技能把转写中间产物写在 .molio/wiki-build/ 下 —— 那是**库内**路径。
+    // 之前被 classifyWritePath 的 hidden 层（库外 ∨ 点目录 混为一谈）误标成「库外文件」。
+    const script: unknown[] = [{ type: 'status', label: 'running' }];
+    for (let i = 0; i < 9; i++) {
+      script.push({ type: 'tool_use', id: `d${i}`, name: 'Read', input: { file_path: `笔记/文档${i}.md` } });
+      script.push({ type: 'tool_result', toolUseId: `d${i}`, content: '# 内容', isError: false });
+    }
+    script.push({ type: 'tool_use', id: 'p1', name: 'Read', input: { file_path: '.molio/wiki-build/transcode-a.txt' } });
+    script.push({ type: 'tool_result', toolUseId: 'p1', content: '转写', isError: false });
+    script.push({ type: 'text_delta', delta: '已完成。' });
+    script.push({ type: 'turn_end', stopReason: 'end_turn' });
+    script.push({ type: 'usage', usage: { input_tokens: 400, output_tokens: 60 }, costUsd: 0.02 });
+
+    await mockChatRun(page, { script });
+    await page.goto(`/knowledge?vault=${vault.id}&file=test.md`);
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+    await page.locator('[data-testid="kb-btn-ask"]').click();
+    await page.locator('[data-testid="kb-chat-panel"] [data-testid="composer-input"]').fill('构建');
+    await page.locator('[data-testid="composer-send"]').click();
+
+    const msg = page.locator('[data-testid="assistant-message"]').last();
+    await expect(msg.locator('[data-testid="source-ledger-head"]')).toBeVisible({ timeout: 10_000 });
+
+    // 过程产物单独一类，不混进「库外文件」
+    await expect(msg.locator('[data-testid="source-ledger-bucket-process-dir"]')).toBeVisible();
+    await expect(msg.locator('[data-testid="source-ledger-bucket-outside"]')).toHaveCount(0);
+  });
+
+  test('产出区 > 8 项也走台账形态（标题带计数、可折叠、分批铺开）', async ({ page }) => {
+    await mockChatRun(page, { script: writeScript(20) });
+    await page.goto(`/knowledge?vault=${vault.id}&file=test.md`);
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+    await page.locator('[data-testid="kb-btn-ask"]').click();
+    await page.locator('[data-testid="kb-chat-panel"] [data-testid="composer-input"]').fill('写页面');
+    await page.locator('[data-testid="composer-send"]').click();
+
+    const banner = page.locator('[data-testid="work-complete-banner"]');
+    await expect(banner).toBeVisible({ timeout: 10_000 });
+
+    // 台账形态：标题行带计数
+    const toggle = banner.locator('[data-testid="work-complete-toggle"]');
+    await expect(toggle).toBeVisible();
+    await expect(toggle).toContainText('20');
+
+    // 先铺一批，其余由「显示全部」铺开
+    await expect(banner.locator('[data-testid="work-complete-file"]')).toHaveCount(12);
+    const more = banner.locator('[data-testid="work-complete-more"]');
+    await expect(more).toBeVisible();
+    await more.click();
+    await expect(banner.locator('[data-testid="work-complete-file"]')).toHaveCount(20);
+
+    // 折叠整条 → 只剩标题行
+    await toggle.click();
+    await expect(banner.locator('[data-testid="work-complete-file"]')).toHaveCount(0);
+    await expect(toggle).toBeVisible();
   });
 });

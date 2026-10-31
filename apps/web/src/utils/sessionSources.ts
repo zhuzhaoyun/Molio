@@ -7,7 +7,7 @@
  * （commit ac179411）。此处以独立 tab 呈现，规避该理由。
  */
 import type { ChatMessage } from '../hooks/useChatCore.ts';
-import { extractSources, classifyWritePath, writeKey, isMetaBasename } from './toolRefs.ts';
+import { extractSources, writeKey, isMetaBasename, classifySourceLocation } from './toolRefs.ts';
 import { disambiguateLabels } from './workSteps.ts';
 
 export interface SessionSourceRef {
@@ -32,6 +32,13 @@ export interface SessionSources {
    */
   meta: SessionSourceRef[];
   /**
+   * 媒体与数据文件（png / tsv / .mis 等库内非文档）—— 过程产物，不是「依据」。
+   *
+   * 与消息内联引用区（inlineSources.ts）同构：那边把它们折进「媒体与数据」组，
+   * 这边也折 —— 一次 wiki 构建能读几百个媒体文件，全灌进主列表会决堤。
+   */
+  media: SessionSourceRef[];
+  /**
    * **被过滤掉、面板不展示**的引用（库外文件 / 隐藏目录 / 检索目录 / glob pattern）。
    *
    * 为什么必须单独回传：消息内联的引用标签（SourceChips）**照单全收**这些项，
@@ -49,6 +56,8 @@ function hasGlobMeta(p: string): boolean {
 }
 /** 供 Grep 判「是不是文件」用：Grep 的 path 可能是目录，目录无扩展名。 */
 const FILE_EXT_RE = /\.[A-Za-z0-9]+$/;
+/** 文档扩展名 —— 与 toolRefs.MARKDOWN_RE 同口径（媒体组靠它把文档排除掉）。 */
+const DOC_EXT_RE = /\.(mdown|markdown|md)$/i;
 
 /**
  * 判一个文件类来源「为什么进不了面板」，返回过滤原因；能展示则返回 null。
@@ -65,8 +74,10 @@ function omitReason(
   // Grep 的 path 可能是目录 → 要求带扩展名；Read/Bash(cat) 一定是文件（agent 不会 Read 目录），
   // 故不要求扩展名（否则 Makefile / LICENSE 这类真实文件会被静默丢掉）。
   if (toolName === 'Grep' && !FILE_EXT_RE.test(target)) return 'search-dir';
-  // 库外路径 / 隐藏目录（.molio、.claude）：预览必然失败，不进面板
-  if (classifyWritePath(writeKey(target, vaultPath)) === 'hidden') return 'outside';
+  // 真库外：路径根本不在库里 → 预览必然失败，不进面板。
+  // 注意区分「库外」与「库内点开头目录」（.molio/wiki-build 等）—— 后者是库内路径，
+  // 只是过程产物，预览能成，不能按「库外」丢进 omitted（与 inlineSources 同口径）。
+  if (classifySourceLocation(writeKey(target, vaultPath)) === 'outside') return 'outside';
   return null;
 }
 
@@ -112,6 +123,8 @@ export function aggregateSessionSources(
   const order: string[] = [];
   const metaMap = new Map<string, SessionSourceRef>();
   const metaOrder: string[] = [];
+  const mediaMap = new Map<string, SessionSourceRef>();
+  const mediaOrder: string[] = [];
   const omittedMap = new Map<string, SessionSourceRef>();
   const omittedOrder: string[] = [];
 
@@ -129,6 +142,17 @@ export function aggregateSessionSources(
           bump(metaMap, metaOrder, refKey('file', s.target, vaultPath), s.target, s.label, 'file');
           continue;
         }
+        // 库内非文档（媒体 / 数据 / 过程产物）→ 折叠组（与消息内联引用区同构）
+        // 判据：过程目录（.molio/ 等）里的东西一律是过程产物（哪怕是 .md）；
+        // 否则「有扩展名但不是文档」的是媒体/数据。
+        // 无扩展名的真实文件（Makefile）留在主列表 —— 它是内容，不是媒体。
+        const key = writeKey(s.target, vaultPath);
+        const inProcessDir = classifySourceLocation(key) === 'process-dir';
+        const isMedia = inProcessDir || (FILE_EXT_RE.test(key) && !DOC_EXT_RE.test(key));
+        if (isMedia) {
+          bump(mediaMap, mediaOrder, refKey('file', s.target, vaultPath), s.target, s.label, 'file');
+          continue;
+        }
       }
       bump(map, order, refKey(s.kind, s.target, vaultPath), s.target, s.label, s.kind);
     }
@@ -136,8 +160,9 @@ export function aggregateSessionSources(
 
   const refs = sortRefs([...map.values()], order, vaultPath);
   const meta = sortRefs([...metaMap.values()], metaOrder, vaultPath);
+  const media = sortRefs([...mediaMap.values()], mediaOrder, vaultPath);
   const omitted = sortRefs([...omittedMap.values()], omittedOrder, vaultPath);
-  return { refs, meta, omitted };
+  return { refs, meta, media, omitted };
 }
 
 /** count 降序，同 count 按首次出现顺序；同名文件加父目录消歧。 */

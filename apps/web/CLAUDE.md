@@ -297,9 +297,12 @@ pnpm test:e2e     # Playwright 自动启动隔离的 daemon/cloud/web（先关�
 - **代码块**: 拆分渲染——文本段走 `renderMarkdown`，fenced 代码段走 `<CodeBlock>`（语言标签 + 复制 + >20 行折叠）
 - **引用来源条** (`SourceChips.tsx` + `utils/inlineSources.ts`): 助手回复底部的「这条答案读了什么」。两种形态：
   - **平铺**（≤ 8 项）：一行 chip，与旧形态逐像素一致 —— 轻场景零变化。
-  - **台账**（> 8 项）：`引用 N 项` 标题行（整条可折叠）+ **可查证层**（库内文档 + 外部链接，chip）+ **其余层**（媒体数据 / 索引日志 / 库外 / 检索模式，各一行计数、按需展开，条目是无边框文字而非 chip）。
-  - 口径分层在 `groupInlineSources()`：按归一化路径去重（`a.md` / `./a.md` / 绝对路径算同一条）、同名文件带父目录消歧、库外与检索模式不可导航（点开必然失败）。Bash 命令解析残渣（`=`、`n:')`）在 `toolRefs.extractSources` 里过滤 —— **展示层过滤，不动 `bashReadPaths` 的记账口径**（那个函数是 daemon `citations.ts` 的镜像实现，改了会污染 IM 出站清单与 E1 对账基线）。
+  - **台账**（> 8 项）：`引用 N 项` 标题行（整条可折叠）+ **可查证层**（库内文档 + 外部链接，chip）+ **其余层**（媒体数据 / 过程产物 / 索引日志 / 库外 / 检索模式，各一行计数、按需展开，条目是无边框文字而非 chip）。
+  - 口径分层在 `groupInlineSources()`：按归一化路径去重（`a.md` / `./a.md` / 绝对路径算同一条）、同名文件带父目录消歧、库外与检索模式不可导航（点开必然失败）。Bash 命令解析残渣（`=`、`n:')`、`media-$f.md`）在 `toolRefs.extractSources` 里过滤 —— **展示层过滤，不动 `bashReadPaths` 的记账口径**（那个函数是 daemon `citations.ts` 的镜像实现，改了会污染 IM 出站清单与 E1 对账基线）。
+  - **库内/库外/过程目录三分**（`toolRefs.classifySourceLocation`）：**不要**用 `classifyWritePath` 判库外 —— 它的 hidden 层把「真库外」与「库内点开头目录」（`.molio/wiki-build/`、`.claude/`）混为一谈，而后者在 wiki 构建里是主力（转写中间产物全在那儿）。判据：相对路径恒在库内（run 的 cwd 就是库根，见 `KbChatSessionController` 传 `vaultPath`）；绝对路径剥不掉库前缀才是真库外；库内点目录 = 过程产物（在库内、可导航，但不是用户内容）。
   - 回归测试：`src/utils/inlineSources.test.ts`（单测）+ `e2e/source-chips-ledger.spec.ts`（E2E）
+- **产出区** (`WorkCompleteBanner.tsx`): 与引用区同构 —— > 8 项也走台账形态（标题带计数、可折叠、分批铺开）。产出全是文档，不需要分层。E2E 见 `source-chips-ledger.spec.ts`。
+- **会话产出面板的引用 tab** (`SessionOutputPanel.tsx` + `utils/sessionSources.ts`): 与消息内联引用区同口径 —— 媒体与数据文件折进「媒体与数据」折叠组（一次 wiki 构建能读几百个，全灌进主列表会决堤）。库外/检索路径仍进 omitted（点不开，面板必须明说）。
 - **SSE**: 通过 `EventSource` 订阅 daemon 事件流，实时更新消息状态
 
 ## 与 daemon 的交互

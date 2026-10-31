@@ -7,11 +7,11 @@
 // - 两边共用 toolRefs 的真值源：writeKey（归一化）、classifyWritePath（库内/库外/骨架）、
 //   disambiguateLabels（同名消歧）。
 import type { ToolEvent } from '../hooks/useChatCore.ts';
-import { extractSources, writeKey, classifyWritePath, isMetaBasename } from './toolRefs.ts';
+import { extractSources, writeKey, classifySourceLocation, isMetaBasename } from './toolRefs.ts';
 import { disambiguateLabels } from './workSteps.ts';
 
 /** 次要组的构成类别 —— 折叠时据此给出「这堆是什么」的一句话说明。 */
-export type InlineBucket = 'media' | 'meta' | 'outside' | 'pattern';
+export type InlineBucket = 'media' | 'meta' | 'outside' | 'pattern' | 'process-dir';
 
 export interface InlineSourceItem {
   kind: 'file' | 'url';
@@ -71,7 +71,7 @@ export function groupInlineSources(
   // 同一文件可能被多次提到（不同写法：'a.md' / './a.md' / 绝对路径）。
   // 先按归一化 key 合并，再统一定层 —— 否则「先来的是 pattern、后来的是可打开文档」
   // 时，层级会被第一次出现钉死。
-  const merged = new Map<string, { key: string; kind: 'file' | 'url'; navigable: boolean; doc: boolean; meta: boolean; pattern: boolean; searchDir: boolean; inside: boolean }>();
+  const merged = new Map<string, { key: string; kind: 'file' | 'url'; navigable: boolean; pattern: boolean; searchDir: boolean }>();
 
   for (const ref of refs) {
     if (ref.kind === 'url') {
@@ -80,43 +80,33 @@ export function groupInlineSources(
           key: ref.target,
           kind: 'url',
           navigable: true,
-          doc: false,
-          meta: false,
           pattern: false,
           searchDir: false,
-          inside: true,
         });
       }
       continue;
     }
 
     const key = writeKey(ref.target, vaultPath ?? undefined);
-    const layer = classifyWritePath(key);
-    // 不知道库在哪时无法证伪「库外」，按在库内处理（与旧行为一致）
-    const inside = vaultPath ? layer !== 'hidden' : true;
     const pattern = GLOB_META_RE.test(ref.target);
     const searchDir = ref.toolName === 'Grep' && !HAS_EXT_RE.test(ref.target);
-    const navigable = ref.navigable && !pattern && !searchDir && inside;
 
     const existing = merged.get(key);
     if (existing) {
-      // 合并：可导航性与「像个文档」都取「任一次出现满足」
-      existing.navigable = existing.navigable || navigable;
-      existing.doc = existing.doc || DOC_RE.test(key);
-      existing.pattern = existing.pattern && pattern;
+      // 合并同一路径的多次出现：可导航性取「任一次可导航」，
+      // 「是不是检索目录」取「任一次是真实文件读」——
+      // 同一个路径既被 cat 过又被 grep 过时，它是个文件，不是检索动作。
+      existing.navigable = existing.navigable || (ref.navigable && !pattern && !searchDir);
       existing.searchDir = existing.searchDir && searchDir;
-      existing.inside = existing.inside && inside;
+      existing.pattern = existing.pattern && pattern;
       continue;
     }
     merged.set(key, {
       key,
       kind: 'file',
-      navigable,
-      doc: DOC_RE.test(key),
-      meta: isMetaBasename(key),
+      navigable: ref.navigable && !pattern && !searchDir,
       pattern,
       searchDir,
-      inside,
     });
   }
 
@@ -133,13 +123,23 @@ export function groupInlineSources(
       });
       continue;
     }
+    // 库内/库外/过程目录三分 —— 相对路径恒在库内（run 的 cwd 就是库根）
+    const location = classifySourceLocation(key);
+    const isDoc = DOC_RE.test(key);
+    const isMeta = isMetaBasename(key);
+    // 过程目录（.molio/wiki-build 等）里的东西不是用户内容 → 不进可查证层
+    const inside = location === 'inside';
+
     // 可查证层 = 可打开的库内文档；骨架文件（INDEX/log/hot）每次 wiki 操作都读，不算依据
-    const isPrimary = m.doc && !m.meta && m.inside && m.navigable;
+    // 无扩展名的库内文件（Makefile 等）算「真实内容」→ 可查证层（与 dock 同口径）。
+    const isRealFile = HAS_EXT_RE.test(key);
+    const isPrimary = (isDoc || !isRealFile) && !isMeta && inside && m.navigable;
     let bucket: InlineBucket | undefined;
     if (!isPrimary) {
       bucket = m.pattern || m.searchDir ? 'pattern'
-        : !m.inside ? 'outside'
-        : m.meta ? 'meta'
+        : location === 'outside' ? 'outside'
+        : location === 'process-dir' ? 'process-dir'
+        : isMeta ? 'meta'
         : 'media';
     }
     items.push({
@@ -147,7 +147,7 @@ export function groupInlineSources(
       key,
       label: basename(key),
       path: key,
-      navigable: m.navigable,
+      navigable: m.navigable && location !== 'outside',
       bucket,
     });
   }

@@ -26,7 +26,8 @@ const FLAT_LIMIT = 8;
 const PAGE_LIMIT = 12;
 
 /** 其余层的构成顺序：先「产物」，再「过程痕迹」，最后「不可打开的」 */
-const BUCKET_ORDER: InlineBucket[] = ['media', 'meta', 'outside', 'pattern'];
+/** 其余层的展示顺序：先「产物类」（库内过程痕迹），再「不可用的」（库外 / 检索路径）。 */
+const BUCKET_ORDER: InlineBucket[] = ['media', 'process-dir', 'meta', 'outside', 'pattern'];
 
 export function SourceChips({ tools }: Props) {
   const { t } = useI18n();

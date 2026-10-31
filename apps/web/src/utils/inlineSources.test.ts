@@ -103,6 +103,53 @@ describe('groupInlineSources · 分层', () => {
     assert.equal(byBucket.get('pattern'), '*.ts');
   });
 
+  test('库内点开头目录算「过程产物」，不是「库外文件」', () => {
+    // 回归：wiki 技能把转写中间产物写在 .molio/wiki-build/ 下（wiki-build SKILL.md），
+    // 那是**库内**路径 —— 之前被 classifyWritePath 的 hidden 层误标成库外。
+    const s = groupInlineSources(
+      [
+        doneTool('Read', { file_path: '.molio/wiki-build/transcode-a.txt' }),
+        doneTool('Read', { file_path: '/elsewhere/真库外.md' }),
+      ],
+      opts,
+    );
+    const byBucket = new Map(s.minor.map((i) => [i.bucket, i.label]));
+    assert.equal(byBucket.get('process-dir'), 'transcode-a.txt');
+    assert.equal(byBucket.get('outside'), '真库外.md');
+    // 过程产物在库内 → 可导航（真库外不可导航）
+    assert.equal(s.minor.find((i) => i.bucket === 'process-dir')!.navigable, true);
+    assert.equal(s.minor.find((i) => i.bucket === 'outside')!.navigable, false);
+  });
+
+  test('相对路径恒在库内（run 的 cwd 就是库根）', () => {
+    // 相对路径剥不掉库前缀不代表在库外 —— agent 的 cwd 是库根，相对路径必在库内
+    const s = groupInlineSources(
+      [doneTool('Read', { file_path: 'wiki/笔记.md' })],
+      opts,
+    );
+    assert.equal(s.primary.length, 1);
+    assert.equal(s.minor.length, 0);
+  });
+
+  test('无扩展名的库内文件（Makefile）算真实内容，进可查证层', () => {
+    // 与 dock 引用 tab 同口径：无扩展名文件是真实文件，不是「媒体与数据」
+    const s = groupInlineSources(
+      [doneTool('Read', { file_path: 'Makefile' })],
+      opts,
+    );
+    assert.equal(s.primary.length, 1);
+    assert.equal(s.minor.length, 0);
+  });
+
+  test('Bash 未展开的变量（media-$f.md）不是文件，不进引用', () => {
+    // 回归：bashReadPaths 不做变量展开，`cat media-$f.md` 会把字面量当文件名读进来
+    const s = groupInlineSources(
+      [doneTool('Bash', { command: 'for f in a b; do cat media-$f.md; done' })],
+      opts,
+    );
+    assert.equal(s.total, 0);
+  });
+
   test('库外文件与检索路径不可导航（点开只会失败）', () => {
     const s = groupInlineSources(
       [
@@ -116,10 +163,12 @@ describe('groupInlineSources · 分层', () => {
     assert.ok(s.minor.every((i) => !i.navigable));
   });
 
-  test('不知道库路径时不判库外（无法证伪的按库内处理，与旧行为一致）', () => {
+  test('不知道库路径时：绝对路径仍判库外（路径形态本身可判，不依赖 vaultPath）', () => {
+    // 绝对路径不在任何 vault 前缀下 → 形态上就是库外，与「知不知道库路径」无关。
+    // 相对路径才是「恒在库内」（cwd = 库根）。
     const s = groupInlineSources([doneTool('Read', { file_path: '/elsewhere/b.md' })], {});
-    assert.equal(s.primary.length, 1);
-    assert.equal(s.minor.length, 0);
+    assert.equal(s.primary.length, 0);
+    assert.equal(s.minor[0]!.bucket, 'outside');
   });
 
   test('索引与日志不算依据（wiki 每次操作都读）', () => {
