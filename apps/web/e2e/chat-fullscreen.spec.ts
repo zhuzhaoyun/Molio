@@ -1,7 +1,7 @@
 // apps/web/e2e/chat-fullscreen.spec.ts
 import { test, expect } from '@playwright/test';
 import { createTempVault, cleanupTempVault, type TempVault } from './helpers/cleanup';
-import { mockChatRun, mockNoAgents, unmockAll } from './helpers/mock-sse';
+import { mockChatRun, mockNoAgents, unmockAll, SCRIPTS } from './helpers/mock-sse';
 import { gotoChatSpa, clickNav } from './helpers/navigation';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -342,5 +342,92 @@ test.describe('/chat 全屏态与面板共享活动会话', () => {
     await expect(bar).toHaveClass(/home-composer-bar--card/);
     await expect(bar).toHaveCSS('border-top-width', '0px');
     await expect(bar).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+  });
+
+  // ── 全屏态补全会话标签栏（会话管理能力 = 面板的超集；壳层控件让位给「最小化」）──
+
+  test('全屏态 header 内嵌会话标签栏：显示、切换、壳层按钮不渲染', async ({ page }) => {
+    await mockChatRun(page);
+    await seedSession(page, '标签A');
+
+    await page.locator('[data-testid="kb-chat-fullscreen"]').click();
+    await expect(page).toHaveURL(/\/chat$/);
+    await expect(page.locator('.home-header')).toBeVisible({ timeout: 5_000 });
+
+    // 标签栏嵌在 home-header 中段（不是面板 DOM——面板在全屏让位）
+    const headerTabs = page.locator('.home-header [data-testid="kb-chat-session-tab"]');
+    await expect(page.locator('.home-header [data-testid="kb-chat-session-tabbar"]')).toBeVisible();
+    await expect(headerTabs).toHaveCount(1);
+    // 历史入口也随标签栏可达
+    await expect(page.locator('.home-header [data-testid="kb-chat-session-history"]')).toBeVisible();
+
+    // 壳层控件（收起/停靠/全屏）不渲染 —— 全屏态由页头「最小化」承担，不重复
+    await expect(page.locator('[data-testid="kb-chat-close"]')).toHaveCount(0);
+    await expect(page.locator('[data-testid="kb-chat-dock-toggle"]')).toHaveCount(0);
+    await expect(page.locator('[data-testid="kb-chat-fullscreen"]')).toHaveCount(0);
+
+    // + 新建第二个标签（空会话）→ 消息区随之变空
+    await page.locator('[data-testid="kb-chat-session-new"]').click();
+    await expect(headerTabs).toHaveCount(2);
+    await expect(page.locator('[data-testid="assistant-message"]')).toHaveCount(0);
+
+    // 切回标签 A：消息回来，aria-current 跟着移动
+    await headerTabs.first().click();
+    await expect(page.locator('[data-testid="assistant-message"]').last()).toBeVisible({ timeout: 10_000 });
+    await expect(headerTabs.first()).toHaveAttribute('aria-current', 'true');
+  });
+
+  test('全屏态后台会话运行：标签运行点可见，运行中可新建会话', async ({ page }) => {
+    // 挂起一场「永不结束」的运行：首脚本没有 turn_end，secondTurnScripts 门
+    // 等一条永远不会发出的 POST → SSE 连接一直开着，isRunning 恒真（无定时竞态）。
+    await mockChatRun(page, {
+      script: [
+        { type: 'status', label: 'running' },
+        { type: 'text_delta', delta: '一直在流式输出…' },
+      ],
+      frameDelay: 100,
+      secondTurnScripts: [SCRIPTS.simpleTextReply],
+    });
+    await seedSession(page, '运行中会话');
+    await page.locator('[data-testid="kb-chat-fullscreen"]').click();
+    await expect(page).toHaveURL(/\/chat$/);
+
+    // 核心收益：后台任务在全屏态**可见**（此前全屏看不到任何标签在跑）
+    await expect(page.locator('.home-header [data-testid="kb-chat-session-running"]')).toBeVisible();
+
+    // 运行中也能 + 新建（旧页头 + 在运行中整个消失——单会话时代残留，已废除）
+    await page.locator('[data-testid="kb-chat-session-new"]').click();
+    await expect(page.locator('.home-header [data-testid="kb-chat-session-tab"]')).toHaveCount(2);
+    // 运行点仍只在原来那个标签上
+    await expect(page.locator('[data-testid="kb-chat-session-running"]')).toHaveCount(1);
+  });
+
+  test('全屏态关闭运行中的会话标签：确认框出现（portal），确认后标签关闭', async ({ page }) => {
+    await mockChatRun(page, {
+      script: [
+        { type: 'status', label: 'running' },
+        { type: 'text_delta', delta: '一直在流式输出…' },
+      ],
+      frameDelay: 100,
+      secondTurnScripts: [SCRIPTS.simpleTextReply],
+    });
+    await seedSession(page, '关闭运行中');
+    await page.locator('[data-testid="kb-chat-fullscreen"]').click();
+    await expect(page).toHaveURL(/\/chat$/);
+    await expect(page.locator('.home-header [data-testid="kb-chat-session-running"]')).toBeVisible();
+
+    // 关闭运行中的标签 → 确认框。面板 DOM 在全屏整体让位（return null），
+    // 所以确认框必须经 portal 渲染到 body —— 这条断言同时钉住这个实现约束。
+    const headerTabs = page.locator('.home-header [data-testid="kb-chat-session-tab"]');
+    await headerTabs.first().locator('[data-testid="kb-chat-session-tab-close"]').click();
+    const dialog = page.locator('[data-testid="confirm-dialog"]');
+    await expect(dialog).toBeVisible();
+    await expect(dialog).toContainText('中断并关闭');
+
+    // 确认「中断并关闭」→ 标签全关 → 会话清空回落 landing（无任何标签）
+    await dialog.locator('.kb-btn-danger').click();
+    await expect(headerTabs).toHaveCount(0);
+    await expect(page.locator('[data-testid="kb-chat-session-running"]')).toHaveCount(0);
+    await expect(page.locator('.home-landing')).toBeVisible({ timeout: 5_000 });
   });
 });

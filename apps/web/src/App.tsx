@@ -337,13 +337,6 @@ export default function App() {
       .catch(() => {});
   }, [activeVault?.path]);
 
-  // 页头「+」：新建一个会话标签（不再重置 App 级会话 —— 会话状态已由面板/Provider 按标签持有）。
-  const handleNewChat = () => {
-    kbChatSessionsStore.openSession({
-      mode: 'qa', title: '新会话', conversationId: null, filePath: null,
-    });
-  };
-
   /**
    * 全屏态「最小化」：会话降级回悬浮面板，并把用户送回他来的地方。
    *
@@ -429,7 +422,8 @@ export default function App() {
                   agentsUnavailable={agentsUnavailable}
                   onRetryAgents={refreshAgents}
                   onOpenRuntimes={() => navigate('/settings?tab=runtimes')}
-                  onNewChat={handleNewChat}
+                  // 页头标签栏「关闭会话」：转交面板的确认流程（面板常驻挂载，全屏只让位 DOM）
+                  onRequestCloseSession={(id) => kbChatPanelRef.current?.requestCloseSession(id)}
                   onMinimize={handleMinimize}
                   onOpenConversation={(conversationId) => {
                     // 就地切换活动会话并触发加载（复用面板已有的切换语义：运行中 → 新开标签）。
