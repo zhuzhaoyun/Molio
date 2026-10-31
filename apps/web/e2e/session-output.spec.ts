@@ -269,7 +269,7 @@ test.describe('Home 会话产出面板', () => {
       await expect(panel.locator('[data-testid="session-output-stats"]')).not.toContainText('写入');
 
       // 未展示分组：2 条（真库外 MEMORY.md / 检索目录 wiki）
-      // —— `.molio/cache/x.md` 是**库内**路径（过程产物），归「媒体与数据」折叠组，
+      // —— `.molio/cache/x.md` 是**库内**路径（过程产物），归「媒体与过程产物」折叠组，
       //    不是「库外」：它能预览，只是不是答案的依据。
       const omitted = panel.locator('[data-testid="session-output-sources-omitted"]');
       await expect(omitted).toBeVisible();
@@ -278,10 +278,10 @@ test.describe('Home 会话产出面板', () => {
       await omitted.locator('summary').click();
       await expect(omitted).toContainText('MEMORY.md');
 
-      // 媒体与数据组：库内过程产物单独成组（与消息内联引用区同口径）
+      // 媒体与过程产物组：库内过程产物单独成组（与消息内联引用区同口径）
       const media = panel.locator('[data-testid="session-output-sources-media"]');
       await expect(media).toBeVisible();
-      await expect(media).toContainText('媒体与数据');
+      await expect(media).toContainText('媒体与过程产物');
       await media.locator('summary').click();
       await expect(media).toContainText('x.md');
     } finally {
