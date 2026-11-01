@@ -19,7 +19,7 @@
  */
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -130,5 +130,35 @@ describe('area-map.json 结构契约', () => {
       else seen.set(entry.file, name);
     }
     assert.deepStrictEqual(dup, [], `多个条目指向同一个文件：\n  ${dup.join('\n  ')}`);
+  });
+
+  it('带 @priority P0/P1 注释的 spec 文件必须注册（否则 PR 门禁永远不跑它，只烂在 nightly 里）', () => {
+    // 背景：composer-skill-palette / kb-doc-context-menu / multi-window 三个 spec
+    // 都写了 @area/@priority 注释却没进 area-map.json——头注释是文档不是数据，
+    // select-specs.mjs 只认 area-map.json。结果 PR 门禁从不跑它们，各自烂掉
+    // （9+5+1 条），只有 nightly 在跑、nightly 红了没人看（2026-11-01 诊断）。
+    //
+    // 只强制 P0/P1：P2 允许不注册（nightly-only 是合法形态）。
+    // 没写 @priority 注释的文件不在此守卫范围（历史遗留，渐进补齐）。
+    const map = readAreaMap();
+    const registeredFiles = new Set(Object.values(map.specs).map((e) => e.file));
+    const unregistered: string[] = [];
+    for (const f of readdirSync(E2E_DIR)) {
+      if (!f.endsWith('.spec.ts')) continue;
+      const head = readFileSync(resolve(E2E_DIR, f), 'utf8').slice(0, 600);
+      const m = /@priority\s+(P0|P1|P2)/.exec(head);
+      if (!m || m[1] === 'P2') continue;
+      if (!registeredFiles.has(f)) unregistered.push(`${f}（@priority ${m[1]}）`);
+    }
+    assert.deepStrictEqual(
+      unregistered,
+      [],
+      '这些 spec 声明了 P0/P1，但 area-map.json 里没有它的条目——select-specs.mjs 只认 ' +
+        'area-map.json（spec 头部的 @area/@priority 注释是文档不是数据），它们永远不会进 PR 门禁：\n  ' +
+        unregistered.join('\n  ') +
+        '\n修法：在 areas.<对应area>.specs 追加名字，并在 specs 表补条目：\n' +
+        '  "composer-skill-palette": { "priority": "P1", "file": "composer-skill-palette.spec.ts" }\n' +
+        '（若确实是 nightly-only，把注释改成 @priority P2）',
+    );
   });
 });
