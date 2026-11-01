@@ -17,6 +17,39 @@
 .work-complete-title svg {
   color: var(--text-soft, #9a9894);
 }
+
+/* 台账形态（产出 > 8 项）：标题行带计数，整条可折叠 + 分批铺开。
+   与引用区同一套语言（source-ledger-* 类名共用）。 */
+.work-complete--ledger {
+  gap: 6px;
+}
+/* button 的 UA 默认样式要清干净；字体/字号继承 .work-complete-title 的，
+   不能用 `font: inherit` —— 它会把 font-size 一起重置掉。 */
+.work-complete-title--toggle {
+  align-self: flex-start;
+  padding: 0;
+  border: none;
+  background: transparent;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: inherit;
+  line-height: 1;
+  color: var(--text-soft, #9a9894);
+  cursor: pointer;
+}
+.work-complete-title--toggle:hover .work-complete-count {
+  color: var(--accent, #c96442);
+}
+.work-complete-title--toggle:focus-visible {
+  outline: 2px solid var(--accent-soft, #f5d8cb);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+.work-complete-count {
+  color: var(--text-muted, #6b6964);
+  font-variant-numeric: tabular-nums;
+  transition: color 0.15s ease;
+}
 .work-complete-files {
   display: flex;
   flex-wrap: wrap;

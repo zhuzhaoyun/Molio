@@ -200,9 +200,18 @@ const zh: Record<string, string> = {
 
   // ── SourceChips ──
   'source.title': '引用',
+  'source.count': '{n} 项',
+  'source.showAll': '显示全部 {n} 项',
+  'source.more': '还有 {n} 项',
+  'source.bucket.media': '媒体与数据',
+  'source.bucket.meta': '索引与日志',
+  'source.bucket.outside': '库外文件',
+  'source.bucket.pattern': '检索路径',
+  'source.bucket.process-dir': '过程产物',
 
   // ── WorkCompleteBanner ──
   'complete.title': '产出文件',
+  'complete.count': '{n} 项',
   'complete.reveal': '在资源管理器中显示',
 
   // ── 会话产出面板（主页 dock）──
@@ -234,6 +243,8 @@ const zh: Record<string, string> = {
   'output.sourcesOmittedHint': '库外文件、隐藏目录与检索路径不在此列表 —— 消息内联的「引用」标签里能看到它们',
   'output.sourcesMeta': '索引·日志 {n}',
   'output.sourcesMetaHint': 'wiki 每次操作都会读写的登记文件（目录索引、日志、缓存）——点开可预览',
+  'output.sourcesMedia': '媒体与过程产物 {n}',
+  'output.sourcesMediaHint': '过程产物（图片、表格、转写中间文件等）——不是答案的依据，点开可预览',
   'output.changeKind.create': '新建文件',
   'output.changeKind.update': '编辑',
   'output.changeKind.append': '追加',

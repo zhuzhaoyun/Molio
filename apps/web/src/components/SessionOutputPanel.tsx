@@ -164,7 +164,7 @@ export function SessionOutputPanel({ messages }: Props) {
   // refs = 展示清单；meta = 登记骨架（INDEX/log/hot，折叠展示）；omitted = 被过滤掉的
   // 引用（库外文件 / 隐藏目录 / 检索目录），面板要自己说明「少了什么」，否则同一屏里
   // 用户看到的引用标签比面板多、像面板漏了。
-  const { refs: sourceRefs, meta: sourceMeta, omitted: omittedSources } = useMemo(
+  const { refs: sourceRefs, meta: sourceMeta, media: sourceMedia, omitted: omittedSources } = useMemo(
     () => aggregateSessionSources(messages, activeVault?.path),
     [messages, activeVault?.path],
   );
@@ -367,7 +367,7 @@ export function SessionOutputPanel({ messages }: Props) {
           {tab === 'sources' ? (
             /* ── 引用 tab：本会话读入的文件（count 降序）+ URL 折叠组 + 未展示说明 ── */
             <div className="session-output-body" data-testid="session-output-sources">
-              {sourceFiles.length === 0 && sourceUrls.length === 0 && sourceMeta.length === 0 ? (
+              {sourceFiles.length === 0 && sourceUrls.length === 0 && sourceMeta.length === 0 && sourceMedia.length === 0 ? (
                 <p className="session-output-empty">{t('output.sourcesEmpty')}</p>
               ) : (
                 <>
@@ -405,6 +405,30 @@ export function SessionOutputPanel({ messages }: Props) {
                           type="button"
                           className="session-output-item"
                           data-testid="session-output-meta-item"
+                          title={s.target}
+                          disabled={!vaultId}
+                          onClick={() => { if (vaultId) openPreview('read', s.target, s.label); }}
+                        >
+                          <span className="session-output-item-icon" aria-hidden>📄</span>
+                          <span className="session-output-item-label">{s.label}</span>
+                          <span className="session-output-item-count">{s.count}</span>
+                        </button>
+                      ))}
+                    </details>
+                  )}
+                  {/* 媒体与数据文件（png/tsv/.mis）：过程产物不是「依据」——
+                      与消息内联引用区同构折起来，否则一次 wiki 构建能灌满整屏 */}
+                  {sourceMedia.length > 0 && (
+                    <details className="session-output-sources-meta" data-testid="session-output-sources-media">
+                      <summary title={t('output.sourcesMediaHint')}>
+                        {t('output.sourcesMedia', { n: sourceMedia.length })}
+                      </summary>
+                      {sourceMedia.map((s) => (
+                        <button
+                          key={s.target}
+                          type="button"
+                          className="session-output-item"
+                          data-testid="session-output-media-item"
                           title={s.target}
                           disabled={!vaultId}
                           onClick={() => { if (vaultId) openPreview('read', s.target, s.label); }}

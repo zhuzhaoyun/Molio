@@ -104,4 +104,20 @@ describe('extractSources × Bash（面板口径）', () => {
     ]);
     assert.deepEqual(running, []);
   });
+
+  test('命令解析残渣不是文件，不进引用（wiki 构建一轮能攒出几十个）', () => {
+    const refs = extractSources([
+      doneTool('Bash', { command: 'cat = ' }),
+      doneTool('Bash', { command: "sed -n \"1,50p\" 'n:\\')'" }),
+      doneTool('Bash', { command: 'cat real.md' }),
+    ]);
+    assert.deepEqual(refs.map((r) => r.target), ['real.md']);
+  });
+
+  test('残渣过滤只作用于 Bash —— Read 的路径是 agent 直报的，照单全收', () => {
+    const refs = extractSources([
+      doneTool('Read', { file_path: 'notes/weird (name).md' }),
+    ]);
+    assert.deepEqual(refs.map((r) => r.target), ['notes/weird (name).md']);
+  });
 });
