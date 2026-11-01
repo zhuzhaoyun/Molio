@@ -1,5 +1,5 @@
 /**
- * @area knowledge
+ * @area kb
  * @priority P1
  *
  * Multi-window (P2): URL-driven vault isolation. Each Playwright context is one

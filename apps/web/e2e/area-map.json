@@ -74,13 +74,22 @@
         "file-ref-navigation",
         "model-switcher",
         "composer-hints",
+        "composer-skill-palette",
         "chat-markdown",
         "session-output",
         "session-output-history",
         "quiz",
         "sandbox",
         "chat-autoscroll",
-        "chat-doc-ref-chip"
+        "chat-doc-ref-chip",
+        "activity-tree",
+        "chat-composer-queue",
+        "chat-sse-watchdog",
+        "chat-timeout-idle-reset",
+        "composer-file-picker",
+        "composer-ime",
+        "run-progress",
+        "source-chips-spacing"
       ]
     },
     "kb": {
@@ -126,13 +135,21 @@
         "kb-large-file-too-large",
         "pdf-preview",
         "chat-work-visibility",
+        "kb-doc-context-menu",
+        "multi-window",
         "split-view",
         "kb-terminology",
         "kb-search",
         "kb-export",
         "market-community",
         "kb-create-at-root",
-        "kb-tree-refresh-search"
+        "kb-tree-refresh-search",
+        "kb-chat-resume-multi",
+        "kb-chat-resume",
+        "kb-tab-drag",
+        "kb-tabs",
+        "kb-tree-folder-state",
+        "navigation-history"
       ]
     },
     "publish": {
@@ -632,6 +649,74 @@
     "kb-tree-refresh-search": {
       "priority": "P1",
       "file": "kb-tree-refresh-search.spec.ts"
+    },
+    "composer-skill-palette": {
+      "priority": "P1",
+      "file": "composer-skill-palette.spec.ts"
+    },
+    "kb-doc-context-menu": {
+      "priority": "P0",
+      "file": "kb-doc-context-menu.spec.ts"
+    },
+    "multi-window": {
+      "priority": "P1",
+      "file": "multi-window.spec.ts"
+    },
+    "activity-tree": {
+      "priority": "P1",
+      "file": "activity-tree.spec.ts"
+    },
+    "chat-composer-queue": {
+      "priority": "P1",
+      "file": "chat-composer-queue.spec.ts"
+    },
+    "chat-sse-watchdog": {
+      "priority": "P0",
+      "file": "chat-sse-watchdog.spec.ts"
+    },
+    "chat-timeout-idle-reset": {
+      "priority": "P1",
+      "file": "chat-timeout-idle-reset.spec.ts"
+    },
+    "composer-file-picker": {
+      "priority": "P1",
+      "file": "composer-file-picker.spec.ts"
+    },
+    "composer-ime": {
+      "priority": "P0",
+      "file": "composer-ime.spec.ts"
+    },
+    "run-progress": {
+      "priority": "P0",
+      "file": "run-progress.spec.ts"
+    },
+    "source-chips-spacing": {
+      "priority": "P1",
+      "file": "source-chips-spacing.spec.ts"
+    },
+    "kb-chat-resume-multi": {
+      "priority": "P1",
+      "file": "kb-chat-resume-multi.spec.ts"
+    },
+    "kb-chat-resume": {
+      "priority": "P1",
+      "file": "kb-chat-resume.spec.ts"
+    },
+    "kb-tab-drag": {
+      "priority": "P1",
+      "file": "kb-tab-drag.spec.ts"
+    },
+    "kb-tabs": {
+      "priority": "P1",
+      "file": "kb-tabs.spec.ts"
+    },
+    "kb-tree-folder-state": {
+      "priority": "P1",
+      "file": "kb-tree-folder-state.spec.ts"
+    },
+    "navigation-history": {
+      "priority": "P1",
+      "file": "navigation-history.spec.ts"
     }
   }
 }

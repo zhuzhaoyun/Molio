@@ -5,7 +5,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 /**
- * @area navigation
+ * @area kb
  * @priority P1
  *
  * Tab-scoped view history. The forward/back buttons walk the order of views the
