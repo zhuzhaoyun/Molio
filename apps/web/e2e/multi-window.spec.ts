@@ -1,8 +1,9 @@
 /**
  * @area kb
- * @priority P1
+ * @priority P2
  *
- * Multi-window (P2): URL-driven vault isolation. Each Playwright context is one
+ * Multi-window: URL-driven vault isolation. ⚠️ P2（nightly-only）：CI 上 1 条红（切库后首轮 POST 未发生，根因待查），
+ * 本地 mac 隔离跑 9/12 秒败——环境病，修好后升回 P1。 Each Playwright context is one
  * "window" — contexts share nothing but the daemon + (if same browser context)
  * localStorage. Two separate contexts approximate two Electron windows.
  *

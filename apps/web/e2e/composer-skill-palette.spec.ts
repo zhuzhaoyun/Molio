@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { gotoHome } from './helpers/navigation';
-import { mockChatRun, unmockAll } from './helpers/mock-sse';
+import { mockAgent, mockChatRun, unmockAll } from './helpers/mock-sse';
 import { createTempVault, cleanupTempVault, type TempVault } from './helpers/cleanup';
 
 /**
@@ -79,6 +79,14 @@ test.afterAll(async () => {
 });
 
 test.describe('Composer / skill palette', () => {
+  // CI runner 上没有安装任何 agent CLI，真实 /api/agents 返回全部 unavailable
+  // → composer 停在「未选择代理」disabled 态，连 "/" 都打不进去（nightly 上
+  // 9 条超时的根因，2026-11-01 诊断）。技能清单走的是真实 daemon 的
+  // /api/skills，不受这两个路由 mock 影响。
+  test.beforeEach(async ({ page }) => {
+    await mockAgent(page);
+  });
+
   test('typing / at input start opens the palette listing installed skills', async ({ page }) => {
     await gotoHome(page);
     const input = page.locator('[data-testid="composer-input"]');

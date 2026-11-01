@@ -1,8 +1,10 @@
 /**
  * @area kb
- * @priority P0
+ * @priority P2
  *
  * 回归：拖选文档内容松手后，选区必须保留（不被 React 重渲染抹掉）。
+ * ⚠️ P2（nightly-only）：CI ubuntu headless 上选区/全选失效（getSelection=0，
+ * 2026-11 起 nightly 稳定红 5 条），本地 mac 反而绿——根因待查，修好后升回 P0。
  * 前置：pnpm dev（daemon :3100 + web :5173）。
  */
 import { test, expect } from '@playwright/test';

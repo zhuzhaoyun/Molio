@@ -655,11 +655,11 @@
       "file": "composer-skill-palette.spec.ts"
     },
     "kb-doc-context-menu": {
-      "priority": "P0",
+      "priority": "P2",
       "file": "kb-doc-context-menu.spec.ts"
     },
     "multi-window": {
-      "priority": "P1",
+      "priority": "P2",
       "file": "multi-window.spec.ts"
     },
     "activity-tree": {
