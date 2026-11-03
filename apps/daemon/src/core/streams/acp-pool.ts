@@ -3,6 +3,7 @@ import type { AgentEvent } from '@molio/contracts';
 import { AcpTransport } from './acp-transport.js';
 import { killAgentProcessTree } from '../runtimes/kill-tree.js';
 import { createStderrDecoder } from '../runtimes/env.js';
+import { quoteForCmd } from '../runtimes/launch.js';
 
 /**
  * AcpPool — shared warm-process pool for ACP agents (hermes, dsh).
@@ -327,7 +328,7 @@ export class AcpPool {
 
   private spawnEntry(spec: AcpSpawnSpec): PoolEntry {
     const entryId = `acp-${spec.agentId}-${++entryCounter}`;
-    const child = spawn(spec.binary, spec.args, {
+    const child = spawn(spec.shell ? quoteForCmd(spec.binary) : spec.binary, spec.args, {
       env: spec.env,
       stdio: ['pipe', 'pipe', 'pipe'],
       cwd: spec.cwd,
