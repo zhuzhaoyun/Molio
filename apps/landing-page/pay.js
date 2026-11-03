@@ -42,6 +42,7 @@
   var PENDING_KEY = 'molio_pay_pending';        // 待付订单（sessionStorage，回跳续接兜底）
   var PENDING_TTL_MS = 2 * 60 * 60 * 1000;      // 支付宝订单 30 分钟内可付，留足余量
   var RESUME_PARAM = 'molio_pay_resume';        // 回跳参数：<商品 id>~<订单号>
+  var BROWSER_HELP_PARAM = 'molio_browser_help';
 
   var payBase = function () { return window.MOLIO_PAY_BASE || ''; };
 
@@ -61,8 +62,23 @@
   function pageUrlWithoutResume() {
     var href = location.href.split('#')[0];
     return href
+      .replace(new RegExp('([?&])' + BROWSER_HELP_PARAM + '=[^&#]*&?'), '$1')
       .replace(new RegExp('([?&])' + RESUME_PARAM + '=[^&#]*&?'), '$1')
       .replace(/[?&]$/, '');
+  }
+
+  // Best effort only: the host WebView decides whether to handle intent: links.
+  // Keep the default browser/chooser; do not assume Chrome or a vendor browser is installed.
+  function browserIntentUrl() {
+    if (!/Android/i.test(navigator.userAgent || '') || payEnv() !== 'embedded') return '';
+    var page;
+    try { page = new URL(pageUrlWithoutResume()); } catch (e) { return ''; }
+    if (page.origin !== 'https://molio.cn') return '';
+    var fallback = new URL(page.href);
+    fallback.searchParams.set(BROWSER_HELP_PARAM, '1');
+    return 'intent://' + page.host + page.pathname + page.search +
+      '#Intent;scheme=https;action=android.intent.action.VIEW;category=android.intent.category.BROWSABLE;' +
+      'S.browser_fallback_url=' + encodeURIComponent(fallback.href) + ';end';
   }
 
   /* ---------- 待付订单：跳转支付宝前落盘，回跳后据此续接（不重新下单） ---------- */
@@ -128,6 +144,7 @@
         '<div class="pay-amount" id="pay-amount"></div>' +
         '<div class="pay-qr" id="pay-qr"></div>' +
         '<p class="pay-tip" id="pay-tip"></p>' +
+        '<a class="btn btn-primary pay-open-browser" id="pay-open-browser" hidden>在浏览器中继续</a>' +
         '<input type="url" id="pay-browser-url" class="pay-browser-url" aria-label="资源页地址" readonly hidden>' +
         '<button type="button" class="btn btn-secondary" id="pay-copy-link" hidden>复制资源页链接</button>' +
         '<a class="btn btn-primary pay-dl" id="pay-dl" hidden>下载资源包</a>' +
@@ -145,6 +162,7 @@
 
     var titleEl = document.getElementById('pay-title');
     var browserUrl = document.getElementById('pay-browser-url');
+    var openBrowser = document.getElementById('pay-open-browser');
     var copyLink = document.getElementById('pay-copy-link');
     copyLink.addEventListener('click', function () {
       if (navigator.clipboard && navigator.clipboard.writeText) {
@@ -183,6 +201,7 @@
     function resetView() {
       qrBox.hidden = false;
       browserUrl.hidden = true;
+      openBrowser.hidden = true;
       copyLink.hidden = true;
       copyLink.textContent = '复制资源页链接';
       if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
@@ -285,6 +304,13 @@
         browserUrl.value = pageUrlWithoutResume();
         browserUrl.hidden = false;
         copyLink.hidden = false;
+        var intentUrl = browserIntentUrl();
+        if (intentUrl) {
+          openBrowser.href = intentUrl;
+          openBrowser.hidden = false;
+          titleEl.textContent = '去浏览器继续付款';
+          tip.textContent = '正在尝试打开系统浏览器；若出现选择框，请选择浏览器。未跳出可重试，或复制链接到浏览器，再继续支付宝付款。';
+        }
         return;
       }
 
@@ -373,6 +399,15 @@
     window.MolioPay = window.MolioPay || {};
     /** 付费下载门槛：未登录 → 弹登录框，登录成功才下单；用户取消则不创建订单 */
     window.MolioPay.open = function (r) {
+      // Must run synchronously in the buy click; waiting for login can lose user activation.
+      if (payEnv() === 'embedded') {
+        startOrder(r, null);
+        var intentUrl = browserIntentUrl();
+        if (intentUrl) {
+          try { location.href = intentUrl; } catch (e) { /* The visible retry/copy choices remain usable. */ }
+        }
+        return;
+      }
       var auth = window.MolioAuth;
       if (!auth) { startOrder(r, null); return; } // auth.js 缺失时优雅降级（旧行为）
       auth.requireAuth().then(
@@ -384,6 +419,11 @@
     // 回跳续接：从支付宝付完（或被用户带回）本页时自动续上订单
     var resumed = takePending();
     if (resumed) resumeOrder(resumed.id, resumed.no);
+    // Fallback reload shows help without attempting another automatic navigation.
+    else if (new URLSearchParams(location.search).get(BROWSER_HELP_PARAM) === '1' && payEnv() === 'embedded') {
+      var listing = window.__LISTING__;
+      if (listing && listing.id) startOrder({ id: listing.id, price: listing.priceCents / 100 }, null);
+    }
   }
 
   if (document.readyState === 'loading') {

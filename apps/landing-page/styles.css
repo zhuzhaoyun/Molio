@@ -1540,6 +1540,8 @@ p { margin-bottom: 0; }
 .res-side-card .btn { width: 100%; }
 
 .pay-browser-url { width: 100%; box-sizing: border-box; margin: 12px 0; padding: 12px; border: 1px solid var(--hair); background: var(--paper-2); color: var(--ink-60); font-size: 14px; }
+.pay-open-browser { width: 100%; }
+.pay-open-browser[hidden] { display: none; }
 
 @media (max-width: 900px) {
   body:has(.res-purchase-card) { padding-bottom: calc(148px + env(safe-area-inset-bottom, 0px)); }

@@ -6,8 +6,10 @@ import type { MarketListing } from '@molio/contracts';
 
 test.use({ userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148 Safari/604.1', viewport: { width: 390, height: 844 } });
 
-test('B站半屏资源页首屏及滚动后均可购买，并提供外部浏览器地址', async ({ browser }) => {
-  const context = await browser.newContext({ viewport: { width: 390, height: 550 }, userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) Mobile/15E148 BiliApp/76000100' });
+for (const platform of ['iOS', 'Android']) {
+test(`${platform} B站半屏资源页购买入口及浏览器兼容引导`, async ({ browser }) => {
+  const userAgent = platform === 'Android' ? 'Mozilla/5.0 (Linux; Android 13; wv) Mobile BiliApp/76000100' : 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) Mobile/15E148 BiliApp/76000100';
+  const context = await browser.newContext({ viewport: { width: 390, height: 550 }, userAgent });
   const page = await context.newPage();
   const listing: MarketListing = { id: 'test', name: '测试资源', summary: '资源说明。'.repeat(800), tags: [], overview: [], highlights: [], previews: [], source: 'official', icon: '📚', tint: '#eee', version: '1', priceCents: 1990, payUrl: '', author: 'Molio', fileSize: 100, publishedAt: null };
   let orders = 0;
@@ -30,14 +32,18 @@ test('B站半屏资源页首屏及滚动后均可购买，并提供外部浏览�
   await expect(page.locator('#pay-tip')).toContainText('系统浏览器');
   await expect(page.locator('#pay-browser-url')).toHaveValue('https://molio.cn/resource/test.html');
   await expect(page.locator('#pay-copy-link')).toBeVisible();
-  await expect(page.locator('#pay-copy-link')).toBeInViewport();
+  if (platform === 'Android') {
+    await expect(page.locator('#pay-open-browser')).toBeInViewport();
+    await expect(page.locator('#pay-open-browser')).toHaveAttribute('href', /^intent:\/\/molio.cn\/resource\/test.html#Intent;/);
+  } else await expect(page.locator('#pay-open-browser')).toBeHidden();
   expect(orders).toBe(0);
-  await page.screenshot({ path: 'test-results/alipay-bili-guidance.png' });
+  await page.screenshot({ path: `test-results/alipay-bili-guidance-${platform}.png` });
   await page.locator('#pay-close').click();
   await page.setViewportSize({ width: 1280, height: 900 });
   expect(await buy.evaluate(el => getComputedStyle(el.parentElement!).position)).not.toBe('fixed');
   await context.close();
 });
+}
 
 test('mobile browser opens Alipay and resumes paid order to download without creating another order', async ({ page }) => {
   let orders = 0;

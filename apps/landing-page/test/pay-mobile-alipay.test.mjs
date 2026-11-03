@@ -264,9 +264,43 @@ test('B站内不创建无法付款的订单，引导系统浏览器', async () =
     h.window.MolioPay.open({ id: 'consulting', price: 49 });
     await flushAll();
     assert.equal(h.payCalls().length, 0);
-    assert.equal(h.location.href, PAGE_URL);
+    assert.ok(h.location.href.startsWith('intent://molio.cn/resource/consulting.html#Intent;'));
+    assert.ok(h.location.href.includes('scheme=https;'));
+    assert.ok(!h.location.href.includes('package='), '不绑定某个品牌浏览器');
+    assert.equal(h.node('pay-open-browser').hidden, false);
     assert.ok(h.tipText().includes('系统浏览器'));
-    assert.equal(h.titleText(), '请在浏览器中打开');
+    assert.equal(h.titleText(), '去浏览器继续付款');
+  } finally { h.restore(); }
+});
+
+test('Android B站在原点击同步尝试浏览器，不等待登录异步回调', () => {
+  const h = loadPay({ ua: UA_BILI, auth: { requireAuth() { throw new Error('不应先要求B站内登录'); } } });
+  try {
+    h.window.MolioPay.open({ id: 'consulting', price: 49 });
+    assert.ok(h.location.href.startsWith('intent://'));
+    assert.equal(h.payCalls().length, 0);
+    assert.equal(h.node('pay-copy-link').hidden, false);
+  } finally { h.restore(); }
+});
+
+test('iOS B站保留手动引导，不执行Android跳转', async () => {
+  const h = loadPay({ ua: UA_MOBILE + ' BiliApp/76000100' });
+  try {
+    h.window.MolioPay.open({ id: 'consulting', price: 49 });
+    await flushAll();
+    assert.equal(h.location.href, PAGE_URL);
+    assert.equal(h.node('pay-open-browser').hidden, true);
+    assert.equal(h.node('pay-copy-link').hidden, false);
+  } finally { h.restore(); }
+});
+
+test('Android Intent失败回退仅显示引导，不循环跳转或下单', () => {
+  const h = loadPay({ ua: UA_BILI, search: '?molio_browser_help=1' });
+  try {
+    assert.equal(h.location.href, PAGE_URL + '?molio_browser_help=1');
+    assert.equal(h.node('pay-open-browser').hidden, false);
+    assert.equal(h.node('pay-browser-url').value, PAGE_URL);
+    assert.equal(h.payCalls().length, 0);
   } finally { h.restore(); }
 });
 
