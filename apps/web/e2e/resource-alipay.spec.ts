@@ -11,6 +11,9 @@ test(`${platform} B站半屏资源页购买入口及浏览器兼容引导`, asyn
   const userAgent = platform === 'Android' ? 'Mozilla/5.0 (Linux; Android 13; wv) Mobile BiliApp/76000100' : 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) Mobile/15E148 BiliApp/76000100';
   const context = await browser.newContext({ viewport: { width: 390, height: 550 }, userAgent });
   const page = await context.newPage();
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: async (value: string) => { sessionStorage.setItem('test-copied-url', value); } } });
+  });
   const listing: MarketListing = { id: 'test', name: '测试资源', summary: '资源说明。'.repeat(800), tags: [], overview: [], highlights: [], previews: [], source: 'official', icon: '📚', tint: '#eee', version: '1', priceCents: 1990, payUrl: '', author: 'Molio', fileSize: 100, publishedAt: null };
   let orders = 0;
   await page.route('**', route => {
@@ -32,10 +35,17 @@ test(`${platform} B站半屏资源页购买入口及浏览器兼容引导`, asyn
   await expect(page.locator('#pay-tip')).toContainText('系统浏览器');
   await expect(page.locator('#pay-browser-url')).toHaveValue('https://molio.cn/resource/test.html');
   await expect(page.locator('#pay-copy-link')).toBeVisible();
-  if (platform === 'Android') {
-    await expect(page.locator('#pay-open-browser')).toBeInViewport();
-    await expect(page.locator('#pay-open-browser')).toHaveAttribute('href', /^intent:\/\/molio.cn\/resource\/test.html#Intent;/);
-  } else await expect(page.locator('#pay-open-browser')).toBeHidden();
+  await expect(page.locator('#pay-open-browser')).toHaveCount(0);
+  await expect(page.locator('#pay-amount')).toBeHidden();
+  await expect(page.locator('#pay-copy-link')).toBeInViewport();
+  await page.screenshot({ path: `test-results/alipay-copy-link-${platform}.png` });
+  await page.locator('#pay-copy-link').click();
+  await expect(page.locator('#pay-copy-link')).toContainText('已复制');
+  expect(await page.evaluate(() => sessionStorage.getItem('test-copied-url'))).toBe('https://molio.cn/resource/test.html');
+  await expect(page.locator('#pay-tip')).toContainText('粘贴');
+  await page.evaluate(() => { navigator.clipboard.writeText = async () => { throw new Error('clipboard unavailable'); }; });
+  await page.locator('#pay-copy-link').click();
+  await expect(page.locator('#pay-copy-link')).toHaveText('请长按地址复制');
   expect(orders).toBe(0);
   await page.screenshot({ path: `test-results/alipay-bili-guidance-${platform}.png` });
   await page.locator('#pay-close').click();

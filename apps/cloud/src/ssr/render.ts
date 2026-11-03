@@ -457,7 +457,7 @@ export function renderProductPage(m: MarketListing, related: MarketListing[]): s
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="icon" type="image/png" href="/images/favicon-32.png">
 <link rel="apple-touch-icon" href="/images/favicon-180.png">
-<link rel="stylesheet" href="/styles.css?v=20261103-browserhop">
+<link rel="stylesheet" href="/styles.css?v=20261103-copylink">
 
 <!-- Open Graph -->
 <meta property="og:title" content="${escapeHtml(title)}">
@@ -540,7 +540,7 @@ ${FOOTER}
 <script>window.MOLIO_PAY_BASE = '${PAY_BASE}';window.__LISTING__ = ${safeJson(hydrationListing)};</script>
 <script src="/vendor/qrcode.min.js"></script>
 <script src="/auth.js?v=20260824a"></script>
-<script src="/pay.js?v=20261103-browserhop"></script>
+<script src="/pay.js?v=20261103-copylink"></script>
 <script src="/resource-hydrate.js?v=20260901a"></script>
 <script src="/shared.js?v=20260813a"></script>
 ${ANALYTICS}
@@ -762,7 +762,7 @@ ${FOOTER}
 <script src="/resource-catalog.js?v=20261003a" defer></script>
 <script src="/vendor/qrcode.min.js"></script>
 <script src="/auth.js?v=20260824a"></script>
-<script src="/pay.js?v=20261103-browserhop"></script>
+<script src="/pay.js?v=20261103-copylink"></script>
 <script>
 (function () {
   'use strict';

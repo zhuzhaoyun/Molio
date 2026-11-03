@@ -264,20 +264,18 @@ test('B站内不创建无法付款的订单，引导系统浏览器', async () =
     h.window.MolioPay.open({ id: 'consulting', price: 49 });
     await flushAll();
     assert.equal(h.payCalls().length, 0);
-    assert.ok(h.location.href.startsWith('intent://molio.cn/resource/consulting.html#Intent;'));
-    assert.ok(h.location.href.includes('scheme=https;'));
-    assert.ok(!h.location.href.includes('package='), '不绑定某个品牌浏览器');
-    assert.equal(h.node('pay-open-browser').hidden, false);
+    assert.equal(h.location.href, PAGE_URL);
+    assert.ok(!h.modalHtml().includes('pay-open-browser'));
     assert.ok(h.tipText().includes('系统浏览器'));
-    assert.equal(h.titleText(), '去浏览器继续付款');
+    assert.equal(h.titleText(), '在浏览器中完成购买');
   } finally { h.restore(); }
 });
 
-test('Android B站在原点击同步尝试浏览器，不等待登录异步回调', () => {
+test('Android B站只显示复制引导，不自动跳转或要求内置浏览器登录', () => {
   const h = loadPay({ ua: UA_BILI, auth: { requireAuth() { throw new Error('不应先要求B站内登录'); } } });
   try {
     h.window.MolioPay.open({ id: 'consulting', price: 49 });
-    assert.ok(h.location.href.startsWith('intent://'));
+    assert.equal(h.location.href, PAGE_URL);
     assert.equal(h.payCalls().length, 0);
     assert.equal(h.node('pay-copy-link').hidden, false);
   } finally { h.restore(); }
@@ -289,17 +287,24 @@ test('iOS B站保留手动引导，不执行Android跳转', async () => {
     h.window.MolioPay.open({ id: 'consulting', price: 49 });
     await flushAll();
     assert.equal(h.location.href, PAGE_URL);
-    assert.equal(h.node('pay-open-browser').hidden, true);
+    assert.ok(!h.modalHtml().includes('pay-open-browser'));
     assert.equal(h.node('pay-copy-link').hidden, false);
   } finally { h.restore(); }
 });
 
-test('Android Intent失败回退仅显示引导，不循环跳转或下单', () => {
-  const h = loadPay({ ua: UA_BILI, search: '?molio_browser_help=1' });
+test('从列表购买时复制商品详情链接，复制成功后明确提示下一步', async () => {
+  const h = loadPay({ ua: UA_BILI, pathname: '/resources.html' });
+  let copied;
+  navigator.clipboard = { writeText: async value => { copied = value; } };
   try {
-    assert.equal(h.location.href, PAGE_URL + '?molio_browser_help=1');
-    assert.equal(h.node('pay-open-browser').hidden, false);
+    h.location.href = 'https://molio.cn/resources.html';
+    h.window.MolioPay.open({ id: 'consulting', price: 49 });
     assert.equal(h.node('pay-browser-url').value, PAGE_URL);
+    h.click('pay-copy-link');
+    await flushAll();
+    assert.equal(copied, PAGE_URL);
+    assert.ok(h.node('pay-copy-link').textContent.includes('已复制'));
+    assert.ok(h.tipText().includes('粘贴'));
     assert.equal(h.payCalls().length, 0);
   } finally { h.restore(); }
 });
@@ -315,7 +320,7 @@ test('微信内：不创建订单、不渲染二维码，只引导去浏览器�
     assert.equal(h.qrCalls.length, 0, '不再画一个微信内识别不了的二维码');
     assert.equal(h.location.href, PAGE_URL, '不跳转');
     assert.ok(h.tipText().includes('在浏览器中打开'), '引导用户到浏览器');
-    assert.equal(h.titleText(), '请在浏览器中打开');
+    assert.equal(h.titleText(), '在浏览器中完成购买');
   } finally {
     h.restore();
   }

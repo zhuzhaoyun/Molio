@@ -1540,8 +1540,12 @@ p { margin-bottom: 0; }
 .res-side-card .btn { width: 100%; }
 
 .pay-browser-url { width: 100%; box-sizing: border-box; margin: 12px 0; padding: 12px; border: 1px solid var(--hair); background: var(--paper-2); color: var(--ink-60); font-size: 14px; }
-.pay-open-browser { width: 100%; }
-.pay-open-browser[hidden] { display: none; }
+.pay-copy-link { width: 100%; }
+.pay-copy-link[hidden] { display: none; }
+.pay-modal[data-browser-help="true"] .pay-amount { display: none; }
+.pay-modal[data-browser-help="true"] .pay-card { padding: 32px 24px 24px; }
+.pay-modal[data-browser-help="true"] .pay-tip { margin: 16px 0 8px; font-size: 14px; }
+.pay-modal[data-browser-help="true"] .pay-browser-url { margin: 12px 0 16px; min-width: 0; border-radius: 3px; }
 
 @media (max-width: 900px) {
   body:has(.res-purchase-card) { padding-bottom: calc(148px + env(safe-area-inset-bottom, 0px)); }
