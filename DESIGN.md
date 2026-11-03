@@ -2,6 +2,7 @@
 version: alpha
 name: Molio Landing Page
 description: 墨与纸的品牌视觉，落到首页上是一张会被内容撑满的纸色画布。
+mobilePurchase: 资源详情页在窄屏使用纸色底部固定购买栏，保留同一个购买按钮与登录流程，预留安全区和正文底部空间；支付提示层位于购买栏上方。
 colors:
   primary: "#0D0D0D"
   ink-80: "#1A1A1A"

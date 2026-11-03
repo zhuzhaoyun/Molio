@@ -11,10 +11,10 @@
  *
  * 两条支付通道，按设备分流（后端 /pay?scene= 决定下单方式；订单号/查单/交付两条路完全共用）：
  *   - 桌面 → 微信 Native 支付：渲染二维码，每 3s 轮询 /order → SUCCESS 后 /deliver 拿下载链接。
- *   - 手机（微信外，含 B 站/抖音等 App 内置浏览器）→ 支付宝手机网站支付（WAP）：
+ *   - 手机系统浏览器 → 支付宝手机网站支付（WAP）：
  *     跳转 pay_url 打开支付宝收银台，付完回跳本页解锁。
  *     不用微信 H5 的原因：H5 支付要单独开通且 App WebView 内唤端不稳定（本项目申请未通过）；
- *     支付宝 WAP 是整页收银台，唤不起 App 时还能用账号/银行卡在网页内付完，WebView 通过率更高。
+ *     支付宝收银台的唤端能力依赖浏览器；B站内置浏览器先引导到系统浏览器，不创建订单。
  *     跳转会**卸载本页**，故下单后先把待付订单写进 sessionStorage；回跳时
  *     （带 molio_pay_resume 参数 / sessionStorage 兜底 / bfcache 恢复）凭订单号直接查单，
  *     不重新下单也不重复弹登录框。
@@ -52,6 +52,7 @@
   function payEnv() {
     var ua = (typeof navigator !== 'undefined' && navigator.userAgent) || '';
     if (/MicroMessenger/i.test(ua)) return 'wechat';
+    if (/BiliApp|bili-universal|bilibili/i.test(ua)) return 'embedded';
     if (/Android|iPhone|iPad|iPod|Mobile|HarmonyOS|Windows Phone/i.test(ua)) return 'mobile';
     return 'desktop';
   }
@@ -127,6 +128,8 @@
         '<div class="pay-amount" id="pay-amount"></div>' +
         '<div class="pay-qr" id="pay-qr"></div>' +
         '<p class="pay-tip" id="pay-tip"></p>' +
+        '<input type="url" id="pay-browser-url" class="pay-browser-url" aria-label="资源页地址" readonly hidden>' +
+        '<button type="button" class="btn btn-secondary" id="pay-copy-link" hidden>复制资源页链接</button>' +
         '<a class="btn btn-primary pay-dl" id="pay-dl" hidden>下载资源包</a>' +
         '<button type="button" class="btn btn-secondary pay-retry" id="pay-retry" hidden>重新支付</button>' +
         '<div class="pay-group" id="pay-group" hidden ' +
@@ -141,6 +144,15 @@
     document.body.appendChild(modal);
 
     var titleEl = document.getElementById('pay-title');
+    var browserUrl = document.getElementById('pay-browser-url');
+    var copyLink = document.getElementById('pay-copy-link');
+    copyLink.addEventListener('click', function () {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(browserUrl.value).then(function () {
+          copyLink.textContent = '已复制，请粘贴到系统浏览器';
+        }, function () { browserUrl.focus(); browserUrl.select(); copyLink.textContent = '请长按地址复制'; });
+      } else { browserUrl.focus(); browserUrl.select(); copyLink.textContent = '请长按地址复制'; }
+    });
     var qrBox = document.getElementById('pay-qr');
     var tip = document.getElementById('pay-tip');
     var dl = document.getElementById('pay-dl');
@@ -169,6 +181,10 @@
     groupQr.src = groupQrSrc();
 
     function resetView() {
+      qrBox.hidden = false;
+      browserUrl.hidden = true;
+      copyLink.hidden = true;
+      copyLink.textContent = '复制资源页链接';
       if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
       pending = null;
       qrBox.innerHTML = '';
@@ -260,9 +276,15 @@
 
       // 微信内不创建订单：微信屏蔽支付宝域名；微信 H5 支付只能在微信外调起；
       // Native 二维码的「长按识别 / 相册识别」又已被微信支付封禁 —— 唯一可行是去浏览器。
-      if (env === 'wechat') {
+      if (env === 'wechat' || env === 'embedded') {
+        qrBox.hidden = true;
         titleEl.textContent = '请在浏览器中打开';
-        tip.textContent = '微信内无法直接支付。点右上角 ⋯ 选择「在浏览器中打开」，即可用支付宝完成支付。';
+        tip.textContent = env === 'embedded'
+          ? 'B站内置浏览器可能无法打开支付宝。请使用页面菜单中的「在浏览器中打开」，或复制下方链接到 Safari、Chrome 等系统浏览器，再登录购买。'
+          : '微信内无法直接支付。点右上角 ⋯ 选择「在浏览器中打开」，即可用支付宝完成支付。';
+        browserUrl.value = pageUrlWithoutResume();
+        browserUrl.hidden = false;
+        copyLink.hidden = false;
         return;
       }
 

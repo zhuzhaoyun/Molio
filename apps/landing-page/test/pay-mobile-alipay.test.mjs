@@ -205,9 +205,9 @@ function payRespond() {
   return { respond, setPaid() { orderStatus = 'SUCCESS'; } };
 }
 
-test('手机端（B站 WebView）：下单带 scene=alipay → 跳支付宝收银台，不渲染二维码', async () => {
+test('手机系统浏览器：下单带 scene=alipay → 跳支付宝收银台，不渲染二维码', async () => {
   const { respond } = payRespond();
-  const h = loadPay({ ua: UA_BILI, respond });
+  const h = loadPay({ ua: UA_MOBILE, respond });
   try {
     h.window.MolioPay.open({ id: 'consulting', price: 49 });
     await flushAll();
@@ -255,6 +255,19 @@ test('桌面端：仍走 Native 扫码，一行不变（回归保护）', async 
   } finally {
     h.restore();
   }
+});
+
+test('B站内不创建无法付款的订单，引导系统浏览器', async () => {
+  const { respond } = payRespond();
+  const h = loadPay({ ua: UA_BILI, respond });
+  try {
+    h.window.MolioPay.open({ id: 'consulting', price: 49 });
+    await flushAll();
+    assert.equal(h.payCalls().length, 0);
+    assert.equal(h.location.href, PAGE_URL);
+    assert.ok(h.tipText().includes('系统浏览器'));
+    assert.equal(h.titleText(), '请在浏览器中打开');
+  } finally { h.restore(); }
 });
 
 test('微信内：不创建订单、不渲染二维码，只引导去浏览器打开', async () => {

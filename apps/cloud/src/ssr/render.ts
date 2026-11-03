@@ -235,7 +235,7 @@ function renderCta(m: MarketListing): { cta: string; note: string } {
   if (m.priceCents > 0) {
     return {
       cta: `<button type="button" class="btn btn-primary" id="pay-btn" data-testid="resource-pay-btn" data-auth-gate="立即购买 ¥${escapeHtml(price)}">立即购买 ¥${escapeHtml(price)}</button>`,
-      note: '扫码支付成功后自动解锁下载，下载链接 1 小时内有效。',
+      note: '支付成功后自动解锁下载，下载链接 1 小时内有效。',
     };
   }
   return {
@@ -457,7 +457,7 @@ export function renderProductPage(m: MarketListing, related: MarketListing[]): s
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="icon" type="image/png" href="/images/favicon-32.png">
 <link rel="apple-touch-icon" href="/images/favicon-180.png">
-<link rel="stylesheet" href="/styles.css?v=20261027b">
+<link rel="stylesheet" href="/styles.css?v=20261103-mobilepay">
 
 <!-- Open Graph -->
 <meta property="og:title" content="${escapeHtml(title)}">
@@ -510,7 +510,7 @@ ${NAV}
         ${content ? renderContentReview(content.review) : ''}
       </div>
       <aside class="res-side">
-        <div class="res-side-card reveal">${cta}<p class="res-side-note">${escapeHtml(note)}</p>${renderSampleHint(m)}</div>
+        <div class="res-side-card res-purchase-card">${cta}<p class="res-side-note">${escapeHtml(note)}</p>${renderSampleHint(m)}</div>
         <div class="res-side-card reveal">
           <div class="res-info-row"><span class="k">作者</span><span class="v">${escapeHtml(m.author)}</span></div>
           <div class="res-info-row"><span class="k">版本</span><span class="v">${escapeHtml(m.version)}</span></div>
@@ -540,7 +540,7 @@ ${FOOTER}
 <script>window.MOLIO_PAY_BASE = '${PAY_BASE}';window.__LISTING__ = ${safeJson(hydrationListing)};</script>
 <script src="/vendor/qrcode.min.js"></script>
 <script src="/auth.js?v=20260824a"></script>
-<script src="/pay.js?v=20261103-alipay"></script>
+<script src="/pay.js?v=20261103-mobilepay"></script>
 <script src="/resource-hydrate.js?v=20260901a"></script>
 <script src="/shared.js?v=20260813a"></script>
 ${ANALYTICS}
@@ -762,7 +762,7 @@ ${FOOTER}
 <script src="/resource-catalog.js?v=20261003a" defer></script>
 <script src="/vendor/qrcode.min.js"></script>
 <script src="/auth.js?v=20260824a"></script>
-<script src="/pay.js?v=20261103-alipay"></script>
+<script src="/pay.js?v=20261103-mobilepay"></script>
 <script>
 (function () {
   'use strict';
