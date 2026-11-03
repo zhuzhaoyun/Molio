@@ -540,7 +540,7 @@ ${FOOTER}
 <script>window.MOLIO_PAY_BASE = '${PAY_BASE}';window.__LISTING__ = ${safeJson(hydrationListing)};</script>
 <script src="/vendor/qrcode.min.js"></script>
 <script src="/auth.js?v=20260824a"></script>
-<script src="/pay.js?v=20260905a"></script>
+<script src="/pay.js?v=20261103-alipay"></script>
 <script src="/resource-hydrate.js?v=20260901a"></script>
 <script src="/shared.js?v=20260813a"></script>
 ${ANALYTICS}
@@ -762,7 +762,7 @@ ${FOOTER}
 <script src="/resource-catalog.js?v=20261003a" defer></script>
 <script src="/vendor/qrcode.min.js"></script>
 <script src="/auth.js?v=20260824a"></script>
-<script src="/pay.js?v=20260905a"></script>
+<script src="/pay.js?v=20261103-alipay"></script>
 <script>
 (function () {
   'use strict';
