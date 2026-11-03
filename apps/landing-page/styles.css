@@ -1539,6 +1539,32 @@ p { margin-bottom: 0; }
 
 .res-side-card .btn { width: 100%; }
 
+.pay-browser-url { width: 100%; box-sizing: border-box; margin: 12px 0; padding: 12px; border: 1px solid var(--hair); background: var(--paper-2); color: var(--ink-60); font-size: 14px; }
+.pay-copy-link { width: 100%; }
+.pay-copy-link[hidden] { display: none; }
+.pay-modal[data-browser-help="true"] .pay-amount { display: none; }
+.pay-modal[data-browser-help="true"] .pay-card { padding: 32px 24px 24px; }
+.pay-modal[data-browser-help="true"] .pay-tip { margin: 16px 0 8px; font-size: 14px; }
+.pay-modal[data-browser-help="true"] .pay-browser-url { margin: 12px 0 16px; min-width: 0; border-radius: 3px; }
+
+@media (max-width: 900px) {
+  body:has(.res-purchase-card) { padding-bottom: calc(148px + env(safe-area-inset-bottom, 0px)); }
+  .res-purchase-card {
+    position: fixed;
+    z-index: 150;
+    inset: auto 0 0;
+    background: var(--paper);
+    border: 0;
+    border-top: 1px solid var(--hair);
+    padding: 12px 20px calc(12px + env(safe-area-inset-bottom, 0px));
+    border-radius: 0;
+  }
+  .res-purchase-card .btn { min-height: 50px; }
+  .res-purchase-card .res-side-note { margin-top: 6px; font-size: 12px; }
+  .res-purchase-card .res-side-note ~ .res-side-note { display: none; }
+  .pay-card { max-height: calc(100dvh - 48px); overflow-y: auto; }
+}
+
 .res-side-note {
   margin-top: 12px;
   font-size: 12.5px;
@@ -1631,6 +1657,7 @@ p { margin-bottom: 0; }
 }
 
 .pay-qr img, .pay-qr canvas { border-radius: 2px; }
+.pay-qr[hidden] { display: none; }
 
 .pay-tip {
   font-size: 13px;
