@@ -272,12 +272,16 @@
         "apps/web/src/styles/resources.css",
         "apps/landing-page/resources-data.js",
         "apps/landing-page/resource-catalog.js",
+        "apps/landing-page/pay.js",
+        "apps/cloud/src/ssr/render.ts",
+        "apps/web/e2e/resource-alipay.spec.ts",
         "apps/web/e2e/resource-catalog-website.spec.ts"
       ],
       "specs": [
         "resources",
         "resource-product-content",
         "resource-catalog-website",
+        "resource-alipay",
         "navigation",
         "bootstrap"
       ]
@@ -713,6 +717,10 @@
     "kb-tree-folder-state": {
       "priority": "P1",
       "file": "kb-tree-folder-state.spec.ts"
+    },
+    "resource-alipay": {
+      "priority": "P1",
+      "file": "resource-alipay.spec.ts"
     },
     "navigation-history": {
       "priority": "P1",

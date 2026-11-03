@@ -234,7 +234,7 @@ function renderCta(m: MarketListing): { cta: string; note: string } {
   }
   if (m.priceCents > 0) {
     return {
-      cta: `<button type="button" class="btn btn-primary" id="pay-btn" data-auth-gate="微信支付 ¥${escapeHtml(price)}">微信支付 ¥${escapeHtml(price)}</button>`,
+      cta: `<button type="button" class="btn btn-primary" id="pay-btn" data-testid="resource-pay-btn" data-auth-gate="立即购买 ¥${escapeHtml(price)}">立即购买 ¥${escapeHtml(price)}</button>`,
       note: '扫码支付成功后自动解锁下载，下载链接 1 小时内有效。',
     };
   }
