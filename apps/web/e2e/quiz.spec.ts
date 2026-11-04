@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { gotoHome, sendMessage } from './helpers/navigation';
 import { mockChatRun, unmockAll } from './helpers/mock-sse';
+import { cleanupTempVault, createTempVault } from './helpers/cleanup';
 
 /**
  * @area chat
@@ -763,6 +764,116 @@ test.describe('Quiz interaction block', () => {
     await page.unroute('**/api/knowledge/vaults/vault-1/tree');
     await page.unroute('**/api/knowledge/vaults/vault-1/resolve/**');
   });
+
+  test('saves into the conversation vault, not the active vault', async ({ page }) => {
+    // 跨库回归：活动库 ≠ 会话所属库时，题库文件必须落进会话那一侧
+    //（对话是从某个库里开的，题也是那个库的材料出的）。
+    const other = await createTempVault('e2e-quiz-target');
+    try {
+      await page.route('**/api/knowledge/vaults', async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            vaults: [
+              { id: VAULT_ID, name: 'Test Vault', path: '/tmp/vault', createdAt: 0, updatedAt: 0 },
+              { id: other.id, name: other.name, path: other.path, createdAt: 0, updatedAt: 0 },
+            ],
+          }),
+        });
+      });
+      await page.route(/\/api\/conversations\/conv-1(\?.*)?$/, async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            id: 'conv-1', projectId: 'p', title: null, vaultId: other.id, createdAt: 0, updatedAt: 0,
+          }),
+        });
+      });
+      let savedToConversationVault: string | null = null;
+      let savedToActiveVault: string | null = null;
+      await page.route(`**/api/knowledge/vaults/${other.id}/files/**`, async (route) => {
+        const request = route.request();
+        if (request.method() === 'GET') {
+          await route.fulfill({
+            status: 404,
+            contentType: 'application/json',
+            body: JSON.stringify({ error: { code: 'NOT_FOUND', message: 'not found' } }),
+          });
+          return;
+        }
+        savedToConversationVault = decodeURIComponent(request.url());
+        await route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
+      });
+      await page.route('**/api/knowledge/vaults/vault-1/files/**', async (route) => {
+        const request = route.request();
+        if (request.method() === 'GET') {
+          await route.fulfill({
+            status: 404,
+            contentType: 'application/json',
+            body: JSON.stringify({ error: { code: 'NOT_FOUND', message: 'not found' } }),
+          });
+          return;
+        }
+        savedToActiveVault = decodeURIComponent(request.url());
+        await route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
+      });
+
+      await mockChatRun(page, { runId: 'run-1', conversationId: 'conv-1', script: SCRIPT });
+      await gotoHome(page);
+      await sendMessage(page, '出几道题');
+
+      const card = page.locator('[data-testid="quiz-card"]');
+      await expect(card).toBeVisible({ timeout: 10_000 });
+      await card.locator('[data-testid="quiz-save-kb"]').click();
+      // 保存目标显示会话库名，而不是活动库名
+      await expect(card.locator('[data-testid="quiz-save-target"]')).toContainText('e2e-quiz-target');
+      await card.locator('[data-testid="quiz-save-confirm"]').click();
+
+      await expect.poll(() => savedToConversationVault).not.toBeNull();
+      expect(savedToConversationVault!).toContain(other.id);
+      expect(savedToActiveVault).toBeNull();
+    } finally {
+      await cleanupTempVault(other);
+    }
+  });
+
+  for (const path of ['explicit', 'system'] as const) {
+    test(`save panel follows the dark theme (${path})`, async ({ page }) => {
+      if (path === 'explicit') {
+        // 用户在设置里显式选了深色：html[data-theme="dark"]
+        await page.addInitScript(() => {
+          try { localStorage.setItem('molio.theme', 'dark'); } catch { /* ignore */ }
+        });
+      } else {
+        // 跟随系统：不写 data-theme，靠 prefers-color-scheme
+        await page.emulateMedia({ colorScheme: 'dark' });
+      }
+
+      await mockChatRun(page, { runId: 'run-1', conversationId: 'conv-1', script: SCRIPT });
+      await gotoHome(page);
+      await sendMessage(page, '出几道题');
+
+      const card = page.locator('[data-testid="quiz-card"]');
+      await expect(card).toBeVisible({ timeout: 10_000 });
+      await card.locator('[data-testid="quiz-save-kb"]').click();
+
+      const panel = card.locator('[data-testid="quiz-save-panel"]');
+      await expect(panel).toBeVisible();
+      // 面板走 token：深色下表面是 --bg（#181816），说明文字是 --text-muted（#a8a6a0）
+      expect(await panel.evaluate((el) => getComputedStyle(el).backgroundColor)).toBe('rgb(24, 24, 22)');
+      expect(
+        await card.locator('[data-testid="quiz-save-target"]').evaluate((el) => getComputedStyle(el).color),
+      ).toBe('rgb(168, 166, 160)');
+
+      // 选中语义在深色下同样生效（aria-checked 驱动的高亮，不靠写死颜色）
+      await expect(card.locator('[data-testid="quiz-scope-all"]')).toHaveAttribute('aria-checked', 'true');
+      await card.locator('[data-testid="quiz-scope-pick"]').click();
+      await expect(card.locator('[data-testid="quiz-scope-pick"]')).toHaveAttribute('aria-checked', 'true');
+      await expect(card.locator('[data-testid="quiz-save-list"]')).toBeVisible();
+    });
+  }
 
   test('renders markdown in stem and options (image, bold, blank marker)', async ({ page }) => {
     // 题干/选项走受控 markdown：图片语法出 <img>、加粗出 <strong>；
