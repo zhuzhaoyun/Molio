@@ -693,6 +693,42 @@ test.describe('Quiz interaction block', () => {
     await page.unroute('**/api/knowledge/vaults/vault-1/files/**');
   });
 
+  test('saved result actions collapse after the 6s window, leaving the path', async ({ page }) => {
+    await page.route('**/api/knowledge/vaults/vault-1/files/**', async (route) => {
+      const request = route.request();
+      if (request.method() === 'GET') {
+        await route.fulfill({
+          status: 404,
+          contentType: 'application/json',
+          body: JSON.stringify({ error: { code: 'NOT_FOUND', message: 'not found' } }),
+        });
+        return;
+      }
+      await route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
+    });
+
+    await mockChatRun(page, { runId: 'run-1', conversationId: 'conv-1', script: SCRIPT });
+    await gotoHome(page);
+    await sendMessage(page, '出几道题');
+
+    const card = page.locator('[data-testid="quiz-card"]');
+    await expect(card).toBeVisible({ timeout: 10_000 });
+    await card.locator('[data-testid="quiz-save-kb"]').click();
+    await card.locator('[data-testid="quiz-save-confirm"]').click();
+
+    const result = card.locator('[data-testid="quiz-save-result"]');
+    await expect(result).toContainText('已存 3 题');
+    await expect(card.locator('[data-testid="quiz-save-open"]')).toBeVisible();
+
+    // 反馈窗 6s（与 SaveToKbButton 一致）：动作收起，只留一行静态路径。
+    await expect(card.locator('[data-testid="quiz-save-open"]')).toHaveCount(0, { timeout: 8_000 });
+    await expect(card.locator('[data-testid="quiz-save-undo"]')).toHaveCount(0);
+    await expect(result).toContainText('已存 3 题');
+    await expect(result).toContainText('题库/');
+
+    await page.unroute('**/api/knowledge/vaults/vault-1/files/**');
+  });
+
   test('saved result opens the file in the knowledge base', async ({ page }) => {
     // 写盘前的探测必须 404（否则 saveQuizToVault 判定为「同名文件已存在/不可写」而中止），
     // 写盘之后再读文件才返回内容 —— KB 页打开这份文件时才会渲染出正文。

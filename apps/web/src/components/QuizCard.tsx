@@ -37,6 +37,9 @@ import {
   type QuizSelections,
 } from '../utils/quiz';
 
+/** 存档结果行的动作按钮存活时长（与 SaveToKbButton 的反馈窗一致）。 */
+const SAVE_ACTIONS_WINDOW_MS = 6000;
+
 interface Props {
   /** JSON text inside the ```quiz fence. */
   raw: string;
@@ -153,6 +156,10 @@ function QuizBody({
   const [undoing, setUndoing] = useState(false);
   const [undoError, setUndoError] = useState<string | null>(null);
   const undoRef = useRef(false);
+  // 结果行的动作按钮只开 6s 反馈窗（与 SaveToKbButton 一致：2.5s 对非技术用户太短，
+  // 但不能常驻——写盘是低频动作，留下来会一直占着卡片底部）。窗口过后只剩一行静态路径。
+  const [saveActionsVisible, setSaveActionsVisible] = useState(false);
+  const saveActionsTimerRef = useRef<number | null>(null);
   const restoredKeyRef = useRef<string | null>(null);
 
   const grades = useMemo(
@@ -442,6 +449,16 @@ function QuizBody({
     });
   }, []);
 
+  const clearSaveActionsTimer = useCallback(() => {
+    if (saveActionsTimerRef.current !== null) {
+      window.clearTimeout(saveActionsTimerRef.current);
+      saveActionsTimerRef.current = null;
+    }
+  }, []);
+
+  // 卸载时清定时器：卡片随消息流销毁后别再 setState。
+  useEffect(() => clearSaveActionsTimer, [clearSaveActionsTimer]);
+
   const handleSave = useCallback(async () => {
     if (!vaultId || savingRef.current || selected.length === 0) return;
     savingRef.current = true;
@@ -464,13 +481,19 @@ function QuizBody({
       const path = await saveQuizToVault(vaultId, input, api);
       setSaved({ path, count: selected.length });
       setSaveOpen(false);
+      setSaveActionsVisible(true);
+      clearSaveActionsTimer();
+      saveActionsTimerRef.current = window.setTimeout(
+        () => setSaveActionsVisible(false),
+        SAVE_ACTIONS_WINDOW_MS,
+      );
     } catch {
       setSaveError(t('quiz.saveFailed'));
     } finally {
       savingRef.current = false;
       setSaving(false);
     }
-  }, [vaultId, selected, quiz, fingerprint, saveContext, selections, subjectStates, t]);
+  }, [vaultId, selected, quiz, fingerprint, saveContext, selections, subjectStates, t, clearSaveActionsTimer]);
 
   // 撤销 = 删掉刚写的那份文件。只在写盘成功后出现，删除成功即收起结果行；
   // 失败保留结果行并说明原因（用户仍可以自己去库里删）。
@@ -894,35 +917,42 @@ function QuizBody({
             <span className="quiz-save-result-text" title={saved.path}>
               {t('quiz.savedSummary', { count: saved.count, path: saved.path })}
             </span>
-            <span className="quiz-save-result-actions">
-              <button
-                type="button"
-                className="quiz-btn quiz-save-action"
-                data-testid="quiz-save-open"
-                onClick={() => { if (vaultId) openFile(vaultId, saved.path); }}
+            {(saveActionsVisible || undoError) && (
+              <span
+                className="quiz-save-result-actions"
+                // 键盘焦点落进按钮就把窗口收掉：否则读到「撤销」时按钮被计时器抽走，
+                // 焦点跌回 body。
+                onFocusCapture={clearSaveActionsTimer}
               >
-                {t('quiz.saveOpen')}
-              </button>
-              {revealReady && (
                 <button
                   type="button"
                   className="quiz-btn quiz-save-action"
-                  data-testid="quiz-save-reveal"
-                  onClick={() => { if (targetVault?.path) revealInFolder(targetVault.path, saved.path); }}
+                  data-testid="quiz-save-open"
+                  onClick={() => { if (vaultId) openFile(vaultId, saved.path); }}
                 >
-                  {t('quiz.saveReveal')}
+                  {t('quiz.saveOpen')}
                 </button>
-              )}
-              <button
-                type="button"
-                className="quiz-btn quiz-save-action"
-                data-testid="quiz-save-undo"
-                disabled={undoing}
-                onClick={handleUndo}
-              >
-                {t('quiz.saveUndo')}
-              </button>
-            </span>
+                {revealReady && (
+                  <button
+                    type="button"
+                    className="quiz-btn quiz-save-action"
+                    data-testid="quiz-save-reveal"
+                    onClick={() => { if (targetVault?.path) revealInFolder(targetVault.path, saved.path); }}
+                  >
+                    {t('quiz.saveReveal')}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="quiz-btn quiz-save-action"
+                  data-testid="quiz-save-undo"
+                  disabled={undoing}
+                  onClick={handleUndo}
+                >
+                  {t('quiz.saveUndo')}
+                </button>
+              </span>
+            )}
             {undoError && <span className="quiz-error" role="alert">{undoError}</span>}
           </div>
         )}
