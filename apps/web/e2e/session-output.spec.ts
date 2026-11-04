@@ -585,7 +585,9 @@ test.describe('Home 会话产出面板', () => {
       }).toPass({ timeout: 15_000 });
       await gotoChatSpa(page);
       await expect(page.locator('.home-page.chat-active')).toBeVisible({ timeout: 5_000 });
-      await expect(page.locator('[data-testid="assistant-message"]')).toHaveCount(0);
+      // 内容原样回来（历史从 DB 重载）。**不要**断言「没有 assistant-message」——
+      // 切回后 controller 会重订阅那条仍在跑的 run（kb-chat-resume 的直播恢复），
+      // 回复会重新流一遍，assistant 消息出现与否取决于时序。
       await expect(page.locator('.home-chat-log')).toContainText('整理产出', { timeout: 5_000 });
     } finally {
       await cleanupTempVault(vaultA);
