@@ -557,7 +557,12 @@ test.describe('Quiz interaction block', () => {
 
     const card = page.locator('[data-testid="quiz-card"]');
     await expect(card).toBeVisible({ timeout: 10_000 });
+    // 没作答没交卷 → 没有错题 → 默认范围是「全部」。
     await card.locator('[data-testid="quiz-save-kb"]').click();
+    await expect(card.locator('[data-testid="quiz-save-panel"]')).toBeVisible();
+    await expect(card.locator('[data-testid="quiz-save-target"]')).toBeVisible();
+    await expect(card.locator('[data-testid="quiz-save-confirm"]')).toHaveText('保存 3 题');
+    await card.locator('[data-testid="quiz-save-confirm"]').click();
 
     await expect(card.locator('[data-testid="quiz-saved-path"]')).toBeVisible();
     await expect.poll(() => savedUrl).not.toBeNull();
@@ -568,6 +573,82 @@ test.describe('Quiz interaction block', () => {
     expect(savedBody?.content).toContain('quiz_title: "番茄工作法 · 3 题"');
     expect(savedBody?.content).toContain('## 第 1 题');
     expect(savedBody?.content).not.toContain('```quiz');
+
+    await page.unroute('**/api/knowledge/vaults/vault-1/files/**');
+  });
+
+  test('defaults to saving only the wrong questions', async ({ page }) => {
+    let savedBody: { content?: string } | null = null;
+    await page.route('**/api/knowledge/vaults/vault-1/files/**', async (route) => {
+      const request = route.request();
+      if (request.method() === 'GET') {
+        await route.fulfill({
+          status: 404,
+          contentType: 'application/json',
+          body: JSON.stringify({ error: { code: 'NOT_FOUND', message: 'not found' } }),
+        });
+        return;
+      }
+      if (request.method() === 'POST') savedBody = JSON.parse(request.postData() || '{}');
+      await route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
+    });
+
+    await mockChatRun(page, { runId: 'run-1', conversationId: 'conv-1', script: SCRIPT });
+    await gotoHome(page);
+    await sendMessage(page, '出几道题');
+
+    const card = page.locator('[data-testid="quiz-card"]');
+    await expect(card).toBeVisible({ timeout: 10_000 });
+    // 第 1 题答错（正确答案 B），第 2、3 题答对。
+    await card.locator('[data-testid="quiz-option"][data-question-id="q1"][data-key="A"]').click();
+    await card.locator('[data-testid="quiz-option"][data-question-id="q2"][data-key="A"]').click();
+    await card.locator('[data-testid="quiz-option"][data-question-id="q2"][data-key="B"]').click();
+    await card.locator('[data-testid="quiz-option"][data-question-id="q3"][data-key="B"]').click();
+    await card.locator('[data-testid="quiz-submit"]').click();
+
+    await card.locator('[data-testid="quiz-save-kb"]').click();
+    await expect(card.locator('[data-testid="quiz-scope-wrong"]')).toHaveAttribute('aria-checked', 'true');
+    await expect(card.locator('[data-testid="quiz-save-confirm"]')).toHaveText('保存 1 题');
+    await card.locator('[data-testid="quiz-save-confirm"]').click();
+
+    await expect.poll(() => savedBody).not.toBeNull();
+    expect(savedBody?.content).toContain('quiz_saved_questions: 1');
+    expect(savedBody?.content).toContain('**你的答案**：A ✗');
+    expect(savedBody?.content).not.toContain('## 第 2 题');
+
+    await page.unroute('**/api/knowledge/vaults/vault-1/files/**');
+  });
+
+  test('two rapid confirm clicks write one file', async ({ page }) => {
+    let postCount = 0;
+    await page.route('**/api/knowledge/vaults/vault-1/files/**', async (route) => {
+      const request = route.request();
+      if (request.method() === 'GET') {
+        await route.fulfill({
+          status: 404,
+          contentType: 'application/json',
+          body: JSON.stringify({ error: { code: 'NOT_FOUND', message: 'not found' } }),
+        });
+        return;
+      }
+      if (request.method() === 'POST') {
+        postCount += 1;
+        // 写盘留出窗口：否则第一次点击成功后按钮已卸载，测不到竞态。
+        await new Promise((resolve) => setTimeout(resolve, 300));
+      }
+      await route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
+    });
+
+    await mockChatRun(page, { runId: 'run-1', conversationId: 'conv-1', script: SCRIPT });
+    await gotoHome(page);
+    await sendMessage(page, '出几道题');
+
+    const card = page.locator('[data-testid="quiz-card"]');
+    await expect(card).toBeVisible({ timeout: 10_000 });
+    await card.locator('[data-testid="quiz-save-kb"]').click();
+    await card.locator('[data-testid="quiz-save-confirm"]').dblclick();
+
+    await expect.poll(() => postCount).toBe(1);
 
     await page.unroute('**/api/knowledge/vaults/vault-1/files/**');
   });
@@ -1340,6 +1421,7 @@ test.describe('Quiz interaction block', () => {
     const card = page.locator('[data-testid="quiz-card"]');
     await expect(card).toBeVisible({ timeout: 10_000 });
     await card.locator('[data-testid="quiz-save-kb"]').click();
+    await card.locator('[data-testid="quiz-save-confirm"]').click();
 
     await expect.poll(() => savedUrl).not.toBeNull();
     expect(decodeURIComponent(savedUrl!)).toContain('-2.md');

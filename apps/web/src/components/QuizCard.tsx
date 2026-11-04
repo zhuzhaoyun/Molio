@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../api/client';
 import { useI18n } from '../i18n';
-import { useActiveVaultId } from '../stores/vaultStore';
+import { useActiveVaultId, useVaults } from '../stores/vaultStore';
 import { quizAnchorStore, useQuizAnswerAnchor } from '../stores/quizAnchorStore';
 import { useQuizSubjects } from '../stores/quizSubjectStore';
 import { anchorBelongsToQuestion, backfillAnchorFingerprint, gradingMapKey } from '../utils/quizAnswer';
@@ -13,7 +13,10 @@ import { saveQuizToVault, type QuizFileInput } from '../utils/quizFile';
 import {
   buildQuizFileQuestions,
   classifyQuestions,
+  pickDefaultScope,
+  selectForSave,
   type QuizSaveContext,
+  type QuizSaveScope,
 } from '../utils/quizSaveScope';
 import {
   parseQuizBlock,
@@ -47,6 +50,15 @@ interface Props {
 
 /** 填空符号托盘：通用难输入字符（理工科一期组）。分组与后置项依据
  *  docs/2026-10-24-quiz-fill-input-domains.md（文科/小语种组后续按需追加）。 */
+/** 列表里的一行题面：去掉图片语法与强调标记，压成单行（CSS 再负责省略号）。 */
+function previewStem(stem: string): string {
+  return stem
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, '')
+    .replace(/[*_`#>]+/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 const FILL_SYMBOL_GROUPS: ReadonlyArray<{ labelKey: string; chars: readonly string[] }> = [
   { labelKey: 'quiz.symbolGroup.common', chars: ['√', 'π', '°', '≤', '≥', '≠', '±', '→', '×', '÷', '∞'] },
   { labelKey: 'quiz.symbolGroup.greek', chars: ['α', 'β', 'γ', 'δ', 'θ', 'λ', 'μ', 'σ', 'ω', 'Δ', 'Ω'] },
@@ -127,8 +139,14 @@ function QuizBody({
   const fingerprintKey = fingerprint?.slice(0, 8) ?? '';
   const [selections, setSelections] = useState<QuizSelections>({});
   const [submitted, setSubmitted] = useState(false);
+  // 存档：面板 + 范围 + 勾选。错题优先是默认，但永远由用户按下确认才写盘。
+  const [saveOpen, setSaveOpen] = useState(false);
+  const [scope, setScope] = useState<QuizSaveScope>('wrong');
+  const [picked, setPicked] = useState<ReadonlySet<number>>(new Set());
   const [saving, setSaving] = useState(false);
-  const [savedPath, setSavedPath] = useState<string | null>(null);
+  // setState 是异步的：连点两次时第二次进来 saving 仍是 false，会写两份文件。
+  const savingRef = useRef(false);
+  const [saved, setSaved] = useState<{ path: string; count: number } | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const restoredKeyRef = useRef<string | null>(null);
 
@@ -381,8 +399,43 @@ function QuizBody({
     fingerprintKey,
   }), [submitted, grades, subjectStates, fingerprintKey]);
 
+  const candidates = useMemo(() => classifyQuestions(quiz, saveContext), [quiz, saveContext]);
+  const wrongCount = candidates.filter((candidate) => candidate.outcome === 'wrong').length;
+  // 没有错题时「只存做错的」会是空集：静默退回全部，而不是让用户按下一个 0 题按钮。
+  const effectiveScope: QuizSaveScope = scope === 'wrong' && wrongCount === 0 ? 'all' : scope;
+  const selected = useMemo(
+    () => selectForSave(candidates, effectiveScope, picked),
+    [candidates, effectiveScope, picked],
+  );
+  const vaultName = useVaults().find((vault) => vault.id === vaultId)?.name ?? '';
+
+  const openSavePanel = useCallback(() => {
+    setScope(pickDefaultScope(candidates));
+    setPicked(new Set(candidates.filter((c) => c.outcome === 'wrong').map((c) => c.index)));
+    setSaveError(null);
+    setSaveOpen(true);
+  }, [candidates]);
+
+  const chooseScope = useCallback((next: QuizSaveScope) => {
+    // 切到「自己挑」时用错题预勾：用户多半是在默认集合上做增减。
+    setPicked((prev) => (next === 'pick' && prev.size === 0
+      ? new Set(candidates.filter((c) => c.outcome === 'wrong').map((c) => c.index))
+      : prev));
+    setScope(next);
+  }, [candidates]);
+
+  const togglePicked = useCallback((index: number) => {
+    setPicked((prev) => {
+      const next = new Set(prev);
+      if (next.has(index)) next.delete(index);
+      else next.add(index);
+      return next;
+    });
+  }, []);
+
   const handleSave = useCallback(async () => {
-    if (!vaultId || saving) return;
+    if (!vaultId || savingRef.current || selected.length === 0) return;
+    savingRef.current = true;
     setSaving(true);
     setSaveError(null);
     try {
@@ -393,20 +446,22 @@ function QuizBody({
         totalQuestions: quiz.questions.length,
         questions: buildQuizFileQuestions(
           quiz,
-          classifyQuestions(quiz, saveContext),
+          selected,
           saveContext,
           selections,
           subjectStates?.answers ?? new Map(),
         ),
       };
       const path = await saveQuizToVault(vaultId, input, api);
-      setSavedPath(path);
+      setSaved({ path, count: selected.length });
+      setSaveOpen(false);
     } catch {
       setSaveError(t('quiz.saveFailed'));
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
-  }, [vaultId, saving, quiz, fingerprint, saveContext, selections, subjectStates, t]);
+  }, [vaultId, selected, quiz, fingerprint, saveContext, selections, subjectStates, t]);
 
   return (
     <div className="quiz-card" data-testid="quiz-card">
@@ -706,17 +761,112 @@ function QuizBody({
           className="quiz-btn"
           data-testid="quiz-save-kb"
           disabled={!vaultId || saving}
+          aria-expanded={saveOpen}
           title={!vaultId ? t('quiz.saveNoVault') : undefined}
-          onClick={handleSave}
+          onClick={() => (saveOpen ? setSaveOpen(false) : openSavePanel())}
         >
           {saving ? t('quiz.saving') : t('quiz.save')}
         </button>
-        {savedPath && (
-          <span className="quiz-saved" data-testid="quiz-saved-path">
-            {t('quiz.saved', { path: savedPath })}
-          </span>
+
+        {saveOpen && (
+          <div className="quiz-save-panel" data-testid="quiz-save-panel">
+            <div className="quiz-save-target" data-testid="quiz-save-target">
+              {t('quiz.saveTarget', { vault: vaultName })}
+            </div>
+
+            <div className="quiz-scopes" role="radiogroup" aria-label={t('quiz.save')}>
+              {wrongCount > 0 && (
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={effectiveScope === 'wrong'}
+                  className="quiz-btn quiz-scope"
+                  data-testid="quiz-scope-wrong"
+                  onClick={() => chooseScope('wrong')}
+                >
+                  {t('quiz.saveScopeWrong', { count: wrongCount })}
+                </button>
+              )}
+              <button
+                type="button"
+                role="radio"
+                aria-checked={effectiveScope === 'all'}
+                className="quiz-btn quiz-scope"
+                data-testid="quiz-scope-all"
+                onClick={() => chooseScope('all')}
+              >
+                {t('quiz.saveScopeAll', { count: candidates.length })}
+              </button>
+              <button
+                type="button"
+                role="radio"
+                aria-checked={effectiveScope === 'pick'}
+                className="quiz-btn quiz-scope"
+                data-testid="quiz-scope-pick"
+                onClick={() => chooseScope('pick')}
+              >
+                {t('quiz.saveScopePick')}
+              </button>
+            </div>
+
+            <div className="quiz-save-list" data-testid="quiz-save-list">
+              {effectiveScope === 'pick' ? candidates.map(({ index, outcome }) => (
+                <label key={index} className="quiz-save-row">
+                  <input
+                    type="checkbox"
+                    className="quiz-save-check"
+                    data-testid="quiz-save-pick"
+                    checked={picked.has(index)}
+                    onChange={() => togglePicked(index)}
+                  />
+                  <span className="quiz-save-index">{index + 1}</span>
+                  <span className="quiz-save-stem">{previewStem(quiz.questions[index]!.stem)}</span>
+                  <span className={`quiz-save-badge ${outcome}`}>
+                    {outcome === 'correct' ? t('quiz.outcomeCorrect')
+                      : outcome === 'wrong' ? t('quiz.outcomeWrong') : t('quiz.outcomeUngraded')}
+                  </span>
+                </label>
+              )) : selected.map(({ index, outcome }) => (
+                <div key={index} className="quiz-save-row quiz-save-row--static">
+                  <span className="quiz-save-index">{index + 1}</span>
+                  <span className="quiz-save-stem">{previewStem(quiz.questions[index]!.stem)}</span>
+                  <span className={`quiz-save-badge ${outcome}`}>
+                    {outcome === 'correct' ? t('quiz.outcomeCorrect')
+                      : outcome === 'wrong' ? t('quiz.outcomeWrong') : t('quiz.outcomeUngraded')}
+                  </span>
+                </div>
+              ))}
+            </div>
+
+            <div className="quiz-save-actions">
+              <button
+                type="button"
+                className="quiz-btn quiz-btn-primary"
+                data-testid="quiz-save-confirm"
+                disabled={saving || selected.length === 0}
+                onClick={handleSave}
+              >
+                {saving ? t('quiz.saving') : t('quiz.saveConfirm', { count: selected.length })}
+              </button>
+              <button
+                type="button"
+                className="quiz-btn"
+                data-testid="quiz-save-cancel"
+                onClick={() => setSaveOpen(false)}
+              >
+                {t('quiz.saveCancel')}
+              </button>
+            </div>
+
+            {saveError && <span className="quiz-error" role="alert">{saveError}</span>}
+          </div>
         )}
-        {saveError && <span className="quiz-error" role="alert">{saveError}</span>}
+
+        {saved && (
+          <div className="quiz-saved" data-testid="quiz-saved-path">
+            {t('quiz.saved', { path: saved.path })}
+          </div>
+        )}
       </div>
     </div>
   );
