@@ -6,6 +6,8 @@ import { quizAnchorStore, useQuizAnswerAnchor } from '../stores/quizAnchorStore'
 import { useQuizSubjects } from '../stores/quizSubjectStore';
 import { anchorBelongsToQuestion, backfillAnchorFingerprint, gradingMapKey } from '../utils/quizAnswer';
 import { useWikiLinkClick } from '../hooks/useWikiLinkClick';
+import { useFileNavigation } from '../hooks/useFileNavigation';
+import { isRevealAvailable, revealInFolder } from '../utils/reveal';
 import { CodeBlock } from './CodeBlock';
 import { renderMarkdown } from '../utils/markdown';
 import { preprocessLocalImages } from '../utils/kbImage';
@@ -148,6 +150,9 @@ function QuizBody({
   const savingRef = useRef(false);
   const [saved, setSaved] = useState<{ path: string; count: number } | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [undoing, setUndoing] = useState(false);
+  const [undoError, setUndoError] = useState<string | null>(null);
+  const undoRef = useRef(false);
   const restoredKeyRef = useRef<string | null>(null);
 
   const grades = useMemo(
@@ -407,7 +412,11 @@ function QuizBody({
     () => selectForSave(candidates, effectiveScope, picked),
     [candidates, effectiveScope, picked],
   );
-  const vaultName = useVaults().find((vault) => vault.id === vaultId)?.name ?? '';
+  const targetVault = useVaults().find((vault) => vault.id === vaultId);
+  const vaultName = targetVault?.name ?? '';
+  // 「在资源管理器中显示」只在桌面壳里成立（浏览器 / NAS 远程访问没有这个能力）
+  const revealReady = isRevealAvailable() && !!targetVault?.path;
+  const { openFile } = useFileNavigation();
 
   const openSavePanel = useCallback(() => {
     setScope(pickDefaultScope(candidates));
@@ -462,6 +471,24 @@ function QuizBody({
       setSaving(false);
     }
   }, [vaultId, selected, quiz, fingerprint, saveContext, selections, subjectStates, t]);
+
+  // 撤销 = 删掉刚写的那份文件。只在写盘成功后出现，删除成功即收起结果行；
+  // 失败保留结果行并说明原因（用户仍可以自己去库里删）。
+  const handleUndo = useCallback(async () => {
+    if (!vaultId || !saved || undoRef.current) return;
+    undoRef.current = true;
+    setUndoing(true);
+    setUndoError(null);
+    try {
+      await api.deleteFile(vaultId, saved.path);
+      setSaved(null);
+    } catch {
+      setUndoError(t('quiz.undoFailed'));
+    } finally {
+      undoRef.current = false;
+      setUndoing(false);
+    }
+  }, [vaultId, saved, t]);
 
   return (
     <div className="quiz-card" data-testid="quiz-card">
@@ -863,8 +890,40 @@ function QuizBody({
         )}
 
         {saved && (
-          <div className="quiz-saved" data-testid="quiz-saved-path">
-            {t('quiz.saved', { path: saved.path })}
+          <div className="quiz-save-result" data-testid="quiz-save-result">
+            <span className="quiz-save-result-text" title={saved.path}>
+              {t('quiz.savedSummary', { count: saved.count, path: saved.path })}
+            </span>
+            <span className="quiz-save-result-actions">
+              <button
+                type="button"
+                className="quiz-btn quiz-save-action"
+                data-testid="quiz-save-open"
+                onClick={() => { if (vaultId) openFile(vaultId, saved.path); }}
+              >
+                {t('quiz.saveOpen')}
+              </button>
+              {revealReady && (
+                <button
+                  type="button"
+                  className="quiz-btn quiz-save-action"
+                  data-testid="quiz-save-reveal"
+                  onClick={() => { if (targetVault?.path) revealInFolder(targetVault.path, saved.path); }}
+                >
+                  {t('quiz.saveReveal')}
+                </button>
+              )}
+              <button
+                type="button"
+                className="quiz-btn quiz-save-action"
+                data-testid="quiz-save-undo"
+                disabled={undoing}
+                onClick={handleUndo}
+              >
+                {t('quiz.saveUndo')}
+              </button>
+            </span>
+            {undoError && <span className="quiz-error" role="alert">{undoError}</span>}
           </div>
         )}
       </div>

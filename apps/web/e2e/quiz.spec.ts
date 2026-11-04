@@ -564,7 +564,7 @@ test.describe('Quiz interaction block', () => {
     await expect(card.locator('[data-testid="quiz-save-confirm"]')).toHaveText('保存 3 题');
     await card.locator('[data-testid="quiz-save-confirm"]').click();
 
-    await expect(card.locator('[data-testid="quiz-saved-path"]')).toBeVisible();
+    await expect(card.locator('[data-testid="quiz-save-result"]')).toBeVisible();
     await expect.poll(() => savedUrl).not.toBeNull();
     expect(savedUrl!).toContain('/题库/');
     expect(savedUrl!.endsWith('.md')).toBe(true);
@@ -651,6 +651,117 @@ test.describe('Quiz interaction block', () => {
     await expect.poll(() => postCount).toBe(1);
 
     await page.unroute('**/api/knowledge/vaults/vault-1/files/**');
+  });
+
+  test('saved result can undo the write', async ({ page }) => {
+    let deletedUrl: string | null = null;
+    await page.route('**/api/knowledge/vaults/vault-1/files/**', async (route) => {
+      const request = route.request();
+      if (request.method() === 'GET') {
+        await route.fulfill({
+          status: 404,
+          contentType: 'application/json',
+          body: JSON.stringify({ error: { code: 'NOT_FOUND', message: 'not found' } }),
+        });
+        return;
+      }
+      if (request.method() === 'DELETE') deletedUrl = decodeURIComponent(request.url());
+      await route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
+    });
+
+    await mockChatRun(page, { runId: 'run-1', conversationId: 'conv-1', script: SCRIPT });
+    await gotoHome(page);
+    await sendMessage(page, '出几道题');
+
+    const card = page.locator('[data-testid="quiz-card"]');
+    await expect(card).toBeVisible({ timeout: 10_000 });
+    await card.locator('[data-testid="quiz-save-kb"]').click();
+    await card.locator('[data-testid="quiz-save-confirm"]').click();
+
+    const result = card.locator('[data-testid="quiz-save-result"]');
+    await expect(result).toContainText('已存 3 题');
+    await expect(result).toContainText('题库/');
+    // 浏览器环境下没有「在资源管理器中显示」——桌面壳专属能力
+    await expect(card.locator('[data-testid="quiz-save-reveal"]')).toHaveCount(0);
+
+    await card.locator('[data-testid="quiz-save-undo"]').click();
+    await expect.poll(() => deletedUrl).not.toBeNull();
+    expect(deletedUrl!).toContain('/题库/');
+    await expect(card.locator('[data-testid="quiz-save-result"]')).toHaveCount(0);
+
+    await page.unroute('**/api/knowledge/vaults/vault-1/files/**');
+  });
+
+  test('saved result opens the file in the knowledge base', async ({ page }) => {
+    // 写盘前的探测必须 404（否则 saveQuizToVault 判定为「同名文件已存在/不可写」而中止），
+    // 写盘之后再读文件才返回内容 —— KB 页打开这份文件时才会渲染出正文。
+    let savedPath = '';
+    await page.route('**/api/knowledge/vaults/vault-1/files/**', async (route) => {
+      const request = route.request();
+      const path = decodeURIComponent(new URL(request.url()).pathname.split('/files/')[1] ?? '');
+      if (request.method() === 'GET') {
+        if (!savedPath) {
+          await route.fulfill({
+            status: 404,
+            contentType: 'application/json',
+            body: JSON.stringify({ error: { code: 'NOT_FOUND', message: 'not found' } }),
+          });
+          return;
+        }
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ path, content: '# 题库正文\n\n已保存的题。', size: 20, modifiedAt: 0 }),
+        });
+        return;
+      }
+      savedPath = path;
+      await route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
+    });
+    // KB 页在 treeVaultId 就绪且树非空时才处理 location.state.openFile：树里必须有刚写的文件。
+    await page.route('**/api/knowledge/vaults/vault-1/tree', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          tree: savedPath
+            ? [{
+              name: '题库',
+              path: '题库',
+              type: 'directory',
+              children: [{ name: savedPath.split('/').pop(), path: savedPath, type: 'file' }],
+            }]
+            : [],
+        }),
+      });
+    });
+    // beforeEach 的 resolve mock 恒返回 notes/番茄工作法.md，会把这题的开档重定向到别处。
+    await page.route('**/api/knowledge/vaults/vault-1/resolve/**', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ path: savedPath }),
+      });
+    });
+
+    await mockChatRun(page, { runId: 'run-1', conversationId: 'conv-1', script: SCRIPT });
+    await gotoHome(page);
+    await sendMessage(page, '出几道题');
+
+    const card = page.locator('[data-testid="quiz-card"]');
+    await expect(card).toBeVisible({ timeout: 10_000 });
+    await card.locator('[data-testid="quiz-save-kb"]').click();
+    await card.locator('[data-testid="quiz-save-confirm"]').click();
+    await expect(card.locator('[data-testid="quiz-save-result"]')).toBeVisible();
+
+    await card.locator('[data-testid="quiz-save-open"]').click();
+    await page.waitForURL(/\/knowledge/);
+    // KB 页消费 location.state.openFile 打开目标文件：文档区渲染出文件内容
+    await expect(page.locator('#output')).toContainText('题库正文', { timeout: 10_000 });
+
+    await page.unroute('**/api/knowledge/vaults/vault-1/files/**');
+    await page.unroute('**/api/knowledge/vaults/vault-1/tree');
+    await page.unroute('**/api/knowledge/vaults/vault-1/resolve/**');
   });
 
   test('renders markdown in stem and options (image, bold, blank marker)', async ({ page }) => {

@@ -2250,15 +2250,30 @@
 .quiz-save-badge.ungraded { color: var(--text-muted); }
 .quiz-save-actions { display: flex; gap: 8px; }
 /* 结果整行：长路径不再把「存为题库」按钮顶到第二行 */
-.quiz-saved {
+.quiz-save-result {
   flex-basis: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  min-width: 0;
+  font-size: 12px;
+}
+.quiz-save-result-text {
+  flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 12px;
   color: var(--green);
 }
+.quiz-save-result-actions {
+  display: inline-flex;
+  gap: 6px;
+  margin-left: auto;
+}
+.quiz-save-action { padding: 2px 10px; font-size: 12px; }
+.quiz-save-result .quiz-error { flex-basis: 100%; }
 .quiz-error { font-size: 12px; color: var(--red); }
 .quiz-generating {
   margin: 10px 0;
