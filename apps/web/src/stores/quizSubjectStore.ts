@@ -1,9 +1,10 @@
 /**
  * 解答题状态 store——ChatSessionView 写入（从会话消息推导），QuizCard 订阅。
  *
- * 存两类状态，键同构（`指纹:题号`）：
- * - answered：这道解答题已作答（作答发生在聊天输入框里 → 只能从消息序推导，
- *   跨刷新可恢复，比题卡本地 state 更可靠）
+ * 存三类状态，键同构（`指纹:题号`）：
+ * - answers：这道解答题的作答正文（作答发生在聊天输入框里 → 只能从消息序推导，
+ *   跨刷新可恢复，比题卡本地 state 更可靠；正文给「存为题库」回写用）
+ * - answered：由 answers 的键派生（保留给只关心「答没答」的 UI）
  * - gradings：这道解答题的批改结果（模型批改回复 → 同样从消息序推导）
  *
  * mirrors vaultStore / quizAnchorStore 的 useSyncExternalStore 模式。无持久
@@ -18,7 +19,9 @@ type Listener = () => void;
 export interface QuizSubjectState {
   /** 批改结果：键 = `指纹:题号` */
   gradings: Map<string, QuizGrading>;
-  /** 已作答的解答题：键 = `指纹:题号` */
+  /** 作答正文：键 = `指纹:题号` */
+  answers: Map<string, string>;
+  /** 已作答的解答题（= answers 的键）：键 = `指纹:题号` */
   answered: Set<string>;
 }
 
@@ -51,10 +54,10 @@ function sameGradings(a: Map<string, QuizGrading>, b: Map<string, QuizGrading>):
   return true;
 }
 
-function sameAnswered(a: Set<string>, b: Set<string>): boolean {
+function sameAnswers(a: Map<string, string>, b: Map<string, string>): boolean {
   if (a.size !== b.size) return false;
-  for (const key of a) {
-    if (!b.has(key)) return false;
+  for (const [key, body] of a) {
+    if (b.get(key) !== body) return false;
   }
   return true;
 }
@@ -70,17 +73,21 @@ export const quizSubjectStore = {
   setConversation(
     conversationId: string,
     gradings: Map<string, QuizGrading>,
-    answered: Set<string>,
+    answers: Map<string, string>,
   ) {
     const existing = byConversation.get(conversationId);
     if (
       existing
       && sameGradings(existing.gradings, gradings)
-      && sameAnswered(existing.answered, answered)
+      && sameAnswers(existing.answers, answers)
     ) {
       return;
     }
-    byConversation.set(conversationId, { gradings, answered });
+    byConversation.set(conversationId, {
+      gradings,
+      answers,
+      answered: new Set(answers.keys()),
+    });
     emit();
   },
 
