@@ -109,6 +109,7 @@ const zh: Record<string, string> = {
   'composer.historySearchPlaceholder': '搜索历史会话',
   'composer.noSearchResults': '没有匹配的会话',
   'composer.untitled': '未命名对话',
+  'composer.currentSession': '当前',
 
   // ── QuizCard ──
   'quiz.generating': '正在出题…',

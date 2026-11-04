@@ -20,6 +20,11 @@ interface Props {
   buttonTestId?: string;
   /** 下拉展开方向：'up' = 输入框（底部上弹，默认）；'down' = 顶栏（向下展开） */
   align?: 'up' | 'down';
+  /**
+   * 当前正在看的会话 id —— 列表里对应那条要高亮（用户报障：打开历史记录后
+   * 分不清「现在这条」是哪条）。不传 = 不高亮。
+   */
+  activeConversationId?: string | null;
 }
 
 export function ConversationHistoryMenu({
@@ -28,6 +33,7 @@ export function ConversationHistoryMenu({
   buttonClassName,
   buttonTestId,
   align = 'up',
+  activeConversationId,
 }: Props) {
   const { t } = useI18n();
   const [show, setShow] = useState(false);
@@ -173,11 +179,15 @@ export function ConversationHistoryMenu({
                     const id = item.conversation.id;
                     const isRenaming = renamingId === id;
                     const channelType = item.conversation.channelType;
+                    // 当前正在看的会话 → 高亮（左侧强调条 + 「当前」标记）
+                    const isCurrent = !!activeConversationId && activeConversationId === id;
                     return (
                       <div
                         key={id}
-                        className={`composer-history-item${isRenaming ? ' is-renaming' : ''}`}
+                        className={`composer-history-item${isRenaming ? ' is-renaming' : ''}${isCurrent ? ' is-current' : ''}`}
                         data-testid="composer-history-item"
+                        data-current={isCurrent ? 'true' : undefined}
+                        aria-current={isCurrent ? 'true' : undefined}
                       >
                         {isRenaming ? (
                           <input
@@ -206,6 +216,11 @@ export function ConversationHistoryMenu({
                               {channelType && channelType !== 'desktop' && (
                                 <span className="composer-history-channel">
                                   {channelType === 'weixin' ? '微信' : channelType}
+                                </span>
+                              )}
+                              {isCurrent && (
+                                <span className="composer-history-current" data-testid="composer-history-current">
+                                  {t('composer.currentSession')}
                                 </span>
                               )}
                               <span className="composer-history-time">

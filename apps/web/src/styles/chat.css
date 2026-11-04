@@ -1352,6 +1352,29 @@
   flex-shrink: 0;
 }
 
+/* 当前会话（正在看的那条）—— 左侧强调条常驻 + 浅底 + 「当前」标记。
+   用户报障：打开历史记录后分不清自己在看哪一条。 */
+.composer-history-item.is-current {
+  background: var(--accent-tint);
+}
+.composer-history-item.is-current::before {
+  width: 3px;
+  background: var(--accent);
+}
+.composer-history-item.is-current:hover {
+  background: var(--accent-tint);
+}
+.composer-history-current {
+  flex-shrink: 0;
+  padding: 1px 5px;
+  font-size: 9.5px;
+  font-weight: 500;
+  line-height: 1.4;
+  color: var(--accent-strong);
+  background: var(--accent-soft);
+  border-radius: 3px;
+}
+
 /* hover 动作（重命名/删除） — 默认不占位，hover / focus 时替代时间位置显示 */
 .composer-history-actions {
   display: none;

@@ -110,6 +110,7 @@ const en: Record<string, string> = {
   'composer.historySearchPlaceholder': 'Search conversations',
   'composer.noSearchResults': 'No matching conversations',
   'composer.untitled': 'Untitled',
+  'composer.currentSession': 'Current',
 
   // ── QuizCard ──
   'quiz.generating': 'Generating questions…',

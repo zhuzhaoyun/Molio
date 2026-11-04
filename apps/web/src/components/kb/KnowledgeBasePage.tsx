@@ -263,18 +263,9 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
     onConfirm: () => void;
   }>({ show: false, title: '', message: '', onConfirm: () => {} });
 
-  // vault 切换：清空所有会话的 @文件上下文（旧库引用失效）。
-  // 仅在「已解析的 vault id」之间变化时清理：页面加载时 activeVault 走
-  // null → 解析出 id 的过程，若把 null→id 也当切换，每次刷新/进页都会
-  // 无感觉清掉持久化会话的文件绑定（D7 会话记忆文档被刷新击穿）。
-  const prevVaultIdRef = useRef<string | null | undefined>(undefined);
-  useEffect(() => {
-    const current = kb.activeVault?.id ?? null;
-    if (prevVaultIdRef.current !== undefined && prevVaultIdRef.current !== null && prevVaultIdRef.current !== current) {
-      kbChatSessionsStore.clearFilePaths();
-    }
-    prevVaultIdRef.current = current;
-  }, [kb.activeVault?.id]);
+  // 注：切库不再清空会话的 @文件上下文 —— 会话标签按库隔离（见 kbChatSessionsStore），
+  // 别的库的会话只是被隐藏（切回来原样恢复），它绑定的文档在自己的库里依然有效。
+  // 清掉反而让用户切回来时丢了绑定的文档。
 
   // wiki 任务完成 → 刷新文件树（方案 D：onWikiComplete 改 store 事件总线，KB 页挂载时订阅）
   useEffect(() => {
