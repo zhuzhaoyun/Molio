@@ -9,7 +9,12 @@ import { useWikiLinkClick } from '../hooks/useWikiLinkClick';
 import { CodeBlock } from './CodeBlock';
 import { renderMarkdown } from '../utils/markdown';
 import { preprocessLocalImages } from '../utils/kbImage';
-import { saveQuizToVault } from '../utils/quizFile';
+import { saveQuizToVault, type QuizFileInput } from '../utils/quizFile';
+import {
+  buildQuizFileQuestions,
+  classifyQuestions,
+  type QuizSaveContext,
+} from '../utils/quizSaveScope';
 import {
   parseQuizBlock,
   gradeQuiz,
@@ -360,19 +365,40 @@ function QuizBody({
     [quizAnchor, fingerprintKey, t],
   );
 
+  // 保存口径从同一份上下文派生（判定三态 / 作答正文 / 批改分数）。
+  const saveContext = useMemo<QuizSaveContext>(() => ({
+    submitted,
+    grades,
+    subjectGradings: subjectStates?.gradings ?? new Map(),
+    fingerprintKey,
+  }), [submitted, grades, subjectStates, fingerprintKey]);
+
   const handleSave = useCallback(async () => {
     if (!vaultId || saving) return;
     setSaving(true);
     setSaveError(null);
     try {
-      const path = await saveQuizToVault(vaultId, quiz, api);
+      const input: QuizFileInput = {
+        title: quiz.title,
+        version: quiz.version,
+        fingerprint,
+        totalQuestions: quiz.questions.length,
+        questions: buildQuizFileQuestions(
+          quiz,
+          classifyQuestions(quiz, saveContext),
+          saveContext,
+          selections,
+          subjectStates?.answers ?? new Map(),
+        ),
+      };
+      const path = await saveQuizToVault(vaultId, input, api);
       setSavedPath(path);
     } catch {
       setSaveError(t('quiz.saveFailed'));
     } finally {
       setSaving(false);
     }
-  }, [vaultId, saving, quiz, t]);
+  }, [vaultId, saving, quiz, fingerprint, saveContext, selections, subjectStates, t]);
 
   return (
     <div className="quiz-card" data-testid="quiz-card">

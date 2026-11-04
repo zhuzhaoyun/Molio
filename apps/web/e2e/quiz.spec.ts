@@ -563,8 +563,11 @@ test.describe('Quiz interaction block', () => {
     await expect.poll(() => savedUrl).not.toBeNull();
     expect(savedUrl!).toContain('/题库/');
     expect(savedUrl!.endsWith('.md')).toBe(true);
-    expect(savedBody?.content).toContain('```quiz');
-    expect(savedBody?.content).toContain('番茄工作法 · 3 题');
+    // 文件是人读 markdown + 结构化 frontmatter，不再回写 ```quiz 围栏。
+    expect(savedBody?.content).toContain('quiz_fingerprint:');
+    expect(savedBody?.content).toContain('quiz_title: "番茄工作法 · 3 题"');
+    expect(savedBody?.content).toContain('## 第 1 题');
+    expect(savedBody?.content).not.toContain('```quiz');
 
     await page.unroute('**/api/knowledge/vaults/vault-1/files/**');
   });
