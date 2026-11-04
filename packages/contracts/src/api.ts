@@ -114,6 +114,8 @@ export interface Conversation {
   id: string;
   projectId: string;
   title: string | null;
+  /** Vault this conversation belongs to; null for channel conversations without one. */
+  vaultId?: string | null;
   channelType?: string;
   externalSessionId?: string | null;
   metadata?: Record<string, unknown>;
