@@ -102,7 +102,8 @@ test('SSR 商品页：付费形态三选一 CTA', async () => {
   await marketStore.insertListing(listing({}));
   let html = await (await app.request('/resource/01JABCDE0000000000000001.html')).text();
   assert.ok(html.includes('id="pay-btn"'), '微信支付按钮');
-  assert.ok(html.includes('data-auth-gate="微信支付 ¥5.9"'), '登录门槛文案承载');
+  assert.ok(html.includes('data-auth-gate="立即购买 ¥5.9"'), '登录门槛文案不限定支付通道');
+  assert.ok(html.includes('/pay.js?v=20261103-copylink'), '支付脚本使用新版本以避开旧缓存');
   // 外链购买（有 payUrl）
   await marketStore.insertListing(listing({ id: '01JABCDE0000000000000002', payUrl: 'https://pay.example/x?a=1&b=2' }));
   html = await (await app.request('/resource/01JABCDE0000000000000002.html')).text();
