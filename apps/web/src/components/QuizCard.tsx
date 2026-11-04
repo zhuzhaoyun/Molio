@@ -41,6 +41,8 @@ interface Props {
   streaming?: boolean;
   /** Used for localStorage scoping. */
   conversationId?: string | null;
+  /** 会话所属库（daemon 的 conversations.vault_id）；取不到时回落活动库。 */
+  conversationVaultId?: string | null;
 }
 
 /** 填空符号托盘：通用难输入字符（理工科一期组）。分组与后置项依据
@@ -59,7 +61,7 @@ const FILL_SYMBOL_GROUPS: ReadonlyArray<{ labelKey: string; chars: readonly stri
  * （先转义 HTML 再生成受控标签，与聊天正文同一信任级）。
  * 判分在本地完成（不依赖 runtime 工具调用），提交后可重做、可存题库。
  */
-export function QuizCard({ raw, complete, streaming, conversationId }: Props) {
+export function QuizCard({ raw, complete, streaming, conversationId, conversationVaultId }: Props) {
   const { t } = useI18n();
   const parsed = useMemo(() => parseQuizBlock(raw), [raw]);
 
@@ -85,6 +87,7 @@ export function QuizCard({ raw, complete, streaming, conversationId }: Props) {
       quiz={parsed.quiz}
       invalidQuestions={parsed.invalidQuestions}
       conversationId={conversationId}
+      conversationVaultId={conversationVaultId}
     />
   );
 }
@@ -93,13 +96,18 @@ function QuizBody({
   quiz,
   invalidQuestions,
   conversationId,
+  conversationVaultId,
 }: {
   quiz: Quiz;
   invalidQuestions: InvalidQuestion[];
   conversationId?: string | null;
+  conversationVaultId?: string | null;
 }) {
   const { t } = useI18n();
-  const vaultId = useActiveVaultId();
+  // 会话所属库优先：历史会话跨库打开时，活动库不是它自己的库。取不到
+  // （老 daemon / 会话已删 / 首轮消息还没落库）再回落活动库。
+  const activeVaultId = useActiveVaultId();
+  const vaultId = conversationVaultId ?? activeVaultId;
   const handleWikiLinkClick = useWikiLinkClick();
   const quizAnchor = useQuizAnswerAnchor();
   // 本会话的解答题状态（键 = 指纹:题号）：已作答 + 批改结果。两者都从会话

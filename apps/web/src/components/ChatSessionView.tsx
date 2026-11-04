@@ -21,6 +21,8 @@ export interface ChatSessionViewProps {
   isRunning: boolean;
   activity?: ActivityInfo | null;
   conversationId?: string | null;
+  /** 会话所属库（daemon 的 conversations.vault_id）——题卡取库的真相源。 */
+  conversationVaultId?: string | null;
 
   onSend: (text: string, images?: PastedImage[]) => void;
   onSubmitForm?: (text: string) => void;
@@ -85,6 +87,7 @@ export function ChatSessionView({
   isRunning,
   activity,
   conversationId,
+  conversationVaultId,
   onSend,
   onSubmitForm,
   onCancel,
@@ -295,6 +298,7 @@ export function ChatSessionView({
                 key={msg.id}
                 message={msg}
                 conversationId={conversationId}
+                conversationVaultId={conversationVaultId}
                 isLast={msg.id === lastAssistantId}
                 onAnswerToolUse={onSubmitToolResult ? onAnswerToolUse : undefined}
                 onSubmitForm={onSubmitForm ?? ((text: string) => handleSend(text, []))}
