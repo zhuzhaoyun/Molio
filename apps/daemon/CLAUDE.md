@@ -22,6 +22,7 @@ src/
     RunManager.ts      Run 生命周期管理 (create/cancel/submitToolResult)
     config.ts          配置文件加载 (~/.molio/config.json)
     db.ts              SQLite 数据库初始化
+    quiz-trace.ts      会话级「做过题」痕迹统计（卡数 + 对数，历史列表徽标的数据源）—— 卡数判定走 contracts 的 countQuizCards（与渲染器同源），对数按 (fingerprint, question_id) 取最近一次作答去重；范围限 channel_type='desktop'
     transcript.ts      多轮对话 transcript 构建
     knowledge.ts       知识库管理（vault、文件树）
     skills/            用户技能（library）管理：importer.ts 的 inspectSkillSource 是预览与导入共用的单一探测源（防两套逻辑漂移）——文件夹要求根 SKILL.md 且逐字节复制（即使只含一个 SKILL.md 也不走 raw，否则重生成 frontmatter 会丢 allowed-tools 等字段）；单独 .md 走 raw 通道；扩展名门禁（压缩包等 → UNSUPPORTED_TYPE）；名称/描述解析 + NAME_FALLBACK/DESCRIPTION_FALLBACK + 文件数/总大小上限；importFromFolder/importFromRaw 支持 name/description 覆盖（预览填表后回传）。store.ts 技能 CRUD + content dir 落盘 + listSkillFiles（已导入技能的目录清单，bundled 返回 null）；builtin.ts 内置技能镜像（源在 src/tools/skills/）；hub.ts 技能商店客户端

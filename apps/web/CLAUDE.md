@@ -203,9 +203,11 @@ pnpm test:e2e     # Playwright 自动启动隔离的 daemon/cloud/web（先关�
 - **标签**: 
   - vault pill：灰色=存活，红色=已删除。vault_name 反范式化存储，vault 删除后仍可显示原名。
   - channel pill：仅非 desktop 渠道显示（绿色 `[微信]`、蓝色 `[飞书]` / `[企业微信]`）。
+  - 「做过题」pill（紫色）：该会话渲染出题卡的张数 + 答对题数（`N 卡` / `N 卡 · M 对`）。数据来自 daemon 的 `quizCardCount` / `quizCorrectCount`（`apps/daemon/src/core/quiz-trace.ts`）。**判定口径与渲染器同源**——`countQuizCards` 走 contracts 里同一个 `splitContent` + `parseQuizBlock`，daemon 侧不许另写 SQL 复刻。对数为 0 时不单列（答错几道与没答过在列表里分不清）。
 - **日期组**: 按日期分组，serif 字体标题，可折叠/展开，标题右侧显示该组会话数量。
 - **删除**: 勾选式批量删除——行内 ⋯ 溢出菜单 →「删除」→ 进入勾选模式，被点行预勾选；勾选模式下点行主体/复选框切换勾选（跨置顶区 + 日期分组均可选），⋯ 溢出菜单隐藏；顶部浮动确认条「已选 N 条」+「取消/删除」→「删除」弹确认框 → 确认后批量删除。乐观移除 + 调 `POST /conversations/batch-delete`，失败 `refresh()` 回滚 + 3 秒 transient error。删除成功经 `onDeleteConversations` 通知 App——若删除的正是主页当前加载的会话，主页聊天会被清空。
 - **缓存**: 30s stale cache，跨页切换不重复请求。
+- **摘要**: 取最后一条消息，但**先剥掉题卡围栏**（`utils/historySummary.ts` → contracts 的 `stripQuizFences`）只留文字——「最后一条就是一张题卡」的会话原本直接显示裸 JSON（真实库 13 例）。剥完没文字的显示「题卡」。
 - **骨架屏**: 初始加载显示 5 行 shimmer 占位。
 - **对话内历史下拉**（`components/ConversationHistoryMenu.tsx`，主页输入框与 KB 会话标签栏共用）: 口径与历史页默认值**完全一致**——当前活动库 + 未归属任何库的渠道会话（复用 `historyFilterQuery.ts` 的 `initialVaultFilter` / `buildListQuery`，别再手写一套查询参数）；下拉顶部显示口径提示，无活动库时退回全量。改过滤口径要同时看 `e2e/history.spec.ts` 与 `e2e/kb-chat-sessions.spec.ts`。
 - **相关文件**: `hooks/useHistoryFilters.ts`（筛选/分页/缓存/乐观删除状态管理）
@@ -314,6 +316,7 @@ pnpm test:e2e     # Playwright 自动启动隔离的 daemon/cloud/web（先关�
 ### 题库 (Quiz)
 
 - **题卡** (`QuizCard.tsx` + `utils/quiz.ts` / `quizAnswer.ts`): 模型输出 `quiz` 围栏 JSON → 聊天内渲染可作答题卡，**判分全在前端**，不依赖 runtime 工具。题型 single / multiple / judge / fill / subject；大题（subject）的「你的答案」正文由 `pairSubjectAnswers` 按锚点配对（`quizSubjectStore` 同源）。
+- **协议与围栏扫描在 `@molio/contracts`**（`packages/contracts/src/quiz.ts` + `messageSegments.ts`）: `utils/quiz.ts` 与 `utils/markdown.ts` 只是转发层。**原因**：daemon 侧统计「渲染出几张题卡」必须与渲染器同口径，SQL 复刻会漂移（实测过）。改 `splitContent` / `parseQuizBlock` 时同步想一下 daemon 的用法（`countQuizCards`）。
 - **「存为题库」是手动出口，不做自动落库**：拍板结论——题目质量不稳定，存不存由用户判断（自动落库会稀释题库信噪比）。所以这里只把手动流程做厚，不新增页面/导航（「错题本」形态明确不做）。
 - **保存范围** (`utils/quizSaveScope.ts` 纯函数): 错题优先 `wrong`（默认）/ 全部 `all` / 自己挑 `pick`。`wrongCount === 0`（未作答或全对）时「只存做错的」按钮**按设计不渲染**，不是 bug。大题按批改分数判三态——`gradeQuiz` 对 subject 恒 `correct: false`，不能拿来当错题判据。
 - **vault 归属跟随会话，不跟随当前活动库**：`KbChatSessionController` 按 `conversationId` 向 daemon 取 `conversations.vault_id` → `Conversation.vaultId` → `ChatSessionView` → `AssistantMessage` → `QuizCard`，取不到才回落 `useActiveVaultId()`。会话标签上的 `vaultId` 是「打开标签那一刻的活动库」，跨库打开历史会话会存进别人的库。

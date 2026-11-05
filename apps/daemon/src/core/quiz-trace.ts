@@ -105,10 +105,5 @@ export function quizTracesByConversation(
     current.correctCount = Number(row.n);
   }
 
-  // 没做过题的会话也要有一项，调用方不必处理缺省。
-  for (const id of conversationIds) {
-    if (!traces.has(id)) traces.set(id, { cardCount: 0, correctCount: 0 });
-  }
-
   return traces;
 }

@@ -25,10 +25,6 @@ interface Fence {
   complete: boolean;
   /** 开围栏在原文中的起始位置。 */
   openStart: number;
-  /** 围栏正文在原文中的起始位置。 */
-  bodyStart: number;
-  /** 围栏正文在原文中的结束位置（不含）。 */
-  bodyEnd: number;
   /** 整段围栏（含开闭标记）在原文中的结束位置（不含）。未闭合时是内容长度。 */
   blockEnd: number;
 }
@@ -60,8 +56,6 @@ function scanFences(content: string): Fence[] {
         body: content.slice(bodyStart),
         complete: false,
         openStart,
-        bodyStart,
-        bodyEnd: content.length,
         blockEnd: content.length,
       });
       return fences;
@@ -71,8 +65,6 @@ function scanFences(content: string): Fence[] {
       body: content.slice(bodyStart, closeIdx),
       complete: true,
       openStart,
-      bodyStart,
-      bodyEnd: closeIdx,
       blockEnd: closeIdx + 3,
     });
     fence.lastIndex = closeIdx + 3;
