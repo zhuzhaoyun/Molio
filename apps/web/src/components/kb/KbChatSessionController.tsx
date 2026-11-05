@@ -3,7 +3,7 @@
 // 无 DOM 的会话 controller：持有该标签的 `useChatCore`（消息 / SSE 订阅 / 历史加载 /
 // resumeRun），并把 imperative API 经 `registerApi` 交出去。渲染完全交给 `children`
 // render-prop（面板 view / 全屏壳共用同一份状态）。此文件不渲染任何 DOM。
-import { useCallback, useEffect, useMemo, useRef, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { ChatMessage as ContractChatMessage, ActivityInfo } from '@molio/contracts';
 import { api } from '../../api/client';
 import { useChatCore, type CreateRunContext, type ChatMessage } from '../../hooks/useChatCore';
@@ -31,6 +31,8 @@ export interface KbChatSessionState {
   isRunning: boolean;
   activity: ActivityInfo | null;
   conversationId: string | null;
+  /** 会话在 daemon 里记录的所属库——存档/落库的真相源（标签上的 vaultId 只是打开时的活动库）。 */
+  conversationVaultId: string | null;
   send: (text: string, opts?: { queueIfRunning?: boolean }) => void;
   cancel: () => void;
   submitToolResult: (toolUseId: string, content: string) => Promise<void>;
@@ -207,6 +209,30 @@ export function KbChatSessionController({
   // ② vault 对象晚一步就位（vaultPath 由 null 变成真实路径）也会误判成「切库」，
   // 把刚建的会话内容清掉。现在这两条都不成立了。
 
+  // 会话所属库：daemon 里 conversations.vault_id 才是真相源。标签上的 vaultId
+  // 是「打开时」的活动库——历史会话跨库打开（历史页不切库）时就对不上了。
+  // 题卡按它取库（存为题库 / 解析库内图片 / 答题落库），错了会把文件存进别人库。
+  // 挂在 conversationId 上而不是挂载时取一次：首轮发消息才创建 conversation，
+  // 那时没有加载动作会触发取库。
+  const [conversationVaultId, setConversationVaultId] = useState<string | null>(null);
+  useEffect(() => {
+    const id = chat.conversationId;
+    if (!id) {
+      setConversationVaultId(null);
+      return;
+    }
+    let cancelled = false;
+    api.getConversation(id)
+      .then((conversation) => {
+        if (!cancelled) setConversationVaultId(conversation.vaultId ?? null);
+      })
+      .catch(() => {
+        // 取不到（老 daemon / 会话已删）→ 回落活动库，题卡侧用 activeVaultId 兜底。
+        if (!cancelled) setConversationVaultId(null);
+      });
+    return () => { cancelled = true; };
+  }, [chat.conversationId]);
+
   // running 上报（驱动 wiki 互斥判断 + 关闭确认）
   useEffect(() => { onRunningChange(session.id, chat.isRunning); }, [chat.isRunning, session.id, onRunningChange]);
 
@@ -278,6 +304,7 @@ export function KbChatSessionController({
     isRunning: chat.isRunning,
     activity: chat.activity ?? null,
     conversationId: chat.conversationId ?? null,
+    conversationVaultId,
     send: (text, opts) => {
       sendRef.current(text, opts);
     },
@@ -288,7 +315,7 @@ export function KbChatSessionController({
     deleteMessages: (ids) => deleteMessagesRef.current(ids),
     buildSend,
   }), [
-    chat.messages, chat.isRunning, chat.activity, chat.conversationId, buildSend, session.mode,
+    chat.messages, chat.isRunning, chat.activity, chat.conversationId, conversationVaultId, buildSend, session.mode,
   ]);
 
   return <>{children(state)}</>;

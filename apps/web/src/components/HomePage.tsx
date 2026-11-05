@@ -250,6 +250,7 @@ export function HomePage({
             isRunning={state.isRunning}
             activity={state.activity}
             conversationId={state.conversationId}
+            conversationVaultId={state.conversationVaultId}
             onSend={state.buildSend()}
             onSubmitForm={(text) => state.send(text)}
             onCancel={state.cancel}

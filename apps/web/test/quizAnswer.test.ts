@@ -342,6 +342,27 @@ describe('pairSubjectAnswers', () => {
     assert.equal(map.has('bbbb2222:3'), true);
   });
 
+  it('keeps the answer body so the saved file can quote it', () => {
+    const map = pairSubjectAnswers([
+      { role: 'user', content: answerFor(4, 'aaaa1111') },
+    ]);
+    assert.equal(map.get('aaaa1111:4'), '我的作答');
+  });
+
+  it('drops the header block when the body itself has blank lines', () => {
+    const header = buildSubjectAnswerMessage({ ...ANCHOR, questionIndex: 1, fingerprintKey: 'aaaa1111' }, '');
+    const withBody = `${header}第一段\n\n第二段`;
+    const map = pairSubjectAnswers([{ role: 'user', content: withBody }]);
+    assert.equal(map.get('aaaa1111:1'), '第一段\n\n第二段');
+  });
+
+  it('does not record an anchor whose body is empty', () => {
+    const map = pairSubjectAnswers([
+      { role: 'user', content: buildSubjectAnswerMessage({ ...ANCHOR, questionIndex: 2, fingerprintKey: 'aaaa1111' }, '') },
+    ]);
+    assert.equal(map.size, 0);
+  });
+
   it('ignores ordinary messages and unmaterialized answers', () => {
     const map = pairSubjectAnswers([
       { role: 'user', content: '普通消息' },

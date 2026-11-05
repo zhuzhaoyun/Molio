@@ -136,7 +136,7 @@ pnpm typecheck    # tsc --noEmit
 | PUT | `/api/config` | 更新配置 |
 | GET/POST/PUT/DELETE | `/api/projects` | 项目 CRUD |
 | GET | `/api/conversations` | 列出会话历史（支持 ?vaultId=&query=&before=&limit= 游标分页 + 全文搜索 + vault 过滤） |
-| GET | `/api/conversations/:id` | 查询单个会话 |
+| GET | `/api/conversations/:id` | 查询单个会话（含所属 `vaultId`——前端按会话归库而不是当前活动库，跨库打开历史会话才不会存错库） |
 | GET | `/api/conversations/:id/messages` | 列出会话全部消息 |
 | DELETE | `/api/conversations/:id` | 删除会话 |
 | POST | `/api/conversations/:id/rewind-resend` | 重新生成/编辑重发（回退到末条 user 消息重放建新 run） |

@@ -37,6 +37,8 @@ interface Props {
   onRequestDelete?: (id: string) => void;
   /** Conversation id — scopes quiz localStorage keys. */
   conversationId?: string | null;
+  /** 会话所属库（daemon 的 conversations.vault_id）——题卡取库的真相源。 */
+  conversationVaultId?: string | null;
   /**
    * First-run guide is on the save step: keep the toolbar visible and label the
    * save action, so the next step is discoverable without hovering.
@@ -44,7 +46,7 @@ interface Props {
   highlightSave?: boolean;
 }
 
-export function AssistantMessage({ message, isLast, onAnswerToolUse, onSubmitForm, onRegenerate, onContinue, onRequestDelete, conversationId, highlightSave }: Props) {
+export function AssistantMessage({ message, isLast, onAnswerToolUse, onSubmitForm, onRegenerate, onContinue, onRequestDelete, conversationId, conversationVaultId, highlightSave }: Props) {
   const { t } = useI18n();
   const vaultId = useActiveVaultId();
   const selectMode = useSelectMode();
@@ -139,6 +141,7 @@ export function AssistantMessage({ message, isLast, onAnswerToolUse, onSubmitFor
           complete
           streaming={false}
           conversationId={conversationId}
+          conversationVaultId={conversationVaultId}
         />
       ))}
 
@@ -220,6 +223,7 @@ export function AssistantMessage({ message, isLast, onAnswerToolUse, onSubmitFor
                   complete={seg.complete}
                   streaming={message.streaming}
                   conversationId={conversationId}
+                  conversationVaultId={conversationVaultId}
                 />
               );
             }
