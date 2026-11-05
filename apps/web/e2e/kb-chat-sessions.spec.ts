@@ -438,6 +438,99 @@ test.describe('KB chat sessions', () => {
     await expect(page.locator('[data-testid="composer-history-item"]')).toHaveCount(0);
   });
 
+  test('历史下拉按当前知识库过滤（与历史记录页默认口径一致）', async ({ page }) => {
+    // 用户报障：对话内的历史下拉没按知识库过滤，混进别的库的会话，
+    // 和专门打开的「历史记录」页数据对不上。
+    await mockChatRun(page);
+    const listRequests: URL[] = [];
+    await page.route(/\/api\/conversations(?:\?|$)/, async (route) => {
+      listRequests.push(new URL(route.request().url()));
+      await route.fulfill({
+        status: 200, contentType: 'application/json',
+        body: JSON.stringify({
+          pinnedItems: [],
+          items: [{ conversation: { id: 'conv-h', title: '本库会话', updatedAt: Date.now() }, lastMessage: null, messageCount: 1 }],
+          nextCursor: null,
+        }),
+      });
+    });
+
+    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+    await page.locator('[data-testid="kb-btn-ask"]').click();
+    await page.locator('[data-testid="kb-chat-session-history"]').click();
+    await expect(page.locator('[data-testid="composer-history-item"]')).toHaveCount(1);
+
+    // 口径提示：让用户知道下拉只列本库（否则像「历史没了」）
+    await expect(page.locator('[data-testid="composer-history-scope"]'))
+      .toContainText(vault.name);
+
+    // 请求必须带「当前库 + 未归属会话」——这才是历史页 `__current__` 的口径：
+    // 少了 vaultId 会混进别的库，少了 includeUnassociated 会漏掉渠道会话。
+    const listReq = listRequests.find((u) => u.pathname === '/api/conversations');
+    expect(listReq?.searchParams.get('vaultId')).toBe(vault.id);
+    expect(listReq?.searchParams.get('includeUnassociated')).toBe('1');
+  });
+
+  test('历史下拉高亮当前会话（分不清在看哪条）', async ({ page }) => {
+    // 用户报障：会话里打开历史记录，列表里看不出当前是哪一条。
+    await mockChatRun(page);
+    await mockHistoryConv(page);
+    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+    await page.locator('[data-testid="kb-btn-ask"]').click();
+
+    // 从历史下拉打开 conv-h → 当前会话就是它
+    await page.locator('[data-testid="kb-chat-session-history"]').click();
+    await page.locator('[data-testid="kb-chat-panel"] [data-testid="composer-history-item"]')
+      .filter({ hasText: '历史问题' }).click();
+    await expect(page.locator('[data-testid="kb-chat-session-tab"] .chat-session-tab-title'))
+      .toHaveText('历史问题', { timeout: 5_000 });
+
+    // 再开历史下拉 → 当前那条要高亮（左侧强调条 + 「当前」标记）
+    await page.locator('[data-testid="kb-chat-session-history"]').click();
+    const current = page.locator('[data-testid="kb-chat-panel"] [data-testid="composer-history-item"]')
+      .filter({ hasText: '历史问题' });
+    await expect(current).toHaveAttribute('data-current', 'true', { timeout: 5_000 });
+    await expect(current.locator('[data-testid="composer-history-current"]')).toHaveText('当前');
+  });
+
+  test('切换知识库：旧库的会话标签不再出现在新库，切回旧库自动恢复', async ({ page }) => {
+    // 用户报障：切到另一个知识库后，原库的会话标签仍出现在新库的标签栏里，
+    // 点进去却查不到内容。会话标签按库隔离：切库即隐藏，切回即恢复。
+    await mockChatRun(page);
+    // 重新挂载 controller 时会按 conversationId 拉历史；mockChatRun 自带该路由（默认空历史），
+    // 避免真实 daemon 对未知 conversation 404 → onLoadError 关标签。
+
+    const vaultB = await createTempVault('e2e-kb-sessions-b');
+    try {
+      await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+      await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+
+      // 库 A 里开一个问答会话
+      await page.locator('[data-testid="kb-btn-ask"]').click();
+      await expect(page.locator('[data-testid="kb-chat-session-tab"]')).toHaveCount(1);
+      const input = page.locator('[data-testid="kb-chat-panel"] [data-testid="composer-input"]');
+      await input.fill('A 库的问题');
+      await page.locator('[data-testid="composer-send"]').click();
+      await expect(activeMessages(page)).toContainText('A 库的问题');
+
+      // 切到库 B → A 的会话标签不该再出现（内容也不再串台）
+      await page.goto(`http://localhost:5173/knowledge?vault=${vaultB.id}`);
+      await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+      await expect(page.locator('[data-testid="kb-chat-session-tab"]')).toHaveCount(0);
+
+      // 切回库 A → 标签与内容都回来
+      await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+      await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+      await expect(page.locator('[data-testid="kb-chat-session-tab"]')).toHaveCount(1);
+      await expect(page.locator('[data-testid="kb-chat-session-tab"] .chat-session-tab-title'))
+        .toHaveText('A 库的问题');
+    } finally {
+      await cleanupTempVault(vaultB);
+    }
+  });
+
   test('后台会话流式输出不清空当前会话的勾选态（pruneSelection 门控）', async ({ page }) => {
     // 面板把每个会话标签都挂载（非活动者 display:none），messageSelectionStore 是模块级单例。
     // 旧逻辑：任意视图的 messages 变化都会用自己的 id 集合 pruneStale → 后台标签一动就

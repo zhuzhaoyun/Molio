@@ -99,6 +99,7 @@ const zh: Record<string, string> = {
   'composer.removeFileRef': '移除引用',
   'composer.uploadRetryHint': '请重新粘贴图片',
   'composer.history': '历史记录',
+  'composer.historyScope': '仅显示「{vault}」的会话 · 全部记录见「历史记录」',
   'composer.modelMenu': '模型与运行时',
   'composer.modelGroup': '模型',
   'composer.runtimeGroup': '运行时',
@@ -109,6 +110,7 @@ const zh: Record<string, string> = {
   'composer.historySearchPlaceholder': '搜索历史会话',
   'composer.noSearchResults': '没有匹配的会话',
   'composer.untitled': '未命名对话',
+  'composer.currentSession': '当前',
 
   // ── QuizCard ──
   'quiz.generating': '正在出题…',

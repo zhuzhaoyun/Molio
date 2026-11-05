@@ -62,10 +62,11 @@ export function useKbChatSessionState(sessionId: string | null): KbChatSessionSt
 }
 
 export function KbChatSessionsProvider({ agentId, children }: Props) {
+  // 会话标签按库隔离：这里拿到的已经是**当前库**的会话（切库即隐藏，切回即恢复）。
+  // 只有本库的会话才挂 controller —— 别的库的会话不该占着 SSE 订阅与 run 句柄。
   const sessions = useKbChatSessions();
   const { vault } = useCurrentContext();
   const vaultPath = vault?.path ?? null;
-  const vaultId = vault?.id ?? null;
 
   const apiRef = useRef(new Map<string, KbChatSessionApi>());
   const stateRef = useRef(new Map<string, KbChatSessionState>());
@@ -137,7 +138,6 @@ export function KbChatSessionsProvider({ agentId, children }: Props) {
           session={s}
           agentId={agentId}
           vaultPath={vaultPath}
-          vaultId={vaultId}
           onRunningChange={handleRunningChange}
           onComplete={handleComplete}
           onLoadError={handleLoadError}

@@ -197,20 +197,36 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
 
   // External file navigation (?vault=A&file=B): open the file, keep ?vault=,
   // drop the transient ?file= (it is held in pendingUrlNav state).
+  // 只改自己认识的参数：同一 query string 里可能还挂着别的瞬时意图
+  // （如 NavRail 图谱入口的 ?panel=graph），整体替换会把它抹掉。
   useEffect(() => {
     const nav = resolveUrlFileNavigation(searchParams, kb);
     if (!nav) return;
     setPendingUrlNav(nav);
-    setSearchParams({ vault: nav.vaultId }, { replace: true });
+    const next = new URLSearchParams(searchParams);
+    next.delete('file');
+    next.set('vault', nav.vaultId);
+    setSearchParams(next, { replace: true });
   }, [searchParams, kb.vaults, kb.activeVault?.id, setSearchParams]);
 
   // Store → URL mirror: whenever this window's active vault changes (switch,
   // create, import, delete), reflect it into ?vault= so the URL stays an
   // accurate serialization of the window. Must come AFTER the file-nav effect.
+  //
+  // 同理只改 ?vault=，不整体替换 query，而且以**真实地址**（window.location）
+  // 为准而非 router state：这条 effect 由 vault 列表异步到位触发，时机会落在
+  // NavRail 图谱入口那次导航的 transition 中间（vault 请求被挂起、点击后才
+  // 放行时尤其明显）。此时 pushState 已把 ?panel=graph 写进 history，但
+  // useLocation 还停在旧地址 —— 用 useSearchParams 拼参数会把尚未消费的
+  // ?panel=graph 冲掉，图谱标签再也打不开。回归见 e2e/graph.spec.ts 的
+  // 「NavRail 图谱」用例（vault 请求挂起到点击之后才放行）。
   useEffect(() => {
     if (!kb.activeVault?.id) return;
-    setSearchParams({ vault: kb.activeVault.id }, { replace: true });
-  }, [kb.activeVault?.id, setSearchParams]);
+    const live = new URLSearchParams(window.location.search);
+    if (live.get('vault') === kb.activeVault.id) return;
+    live.set('vault', kb.activeVault.id);
+    setSearchParams(live, { replace: true });
+  }, [kb.activeVault?.id, searchParams, setSearchParams]);
 
   // Handle location.state for in-app navigation (e.g., from graph double-click)
   useEffect(() => {
@@ -263,18 +279,9 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
     onConfirm: () => void;
   }>({ show: false, title: '', message: '', onConfirm: () => {} });
 
-  // vault 切换：清空所有会话的 @文件上下文（旧库引用失效）。
-  // 仅在「已解析的 vault id」之间变化时清理：页面加载时 activeVault 走
-  // null → 解析出 id 的过程，若把 null→id 也当切换，每次刷新/进页都会
-  // 无感觉清掉持久化会话的文件绑定（D7 会话记忆文档被刷新击穿）。
-  const prevVaultIdRef = useRef<string | null | undefined>(undefined);
-  useEffect(() => {
-    const current = kb.activeVault?.id ?? null;
-    if (prevVaultIdRef.current !== undefined && prevVaultIdRef.current !== null && prevVaultIdRef.current !== current) {
-      kbChatSessionsStore.clearFilePaths();
-    }
-    prevVaultIdRef.current = current;
-  }, [kb.activeVault?.id]);
+  // 注：切库不再清空会话的 @文件上下文 —— 会话标签按库隔离（见 kbChatSessionsStore），
+  // 别的库的会话只是被隐藏（切回来原样恢复），它绑定的文档在自己的库里依然有效。
+  // 清掉反而让用户切回来时丢了绑定的文档。
 
   // wiki 任务完成 → 刷新文件树（方案 D：onWikiComplete 改 store 事件总线，KB 页挂载时订阅）
   useEffect(() => {

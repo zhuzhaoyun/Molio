@@ -245,6 +245,7 @@ export function ChatSessionView({
       initialFileRefs={composerInitialFileRefs}
       onOpenConversation={onOpenConversation}
       onDeleteConversations={onDeleteConversations}
+      conversationId={conversationId}
     />
   );
 
