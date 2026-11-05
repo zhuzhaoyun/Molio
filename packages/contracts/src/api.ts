@@ -132,6 +132,10 @@ export interface ConversationHistoryItem {
   vaultName?: string | null;
   /** False when the vault row is gone (vault deleted) but the denormalized name is still available. */
   vaultExists?: boolean;
+  /** 该会话里渲染出来的题卡数（0 = 没做过题）。 */
+  quizCardCount?: number;
+  /** 该会话里答对的题数（按 (fingerprint, question_id) 取最近一次作答去重）。 */
+  quizCorrectCount?: number;
 }
 
 export interface ProjectListResponse {

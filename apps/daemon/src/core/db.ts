@@ -12,6 +12,7 @@ import os from 'node:os';
 import { molioDataDir } from './data-dir.js';
 import { randomUUID } from 'node:crypto';
 import type { ChatMessage, Project, Conversation, ConversationHistoryItem, ConversationHistoryPage, ListHistoryQuery, Vault, KbHistoryEntry } from '@molio/contracts';
+import { quizTracesByConversation } from './quiz-trace.js';
 
 export type SqliteDb = Database.Database;
 
@@ -570,6 +571,18 @@ export function listConversationHistory(
   const items = rows.map(rowToHistoryItem);
   const lastItem = items.at(-1);
   const nextCursor = items.length === limit && lastItem ? lastItem.conversation.updatedAt : null;
+
+  // 「做过题」痕迹（历史列表徽标）：卡数 + 对数，按本页会话批量统计。
+  const traces = quizTracesByConversation(
+    db,
+    [...pinnedItems, ...items].map((item) => item.conversation.id),
+  );
+  for (const item of [...pinnedItems, ...items]) {
+    const trace = traces.get(item.conversation.id);
+    item.quizCardCount = trace?.cardCount ?? 0;
+    item.quizCorrectCount = trace?.correctCount ?? 0;
+  }
+
   return { pinnedItems, items, nextCursor };
 }
 

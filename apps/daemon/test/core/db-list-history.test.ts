@@ -201,3 +201,70 @@ describe('listConversationHistory pinned split', () => {
     assert.equal(second.items.length, 1);
   });
 });
+
+describe('listConversationHistory quiz trace', () => {
+  let dir: string;
+  let db: Database.Database;
+  beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'molio-hist-quiz-')); db = openDatabase(dir); });
+  afterEach(() => { closeDatabase(); rmSync(dir, { recursive: true, force: true }); });
+
+  // 一张**合法**题卡。判定与渲染器同源（parseQuizBlock），字段不全的 JSON
+  // 会被判为非法题卡 —— 那是正确行为，不是缺陷。
+  const quizContent = (stem: string) =>
+    '```quiz\n' + JSON.stringify({
+      version: 1,
+      title: 't',
+      questions: [{
+        id: 'q1', type: 'judge', stem,
+        answer: ['A'], explanation: 'e', sources: [{ path: 'p.md' }],
+      }],
+    }) + '\n```';
+
+  const itemOf = (id: string) =>
+    listConversationHistory(db, {}).items.find((i) => i.conversation.id === id)!;
+
+  it('counts quiz fenced messages per conversation', () => {
+    const p = createProject(db, 'QTrace');
+    const c = createConversation(db, p.id, 'quiz-1');
+    upsertMessage(db, c.id, { id: 'qm1', role: 'assistant', content: quizContent('a'), timestamp: 1 });
+    upsertMessage(db, c.id, { id: 'qm2', role: 'assistant', content: quizContent('b'), timestamp: 2 });
+    upsertMessage(db, c.id, { id: 'qm3', role: 'user', content: 'plain', timestamp: 3 });
+
+    assert.equal(itemOf(c.id).quizCardCount, 2);
+  });
+
+  it('is case sensitive: ```Quiz is not a quiz card', () => {
+    const p = createProject(db, 'QCase');
+    const c = createConversation(db, p.id, 'quiz-case');
+    // 内容合法，只改围栏语言名的大小写 —— 这样失败只可能来自大小写判定。
+    upsertMessage(db, c.id, { id: 'qmc', role: 'assistant', content: '```Quiz\n' + JSON.stringify({ version: 1, title: 't', questions: [{ id: 'q1', type: 'judge', stem: 's', answer: ['A'], explanation: 'e', sources: [{ path: 'p.md' }] }] }) + '\n```', timestamp: 1 });
+
+    assert.equal(itemOf(c.id).quizCardCount, 0);
+  });
+
+  it('does not mark channel conversations', () => {
+    const p = createProject(db, 'QChan');
+    // createConversation always writes channel_type='desktop' — a channel
+    // conversation has to be inserted directly.
+    const id = 'chan-1';
+    db.prepare(`INSERT INTO conversations
+      (id, project_id, title, channel_type, external_session_id, created_at, updated_at)
+      VALUES (?, ?, 'weixin', 'weixin', 's1', 1, 1)`).run(id, p.id);
+    upsertMessage(db, id, { id: 'qmc2', role: 'assistant', content: quizContent('c'), timestamp: 1 });
+
+    assert.equal(itemOf(id).quizCardCount, 0);
+  });
+
+  it('counts the latest attempt per question, so redo does not double count', () => {
+    const p = createProject(db, 'QRedo');
+    const c = createConversation(db, p.id, 'quiz-redo');
+    const ins = db.prepare(`INSERT INTO quiz_attempts
+      (vault_id, quiz_fingerprint, question_id, chosen, correct, conversation_id, answered_at)
+      VALUES (NULL, ?, ?, '["A"]', ?, ?, ?)`);
+    ins.run('fp1', 'q1', 0, c.id, 100); // first try: wrong
+    ins.run('fp1', 'q1', 1, c.id, 200); // redo: right
+    ins.run('fp1', 'q2', 1, c.id, 200);
+
+    assert.equal(itemOf(c.id).quizCorrectCount, 2);
+  });
+});
