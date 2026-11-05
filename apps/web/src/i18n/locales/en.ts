@@ -100,6 +100,7 @@ const en: Record<string, string> = {
   'composer.removeFileRef': 'Remove reference',
   'composer.uploadRetryHint': 'Please paste the image again',
   'composer.history': 'History',
+  'composer.historyScope': 'Showing "{vault}" only · See History for all',
   'composer.modelMenu': 'Model & runtime',
   'composer.modelGroup': 'Model',
   'composer.runtimeGroup': 'Runtime',

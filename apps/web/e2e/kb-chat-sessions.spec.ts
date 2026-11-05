@@ -438,6 +438,40 @@ test.describe('KB chat sessions', () => {
     await expect(page.locator('[data-testid="composer-history-item"]')).toHaveCount(0);
   });
 
+  test('历史下拉按当前知识库过滤（与历史记录页默认口径一致）', async ({ page }) => {
+    // 用户报障：对话内的历史下拉没按知识库过滤，混进别的库的会话，
+    // 和专门打开的「历史记录」页数据对不上。
+    await mockChatRun(page);
+    const listRequests: URL[] = [];
+    await page.route(/\/api\/conversations(?:\?|$)/, async (route) => {
+      listRequests.push(new URL(route.request().url()));
+      await route.fulfill({
+        status: 200, contentType: 'application/json',
+        body: JSON.stringify({
+          pinnedItems: [],
+          items: [{ conversation: { id: 'conv-h', title: '本库会话', updatedAt: Date.now() }, lastMessage: null, messageCount: 1 }],
+          nextCursor: null,
+        }),
+      });
+    });
+
+    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+    await page.locator('[data-testid="kb-btn-ask"]').click();
+    await page.locator('[data-testid="kb-chat-session-history"]').click();
+    await expect(page.locator('[data-testid="composer-history-item"]')).toHaveCount(1);
+
+    // 口径提示：让用户知道下拉只列本库（否则像「历史没了」）
+    await expect(page.locator('[data-testid="composer-history-scope"]'))
+      .toContainText(vault.name);
+
+    // 请求必须带「当前库 + 未归属会话」——这才是历史页 `__current__` 的口径：
+    // 少了 vaultId 会混进别的库，少了 includeUnassociated 会漏掉渠道会话。
+    const listReq = listRequests.find((u) => u.pathname === '/api/conversations');
+    expect(listReq?.searchParams.get('vaultId')).toBe(vault.id);
+    expect(listReq?.searchParams.get('includeUnassociated')).toBe('1');
+  });
+
   test('历史下拉高亮当前会话（分不清在看哪条）', async ({ page }) => {
     // 用户报障：会话里打开历史记录，列表里看不出当前是哪一条。
     await mockChatRun(page);

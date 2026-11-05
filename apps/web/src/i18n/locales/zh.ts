@@ -99,6 +99,7 @@ const zh: Record<string, string> = {
   'composer.removeFileRef': '移除引用',
   'composer.uploadRetryHint': '请重新粘贴图片',
   'composer.history': '历史记录',
+  'composer.historyScope': '仅显示「{vault}」的会话 · 全部记录见「历史记录」',
   'composer.modelMenu': '模型与运行时',
   'composer.modelGroup': '模型',
   'composer.runtimeGroup': '运行时',

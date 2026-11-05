@@ -205,6 +205,7 @@ pnpm test:e2e     # Playwright 自动启动隔离的 daemon/cloud/web（先关�
 - **删除**: 勾选式批量删除——行内 ⋯ 溢出菜单 →「删除」→ 进入勾选模式，被点行预勾选；勾选模式下点行主体/复选框切换勾选（跨置顶区 + 日期分组均可选），⋯ 溢出菜单隐藏；顶部浮动确认条「已选 N 条」+「取消/删除」→「删除」弹确认框 → 确认后批量删除。乐观移除 + 调 `POST /conversations/batch-delete`，失败 `refresh()` 回滚 + 3 秒 transient error。删除成功经 `onDeleteConversations` 通知 App——若删除的正是主页当前加载的会话，主页聊天会被清空。
 - **缓存**: 30s stale cache，跨页切换不重复请求。
 - **骨架屏**: 初始加载显示 5 行 shimmer 占位。
+- **对话内历史下拉**（`components/ConversationHistoryMenu.tsx`，主页输入框与 KB 会话标签栏共用）: 口径与历史页默认值**完全一致**——当前活动库 + 未归属任何库的渠道会话（复用 `historyFilterQuery.ts` 的 `initialVaultFilter` / `buildListQuery`，别再手写一套查询参数）；下拉顶部显示口径提示，无活动库时退回全量。改过滤口径要同时看 `e2e/history.spec.ts` 与 `e2e/kb-chat-sessions.spec.ts`。
 - **相关文件**: `hooks/useHistoryFilters.ts`（筛选/分页/缓存/乐观删除状态管理）
 
 ### 知识库 (Knowledge Base)

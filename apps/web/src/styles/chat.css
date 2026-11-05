@@ -1247,6 +1247,16 @@
 .composer-history-search input::placeholder { color: var(--text-faint); }
 .composer-history-search input::-webkit-search-cancel-button { cursor: pointer; }
 
+/* 过滤口径提示（下拉只列当前库的会话） */
+.composer-history-scope {
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border-soft);
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-faint);
+  flex-shrink: 0;
+}
+
 .composer-history-list {
   overflow-y: auto;
   flex: 1;
