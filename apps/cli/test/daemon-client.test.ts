@@ -1,7 +1,12 @@
 /** daemon-client：各端点、URL/查询参数编码、错误映射（404/413/不可达）、SSE 生成器。 */
 import assert from 'node:assert/strict';
 import { after, before, describe, it } from 'node:test';
-import { DaemonClient, isTerminalStatus, lastAssistantText } from '../src/daemon-client.js';
+import {
+  DaemonClient,
+  defaultBaseUrl,
+  isTerminalStatus,
+  lastAssistantText,
+} from '../src/daemon-client.js';
 import { isDaemonError } from '../src/errors.js';
 import { startHarness, type Harness } from './helpers.js';
 
@@ -120,6 +125,32 @@ describe('daemon-client', () => {
 });
 
 describe('daemon-client 纯函数', () => {
+  it('defaultBaseUrl：显式 URL 优先并去尾斜杠，空值回退默认端口', () => {
+    const saved = { url: process.env['MOLIO_DAEMON_URL'], port: process.env['MOLIO_PORT'] };
+    try {
+      process.env['MOLIO_DAEMON_URL'] = 'http://nas.local:3200/';
+      assert.equal(defaultBaseUrl(), 'http://nas.local:3200');
+
+      process.env['MOLIO_DAEMON_URL'] = '   ';
+      process.env['MOLIO_PORT'] = '4100';
+      assert.equal(defaultBaseUrl(), 'http://127.0.0.1:4100');
+
+      // MCPB user_config 清空后可能注入空串/空白，不能拼出 http://127.0.0.1:
+      process.env['MOLIO_PORT'] = '';
+      assert.equal(defaultBaseUrl(), 'http://127.0.0.1:3100');
+      process.env['MOLIO_PORT'] = '  ';
+      assert.equal(defaultBaseUrl(), 'http://127.0.0.1:3100');
+    } finally {
+      for (const [key, value] of [
+        ['MOLIO_DAEMON_URL', saved.url],
+        ['MOLIO_PORT', saved.port],
+      ] as const) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+    }
+  });
+
   it('isTerminalStatus', () => {
     assert.equal(isTerminalStatus('pending'), false);
     assert.equal(isTerminalStatus('running'), false);
