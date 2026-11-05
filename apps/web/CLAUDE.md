@@ -55,6 +55,7 @@ src/
     OverflowMenu.tsx   ⋯ 溢出菜单（收纳低频动作）
     CodeBlock.tsx      代码块（语言标签 + 复制 + 长代码折叠）
     SaveToKbButton.tsx 一键保存助手回复到当前知识库
+    QuizCard.tsx       题卡（作答/判分 +「存为题库」手动存档出口）
     SelectionConfirmBar.tsx 删除勾选态顶部确认条
     MessageCheckbox.tsx  勾选态下每气泡的方框
     icons.tsx          聊天交互 SVG 线条图标
@@ -167,6 +168,7 @@ pnpm test:e2e     # Playwright 自动启动隔离的 daemon/cloud/web（先关�
 | `src/components/runtimes/` | `e2e/runtimes-page.spec.ts`, `e2e/runtime-provider-config.spec.ts` |
 | `src/components/settings/` | `e2e/settings.spec.ts`, `e2e/skills.spec.ts`, `e2e/skill-hub.spec.ts`, `e2e/runtimes-page.spec.ts`（RuntimesPanel 在此）, `e2e/runtime-provider-config.spec.ts` |
 | `src/components/history/` | `e2e/history.spec.ts` |
+| `src/components/QuizCard.tsx`, `src/utils/quiz*.ts` | `e2e/quiz.spec.ts` |
 | `src/components/resources/`, `src/data/resources.ts`, `apps/landing-page/resources-data.js` | `e2e/resources.spec.ts` |
 | `src/App.tsx`（路由变更） | `e2e/navigation.spec.ts`, `e2e/bootstrap.spec.ts` |
 
@@ -304,6 +306,16 @@ pnpm test:e2e     # Playwright 自动启动隔离的 daemon/cloud/web（先关�
 - **产出区** (`WorkCompleteBanner.tsx`): 与引用区同构 —— > 8 项也走台账形态（标题带计数、可折叠、分批铺开）。产出全是文档，不需要分层。E2E 见 `source-chips-ledger.spec.ts`。
 - **会话产出面板的引用 tab** (`SessionOutputPanel.tsx` + `utils/sessionSources.ts`): 与消息内联引用区同口径 —— 媒体与数据文件折进「媒体与数据」折叠组（一次 wiki 构建能读几百个，全灌进主列表会决堤）。库外/检索路径仍进 omitted（点不开，面板必须明说）。
 - **SSE**: 通过 `EventSource` 订阅 daemon 事件流，实时更新消息状态
+
+### 题库 (Quiz)
+
+- **题卡** (`QuizCard.tsx` + `utils/quiz.ts` / `quizAnswer.ts`): 模型输出 `quiz` 围栏 JSON → 聊天内渲染可作答题卡，**判分全在前端**，不依赖 runtime 工具。题型 single / multiple / judge / fill / subject；大题（subject）的「你的答案」正文由 `pairSubjectAnswers` 按锚点配对（`quizSubjectStore` 同源）。
+- **「存为题库」是手动出口，不做自动落库**：拍板结论——题目质量不稳定，存不存由用户判断（自动落库会稀释题库信噪比）。所以这里只把手动流程做厚，不新增页面/导航（「错题本」形态明确不做）。
+- **保存范围** (`utils/quizSaveScope.ts` 纯函数): 错题优先 `wrong`（默认）/ 全部 `all` / 自己挑 `pick`。`wrongCount === 0`（未作答或全对）时「只存做错的」按钮**按设计不渲染**，不是 bug。大题按批改分数判三态——`gradeQuiz` 对 subject 恒 `correct: false`，不能拿来当错题判据。
+- **vault 归属跟随会话，不跟随当前活动库**：`KbChatSessionController` 按 `conversationId` 向 daemon 取 `conversations.vault_id` → `Conversation.vaultId` → `ChatSessionView` → `AssistantMessage` → `QuizCard`，取不到才回落 `useActiveVaultId()`。会话标签上的 `vaultId` 是「打开标签那一刻的活动库」，跨库打开历史会话会存进别人的库。
+- **文件格式** (`utils/quizFile.ts`): 落 `题库/<日期>-<标题>.md`（同名 `-2` / `-3` 去重）。frontmatter 带 `quiz_fingerprint` / 题号清单 / 出处，正文逐题写题干、选项、答案、你的答案、解析——人读，也能被后续组卷反向解析。模型产出的标量一律 JSON 引号包裹（标题含 `: ` 会写出非法 YAML，front-matter 解析失败会让整篇回落成正文）；图片路径补一层 `../`（`题库/` 是子目录）。
+- **存档结果行**: 成功回「已存 N 题 · 路径」；动作（打开 / 在资源管理器中显示 / 撤销）只开 **6s 反馈窗**（与 `SaveToKbButton` 一致），过后只剩静态路径；键盘焦点进入按钮区时取消窗口（否则读到一半按钮被抽走、焦点跌回 body）。「在资源管理器中显示」仅桌面壳（`isRevealAvailable()`）。撤销 = 直接删文件，无二次确认。
+- 回归：`test/quiz*.test.ts`（纯函数）+ `e2e/quiz.spec.ts`（P0）
 
 ## 与 daemon 的交互
 
