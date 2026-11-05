@@ -117,6 +117,47 @@ export type {
   SaveQuizAttemptsRequest,
 } from './knowledge.js';
 
+// Quiz 交互块协议（```quiz 围栏）+ 消息分段——daemon 与 web 共用同一套判定口径。
+export {
+  QUIZ_PROTOCOL_VERSION,
+  MAX_QUIZ_RAW_CHARS,
+  MAX_QUIZ_QUESTIONS,
+  MAX_QUIZ_OPTIONS,
+  MAX_FILL_ANSWERS,
+  MAX_SUBJECT_POINTS,
+  MAX_SUBJECT_POINT_CHARS,
+  MAX_QUIZ_KEY_CHARS,
+  MAX_QUIZ_ID_CHARS,
+  isSubjectQuestion,
+  quizStemOf,
+  parseQuizBlock,
+  normalizeFillText,
+  isFillAnswerCorrect,
+  gradeQuiz,
+  isQuizComplete,
+  canonicalQuizJson,
+  computeQuizFingerprint,
+  quizStorageKey,
+  parseStoredQuizState,
+  stripQuizForStreaming,
+  countQuizCards,
+} from './quiz.js';
+
+export type {
+  QuizQuestionType,
+  QuizOption,
+  QuizSource,
+  QuizQuestion,
+  Quiz,
+  InvalidQuestion,
+  QuizParseResult,
+  QuizSelections,
+  QuizGrade,
+} from './quiz.js';
+
+export { splitContent, stripQuizFences } from './messageSegments.js';
+export type { Segment } from './messageSegments.js';
+
 export type {
   SkillKind,
   SkillManifestEntry,
