@@ -995,6 +995,7 @@ function rowToConversation(row: Record<string, unknown>): Conversation {
     id: row.id as string,
     projectId: row.project_id as string,
     title: (row.title as string) ?? null,
+    vaultId: (row.vault_id as string) ?? null,
     channelType: (row.channel_type as string) ?? 'desktop',
     externalSessionId: (row.external_session_id as string) ?? null,
     metadata: row.metadata_json ? JSON.parse(row.metadata_json as string) : undefined,
