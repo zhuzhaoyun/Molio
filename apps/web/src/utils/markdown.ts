@@ -167,67 +167,12 @@ function escapeAttr(text: string): string {
   return text.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
-export type Segment =
-  | { type: 'text'; content: string }
-  | { type: 'code'; lang: string; code: string }
-  | { type: 'quiz'; raw: string; complete: boolean }
-  | { type: 'sandbox'; raw: string; complete: boolean };
+export type { Segment } from '@molio/contracts';
 
 /**
  * Split message content into text, fenced-code and interactive-block segments.
- * Text segments are rendered with renderMarkdown (preserving wiki-link/list/etc.
- * logic); code segments are rendered as <CodeBlock>; quiz and rule-sandbox
- * segments are rendered by their own components (interactive-block registry).
  *
- * Handles unclosed fences (streaming mid-block) by marking the tail segment
- * incomplete. Interactive-block consumers show a "generating" placeholder
- * instead of parsing.
+ * 实现已下沉到 `@molio/contracts`（daemon 侧统计题卡数要用同一套判定口径，
+ * 两处各写一份会漂移）。本文件保留转发层，web 侧 import 路径不变。
  */
-export function splitContent(content: string): Segment[] {
-  if (!content) return [];
-  const segments: Segment[] = [];
-  // 语言名允许连字符（`rule-sandbox`、`objective-c`）—— \w* 会把 `rule-sandbox`
-  // 截成 `rule`，那样交互块永远识别不出来。但必须以 \w 开头：否则「```- 内容」
-  // 这种首行以 - 开头的裸围栏会把 `-` 吃成语言名，丢掉首字符。
-  const fence = /```([\w][\w-]*)?\n?/g;
-  let lastIndex = 0;
-  let match: RegExpExecArray | null;
-
-  while ((match = fence.exec(content)) !== null) {
-    const lang = match[1] || '';
-    const codeStart = match.index + match[0].length;
-    // Find the closing fence (``` on its own, possibly trailing).
-    const closeIdx = content.indexOf('```', codeStart);
-    if (closeIdx === -1) {
-      // Unclosed (streaming): emit preceding text + trailing block segment.
-      if (match.index > lastIndex) {
-        segments.push({ type: 'text', content: content.slice(lastIndex, match.index) });
-      }
-      if (lang === 'quiz') {
-        segments.push({ type: 'quiz', raw: content.slice(codeStart), complete: false });
-      } else if (lang === 'rule-sandbox') {
-        segments.push({ type: 'sandbox', raw: content.slice(codeStart), complete: false });
-      } else {
-        segments.push({ type: 'code', lang, code: content.slice(codeStart) });
-      }
-      return segments;
-    }
-    if (match.index > lastIndex) {
-      segments.push({ type: 'text', content: content.slice(lastIndex, match.index) });
-    }
-    if (lang === 'quiz') {
-      segments.push({ type: 'quiz', raw: content.slice(codeStart, closeIdx), complete: true });
-    } else if (lang === 'rule-sandbox') {
-      segments.push({ type: 'sandbox', raw: content.slice(codeStart, closeIdx), complete: true });
-    } else {
-      segments.push({ type: 'code', lang, code: content.slice(codeStart, closeIdx) });
-    }
-    lastIndex = closeIdx + 3; // skip past closing ```
-    fence.lastIndex = lastIndex;
-  }
-
-  if (lastIndex < content.length) {
-    segments.push({ type: 'text', content: content.slice(lastIndex) });
-  }
-  return segments;
-}
+export { splitContent } from '@molio/contracts';

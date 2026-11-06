@@ -475,6 +475,12 @@ const en: Record<string, string> = {
   'history.renameDialogTitle': 'Rename conversation',
   'history.titleLabel': 'Title',
   'history.confirm': 'Confirm',
+  // "Did quizzes" badge (One* = singular card count; "1 cards" is wrong English)
+  'history.quizBadge': '{cards} cards',
+  'history.quizBadgeOne': '1 card',
+  'history.quizBadgeCorrect': '{cards} cards · {correct} correct',
+  'history.quizBadgeCorrectOne': '1 card · {correct} correct',
+  'history.quizSummaryOnly': 'Quiz card',
   'history.cancel': 'Cancel',
   'history.pinFailed': 'Action failed, please retry',
   'history.selectedCount': 'Selected {count}',
