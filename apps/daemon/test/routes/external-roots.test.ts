@@ -275,4 +275,43 @@ describe('external-root routes', () => {
     });
     assert.equal(res.status, 400);
   });
+
+  // Unmount must purge the mount namespace from the FTS index immediately.
+  // The reindex walk drops the rows on its next pass, and searchVaultFiles'
+  // lazy validation hides ghosts from responses — but between unmount and the
+  // next sweep the rows would sit in the index with a dead link behind them,
+  // and a vault whose ONLY indexed rows were ghosts would still count as
+  // "seeded" (ensureVaultIndexed keys on any vault_files_state row). Purging
+  // on unmount keeps the index a truthful mirror of what is reachable.
+  it('unmount purges the mount namespace from the FTS index', async () => {
+    const { db, a } = app();
+    const vaultPath = fs.mkdtempSync(path.join(os.tmpdir(), 'molio-v-'));
+    const ext = fs.mkdtempSync(path.join(os.tmpdir(), 'molio-x-'));
+    fs.writeFileSync(path.join(ext, 'needle.md'), '# unique-needle-for-purge');
+    const vault = createVault(db, 'V', vaultPath);
+    const root = (await json<any>(await post(a, vault.id, { target: ext }))).root;
+
+    const { ensureVaultIndexed, searchVaultFiles } = await import(
+      '../../src/core/vault-search.js'
+    );
+    await ensureVaultIndexed(db, vault.id, vaultPath);
+    const indexed = await searchVaultFiles(db, vault.id, vaultPath, 'unique-needle', 20);
+    assert.equal(indexed.results.length, 1, 'precondition: mounted content is indexed');
+
+    const del = await a.request(`/vaults/${vault.id}/external-roots/${root.id}`, {
+      method: 'DELETE',
+    });
+    assert.equal(del.status, 204);
+
+    const rows = db.prepare('SELECT file_path FROM vault_files_state WHERE vault_id = ?').all(
+      vault.id,
+    ) as Array<{ file_path: string }>;
+    assert.equal(
+      rows.filter((r) => r.file_path.startsWith(`external/${root.label}/`)).length,
+      0,
+      'unmount must purge the mount namespace from the index immediately',
+    );
+    const after = await searchVaultFiles(db, vault.id, vaultPath, 'unique-needle', 20);
+    assert.equal(after.results.length, 0, 'no ghost hits after unmount');
+  });
 });

@@ -637,6 +637,12 @@ export function knowledgeRoutes(
       }
     }
     removeExternalRoot(db, vault.id, row.id);
+    // The FTS index must mirror what is reachable: the mount namespace's rows
+    // go with the link. The next reindex would drop them anyway, but the
+    // interim window would serve ghost rows behind a dead link — and a vault
+    // whose ONLY indexed rows were the mount's would still count as "seeded"
+    // (ensureVaultIndexed keys on any vault_files_state row existing).
+    removeVaultDir(db, vault.id, `external/${row.label}`);
     vaultWatcher.watch(vault.id, vault.path).catch(() => {});
     return c.body(null, 204);
   });

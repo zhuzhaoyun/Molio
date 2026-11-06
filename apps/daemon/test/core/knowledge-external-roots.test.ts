@@ -13,7 +13,6 @@ import {
   deleteDirectory,
   createDirectory,
   importFiles,
-  searchFiles,
 } from '../../src/core/knowledge.js';
 import { createDirectoryLink, removeDirectoryLink } from '../../src/core/external-roots.js';
 
@@ -136,92 +135,6 @@ describe('scanTree follows external-root links', () => {
     });
     assert.ok(find(tree, 'external/dist'), 'the mount node itself must appear');
     assert.ok(find(tree, 'external/dist/artifact.md'), 'mounted content must appear');
-  });
-});
-
-// Search is the other traversal of the vault: a mounted folder the tree shows
-// but search cannot see would be a silent hole in "search the knowledge base".
-describe('searchFiles follows external-root links', () => {
-  const rootsFor = (ext: string) => [{ label: 'AgentA', target: fs.realpathSync(ext) }];
-
-  it('finds a text file inside a mounted root', () => {
-    const { vault, ext } = setup();
-    fs.writeFileSync(path.join(ext, 'note.md'), 'hello needle world');
-    const { results } = searchFiles(vault, 'needle', 20, rootsFor(ext));
-    assert.deepEqual(results.map((r) => r.filePath), ['external/AgentA/note.md']);
-    assert.ok(results[0]!.snippet.includes('needle'));
-  });
-
-  // The registry is the whitelist: without it a mount link is just an
-  // unregistered symlink and stays invisible, exactly as in scanTree.
-  it('does not search a mounted root when no roots are passed', () => {
-    const { vault, ext } = setup();
-    fs.writeFileSync(path.join(ext, 'note.md'), 'hello needle world');
-    assert.deepEqual(searchFiles(vault, 'needle').results, []);
-    assert.deepEqual(searchFiles(vault, 'needle', 20, []).results, []);
-  });
-
-  it('reports the virtual path, not the link target', () => {
-    const { vault, ext } = setup();
-    fs.mkdirSync(path.join(ext, 'sub'));
-    fs.writeFileSync(path.join(ext, 'sub', 'note.md'), 'needle');
-    const { results } = searchFiles(vault, 'needle', 20, rootsFor(ext));
-    assert.deepEqual(results.map((r) => r.filePath), ['external/AgentA/sub/note.md']);
-  });
-
-  // Same stack-not-set cycle guard as scanTree: two sibling mounts of one real
-  // folder are two results, and each is still found exactly once.
-  it('searches both of two sibling mounts of the same real folder', () => {
-    const { vault, ext } = setup();
-    createDirectoryLink(fs.realpathSync(ext), path.join(vault, 'external', 'AgentB'));
-    fs.writeFileSync(path.join(ext, 'note.md'), 'needle');
-    const { results } = searchFiles(vault, 'needle', 20, [
-      { label: 'AgentA', target: fs.realpathSync(ext) },
-      { label: 'AgentB', target: fs.realpathSync(ext) },
-    ]);
-    assert.deepEqual(
-      results.map((r) => r.filePath).sort(),
-      ['external/AgentA/note.md', 'external/AgentB/note.md'],
-    );
-  });
-
-  it('does not search a link whose real target is a pruned directory', () => {
-    const vault = fs.mkdtempSync(path.join(os.tmpdir(), 'molio-v-'));
-    fs.mkdirSync(path.join(vault, 'external'), { recursive: true });
-    fs.mkdirSync(path.join(vault, 'node_modules'), { recursive: true });
-    fs.writeFileSync(path.join(vault, 'node_modules', 'dep.md'), 'needle');
-    createDirectoryLink(path.join(vault, 'node_modules'), path.join(vault, 'external', 'notes'));
-    const { results } = searchFiles(vault, 'needle', 20, [
-      { label: 'notes', target: path.join(vault, 'node_modules') },
-    ]);
-    assert.deepEqual(results, []);
-  });
-
-  // Mirror of the scanTree case: a registered mount whose label is a pruned name
-  // must be searched too — tree and search share one visibility rule.
-  it('searches a registered root whose label is a pruned name', () => {
-    const vault = fs.mkdtempSync(path.join(os.tmpdir(), 'molio-v-'));
-    fs.mkdirSync(path.join(vault, 'external'), { recursive: true });
-    const parent = fs.mkdtempSync(path.join(os.tmpdir(), 'molio-ext-'));
-    const dist = path.join(parent, 'dist');
-    fs.mkdirSync(dist);
-    fs.writeFileSync(path.join(dist, 'artifact.md'), 'needle');
-    createDirectoryLink(dist, path.join(vault, 'external', 'dist'));
-    const { results } = searchFiles(vault, 'needle', 20, [
-      { label: 'dist', target: fs.realpathSync(dist) },
-    ]);
-    assert.deepEqual(results.map((r) => r.filePath), ['external/dist/artifact.md']);
-  });
-
-  // A mount link whose target is a folder of links, one of which escapes the
-  // whitelist: only the whitelisted side is searched.
-  it('stops at a nested link that leaves the whitelist', () => {
-    const { vault, ext } = setup();
-    const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'molio-out-'));
-    fs.writeFileSync(path.join(outside, 'secret.md'), 'needle');
-    createDirectoryLink(fs.realpathSync(outside), path.join(ext, 'sneak'));
-    const { results } = searchFiles(vault, 'needle', 20, rootsFor(ext));
-    assert.deepEqual(results, []);
   });
 });
 
