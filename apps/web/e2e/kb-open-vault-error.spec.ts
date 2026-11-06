@@ -28,8 +28,8 @@ async function openOpenForm(page: import('@playwright/test').Page) {
   await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
   await page.locator('.kb-vault-bar').first().click({ timeout: 5_000 });
   await expect(page.locator('.vm-list')).toBeVisible({ timeout: 5_000 });
-  // The non-primary action button in the right panel is 「打开」.
-  await page.locator('.vm-action-btn').filter({ hasText: '打开' }).click();
+  // 动作卡整卡可点（testid 稳定），旧版是 .vm-action-btn 内嵌「打开」按钮。
+  await page.locator('[data-testid="vault-open-action"]').click();
   await expect(page.locator('.vm-submit-btn')).toBeVisible({ timeout: 5_000 });
 }
 
