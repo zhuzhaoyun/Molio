@@ -481,10 +481,10 @@ test('Escape closes the manager, but not while the delete confirmation is up', a
   await page.locator('.kb-vault-bar').first().click();
   await expect(page.locator('.vm-overlay')).toBeVisible({ timeout: 5_000 });
 
-  // 删仓库的 ⋯ 只在 hover 时可见 —— 先 hover 行再点。
+  // 删除入口在行内 ⋯ 菜单里（836c3ca3 后不再是 hover 直出的删除按钮）。
   const row = page.locator('.vm-vault-item').filter({ hasText: vaultName }).first();
-  await row.hover();
-  await row.locator('.vm-vault-delete').click();
+  await row.locator('[data-testid="vault-more-btn"]').click();
+  await page.locator('[data-testid="vault-menu-remove"]').click();
   await expect(page.locator('[data-testid="confirm-dialog"]')).toBeVisible({ timeout: 5_000 });
 
   await page.keyboard.press('Escape');

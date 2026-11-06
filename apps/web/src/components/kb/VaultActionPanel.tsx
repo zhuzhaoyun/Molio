@@ -6,7 +6,7 @@
  *                   They don't apply to any one vault.
  *   • vault scope — external source roots, which belong to whichever vault is
  *                   highlighted in the left column.
- * A rule divides the two, and the second one opens with `当前仓库 · <name>` — so
+ * A rule divides the two, and the second one opens with `当前知识库 · <name>` — so
  * the panel never leaves "which vault does this setting belong to?" unanswered.
  */
 
@@ -99,7 +99,7 @@ export function VaultActionPanel({
           // resolved", and re-selects one in the list when it hasn't.
           <section className="vm-roots is-idle" data-testid="external-root-idle">
             <p className="vm-roots-note">
-              在左侧选中一个仓库，即可在这里为它挂载外部素材根。
+              在左侧选中一个知识库，即可在这里为它挂载外部素材根。
             </p>
           </section>
         )
@@ -225,7 +225,7 @@ function ExternalRootsSection({ vault, onChanged }: ExternalRootsSectionProps) {
       {/* Vault scope — everything below belongs to `vault` alone. */}
       <div className="vm-scope">
         <div className="vm-scope-id">
-          <span className="vm-scope-kicker">当前仓库</span>
+          <span className="vm-scope-kicker">当前知识库</span>
           <span className="vm-scope-sep" aria-hidden="true">
             ·
           </span>
