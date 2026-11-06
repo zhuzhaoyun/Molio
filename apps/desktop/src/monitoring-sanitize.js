@@ -121,34 +121,61 @@ export function sanitizeViewName(url) {
 }
 
 /**
- * 过滤 ARMS SDK 的「自报噪音」异常事件（在 beforeReport 里先于脱敏执行）。
+ * 已知「良性异常」特征（大小写不敏感，匹配 `name + message` 拼串）。
  *
- * 背景：@arms/rum-electron 0.0.5 的 electron-reporter.request() 有 promise 泄漏——
- * 上报请求失败（undici 网络层 TypeError: fetch failed）时，`U.finally(...)` 产生的
- * 镜像 promise 无人处理 → 进程级 unhandledRejection → SDK 自己的 exception
- * collector 又把它当应用异常上报，形成「监控上报失败 → 上报这个失败」的自报噪音。
- * 上游 0.0.7 已修复（catch 吞错入离线队列，不再 rethrow），本地 patch 已随升级撤掉；
- * 本函数保留为兜底，防止 SDK 未来版本同类泄漏再次污染异常统计
- * （回归防线见 test/monitoring/arms-sdk-fetch-leak.test.js）。
+ * 这些都是**预期内的降级或网络抖动**，不代表应用缺陷，上报只会污染异常统计、
+ * 白烧 ARMS 额度（免费额度用完后按上报量计费）。分两类：
  *
- * 不会误伤真实错误：
- * - 桌面主进程所有 fetch 调用点（daemon-metrics 健康轮询、/api/shutdown）都有 catch；
- * - renderer(Chromium) 的 fetch 失败消息是 "Failed to fetch"（大写 F、不同消息）；
- * - daemon 子进程没有 ARMS SDK，它的 fetch 失败不会进入这条上报链路。
+ * 1. 网络/加载抖动 —— 本地优先应用的所有 API 都是 localhost:3100，daemon 冷启动
+ *    竞态、离线、Vite 更新后旧 chunk 404 都会产生这类未捕获 rejection，无诊断价值：
+ *    - `fetch failed`：undici 网络层，也是 @arms/rum-electron 0.0.5 自报噪音的消息
+ *      （electron-reporter.request() promise 泄漏 → unhandledRejection → SDK 再上报；
+ *      上游 0.0.7 已修，此处保留兜底，回归防线见 test/monitoring/arms-sdk-fetch-leak.test.js）
+ *    - `Failed to fetch` / `Load failed`：Chromium/WebKit 传输层失败（daemon 不可达）
+ *    - `NetworkError when attempting to fetch`：Firefox 传输层失败
+ *    - `ERR_CONNECTION_REFUSED` 等：daemon 未就绪 / 断网
+ *    - `Loading (CSS) chunk ... failed`：Vite 懒加载 chunk（发版后旧 hash 404）
+ *    ⚠️ 传输层三条用 `$` 锚定到消息末尾：只匹配「整条就是 Failed to fetch」这种
+ *    网络级失败，**不误伤** client.ts 的 `Failed to fetch <资源>: <状态码>`——后者带
+ *    HTTP 状态码，是真实的 daemon 4xx/5xx，必须保留。
+ * 2. 渲染端良性降级 —— 源码已把对应 console.error 降为 console.warn（采集器只吃 error），
+ *    此处再列一份作**兜底**，防止任何遗漏路径仍以 exception 形式上报（按子串匹配）：
+ *    - `MathJax unavailable`：公式降级为原始 LaTeX
+ *    - `Failed to load code theme CSS` / `Failed to apply theme`：排版主题降级
+ *    - `Failed to load projects|conversations|conversation`：启动竞态拉取失败（UI 有兜底态）
+ *
+ * 只过滤 `event_type === 'exception'`：api/resource 等非异常事件的 message 也可能含
+ * "fetch failed"（daemon 健康检查失败等），不能误伤。匹配对象是 `name + ' ' + message`
+ * 拼串，message 在末尾，故 `$` 等价于「消息结尾」。
+ */
+const BENIGN_EXCEPTION_RE = [
+  /fetch failed$/i,
+  /Failed to fetch$/i,
+  /Load failed$/i,
+  /NetworkError when attempting to fetch/i,
+  /ERR_CONNECTION_REFUSED|ECONNREFUSED|ERR_CONNECTION_RESET|ERR_INTERNET_DISCONNECTED|ERR_NAME_NOT_RESOLVED|ERR_ADDRESS_UNREACHABLE/i,
+  /Loading (?:CSS )?chunk .*failed/i,
+  /MathJax unavailable/i,
+  /Failed to load code theme CSS/i,
+  /Failed to apply theme/i,
+  /Failed to load (?:projects|conversations|conversation)/i,
+];
+
+/**
+ * 过滤已知良性异常事件（在 beforeReport 里先于脱敏执行）。
  *
  * @param {any} bundle SDK 传入的上报 bundle（{ app, user, session, events, ... }）
  * @returns {any} 过滤后的 bundle；events 全是噪音时返回 null（SDK 收到 falsy 会跳过本次上报）
  */
-export function dropFetchFailedNoise(bundle) {
+export function dropNoiseEvents(bundle) {
   if (bundle === null || bundle === undefined || typeof bundle !== 'object') return bundle;
   const events = bundle.events;
   if (!Array.isArray(events)) return bundle;
-  const kept = events.filter((e) => !(
-    e !== null && typeof e === 'object' &&
-    e.event_type === 'exception' &&
-    e.name === 'TypeError' &&
-    e.message === 'fetch failed'
-  ));
+  const kept = events.filter((e) => {
+    if (e === null || typeof e !== 'object' || e.event_type !== 'exception') return true;
+    const hay = `${e.name ?? ''} ${e.message ?? ''}`;
+    return !BENIGN_EXCEPTION_RE.some((re) => re.test(hay));
+  });
   if (kept.length === 0) return null;
   if (kept.length === events.length) return bundle;
   return { ...bundle, events: kept };

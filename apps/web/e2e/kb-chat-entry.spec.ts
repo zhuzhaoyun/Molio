@@ -182,9 +182,10 @@ test.describe('KB chat entry (scoped buttons)', () => {
     await expect(panel.locator('.file-chat-input')).toContainText(/doc2\.md/);
   });
 
-  test('💬问答 from graph tab keeps the session file binding', async ({ page }) => {
-    // 契约：上下文跟随可见视图。图谱标签页激活时可见上下文是库（图谱），
-    // 点 💬 = 打开/继续会话，不改绑、不清除文件绑定（被隐藏的 selectedFile 不参与）。
+  test('切换打开的文档：qa 会话跟着改绑；图谱标签不参与改绑', async ({ page }) => {
+    // 契约（2026-10-22 修订）：引用 chip 始终跟随当前打开的文档——打开新文档即改绑，
+    // 不再需要再点一次 💬问答。图谱标签页激活时可见上下文是库（filePath=null），
+    // 点 💬 = 打开/继续会话，不改绑、不清除已有文件绑定（被隐藏的 selectedFile 不参与）。
     await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
     await expect(page.locator('.kb-main')).toContainText('Doc', { timeout: 10_000 });
@@ -195,17 +196,18 @@ test.describe('KB chat entry (scoped buttons)', () => {
     await page.locator('[data-testid="kb-chat-close"]').click();
     await expect(panel).toBeHidden();
 
-    // 打开 doc2.md（selectedFile 变为 doc2）→ 经 NavRail 切到图谱标签 → 点问答
+    // 打开 doc2.md → 会话绑定自动跟随 doc2（页面重载也不影响：store 里的绑定会被改写）
     await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc2.md`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
     await expect(page.locator('.kb-main')).toContainText('Doc2', { timeout: 10_000 });
     // SPA 路径进图谱（不用 ?panel=graph 首载：tab 恢复会与图谱激活竞态，图谱会被抢回文档 tab）
     await page.locator('[data-view="graph"]').click();
-    await expect(page.locator('[data-testid="kb-wtab-graph"]')).toBeVisible({ timeout: 10_000 });
+    await expect(page.locator('[data-testid="kb-wtab-graph"]')).toHaveClass(/is-active/, { timeout: 10_000 });
     await page.locator('[data-testid="kb-btn-ask-tab"]').click();
     await expect(panel).toBeVisible();
-    await expect(panel.locator('.file-chat-input')).toContainText(/doc\.md/);
-    await expect(panel.locator('.file-chat-input')).not.toContainText(/doc2\.md/);
+    // 图谱激活（可见上下文=库）既不改绑也不清除绑定 → 仍是 doc2
+    await expect(panel.locator('.file-chat-input')).toContainText(/doc2\.md/);
+    await expect(panel.locator('.file-chat-input')).not.toContainText(/doc\.md/);
   });
 
   test('💬问答 from graph tab starts vault-scoped session (no hidden file)', async ({ page }) => {
@@ -215,7 +217,7 @@ test.describe('KB chat entry (scoped buttons)', () => {
     await expect(page.locator('.kb-main')).toContainText('Doc', { timeout: 10_000 });
     // 不创建任何会话，经 NavRail 切图谱（SPA，避开 ?panel=graph 首载竞态）
     await page.locator('[data-view="graph"]').click();
-    await expect(page.locator('[data-testid="kb-wtab-graph"]')).toBeVisible({ timeout: 10_000 });
+    await expect(page.locator('[data-testid="kb-wtab-graph"]')).toHaveClass(/is-active/, { timeout: 10_000 });
     await page.locator('[data-testid="kb-btn-ask-tab"]').click();
     const panel = page.locator('[data-testid="kb-chat-panel"]');
     await expect(panel).toBeVisible();
@@ -223,6 +225,10 @@ test.describe('KB chat entry (scoped buttons)', () => {
   });
 
   test('panel + 新会话 from graph tab stays vault-scoped (no hidden file)', async ({ page }) => {
+    let resolveRequests = 0;
+    page.on('request', (request) => {
+      if (request.url().includes(`/knowledge/vaults/${vault.id}/resolve/doc.md`)) resolveRequests++;
+    });
     // 同一契约覆盖面板「+」入口：图谱页新建会话不绑被隐藏的 selectedFile
     await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
@@ -234,11 +240,15 @@ test.describe('KB chat entry (scoped buttons)', () => {
 
     // 切图谱 → 面板 + 新建 → 新会话应为库级（composer 无 @doc.md）
     await page.locator('[data-view="graph"]').click();
-    await expect(page.locator('[data-testid="kb-wtab-graph"]')).toBeVisible({ timeout: 10_000 });
+    await expect(page.locator('[data-testid="kb-wtab-graph"]')).toHaveClass(/is-active/, { timeout: 10_000 });
     await page.locator('[data-testid="kb-chat-session-new"]').click();
     await expect(page.locator('[data-testid="kb-chat-session-tab"]')).toHaveCount(2);
     const activeInput = panel.locator('[data-testid="kb-chat-session"]:visible .file-chat-input');
     await expect(activeInput).not.toContainText(/doc\.md/);
+    await expect(page.locator('[data-testid="kb-wtab-graph"]')).toHaveClass(/is-active/);
+    // Applying the initial file navigation must not restart resolution when
+    // opening the QA panel or changing the active workspace tab.
+    expect(resolveRequests).toBe(1);
   });
 
   test('💬问答 empty-state CTA also in 未选择文件 state (wiki initialized, no file)', async ({ page }) => {

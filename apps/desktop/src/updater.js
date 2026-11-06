@@ -342,8 +342,11 @@ function spawnInstaller(installerPath) {
 
 /**
  * macOS manual update install: write a shell script that waits for the app
- * to quit, extracts the ZIP, replaces the .app, removes quarantine xattr,
- * and relaunches. Bypasses ShipIt (which requires Developer ID signing).
+ * to quit (polling the app PID — a normal quit takes 5–9s: daemon graceful
+ * shutdown + settle; the old blind 3-second sleep regularly swapped files under a
+ * still-alive app), extracts the ZIP, replaces the .app, removes quarantine
+ * xattr, and relaunches. Bypasses ShipIt (which requires Developer ID
+ * signing).
  *
  * @param {string} zipPath — path to the downloaded update ZIP
  * @param {string} appBundlePath — path to the installed .app bundle
@@ -361,8 +364,19 @@ echo "$(date): [update] ========== START ==========" >> "$LOG"
 echo "$(date): [update] ZIP: $1" >> "$LOG"
 echo "$(date): [update] APP: $2" >> "$LOG"
 
-echo "$(date): [update] Waiting for app to quit..." >> "$LOG"
-sleep 3
+echo "$(date): [update] Waiting for app (pid=$3) to quit..." >> "$LOG"
+for i in $(seq 1 60); do
+  if ! kill -0 "$3" 2>/dev/null; then
+    echo "$(date): [update] App exited (waited ~$((i / 2))s)" >> "$LOG"
+    break
+  fi
+  sleep 0.5
+done
+if kill -0 "$3" 2>/dev/null; then
+  echo "$(date): [update] App still alive after 30s — sending SIGKILL" >> "$LOG"
+  kill -9 "$3" 2>/dev/null || true
+  sleep 1
+fi
 
 echo "$(date): [update] Extracting update..." >> "$LOG"
 TMPDIR=$(mktemp -d)
@@ -392,7 +406,11 @@ echo "$(date): [update] Removing quarantine..." >> "$LOG"
 xattr -rd com.apple.quarantine "$2" 2>> "$LOG" || true
 
 echo "$(date): [update] Launching new version..." >> "$LOG"
-open "$2" 2>> "$LOG" || true
+# -n: force a NEW instance — if a lingering old instance is still registered
+# with LaunchServices, a plain open would only activate it (same bundle id)
+# and the new version would never start. Duplicates are guarded by
+# requestSingleInstanceLock in main.js.
+open -n "$2" 2>> "$LOG" || true
 
 echo "$(date): [update] Cleanup..." >> "$LOG"
 rm -rf "$TMPDIR" "$1" 2>> "$LOG" || true
@@ -403,7 +421,7 @@ echo "$(date): [update] ========== DONE ==========" >> "$LOG"
     writeFileSync(scriptPath, script);
     chmodSync(scriptPath, 0o755);
 
-    const child = spawn('bash', [scriptPath, zipPath, appBundlePath, scriptPath], {
+    const child = spawn('bash', [scriptPath, zipPath, appBundlePath, String(process.pid)], {
       detached: true,
       stdio: 'ignore',
     });

@@ -8,23 +8,83 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import type { GraphData, GraphNode } from '@molio/contracts';
+import type { GraphData, GraphNode, GraphScope } from '@molio/contracts';
 import { api } from '../../api/client';
 import { useI18n } from '../../i18n';
-import { useActiveVaultId, vaultStore } from '../../stores/vaultStore';
+import { useActiveVault, useActiveVaultId, vaultStore } from '../../stores/vaultStore';
 import { navigationHistoryStore, useNavigationHistory } from '../../stores/navigationHistoryStore';
 import { useGraphSettings } from './useGraphSettings';
+import { graphFingerprint, refreshDebounceMs } from './refreshPolicy';
 import { GraphSettingsPanel } from './GraphSettingsPanel';
 import { GraphSearchBox } from './GraphSearchBox';
 import { Minimap } from './Minimap';
-import { getThemeColors, resolveTheme } from './types';
+import { getThemeColors, resolveTheme, NODE_TYPE_COLORS, NODE_TYPE_LABELS } from './types';
 import {
   PixiGraphEngine,
   type EngineNode,
   type EngineEdge,
 } from './engine/pixiGraphEngine';
+import { exportFileName } from './engine/exportImage';
+import {
+  cardInkFor,
+  collectLegend,
+  computeCardLayout,
+  drawCard,
+  pickCoreTopics,
+  type CardAspect,
+} from './engine/exportCard';
 
-export function GraphPage({ active = true, onCloseCompanion }: { active?: boolean; onCloseCompanion?: () => void } = {}) {
+/** 出图署名：免费、无开关。去水印是「负面购买」——向最愿意分享的人收费，
+ *  正好掐掉获客本身；付费点应该是「换成你自己的署名」，不是把名字抹掉。 */
+const EXPORT_WATERMARK = 'Molio';
+
+/** 图谱剔除的 .md 基名（小写）——镜像 daemon `routes/graph.ts` 的 GRAPH_EXCLUDED_BASENAMES，
+ *  仅用于挑空态文案，不参与数据过滤（过滤在 daemon）。 */
+const GRAPH_EXCLUDED_BASENAMES = new Set(['index', 'log']);
+
+/** 出图版式选项。`natural` 跟图的原始比例；其余是发布平台的常用比例。 */
+const EXPORT_ASPECTS: Array<{ key: CardAspect; label: string }> = [
+  { key: 'natural', label: 'graph.exportAspectNatural' },
+  { key: 'square', label: 'graph.exportAspectSquare' },
+  { key: 'portrait', label: 'graph.exportAspectPortrait' },
+  { key: 'wide', label: 'graph.exportAspectWide' },
+];
+
+/**
+ * 「库 + scope」合成键：指纹去重与在途反馈都以它为界。
+ *
+ * 只比内容指纹是不够的——两个不同 scope 的空子图载荷逐字节相同（nodes/edges/
+ * deadLinks/focusNodes 全空），会被误判成「数据没变」而丢弃，界面就停在上一个
+ * scope 上不动。同一库同一 scope 内才谈得上「内容没变」。
+ */
+function graphDataKey(vaultId: string | null | undefined, scopeKey: string | null): string {
+  return `${vaultId ?? ''}|${scopeKey ?? ''}`;
+}
+
+export function GraphPage({
+  active = true,
+  onCloseCompanion,
+  // 局部图作用域（null = 全量图，严格 no-op）：file=单文档 1 跳邻域 / dir=文件夹子图。
+  // 由宿主传入：对照副视图传 file-scope，主格图谱 tab 传 graphTabScope（file/dir）。
+  graphScope = null,
+  onNodeOpen,
+  onScopeReset,
+  // 副视图（对照）模式：小参照面板 + 随主格文档高频重锚定。取景与时机都不同——
+  // 取景用「整张子图 fit」而非「圆心居中放大」（小画布下后者会裁掉邻居），
+  // 且布局同步跑完、瞬时取景，不做过渡动画（见下方数据推送 effect）。
+  companion = false,
+  // 「库变了」信号计数（useKnowledge.treeRevision）：图谱自动跟上文件树。
+  // 宿主传值；图谱不可见时先记账、等可见了再刷（见下方防抖消费 effect）。
+  revision = 0,
+}: {
+  active?: boolean;
+  onCloseCompanion?: () => void;
+  graphScope?: GraphScope | null;
+  onNodeOpen?: () => void;
+  onScopeReset?: () => void;
+  companion?: boolean;
+  revision?: number;
+} = {}) {
   const { t } = useI18n();
   const navigate = useNavigate();
   // 与文件标签标题栏同一份视图历史（#244 store）——图谱也是一个「被看过的视图」
@@ -32,6 +92,8 @@ export function GraphPage({ active = true, onCloseCompanion }: { active?: boolea
 
   // 跟随知识库的活跃 vault，知识库切换时图谱自动切换
   const activeVaultId = useActiveVaultId();
+  // 出图卡片的标题 —— 库名；拿不到就不出标题行（不拿 vaultId 凑数）
+  const activeVault = useActiveVault();
   const [graphData, setGraphData] = useState<GraphData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -40,12 +102,22 @@ export function GraphPage({ active = true, onCloseCompanion }: { active?: boolea
   const [searchOpen, setSearchOpen] = useState(false);
   const [showStats, setShowStats] = useState(false);
   const searchRef = useRef<HTMLDivElement>(null);
+  // 一键出图：气泡里二选一（下载 / 复制），气泡关掉后在原位飘一句结果
+  const [showExport, setShowExport] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [exportNote, setExportNote] = useState<string | null>(null);
+  /** 出图版式：默认跟图的原始比例，固定比例是给发布平台用的（不裁切、只留白）。 */
+  const [exportAspect, setExportAspect] = useState<CardAspect>('natural');
+  /** 是否附带标题/统计/核心主题/图例。默认带（这是卡片的价值所在），
+   *  但有人只想要一张干净的图 —— 给开关，不替他决定。署名始终保留。 */
+  const [exportIncludeInfo, setExportIncludeInfo] = useState(true);
+  const exportRef = useRef<HTMLDivElement>(null);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const engineRef = useRef<PixiGraphEngine | null>(null);
   const [engine, setEngine] = useState<PixiGraphEngine | null>(null);
 
-  const { settings, updateSettings, updateForce } = useGraphSettings();
+  const { settings, updateSettings, updateForce, resetSettings } = useGraphSettings();
   const themeColors = getThemeColors(settings.theme);
 
   // 供引擎回调读取的最新值（避免重建引擎）
@@ -57,31 +129,109 @@ export function GraphPage({ active = true, onCloseCompanion }: { active?: boolea
   settingsRef.current = settings;
   const themeRef = useRef(themeColors);
   themeRef.current = themeColors;
+  // 局部图分支同样经 ref 读取最新值：fetch/push effect 的 deps 只放 scopeKey 字符串，
+  // 绝不 dep scope 对象（父组件每次渲染都新建对象字面量会把 effect 打成每次渲染重跑）
+  const scopeRef = useRef<GraphScope | null>(graphScope);
+  scopeRef.current = graphScope;
+  const activeRef = useRef(active);
+  activeRef.current = active;
+  // 引擎回调 / topbar 按钮都只创建一次，必须走 ref 才能拿到最新的回调实现
+  const onNodeOpenRef = useRef(onNodeOpen);
+  onNodeOpenRef.current = onNodeOpen;
+  const onScopeResetRef = useRef(onScopeReset);
+  onScopeResetRef.current = onScopeReset;
+  // scope 的稳定标识：换 file / 换 dir 才重新拉数据
+  const scopeKey = graphScope ? `${graphScope.type}:${graphScope.path}` : null;
 
-  // Fetch graph data when active vault changes
+  // 供防抖与去重读取的最新值（不进 deps，避免把它们变成 effect 触发器）
+  const graphDataRef = useRef<GraphData | null>(null);
+  graphDataRef.current = graphData;
+  // 上一次「已采纳」数据的指纹（连同它所属的库+scope 键）：两者都相同才跳过 setGraphData
+  // （对象不换 → 下游重排不跑）
+  const fingerprintRef = useRef<{ key: string; fingerprint: string } | null>(null);
+  // 展示中数据所属的库+scope 键：用来区分「换 scope」（必须有在途反馈）与后台自动刷新（不该闪）
+  const shownKeyRef = useRef<string | null>(null);
+  const [scopeLoading, setScopeLoading] = useState(false);
+
+  // ── 库变了 → 防抖后刷新 ──
+  // 复用文件树那条 `tree-changed` 信号（useKnowledge 的 treeRevision），不另开 SSE。
+  // 两道闸门：① 图谱不可见不刷（keep-alive 的隐藏标签页没必要为看不见的重排买单），
+  // 但记账不丢——下一次 active 翻转时补上；② 按图规模尾随防抖，把 AI 连续写入打出的
+  // 多波信号合并成一次（大图一次重排数秒 CPU，多等一会儿更划算）。
+  const [refreshTick, setRefreshTick] = useState(0);
+  const consumedRevisionRef = useRef(revision);
   useEffect(() => {
-    if (!activeVaultId) return;
+    if (!active) return;
+    if (consumedRevisionRef.current === revision) return;
+    const timer = setTimeout(() => {
+      consumedRevisionRef.current = revision;
+      setRefreshTick((v) => v + 1);
+    }, refreshDebounceMs(graphDataRef.current?.nodes.length ?? 0));
+    return () => clearTimeout(timer);
+  }, [revision, active]);
 
+  // Fetch graph data when active vault / scope changes, or the vault content changes
+  useEffect(() => {
+    // 库被清空时在途请求会被 cleanup 取消，其 finally 不再执行——必须在这里收掉在途反馈，
+    // 否则那枚芯片会永远盖在旧图上（库删除发生在换 scope 请求飞行途中时命中）。
+    if (!activeVaultId) {
+      setScopeLoading(false);
+      return;
+    }
+
+    // 局部分支：按 scopeRef.current 分派局部图 / 全量图（deps 用 scopeKey，不含 scope 对象）
+    const scope = scopeRef.current;
+
+    // cancelled：快速切换 scope/file 时丢弃陈旧响应（慢的旧请求晚到不能覆盖新数据）
+    let cancelled = false;
     setLoading(true);
     setError(null);
-    api.getGraph(activeVaultId)
+    // 换 scope（全量图 ⇄ 局部图、局部图之间）而屏幕上已有旧图时，置在途反馈。
+    // 后台自动刷新（refreshTick 触发）键没变，不置——那里数据没变就该保持原样、不闪加载态。
+    const dedupKey = graphDataKey(activeVaultId, scopeKey);
+    if (shownKeyRef.current !== dedupKey) setScopeLoading(true);
+    const req = scope
+      ? api.getLocalGraph(activeVaultId, scope)
+      : api.getGraph(activeVaultId);
+    req
       .then((data) => {
+        if (cancelled) return;
+        // 指纹去重：库变了 ≠ 图谱变了。往 raw/ 拷个 PDF、改个错别字同样会推 tree-changed，
+        // 而重建一次要重跑整轮力导向仿真；数据没变就保持原对象，下游 setData/重排全不跑。
+        // 但去重只在**同一库 + 同一 scope** 内成立：换 scope 时哪怕内容逐字节相同
+        // （两个不同的空子图正是如此）也必须采纳，否则界面停在上一个 scope 上不动。
+        const fingerprint = graphFingerprint(data);
+        const prev = fingerprintRef.current;
+        if (prev && prev.key === dedupKey && prev.fingerprint === fingerprint) return;
+        fingerprintRef.current = { key: dedupKey, fingerprint };
+        shownKeyRef.current = dedupKey;
         setGraphData(data);
       })
       .catch((err) => {
+        if (cancelled) return;
         if (err.message?.includes('404')) {
           // Vault no longer exists in DB — clear stale selection.
           // App.tsx's setVaults() will auto-select a valid vault,
           // and this useEffect will re-fire with the new activeVaultId.
           vaultStore.setActiveVaultId(null);
           setError(null);
+          fingerprintRef.current = null;
+          setGraphData(null);
         } else {
+          // 刷新失败保留旧图，只报错（图还在，用户不必重新等一次布局）。
+          // 首次加载失败时本来就没有旧图，落到的仍然是错误空态。
           setError(err.message ?? 'Failed to load graph');
         }
-        setGraphData(null);
       })
-      .finally(() => setLoading(false));
-  }, [activeVaultId]);
+      .finally(() => {
+        if (cancelled) return;
+        setLoading(false);
+        setScopeLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeVaultId, scopeKey, refreshTick]);
 
   // ── 筛选后的图数据（引擎只接收可见节点）──
   const engineData = useMemo((): { nodes: EngineNode[]; edges: EngineEdge[] } | null => {
@@ -108,6 +258,34 @@ export function GraphPage({ active = true, onCloseCompanion }: { active?: boolea
 
   const hasData = !!engineData && engineData.nodes.length > 0;
 
+  // ── 出图卡片内容 ──
+  // 一律取**筛选后的** engineData：卡片上的统计和核心主题必须跟图面严格对得上，
+  // 否则会出现「图里 300 个点、标题写 1284 篇」——比不写更糟。
+  const coreTopics = useMemo(
+    () => pickCoreTopics(engineData?.nodes ?? [], engineData?.edges ?? []),
+    [engineData],
+  );
+  const exportLegend = useMemo(
+    () => collectLegend(engineData?.nodes ?? [], NODE_TYPE_COLORS, NODE_TYPE_LABELS),
+    [engineData],
+  );
+
+  // 空态文案按 scope 细分——全量图空态只说「库里没有 md」，对局部图是误导
+  // （库里有 md，只是这个文件/目录没有可显示的关系）。
+  const emptyCopy = useMemo(() => {
+    const scope = graphScope;
+    if (!scope) return { title: t('graph.empty'), hint: t('graph.emptyHint') };
+    if (scope.type === 'dir') return { title: t('graph.emptyDir'), hint: t('graph.emptyDirHint') };
+    // file-scope：图谱只收录除 index / log 之外的 .md（与 daemon 的 isGraphExcludedFile 同规则，
+    // 仅用于选文案；规则若变更这里只需同步措辞，不影响功能）。
+    const base = scope.path.split('/').pop() ?? scope.path;
+    const isMd = /\.md$/i.test(base);
+    const excluded = isMd && GRAPH_EXCLUDED_BASENAMES.has(base.replace(/\.md$/i, '').toLowerCase());
+    return isMd && !excluded
+      ? { title: t('graph.emptyFile'), hint: t('graph.emptyFileHint') }
+      : { title: t('graph.emptyOutOfGraph'), hint: t('graph.emptyOutOfGraphHint') };
+  }, [graphScope, t]);
+
   // `/` 快捷键：在非输入态下展开图谱搜索。与全局搜索 Ctrl/Cmd+F 区分，不冲突。
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -124,16 +302,20 @@ export function GraphPage({ active = true, onCloseCompanion }: { active?: boolea
 
   // 搜索开合：外部点击 / Esc 收起（点在搜索框内则保留）。
   useEffect(() => {
-    if (!searchOpen && !showStats) return;
+    if (!searchOpen && !showStats && !showExport) return;
     const onDown = (e: MouseEvent) => {
       const t = e.target as Node;
       if (searchRef.current?.contains(t)) return;
       if ((t as HTMLElement)?.closest?.('.graph-stats-ctrl')) return;
+      // 出图气泡同理：吃掉 caret 内的 mousedown，否则点「下载 PNG」时元素先被卸载，
+      // 后续 click 根本不会派发（mousedown → 卸载 → 无 click），点了没反应。
+      if (exportRef.current?.contains(t)) return;
       setSearchOpen(false);
       setShowStats(false);
+      setShowExport(false);
     };
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') { setSearchOpen(false); setShowStats(false); }
+      if (e.key === 'Escape') { setSearchOpen(false); setShowStats(false); setShowExport(false); }
     };
     document.addEventListener('mousedown', onDown);
     document.addEventListener('keydown', onKey);
@@ -141,7 +323,14 @@ export function GraphPage({ active = true, onCloseCompanion }: { active?: boolea
       document.removeEventListener('mousedown', onDown);
       document.removeEventListener('keydown', onKey);
     };
-  }, [searchOpen, showStats]);
+  }, [searchOpen, showStats, showExport]);
+
+  // 出图结果提示 2.4s 自动消失（成功/失败同一条：看见就行，不必手动点掉）
+  useEffect(() => {
+    if (!exportNote) return;
+    const timer = setTimeout(() => setExportNote(null), 2400);
+    return () => clearTimeout(timer);
+  }, [exportNote]);
 
   // ── 引擎生命周期：首次有数据时异步创建 ──
   useEffect(() => {
@@ -159,7 +348,7 @@ export function GraphPage({ active = true, onCloseCompanion }: { active?: boolea
         eng.destroy();
         return;
       }
-      // hover 高亮由引擎内部处理；单击/双击节点都跳转文档
+      // hover 高亮由引擎内部处理；单击/双击节点都跳转文档（见下方 setCallbacks）
       const openNode = (_key: string, node: EngineNode) => {
           const vaultId = vaultIdRef.current;
           if (!vaultId) return;
@@ -167,6 +356,9 @@ export function GraphPage({ active = true, onCloseCompanion }: { active?: boolea
             navigateRef.current('/knowledge', {
               state: { openFile: node.path, vaultId },
             });
+            // 可选宿主通知：在本组件已 navigate 到节点文件后触发一次（走 ref——setCallbacks 只在引擎创建时调用一次）。
+            // 当前无宿主传 onNodeOpen，此调用为 no-op；如未来 graph-as-tab 宿主接管跳转可在此接收。
+            onNodeOpenRef.current?.();
           } else if (node.dead) {
             // 死链节点 → 新建空白页并打开（Obsidian 行为：点未解析链接即建笔记）
             const fileName = /\.md$/i.test(node.label) ? node.label : `${node.label}.md`;
@@ -176,12 +368,16 @@ export function GraphPage({ active = true, onCloseCompanion }: { active?: boolea
                 navigateRef.current('/knowledge', {
                   state: { openFile: fileName, vaultId },
                 });
+                onNodeOpenRef.current?.();
               })
               .catch((err) => {
                 console.error('[graph] 创建死链目标文件失败:', err);
               });
           }
         };
+      // 单击 / 双击节点都打开文章 —— 三处图谱（全量图 / 局部知识图谱 / 对照）行为完全一致。
+      // 「高亮关联」由悬停承担（引擎 hover 两档：非邻居淡化 + 关联边置顶），与 Obsidian 原生图谱同款
+      // （悬停高亮、单击打开）；「单击选中」不提供——它与悬停重复，而「看邻域」已由局部知识图谱专门承担。
       eng.setCallbacks({ onNodeClick: openNode, onNodeDoubleClick: openNode });
       engineRef.current = eng;
       // 开发环境调试句柄：像素提取（renderer.extract）与布局检查
@@ -217,14 +413,68 @@ export function GraphPage({ active = true, onCloseCompanion }: { active?: boolea
 
   // ── 数据推送：vault 切换时先清位置缓存，再 setData ──
   const lastVaultRef = useRef<string | null>(null);
+  // 上一次的 scope 标识：用于识别「局部图 → 全量图」的返回（需要重新取景）
+  const prevScopeKeyRef = useRef<string | null>(null);
   useEffect(() => {
-    if (!engine || !engineData) return;
+    if (!engine) return;
+    const scope = scopeRef.current;
+    const currentScopeKey = scope ? `${scope.type}:${scope.path}` : null;
+    const prevScopeKey = prevScopeKeyRef.current;
+    prevScopeKeyRef.current = currentScopeKey;
+
+    // 空数据必须清引擎：hasData 翻转后 .graph-empty 只是视觉遮罩（不透明背景 + z-index），
+    // 不清掉的话旧子图仍在遮罩背后继续仿真耗 CPU；但引擎本身不销毁（tab 切回还要用）。
+    if (!engineData) {
+      engine.setData([], []);
+      return;
+    }
     if (lastVaultRef.current !== activeVaultId) {
       lastVaultRef.current = activeVaultId;
       engine.resetPositions();
     }
     engine.setData(engineData.nodes, engineData.edges);
-  }, [engine, engineData, activeVaultId]);
+
+    // ── 取景：对照副格 → 整张子图 fit；file → 圆心居中放大；dir → 子图 fit；全量图 → 整图 fit ──
+    // 布局在收敛前一直在动，早取景会落在错误位置（这是「切换后视角不对」的根因），所以：
+    //   scope 切换（含局部图 ⇄ 全量图）→ 立即落位（不动画，先给个合理视角）
+    //                                    + 注册收敛后的动画取景，平滑过渡到正确视角
+    //   同 scope 内筛选变化 → 照旧直接动画取景（数据规模没变，位置基本稳定）
+    // 注意非动画 setTransform 不置 hasUserInteracted，动画路径会置——故立即落位必须非动画，
+    // 否则会抑制收敛后的 reframe。active 读 activeRef（不进 deps）：companion 开合若触发
+    // effect 会全量重跑 setData。
+    const applyView = (animated: boolean) => {
+      if (companion) {
+        // 对照副格：始终瞬时 fit 整张子图（高频重锚定 + 小画布，动画只会拖沓且裁掉邻居）
+        engine.fitView({ animate: false });
+        return;
+      }
+      if (scope?.type === 'file') {
+        const focusKey = graphData?.focusNodes?.[0];
+        // 圆心被筛选条件滤掉（不在可见节点里）时退化为整图 fit
+        if (focusKey && engineData.nodes.some((n) => n.key === focusKey)) {
+          // 框全整张 1 跳邻域（大 hub 下 focusNode 的 k=1.5 会裁掉外圈），并选中圆心做视觉锚点
+          engine.fitView({ animate: animated });
+          engine.selectNode(focusKey);
+          return;
+        }
+      }
+      engine.fitView({ animate: animated });
+    };
+    if (companion) {
+      // 布局同步跑完 → 取景一次到位：无过渡动画、无延迟，每次重锚定都是完整视角
+      engine.preSettle();
+      applyView(false);
+      return;
+    }
+    if (prevScopeKey !== currentScopeKey) {
+      if (currentScopeKey || prevScopeKey) {
+        applyView(false);
+        engine.reframeAfterSettle(() => applyView(activeRef.current));
+      }
+    } else if (scope) {
+      applyView(activeRef.current);
+    }
+  }, [engine, engineData, activeVaultId, graphData, companion]);
 
   // ── 外观/力度参数实时下发（不重建仿真布局）──
   useEffect(() => {
@@ -238,6 +488,104 @@ export function GraphPage({ active = true, onCloseCompanion }: { active?: boolea
   useEffect(() => {
     engine?.setForces(settings.forces);
   }, [engine, settings.forces]);
+
+  /**
+   * 出图并按出口投递。
+   *
+   * 图分两步来：引擎产出位图（captureImage），这里把它排进卡片（标题 / 统计 /
+   * 核心主题 / 图例 / 署名）再编码成 PNG。卡片内容全部取筛选后的数据，与图面一致。
+   *
+   * 复制那条路把 **promise 直接塞进 ClipboardItem** —— `write()` 仍在用户手势的同步段
+   * 内被调用（Safari 只在手势内放行 clipboard.write，先 await 再 write 会被拒）。
+   */
+  const runExport = async (outlet: 'download' | 'copy') => {
+    const eng = engineRef.current;
+    if (!eng || exporting) return;
+    setShowExport(false);
+    // 非安全上下文（如 NAS 上 http 访问）没有 navigator.clipboard：如实说不可用，
+    // 别静默吞掉变成「复制成功」。能力检查放在出图之前 —— 先 capture 再早退会
+    // 留下一个没人接的 promise。
+    if (outlet === 'copy' && (typeof ClipboardItem === 'undefined' || !navigator.clipboard?.write)) {
+      setExportNote(t('graph.exportCopyUnsupported'));
+      return;
+    }
+    setExportNote(null);
+    setExporting(true);
+
+    const metaLine = `${t('graph.nodes', { count: engineData?.nodes.length ?? 0 })} · ${t(
+      'graph.edges',
+      { count: engineData?.edges.length ?? 0 },
+    )}`;
+    const topicsLine = coreTopics.length
+      ? `${t('graph.exportCoreTopics')}${coreTopics.join(' · ')}`
+      : '';
+    const title = activeVault?.name ?? '';
+    const aspect = exportAspect;
+    const includeInfo = exportIncludeInfo;
+
+    /** 位图 → 卡片 → PNG。数据在点击那一刻快照，之后用户再改筛选也不影响这次导出。 */
+    const compose = (raw: HTMLCanvasElement): Promise<Blob | null> => {
+      const layout = computeCardLayout({
+        graphW: raw.width,
+        graphH: raw.height,
+        aspect,
+        hasTopics: topicsLine.length > 0,
+        includeInfo,
+      });
+      if (!layout) return Promise.resolve(null);
+      const out = document.createElement('canvas');
+      out.width = layout.width;
+      out.height = layout.height;
+      const ctx = out.getContext('2d');
+      if (!ctx) return Promise.resolve(null);
+      drawCard(ctx, raw, layout, {
+        title,
+        meta: metaLine,
+        topics: topicsLine,
+        legend: exportLegend,
+        watermark: EXPORT_WATERMARK,
+        ink: cardInkFor(themeColors.bg),
+        bg: themeColors.bg,
+        includeInfo,
+      });
+      return new Promise<Blob | null>((resolve) => out.toBlob(resolve, 'image/png'));
+    };
+
+    const capture = (async () => {
+      const raw = eng.captureImage();
+      return raw ? compose(raw) : null;
+    })();
+
+    try {
+      if (outlet === 'copy') {
+        await navigator.clipboard.write([
+          new ClipboardItem({
+            'image/png': capture.then((blob) => {
+              if (!blob) throw new Error('nothing to export');
+              return blob;
+            }),
+          }),
+        ]);
+        setExportNote(t('graph.exportCopied'));
+      } else {
+        const blob = await capture;
+        if (!blob) throw new Error('nothing to export');
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = exportFileName(new Date(), title);
+        a.click();
+        // 立刻 revoke 有些浏览器会来不及取用；留足时间再释放这个临时 URL
+        setTimeout(() => URL.revokeObjectURL(url), 10_000);
+        setExportNote(t('graph.exportDownloaded'));
+      }
+    } catch (err) {
+      console.error('[graph] 导出图片失败:', err);
+      setExportNote(t('graph.exportFailed'));
+    } finally {
+      setExporting(false);
+    }
+  };
 
   const nodeCount = graphData?.nodes.length ?? 0;
   const edgeCount = graphData?.edges.length ?? 0;
@@ -329,8 +677,8 @@ export function GraphPage({ active = true, onCloseCompanion }: { active?: boolea
               </button>
             </div>
           )}
-          {/* 统计：收敛进 ℹ，点击展示 */}
-          {graphData && !loading && (
+          {/* 统计：收敛进 ℹ，点击展示（刷新期间也留着——不然每次自动刷新控件都会闪一下） */}
+          {graphData && (
             <div className="graph-stats-ctrl">
               {showStats && (
                 <div className="graph-stats-pop">
@@ -357,6 +705,84 @@ export function GraphPage({ active = true, onCloseCompanion }: { active?: boolea
               </button>
             </div>
           )}
+          {/* 一键出图（对外分享/获客）：下载 PNG / 复制到剪贴板。
+              副视图（分屏对照的小参照面板）不渲染——那里是「看」，出图只属于主格。 */}
+          {hasData && !companion && (
+            <div className="graph-export-ctrl" ref={exportRef}>
+              {(showExport || exportNote) && (
+                <div className="graph-export-pop">
+                  {exportNote ? (
+                    <span className="graph-export-note">{exportNote}</span>
+                  ) : (
+                    <>
+                      {/* 版式：默认跟图走；固定比例是给发布平台用的（contain 留白，不裁图） */}
+                      <div
+                        className="graph-export-aspects"
+                        role="group"
+                        aria-label={t('graph.exportAspect')}
+                      >
+                        {EXPORT_ASPECTS.map(({ key, label }) => (
+                          <button
+                            key={key}
+                            type="button"
+                            className={`graph-export-aspect${exportAspect === key ? ' is-active' : ''}`}
+                            data-testid={`graph-export-aspect-${key}`}
+                            aria-pressed={exportAspect === key}
+                            onClick={() => setExportAspect(key)}
+                          >
+                            {t(label)}
+                          </button>
+                        ))}
+                      </div>
+                      {/* 附带信息：默认开（标题/统计/核心主题/图例是卡片的价值），
+                          但只想要一张干净图的人应当能关掉——署名不跟着关。 */}
+                      <label className="graph-export-toggle">
+                        <input
+                          type="checkbox"
+                          data-testid="graph-export-info"
+                          checked={exportIncludeInfo}
+                          onChange={(e) => setExportIncludeInfo(e.target.checked)}
+                        />
+                        <span>{t('graph.exportIncludeInfo')}</span>
+                      </label>
+                      <button
+                        type="button"
+                        className="graph-export-item"
+                        data-testid="graph-export-download"
+                        onClick={() => runExport('download')}
+                      >
+                        {t('graph.exportDownload')}
+                      </button>
+                      <button
+                        type="button"
+                        className="graph-export-item"
+                        data-testid="graph-export-copy"
+                        onClick={() => runExport('copy')}
+                      >
+                        {t('graph.exportCopy')}
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
+              <button
+                type="button"
+                className={`graph-icon-btn${showExport ? ' is-active' : ''}`}
+                onClick={() => setShowExport((v) => !v)}
+                disabled={exporting}
+                data-tooltip={exporting ? t('graph.exporting') : t('graph.export')}
+                aria-label={t('graph.export')}
+                data-testid="graph-export"
+              >
+                {/* 画框 + 山形/日头：一眼即「这一屏能出成图片」 */}
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" width="18" height="18">
+                  <rect x="3" y="4.5" width="18" height="15" rx="2.5" />
+                  <circle cx="8.6" cy="10" r="1.5" />
+                  <path d="M4 17.4l4.7-4.7a1.5 1.5 0 0 1 2.1 0l3.4 3.4 1.6-1.6a1.5 1.5 0 0 1 2.1 0L21 17.6" />
+                </svg>
+              </button>
+            </div>
+          )}
           <button
             className={`graph-settings-btn ${showSettings ? 'is-active' : ''}`}
             onClick={() => setShowSettings(!showSettings)}
@@ -370,6 +796,24 @@ export function GraphPage({ active = true, onCloseCompanion }: { active?: boolea
               <circle cx="15" cy="16" r="2.7" />
             </svg>
           </button>
+          {/* 局部图作用域的「回到全量图」：任意非空 scope 都显示（file/dir 均由宿主是否传 onScopeReset 决定）
+              —— 与搜索/统计/设置同款磨砂 icon-btn；onClick 走 ref，避免闭包过期 */}
+          {graphScope && onScopeReset && (
+            <button
+              type="button"
+              className="graph-icon-btn"
+              onClick={() => onScopeResetRef.current?.()}
+              data-tooltip={t('graph.scopeBack')}
+              aria-label={t('graph.scopeBack')}
+              data-testid="graph-scope-back"
+            >
+              {/* 左指箭头：返回全量图 */}
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" width="18" height="18">
+                <path d="M19 12H5" />
+                <path d="M11 6l-6 6 6 6" />
+              </svg>
+            </button>
+          )}
           {/* 副视图（分屏）关闭 × —— 与搜索/统计/设置同款磨砂 chip，放进图谱自己的 topbar */}
           {onCloseCompanion && (
             <button
@@ -390,10 +834,21 @@ export function GraphPage({ active = true, onCloseCompanion }: { active?: boolea
       </div>
 
       <div className="graph-canvas">
-        {loading && (
+        {/* 刷新时不清屏：有旧图就留着（自动刷新不该闪一下加载态），只有首屏/换库才盖 */}
+        {loading && !graphData && (
           <div className="graph-loading">
             <div className="graph-loading__spinner" />
             <p>{t('graph.loading')}</p>
+          </div>
+        )}
+
+        {/* 换 scope 的在途反馈（旧图仍在屏上，故不能盖全屏）：daemon 每次都要整库重建，
+            慢机器 / 移动盘上可达数十秒，此前这段时间毫无反馈，表现为「旧图纹丝不动」。
+            后台自动刷新不置 scopeLoading，所以不会无谓闪烁。 */}
+        {scopeLoading && graphData && (
+          <div className="graph-scope-loading" data-testid="graph-scope-loading" role="status">
+            <span className="graph-scope-loading__spinner" />
+            <span>{t('graph.loading')}</span>
           </div>
         )}
 
@@ -405,8 +860,8 @@ export function GraphPage({ active = true, onCloseCompanion }: { active?: boolea
 
         {!loading && !error && graphData && graphData.nodes.length === 0 && (
           <div className="graph-empty">
-            <p>{t('graph.empty')}</p>
-            <p className="graph-empty__hint">{t('graph.emptyHint')}</p>
+            <p>{emptyCopy.title}</p>
+            <p className="graph-empty__hint">{emptyCopy.hint}</p>
           </div>
         )}
 
@@ -424,6 +879,7 @@ export function GraphPage({ active = true, onCloseCompanion }: { active?: boolea
               updateForce(patch);
               // 力度参数经 settings → effect 下发到引擎（单一数据源）
             }}
+            onReset={resetSettings}
             onClose={() => setShowSettings(false)}
             availableTypes={graphData.nodes
               .map(n => n.nodeType)

@@ -2,6 +2,17 @@
  * Knowledge Base shared types — vaults, file tree, file content.
  */
 
+// ─── Import size limits (single source of truth) ───
+// Previously duplicated as magic numbers in daemon import route + two web
+// pre-flight checks; drift between them showed up as misleading errors.
+// 2026-09-25: 50MB → 100MB — docling itself handles 200MB+ PDFs, the upload
+// layer was the only bottleneck. Scanned books routinely exceed 50MB.
+/** Per-file import cap. Enforced by the daemon import route and mirrored by the web pre-flight checks. */
+export const MAX_IMPORT_FILE_SIZE = 100 * 1024 * 1024; // 100MB
+/** Whole-request Content-Length backstop for one import batch — loose enough
+ *  for several large files in a single upload, tight enough to abort abuse. */
+export const MAX_IMPORT_BATCH_SIZE = MAX_IMPORT_FILE_SIZE * 4; // 400MB
+
 export interface Vault {
   id: string;
   name: string;
@@ -18,6 +29,13 @@ export interface TreeNode {
   children?: TreeNode[]; // Only for directories
   size?: number; // Only for files (bytes)
   modifiedAt?: number; // Only for files (epoch ms)
+  /**
+   * Only for directories: true when the whole subtree was pruned by the
+   * per-directory entry cap (MAX_DIR_ENTRIES) — children is empty but the
+   * folder is NOT genuinely empty. The tree UI shows a "too many files"
+   * hint instead of a silent blank, which users read as "click did nothing".
+   */
+  pruned?: boolean;
   /**
    * Version-tracking status relative to the last ingest commit.
    * Only present once the vault has a `.git` repo (i.e. wiki has been used).
@@ -74,6 +92,18 @@ export interface FileTreeResponse {
 
 export interface KbHistoryListResponse {
   history: KbHistoryEntry[];
+}
+
+/**
+ * POST /api/knowledge/sample-vault response.
+ * Idempotent: when the sample vault already exists, `created` is false and the
+ * existing vault is returned without rewriting any files.
+ */
+export interface SampleVaultResponse {
+  vault: Vault;
+  /** Vault-relative path of the entry document, e.g. '开始使用.md'. */
+  entryFile: string;
+  created: boolean;
 }
 
 // ─── Wiki types ───
@@ -139,10 +169,21 @@ export interface DeadLinkInfo {
   targetName: string;
 }
 
+/**
+ * 局部图 scope：
+ * - file：单文档 1 跳邻域（depth 预留，当前仅支持 1）
+ * - dir：文件夹（递归）子图
+ */
+export type GraphScope =
+  | { type: 'file'; path: string; depth?: number }
+  | { type: 'dir'; path: string };
+
 export interface GraphData {
   nodes: GraphNode[];
   edges: GraphEdge[];
   deadLinks: DeadLinkInfo[];
+  /** 仅局部图接口回填：file=圆心单点；dir=子图全部节点；空图=[]。全量图不设。 */
+  focusNodes?: string[];
 }
 
 // ─── Search ───
@@ -183,4 +224,20 @@ export interface ExternalRootsResponse {
 export interface AddExternalRootRequest {
   target: string;
   label?: string;
+}
+
+/** 一次提交里单题的作答记录。 */
+export interface QuizAttemptInput {
+  questionId: string;
+  chosen: string[];
+  correct: boolean;
+}
+
+/** POST /api/quiz/attempts 的请求体。 */
+export interface SaveQuizAttemptsRequest {
+  vaultId?: string | null;
+  /** 题目内容指纹（SHA-256 hex，不含 title/引导语）。 */
+  quizFingerprint: string;
+  conversationId?: string | null;
+  attempts: QuizAttemptInput[];
 }

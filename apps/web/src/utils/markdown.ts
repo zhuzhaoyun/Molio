@@ -19,7 +19,7 @@ export function renderMarkdown(text: string): string {
 
   // Fenced code blocks (MUST run before strikethrough to prevent ~~ inside
   // code blocks from being rendered as <del>)
-  html = html.replace(/```(\w*)\n([\s\S]*?)```/g, (_m, _lang, code) => {
+  html = html.replace(/```([\w][\w-]*)?\n([\s\S]*?)```/g, (_m, _lang, code) => {
     return `<pre><code>${code.trim()}</code></pre>`;
   });
 
@@ -43,7 +43,10 @@ export function renderMarkdown(text: string): string {
   // Strikethrough (after code blocks, before bold/italic to avoid ** conflict)
   html = html.replace(/~~(.+?)~~/g, '<del>$1</del>');
 
-  // Headers
+  // Headers (longest marker first — `### ` must not see `####` etc.)
+  html = html.replace(/^###### (.+)$/gm, '<h6>$1</h6>');
+  html = html.replace(/^##### (.+)$/gm, '<h5>$1</h5>');
+  html = html.replace(/^#### (.+)$/gm, '<h4>$1</h4>');
   html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>');
   html = html.replace(/^## (.+)$/gm, '<h2>$1</h2>');
   html = html.replace(/^# (.+)$/gm, '<h1>$1</h1>');
@@ -164,48 +167,12 @@ function escapeAttr(text: string): string {
   return text.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
-export type Segment =
-  | { type: 'text'; content: string }
-  | { type: 'code'; lang: string; code: string };
+export type { Segment } from '@molio/contracts';
 
 /**
- * Split message content into text and fenced-code segments. Text segments are
- * rendered with renderMarkdown (preserving wiki-link/list/etc. logic); code
- * segments are rendered as interactive <CodeBlock> React components.
+ * Split message content into text, fenced-code and interactive-block segments.
  *
- * Handles unclosed fences (streaming mid-code-block) by treating the tail as a
- * code segment.
+ * 实现已下沉到 `@molio/contracts`（daemon 侧统计题卡数要用同一套判定口径，
+ * 两处各写一份会漂移）。本文件保留转发层，web 侧 import 路径不变。
  */
-export function splitContent(content: string): Segment[] {
-  if (!content) return [];
-  const segments: Segment[] = [];
-  const fence = /```(\w*)\n?/g;
-  let lastIndex = 0;
-  let match: RegExpExecArray | null;
-
-  while ((match = fence.exec(content)) !== null) {
-    const lang = match[1] || '';
-    const codeStart = match.index + match[0].length;
-    // Find the closing fence (``` on its own, possibly trailing).
-    const closeIdx = content.indexOf('```', codeStart);
-    if (closeIdx === -1) {
-      // Unclosed (streaming): emit preceding text + trailing code segment.
-      if (match.index > lastIndex) {
-        segments.push({ type: 'text', content: content.slice(lastIndex, match.index) });
-      }
-      segments.push({ type: 'code', lang, code: content.slice(codeStart) });
-      return segments;
-    }
-    if (match.index > lastIndex) {
-      segments.push({ type: 'text', content: content.slice(lastIndex, match.index) });
-    }
-    segments.push({ type: 'code', lang, code: content.slice(codeStart, closeIdx) });
-    lastIndex = closeIdx + 3; // skip past closing ```
-    fence.lastIndex = lastIndex;
-  }
-
-  if (lastIndex < content.length) {
-    segments.push({ type: 'text', content: content.slice(lastIndex) });
-  }
-  return segments;
-}
+export { splitContent } from '@molio/contracts';

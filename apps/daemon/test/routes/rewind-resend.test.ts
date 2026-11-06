@@ -12,15 +12,15 @@ import { closeDatabase, openDatabase, upsertMessage, createDesktopConversation, 
 import type { ChatMessage, RewindResendResponse } from '@molio/contracts';
 
 class MockRunManager {
-  readonly calls: Array<{ op: string; agentId?: string; message?: string; history?: ChatMessage[]; cwd?: string }> = [];
+  readonly calls: Array<{ op: string; agentId?: string; message?: string; history?: ChatMessage[]; cwd?: string; model?: string }> = [];
   readonly cancelled: string[] = [];
   private terminal = new Set<string>();
   private contexts = new Map<string, { agentId: string; conversationId: string | null }>();
   /** Stored onTurnComplete callbacks for runs registered via registerDeferredRun. */
   private deferredCallbacks = new Map<string, (text: string, rid: string) => void>();
 
-  createRun(opts: { agentId: string; message: string; history?: ChatMessage[]; cwd?: string; onTurnComplete?: (t: string, r: string) => void }): Promise<string> {
-    this.calls.push({ op: 'createRun', agentId: opts.agentId, message: opts.message, history: opts.history, cwd: opts.cwd });
+  createRun(opts: { agentId: string; message: string; history?: ChatMessage[]; cwd?: string; model?: string; onTurnComplete?: (t: string, r: string) => void }): Promise<string> {
+    this.calls.push({ op: 'createRun', agentId: opts.agentId, message: opts.message, history: opts.history, cwd: opts.cwd, model: opts.model });
     const runId = `run-${this.calls.length}`;
     this.contexts.set(runId, { agentId: opts.agentId, conversationId: null });
     // simulate immediate turn completion → persist assistant reply
@@ -76,7 +76,7 @@ describe('POST /api/conversations/:id/rewind-resend', () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  async function postRewind(convId: string, body: { newContent: string; agentId?: string; cwd?: string }) {
+  async function postRewind(convId: string, body: { newContent: string; agentId?: string; cwd?: string; model?: string }) {
     const res = await app.request(`/api/conversations/${convId}/rewind-resend`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -107,6 +107,28 @@ describe('POST /api/conversations/:id/rewind-resend', () => {
     // DB: q2-old + a2-old deleted; new user 'q2' + assistant 'reply-1' appended
     const msgs = listMessages(db, conv.id).map((m) => m.content);
     assert.deepEqual(msgs, ['q1', 'a1', 'q2', 'reply-1']);
+  });
+
+  it('passes body.model through to runManager.createRun', async () => {
+    const conv = createDesktopConversation(db, 't');
+    upsertMessage(db, conv.id, mkMsg('user', 'q1'));
+    upsertMessage(db, conv.id, mkMsg('assistant', 'a1', 'run-old'));
+
+    const { status } = await postRewind(conv.id, { newContent: 'q1', agentId: 'claude', model: 'sonnet' });
+    assert.equal(status, 200);
+    const last = runManager.calls.at(-1)!;
+    assert.equal(last.model, 'sonnet');
+  });
+
+  it('omits model when body.model absent (follow CLI default)', async () => {
+    const conv = createDesktopConversation(db, 't');
+    upsertMessage(db, conv.id, mkMsg('user', 'q1'));
+    upsertMessage(db, conv.id, mkMsg('assistant', 'a1', 'run-old'));
+
+    const { status } = await postRewind(conv.id, { newContent: 'q1', agentId: 'claude' });
+    assert.equal(status, 200);
+    const last = runManager.calls.at(-1)!;
+    assert.equal(last.model, undefined);
   });
 
   it('cancels the active run if still alive', async () => {

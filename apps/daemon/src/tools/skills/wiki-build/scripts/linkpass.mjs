@@ -16,8 +16,31 @@
 // Word boundaries: a name is only linked when it stands on its own. An
 // occurrence embedded in a larger Latin/ASCII word (`abi` in "Capabilities",
 // `OWL` in "KNOWLEDGE", `RDF` in "RDFox") is skipped, so the pass never
-// mangles ordinary words into links. CJK names have no word boundaries and are
-// linked freely (flush CJK text is normal, not a larger "word").
+// mangles ordinary words into links. CJK names have no word boundaries, so
+// longer CJK names are linked freely (flush CJK text is normal) — but a short
+// CJK surface (≤3 chars) glued between Han characters on both sides is more
+// often a substring of an unrelated longer word (心理 in 核心理念, 网络 in
+// 神经网络) than a real mention, so it is skipped: a missed link is
+// recoverable, a wrong link mangles prose. Page names get no exemption —
+// [[网络]] resolves fine when 网络.md exists, so an embedded wrap of a
+// short-named page is SILENT damage that deadcheck cannot see.
+// --no-cjk-guard restores the old link-freely behavior.
+//
+// Boundary checks look THROUGH adjacent links at their display text
+// ([[T|Y]] reads as Y, [[T]] as T). Wrapping a neighbor inserts brackets —
+// if the guards read raw neighbor characters, that insertion would flip
+// their verdict on the next run, and the pass would add one more link per
+// run instead of converging in a single pass.
+//
+// Name collisions: if an alias string is also the name of an existing page,
+// the page wins (a link displays as the page it resolves to — deadcheck
+// agrees) and the alias is reported in `collidedAliases`. Without this, both
+// entries wrap the same occurrence and stack into fresh [[T|Y]]Y]] residue.
+//
+// Legacy residue: pre-idempotency linkpass versions left double-wrap residue
+// behind ([[T|Y]]Y]]). The pattern can only be damage, so it is mechanically
+// collapsed to plain Y before the link pass — which also stops residue
+// self-copying into new pages. Cleanup honors the protected regions below.
 //
 // Protected regions (never touched, so quotes stay verbatim for
 // `prep.mjs verify` and code stays intact):
@@ -27,7 +50,7 @@
 //   - quoted text 「」『』“” (citations from source material)
 //
 // Usage:
-//   node linkpass.mjs --vault <dir> [--aliases <json>] [--dry-run]
+//   node linkpass.mjs --vault <dir> [--aliases <json>] [--batches <dir>] [--dry-run] [--no-cjk-guard]
 //
 // aliases json: { "alias": "CanonicalPageName", ... } — canonical must be an
 // existing wiki page base name, otherwise the entry is skipped with a
@@ -42,118 +65,52 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { cleanAliasToken } from './lib/cli.mjs';
+import { collectPageEntries } from './lib/vault.mjs';
+import { residueRe, frontmatterEnd, overlaps, protectedIntervals } from './lib/linktext.mjs';
 
 // Navigational pages are link targets of last resort, not prose vocabulary —
 // never auto-link mentions of them, and don't rewrite these files.
 const NAV_BASES = new Set(['index', 'log', 'hot']);
 
 // A "word" character for boundary purposes = ASCII letter/digit/underscore.
-// CJK has no such boundaries, so CJK page names stay freely linkable even when
-// flush against other CJK text; only Latin/ASCII runs get boundary protection.
+// Only Latin/ASCII runs get this boundary protection; CJK embedding is
+// handled separately by the cjkEmbedded guard in the per-page loop below.
 const LATIN_WORD = /[A-Za-z0-9_]/;
+
+// CJK embedded-word guard: Han script test + the max surface length the guard
+// applies to (counted in code points, not UTF-16 units, so ext-B names keep
+// their protection). Longer aliases are distinctive enough to link freely.
+const HAN = /\p{Script=Han}/u;
+const CJK_GUARD_MAX = 3;
 
 function usage() {
   process.stderr.write(
     [
       'Usage:',
-      '  node linkpass.mjs --vault <dir> [--aliases <json>] [--batches <dir>] [--dry-run]',
+      '  node linkpass.mjs --vault <dir> [--aliases <json>] [--batches <dir>] [--dry-run] [--no-cjk-guard]',
       '',
       'Wraps the first body occurrence of every wiki page name (and alias) in',
       '[[wikilinks]] on every page. Idempotent. Exit 0 success, 2 usage error.',
       '--batches: read aliases from batch TSV files (别名列), replaces --aliases.',
+      '--no-cjk-guard: link short CJK names even when embedded between Han chars',
+      '  (legacy behavior — default skips them: 宁可漏链，不可错链).',
     ].join('\n') + '\n',
   );
 }
 
 function parseArgs(argv) {
-  const opts = { vault: '.', aliases: null, batches: null, dryRun: false };
+  const opts = { vault: '.', aliases: null, batches: null, dryRun: false, cjkGuard: true };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--vault') opts.vault = argv[++i];
     else if (a === '--aliases') opts.aliases = argv[++i];
     else if (a === '--batches') opts.batches = argv[++i];
     else if (a === '--dry-run') opts.dryRun = true;
+    else if (a === '--no-cjk-guard') opts.cjkGuard = false;
     else if (a === '--help' || a === '-h') { usage(); process.exit(0); }
     else { usage(); process.exit(2); }
   }
   return opts;
-}
-
-function collectPages(vault) {
-  const wikiDir = path.join(vault, 'wiki');
-  const pages = [];
-  if (!fs.existsSync(wikiDir)) return pages;
-  const walk = (dir, rel) => {
-    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
-      const abs = path.join(dir, e.name);
-      const rp = rel ? `${rel}/${e.name}` : e.name;
-      if (e.isDirectory()) walk(abs, rp);
-      else if (e.isFile() && e.name.endsWith('.md')) {
-        pages.push({ rel: rp, base: e.name.replace(/\.md$/i, '') });
-      }
-    }
-  };
-  walk(wikiDir, '');
-  return pages;
-}
-
-/** End offset of YAML frontmatter block, or 0 if none. */
-function frontmatterEnd(content) {
-  if (!content.startsWith('---')) return 0;
-  const m = content.match(/^---[ \t]*\r?\n[\s\S]*?\r?\n---[ \t]*(\r?\n|$)/);
-  return m ? m[0].length : 0;
-}
-
-/** Interval helpers. */
-function overlaps(a, list) {
-  for (const [s, e] of list) if (a[0] < e && a[1] > s) return true;
-  return false;
-}
-
-/**
- * Collect protected intervals for one file: frontmatter, code fences, inline
- * code, existing wikilinks, markdown links, and quoted spans.
- */
-function protectedIntervals(content, fmEnd) {
-  const prot = [[0, fmEnd]];
-
-  // Fenced code blocks: line starting with ``` until closing fence.
-  const fenceRe = /^[ \t]*```[^\n]*$/gm;
-  let open = -1;
-  let m;
-  while ((m = fenceRe.exec(content)) !== null) {
-    if (open === -1) open = m.index;
-    else { prot.push([open, m.index + m[0].length]); open = -1; }
-  }
-  if (open !== -1) prot.push([open, content.length]);
-
-  // Inline code (single line spans).
-  for (const im of content.matchAll(/`[^`\n]+`/g)) prot.push([im.index, im.index + im[0].length]);
-
-  // Existing wikilinks.
-  for (const im of content.matchAll(/\[\[[^\]]*\]\]/g)) prot.push([im.index, im.index + im[0].length]);
-
-  // Markdown links [text](url).
-  for (const im of content.matchAll(/\[[^\]\n]*\]\([^)\n]*\)/g)) prot.push([im.index, im.index + im[0].length]);
-
-  // Quoted spans — citations must stay byte-identical for prep.mjs verify.
-  // Cap each span at 500 chars to avoid runaway pairing on unbalanced quotes.
-  const QUOTE_PAIRS = [['「', '」'], ['『', '』'], ['“', '”'], ['‘', '’']];
-  for (const [o, c] of QUOTE_PAIRS) {
-    let i = 0;
-    while (i < content.length) {
-      const s = content.indexOf(o, i);
-      if (s === -1) break;
-      let e = content.indexOf(c, s + o.length);
-      if (e === -1 || e - s > 500) { i = s + o.length; continue; }
-      e += c.length;
-      prot.push([s, e]);
-      i = e;
-    }
-  }
-
-  prot.sort((a, b) => a[0] - b[0]);
-  return prot;
 }
 
 function main() {
@@ -164,7 +121,7 @@ function main() {
     process.exit(2);
   }
 
-  const pages = collectPages(vault);
+  const pages = collectPageEntries(vault);
   if (pages.length === 0) {
     process.stderr.write(JSON.stringify({ ok: true, editedFiles: 0, addedLinks: 0 }) + '\n');
     process.stdout.write('linkpass: no wiki pages found.\n');
@@ -230,15 +187,46 @@ function main() {
     return s;
   }
 
-  // Names to link, longest first so 贾宝玉 wins over 宝玉 at the same spot.
+  // Name/alias collisions: an alias string that is also an existing page name
+  // (nav pages included — [[hot]] resolves to hot.md too) would push a SECOND
+  // edit at the same coordinates and stack into fresh [[T|Y]]Y]] residue.
+  // The page wins (a link displays as the page it resolves to — deadcheck
+  // agrees); the alias is reported, not silently dropped.
+  const pageNameLower = new Set(pages.map(p => p.base.toLowerCase()));
+  const collidedAliases = [];
+  // Names to link, longest first so 贾宝玉 wins over 宝玉 at the same spot
+  // (lengths in code points — same unit as the CJK guard's threshold).
   const names = [
     ...[...canonicals].map(n => ({ surface: n, target: n })),
-    ...[...aliasMap.entries()].map(([a, c]) => ({ surface: a, target: c })),
-  ].sort((a, b) => b.surface.length - a.surface.length);
+    ...[...aliasMap.entries()].flatMap(([a, c]) => {
+      if (pageNameLower.has(a.toLowerCase())) { collidedAliases.push(a); return []; }
+      return [{ surface: a, target: c }];
+    }),
+  ].sort((a, b) => [...b.surface].length - [...a.surface].length);
 
   let editedFiles = 0;
+  let cleanedFiles = 0;
   let addedLinks = 0;
+  let residueFixed = 0;
+  let residueTruncated = 0;
   const perFile = [];
+
+  // Vault-side opt-in for the CJK guard's one remaining blind spot: a page name
+  // that is a PREFIX of a longer word. The both-sides-Han test only fires when
+  // Han is on BOTH sides, so `第六章 平面向量` / `精神，对数学` slip through and
+  // wrap [[平面]]向量 / [[对数]]学. A general fix needs a lexicon of Chinese
+  // function words; a particle list mis-fires on good links ([[平面]]内的点).
+  // So the vault lists the pairs it has actually been bitten by:
+  //   wiki/.linkpass-compounds.json   →   { "对数": ["学"], "平面": ["向"] }
+  // Extend it whenever a `[[X]]Y` mis-split is spotted (the收尾 scan in the
+  // wiki-build SKILL documents how to find them).
+  const compoundGuard = new Map();
+  try {
+    const raw = JSON.parse(fs.readFileSync(path.join(vault, 'wiki', '.linkpass-compounds.json'), 'utf-8'));
+    for (const [name, follow] of Object.entries(raw)) {
+      if (Array.isArray(follow) && follow.length) compoundGuard.set(name, new Set(follow));
+    }
+  } catch { /* no vault-side compound list — guard behaves exactly as before */ }
 
   for (const p of pages) {
     const baseLower = p.base.toLowerCase();
@@ -248,6 +236,40 @@ function main() {
     const abs = path.join(vault, 'wiki', p.rel);
     let content;
     try { content = fs.readFileSync(abs, 'utf-8'); } catch { continue; }
+
+    // Collapse legacy [[T|Y]]Y]] residue before anything else computes wrap
+    // coordinates — the freed alias text then goes through the normal guards.
+    // Hard-protected regions (frontmatter / fences / inline code / citations)
+    // stay byte-identical; links:false because the residue pattern itself
+    // starts with a wikilink. A match touching ANY protected byte is skipped
+    // whole rather than edited across a boundary. Nested residue
+    // ([[甲|乙]][[甲|乙]]乙]]]]) exposes the next layer only after the outer
+    // one collapses, so loop until stable — prot is recomputed each round.
+    // The 20-round cap bounds pathological input; residueCount counts LAYERS,
+    // not spots (a 2-layer nest counts 2), and a file that still has hits on
+    // the last round may have deeper layers left — reported, not hidden.
+    let residueCount = 0;
+    let residueMaybeLeft = false;
+    for (let round = 0; round < 20; round++) {
+      const hardProt = protectedIntervals(content, frontmatterEnd(content), { links: false });
+      const hits = [...content.matchAll(residueRe())].filter(
+        m => !overlaps([m.index, m.index + m[0].length], hardProt),
+      );
+      if (!hits.length) { residueMaybeLeft = false; break; }
+      for (const m of hits.sort((a, b) => b.index - a.index)) {
+        content = content.slice(0, m.index) + m[1] + content.slice(m.index + m[0].length);
+      }
+      residueCount += hits.length;
+      residueMaybeLeft = round === 19;
+    }
+    // Round 20 may have peeled the LAST layer — peek once (look only) so an
+    // exactly-20 nest doesn't cry wolf.
+    if (residueMaybeLeft) {
+      const hardProt = protectedIntervals(content, frontmatterEnd(content), { links: false });
+      residueMaybeLeft = [...content.matchAll(residueRe())].some(
+        m => !overlaps([m.index, m.index + m[0].length], hardProt),
+      );
+    }
 
     const fmEnd = frontmatterEnd(content);
     const prot = protectedIntervals(content, fmEnd);
@@ -283,16 +305,82 @@ function main() {
     const inLongerName = (o) => occ.some(
       q => q.surface.length > o.surface.length && q.start <= o.start && o.end <= q.end,
     );
+    // Link-transparent neighbors: an occurrence flush against an existing
+    // link must see the link's DISPLAY text ([[T|Y]] reads as Y), not the raw
+    // brackets. Wrapping a neighbor inserts [[…]] — if the guards below read
+    // raw characters, that insertion would flip their verdict on the next
+    // run, and the pass would add one more link per run instead of
+    // converging in a single pass.
+    const prevDisplayChar = new Map(); // link end offset → last display char
+    const nextDisplayChar = new Map(); // link start offset → first display char
+    const rememberLink = (index, len, display) => {
+      const chars = [...display.trim()];
+      if (!chars.length) return;
+      prevDisplayChar.set(index + len, chars[chars.length - 1]);
+      nextDisplayChar.set(index, chars[0]);
+    };
+    for (const lm of content.matchAll(/\[\[([^\]|]*)(?:\|([^\]]*))?\]\]/g)) {
+      rememberLink(lm.index, lm[0].length, lm[2] ?? lm[1] ?? '');
+    }
+    for (const lm of content.matchAll(/\[([^\]\n]*)\]\([^)\n]*\)/g)) {
+      rememberLink(lm.index, lm[0].length, lm[1] ?? '');
+    }
+    // Inline emphasis/code markers are as transparent as link syntax. A guard
+    // reading `**对数学` must see the character before 对 (in 精神对数学), not the
+    // `*`: reading the raw marker makes the CJK guard judge a word-initial page
+    // name to be a standalone mention and wrap it, producing `[[对数]]学` out of
+    // the word 对数学. Judging the rendered text is also what keeps the verdict
+    // stable across runs, since the markers do not move when links are inserted.
+    const MARKUP = /[*_~`]/;
+    const prevChar = (s) => {
+      if (prevDisplayChar.has(s)) return prevDisplayChar.get(s);
+      let i = s;
+      while (i > 0 && MARKUP.test(content[i - 1])) i -= 1;
+      if (prevDisplayChar.has(i)) return prevDisplayChar.get(i);
+      if (i <= 0) return '';
+      const cp = content.codePointAt(i - 1);
+      // low surrogate → the real code point (ext-B Han etc.) starts one unit earlier
+      if (cp >= 0xdc00 && cp <= 0xdfff && i > 1) return String.fromCodePoint(content.codePointAt(i - 2));
+      return String.fromCodePoint(cp);
+    };
+    const nextChar = (e) => {
+      if (nextDisplayChar.has(e)) return nextDisplayChar.get(e);
+      let i = e;
+      while (i < content.length && MARKUP.test(content[i])) i += 1;
+      if (nextDisplayChar.has(i)) return nextDisplayChar.get(i);
+      return i < content.length ? String.fromCodePoint(content.codePointAt(i)) : '';
+    };
+
     // Reject occurrences embedded in a larger Latin/ASCII word — `abi` inside
     // "Capabilities", `OWL` inside "KNOWLEDGE", `RDF` inside "RDFox". Without
     // this, indexOf substring-matching mangles ordinary words into links.
-    const boundaryOK = (s, e) => {
-      const prev = s > 0 ? content[s - 1] : '';
-      const next = e < content.length ? content[e] : '';
-      return !LATIN_WORD.test(prev) && !LATIN_WORD.test(next);
+    const boundaryOK = (s, e) => !LATIN_WORD.test(prevChar(s)) && !LATIN_WORD.test(nextChar(e));
+    // Reject SHORT CJK surfaces glued between Han characters on both sides —
+    // usually a substring of an unrelated longer word (心理 in 核心理念,
+    // 网络 in 神经网络). Applies to page names AND aliases alike: "is this a
+    // word fragment" has nothing to do with the name's origin, and an
+    // embedded wrap of a page name is deadcheck-invisible. Skip: 宁可漏链，
+    // 不可错链. The occurrence is left unchanged, so the pass stays
+    // idempotent.
+    const cjkEmbedded = (s, e, surface) => {
+      if ([...surface].length > CJK_GUARD_MAX || !HAN.test(surface)) return false;
+      const next = nextChar(e);
+      // A name that is a PREFIX of a longer word: the both-sides-Han test below
+      // misses it whenever the left neighbour is a space or punctuation, so
+      // 第六章 [[平面]]向量 and ，[[对数]]学 got wrapped out of 平面向量 / 对数学.
+      // The general fix would need a lexicon of Chinese function words, and a
+      // particle list mis-fires on perfectly good noun+particle links
+      // ([[平面]]内的点). So the vault names its own offenders instead.
+      const follows = compoundGuard.get(surface);
+      if (follows && follows.has(next)) return true;
+      return HAN.test(prevChar(s)) && HAN.test(next);
     };
 
     const edits = [];
+    // One edit per span. Unreachable by construction (surfaces in `names` are
+    // unique and a span's text determines the surface) — kept as a guard so
+    // any FUTURE name source fails soft instead of stacking [[T|Y]]Y]].
+    const takenSpans = new Set();
     for (const { surface, target } of names) {
       if (self.has(surface)) continue;
       if (surface.toLowerCase() === baseLower) continue;
@@ -302,32 +390,49 @@ function main() {
       //   covered or untouchable — and unchanged by this pass, so idempotent.
       if (!boundaryOK(first.start, first.end)) continue; // embedded in a larger word —
       //   leave it alone (and unchanged by this pass, so idempotent).
+      if (opts.cjkGuard && cjkEmbedded(first.start, first.end, surface)) continue;
+      //   ^ embedded inside a CJK word — same deal: left unchanged, idempotent.
       if (inLongerName(first)) continue;           // part of a longer name (e.g. 元妃 in
       //   元妃省亲, 宝玉 in 贾宝玉) — the longer name's own handling governs.
+      const spanKey = `${first.start}:${first.end}`;
+      if (takenSpans.has(spanKey)) continue;
+      takenSpans.add(spanKey);
       const replacement = surface === target ? `[[${target}]]` : `[[${target}|${surface}]]`;
       edits.push({ start: first.start, end: first.end, replacement });
     }
 
-    if (edits.length === 0) continue;
+    if (edits.length === 0 && residueCount === 0) continue;
 
     edits.sort((a, b) => b.start - a.start);
     let next = content;
     for (const e of edits) next = next.slice(0, e.start) + e.replacement + next.slice(e.end);
 
     if (!opts.dryRun) fs.writeFileSync(abs, next);
-    editedFiles++;
+    if (edits.length) editedFiles++;
+    if (residueCount) cleanedFiles++;
+    if (residueMaybeLeft) residueTruncated++;
     addedLinks += edits.length;
-    perFile.push({ file: `wiki/${p.rel}`, added: edits.length });
+    residueFixed += residueCount;
+    perFile.push({ file: `wiki/${p.rel}`, added: edits.length, residue: residueCount });
   }
 
-  const meta = { ok: true, dryRun: opts.dryRun, editedFiles, addedLinks, skippedAliases };
+  const meta = {
+    ok: true, dryRun: opts.dryRun,
+    editedFiles, cleanedFiles, addedLinks, residueFixed, residueTruncated,
+    skippedAliases, collidedAliases,
+  };
   process.stderr.write(JSON.stringify(meta) + '\n');
 
   process.stdout.write(
     `linkpass${opts.dryRun ? ' (dry-run)' : ''}: +${addedLinks} link(s) across ${editedFiles} file(s)` +
+    (residueFixed ? `; ${opts.dryRun ? 'would clean' : 'cleaned'} ${residueFixed} legacy [[T|Y]]Y]] residue(s) in ${cleanedFiles} file(s)` : '') +
+    (residueTruncated ? `; WARNING ${residueTruncated} file(s) hit the 20-round residue cap — deeper layers may remain, re-run to continue` : '') +
+    (collidedAliases.length ? `; ${collidedAliases.length} alias(es) collide with page names (page wins): ${collidedAliases.slice(0, 10).join(', ')}` : '') +
     (skippedAliases.length ? `; skipped ${skippedAliases.length} alias(es) without a page` : '') + '\n',
   );
-  for (const f of perFile.slice(0, 30)) process.stdout.write(`  ${f.file}: +${f.added}\n`);
+  for (const f of perFile.slice(0, 30)) {
+    process.stdout.write(`  ${f.file}: +${f.added}${f.residue ? `, cleaned ${f.residue} residue` : ''}\n`);
+  }
   if (perFile.length > 30) process.stdout.write(`  … (+${perFile.length - 30} more files)\n`);
   if (skippedAliases.length) {
     process.stdout.write(`  skipped aliases (no page): ${skippedAliases.slice(0, 10).join(', ')}${skippedAliases.length > 10 ? ' …' : ''}\n`);

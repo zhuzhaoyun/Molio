@@ -23,8 +23,29 @@ export default defineConfig({
   worker: {
     format: 'es',
   },
+  build: {
+    rollupOptions: {
+      output: {
+        // 稳定的 vendor 分包：框架层与 markdown 渲染层各自独立 chunk，
+        // 业务代码迭代不打爆用户缓存。pixi/d3/marked/hljs 本体已由路由级
+        // lazy（App.tsx / HomePage.tsx）拆出首屏，这里只做归拢。
+        manualChunks(id: string) {
+          if (!id.includes('node_modules')) return undefined;
+          if (/node_modules\/(react|react-dom|scheduler|react-router|react-router-dom)\//.test(id)) {
+            return 'vendor-react';
+          }
+          if (/node_modules\/(marked|highlight\.js|katex|dompurify|isomorphic-dompurify|front-matter)\//.test(id)) {
+            return 'vendor-md';
+          }
+          return undefined;
+        },
+      },
+    },
+  },
   server: {
-    port: 5173,
+    // 端口可被 MOLIO_E2E_WEB_PORT / PORT 覆盖：5173 常被另一个 worktree 的
+    // dev server 占用，而复用它会跑到别人的旧代码上（页面正常、断言全红）。
+    port: Number(process.env['MOLIO_E2E_WEB_PORT'] ?? process.env['PORT'] ?? 5173),
     strictPort: true,
     proxy: {
       '/api': {

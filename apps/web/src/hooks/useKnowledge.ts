@@ -12,6 +12,7 @@ import { copyHtml } from '@molio/doocs-md/shared/utils/clipboard';
 import { FRONTMATTER_BLOCK_RE } from '@molio/doocs-md/src/renderer/renderer-impl';
 import { vaultStore, useActiveVaultId } from '../stores/vaultStore';
 import { currentContextStore } from '../stores/currentContextStore';
+import { normalizeEmbedTarget, preprocessLocalImages } from '../utils/kbImage';
 
 const FILE_LOAD_RETRY_MS = 600;
 
@@ -64,7 +65,7 @@ export function preprocessWikiEmbeds(markdown: string, vaultId: string): string 
     /!\[\[([^\]|]+)(?:\|(\d+)(?:x(\d+))?)?\]\]/g,
     (_m, file: string, w?: string, h?: string) => {
       const size = w ? (h ? `|${w}x${h}` : `|${w}`) : '';
-      const encoded = encodeURIComponent(file.trim());
+      const encoded = encodeURIComponent(normalizeEmbedTarget(file));
       const baseUrl = window.location.origin;
       return `![${file}${size}](${baseUrl}/api/knowledge/vaults/${vaultId}/raw/${encoded})`;
     },
@@ -135,12 +136,21 @@ export function stripTrackingPixels(markdown: string): string {
  * corruption this guard exists to prevent.
  */
 
-export function preprocessKbMarkdown(markdown: string, vaultId?: string): string {
+export function preprocessKbMarkdown(
+  markdown: string,
+  vaultId?: string,
+  notePath?: string,
+): string {
   const transform = (body: string): string => {
     const stripped = stripTrackingPixels(body);
     const withEmbeds = vaultId ? preprocessWikiEmbeds(stripped, vaultId) : stripped;
     const proxied = proxyExternalImages(withEmbeds);
-    return preprocessWikiLinks(proxied, vaultId);
+    // After the two above, so their output is already absolute-URLed and gets
+    // skipped by the local-image pass' external-URL guard. notePath is what
+    // makes `![](图.png)` resolve against the note's own folder — Obsidian's
+    // rule. Without it we can still resolve vault-root-relative paths.
+    const localized = vaultId ? preprocessLocalImages(proxied, vaultId, notePath) : proxied;
+    return preprocessWikiLinks(localized, vaultId);
   };
 
   const match = FRONTMATTER_BLOCK_RE.exec(markdown);
@@ -154,6 +164,8 @@ interface UseKnowledgeReturn {
   activeVault: Vault | null;
   treeVaultId: string | null;
   tree: TreeNode[];
+  /** 最近一次拉树失败的原因（面板显示可重试的错误条）；null = 正常。 */
+  treeError: string | null;
   selectedFile: string | null;
   fileContent: FileContent | null;
   fileLoadError: string | null;
@@ -184,10 +196,14 @@ interface UseKnowledgeReturn {
   // Actions
   selectVault: (id: string) => void;
   createVault: (name: string, path: string, description?: string) => Promise<void>;
+  refreshVaults: () => Promise<void>;
   openVault: (path: string) => Promise<void>;
   deleteVault: (id: string) => Promise<void>;
   selectFile: (path: string | null) => void;
-  refreshTree: () => void;
+  /** 重新拉取文件树；返回是否成功（失败原因同时写进 treeError）。 */
+  refreshTree: () => Promise<boolean>;
+  /** 「库变了」信号计数（每次 refreshTree +1）——供图谱等派生视图订阅自动刷新。 */
+  treeRevision: number;
   checkWikiStatus: () => void;
   setPanelWidth: (w: number) => void;
   setSearchQuery: (q: string) => void;
@@ -234,6 +250,13 @@ export function useKnowledge(): UseKnowledgeReturn {
   const activeVaultId = useActiveVaultId();
   const [tree, setTree] = useState<TreeNode[]>([]);
   const [treeVaultId, setTreeVaultId] = useState<string | null>(null);
+  /** 最近一次拉树失败的原因——面板据此显示可重试的错误条，不再是静默失败。 */
+  const [treeError, setTreeError] = useState<string | null>(null);
+  /** 树请求序号：并发刷新（创建/导入/聚焦/SSE/手动）只认最后发起的那一次。 */
+  const treeSeqRef = useRef(0);
+  // 每次收到「库变了」的信号就 +1。文件树自己重取即可，但别的视图（图谱）需要知道
+  // 「该重取了」这件事本身——把信号变成可订阅的计数器，比让每个视图各自开一条 SSE 便宜。
+  const [treeRevision, setTreeRevision] = useState(0);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [fileContent, setFileContent] = useState<FileContent | null>(null);
   const [fileLoadError, setFileLoadError] = useState<string | null>(null);
@@ -303,6 +326,48 @@ export function useKnowledge(): UseKnowledgeReturn {
     return () => { cancelled = true; };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  /** Re-fetch the vault list into both local state and the shared store. */
+  const refreshVaults = useCallback(async () => {
+    const list = await api.listVaults();
+    setVaults(list);
+    vaultStore.setVaults(list);
+  }, []);
+
+  /**
+   * ?manage=1 —— 主页「首次运行引导卡」的建库入口：到知识库页直接把知识库管理器
+   * 打开，省掉用户自己找建库入口那一步（找不到入口正是这次事故的一环）。
+   * 读完即从 URL 摘掉——刷新不该再弹一次；?vault= 原样保留。
+   */
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('manage') !== '1') return;
+    setShowVaultSwitcher(true);
+    params.delete('manage');
+    const qs = params.toString();
+    window.history.replaceState(null, '', window.location.pathname + (qs ? `?${qs}` : ''));
+  }, []);
+
+  /**
+   * 拉取并应用文件树。并发的多次刷新（创建、导入、窗口聚焦、SSE、手动刷新）
+   * 只认最后发起的一次：慢的旧响应后到不会把新树覆盖回去。
+   * 失败写进 treeError 供面板显示——以前此处静默吞掉，用户只能看到一棵不动的旧树。
+   */
+  const loadTree = useCallback(async (vaultId: string): Promise<boolean> => {
+    const seq = ++treeSeqRef.current;
+    try {
+      const t = await api.getFileTree(vaultId);
+      if (seq !== treeSeqRef.current) return true; // 已被更新的请求取代
+      setTree(t);
+      setTreeVaultId(vaultId);
+      setTreeError(null);
+      return true;
+    } catch (err) {
+      if (seq !== treeSeqRef.current) return true;
+      setTreeError(err instanceof Error ? err.message : String(err));
+      return false;
+    }
+  }, []);
+
   // Track previous vault ID to distinguish mount vs vault switch
   const prevVaultIdRef = useRef<string | null>(null);
 
@@ -314,32 +379,22 @@ export function useKnowledge(): UseKnowledgeReturn {
 
     let cancelled = false;
     (async () => {
-      try {
-        setLoading(true);
-        setTree([]);
-        setTreeVaultId(null);
-        const t = await api.getFileTree(activeVaultId);
-        if (!cancelled) {
-          setTree(t);
-          setTreeVaultId(activeVaultId);
-          // Only clear selection on explicit vault switch, not on mount/remount
-          // (tab restore sets selectedFile via KnowledgeBasePage useEffect)
-          if (isVaultSwitch) {
-            setSelectedFile(null);
-            setFileContent(null);
-          }
-        }
-      } catch {
-        if (!cancelled) {
-          setTree([]);
-          setTreeVaultId(null);
-        }
-      } finally {
-        if (!cancelled) setLoading(false);
+      setLoading(true);
+      setTree([]);
+      setTreeVaultId(null);
+      setTreeError(null);
+      const ok = await loadTree(activeVaultId);
+      if (cancelled) return;
+      // Only clear selection on explicit vault switch, not on mount/remount
+      // (tab restore sets selectedFile via KnowledgeBasePage useEffect)
+      if (ok && isVaultSwitch) {
+        setSelectedFile(null);
+        setFileContent(null);
       }
+      setLoading(false);
     })();
     return () => { cancelled = true; };
-  }, [activeVaultId]);
+  }, [activeVaultId, loadTree]);
 
   // Check wiki status when vault changes
   useEffect(() => {
@@ -370,19 +425,12 @@ export function useKnowledge(): UseKnowledgeReturn {
       const now = Date.now();
       if (now - lastFocusTime < MIN_INTERVAL) return;
       lastFocusTime = now;
-
-      try {
-        const t = await api.getFileTree(activeVaultId);
-        setTree(t);
-        setTreeVaultId(activeVaultId);
-      } catch {
-        // Ignore refresh errors
-      }
+      await loadTree(activeVaultId);
     };
 
     window.addEventListener('focus', handleFocus);
     return () => window.removeEventListener('focus', handleFocus);
-  }, [activeVaultId]);
+  }, [activeVaultId, loadTree]);
 
   // Load file content when file selected
   useEffect(() => {
@@ -457,7 +505,7 @@ export function useKnowledge(): UseKnowledgeReturn {
 
   const openVault = useCallback(async (path: string) => {
     // Derive a name from the last path segment
-    const name = path.split(/[\/]/).pop() || '未命名仓库';
+    const name = path.split(/[\/]/).pop() || '未命名知识库';
     const vault = await api.createVault({ name, path, description: `从本地文件夹打开: ${path}` });
     const next = [vault, ...vaultsRef.current];
     setVaults(next);
@@ -487,19 +535,15 @@ export function useKnowledge(): UseKnowledgeReturn {
     setIsTypesetMode(false);
   }, []);
 
-  const refreshTree = useCallback(() => {
-    if (!activeVaultId) return;
-    api.getFileTree(activeVaultId)
-      .then((t) => {
-        setTree(t);
-        setTreeVaultId(activeVaultId);
-      })
-      .catch(() => {});
+  const refreshTree = useCallback(async (): Promise<boolean> => {
+    if (!activeVaultId) return false;
+    setTreeRevision((v) => v + 1);
     // Re-check wiki status after tree refresh (build may have created INDEX.md)
     api.getWikiStatus(activeVaultId)
       .then((s) => setWikiInitialized(s.initialized))
       .catch(() => {});
-  }, [activeVaultId]);
+    return loadTree(activeVaultId);
+  }, [activeVaultId, loadTree]);
 
   const checkWikiStatus = useCallback(() => {
     if (!activeVaultId) return;
@@ -517,7 +561,7 @@ export function useKnowledge(): UseKnowledgeReturn {
     es.onmessage = (msg) => {
       try {
         const payload = JSON.parse(msg.data);
-        if (payload?.type === 'tree-changed') refreshTree();
+        if (payload?.type === 'tree-changed') void refreshTree();
       } catch {
         // Ignore keepalive pings / parse errors
       }
@@ -531,17 +575,15 @@ export function useKnowledge(): UseKnowledgeReturn {
     if (!activeVaultId) return;
     await api.writeFile(activeVaultId, relPath, content);
     // Refresh tree and select the new file
-    const t = await api.getFileTree(activeVaultId);
-    setTree(t);
+    await loadTree(activeVaultId);
     setSelectedFile(relPath);
-  }, [activeVaultId]);
+  }, [activeVaultId, loadTree]);
 
   const createFolder = useCallback(async (relPath: string) => {
     if (!activeVaultId) return;
     await api.createDirectory(activeVaultId, relPath);
-    const t = await api.getFileTree(activeVaultId);
-    setTree(t);
-  }, [activeVaultId]);
+    await loadTree(activeVaultId);
+  }, [activeVaultId, loadTree]);
 
   const deleteFile = useCallback(async (relPath: string) => {
     if (!activeVaultId) return;
@@ -551,9 +593,8 @@ export function useKnowledge(): UseKnowledgeReturn {
       setSelectedFile(null);
       setFileContent(null);
     }
-    const t = await api.getFileTree(activeVaultId);
-    setTree(t);
-  }, [activeVaultId, selectedFile]);
+    await loadTree(activeVaultId);
+  }, [activeVaultId, selectedFile, loadTree]);
 
   const deleteFolder = useCallback(async (relPath: string) => {
     if (!activeVaultId) return;
@@ -563,9 +604,8 @@ export function useKnowledge(): UseKnowledgeReturn {
       setSelectedFile(null);
       setFileContent(null);
     }
-    const t = await api.getFileTree(activeVaultId);
-    setTree(t);
-  }, [activeVaultId, selectedFile]);
+    await loadTree(activeVaultId);
+  }, [activeVaultId, selectedFile, loadTree]);
 
   const renameFile = useCallback(async (oldPath: string, newPath: string) => {
     if (!activeVaultId) return;
@@ -574,9 +614,8 @@ export function useKnowledge(): UseKnowledgeReturn {
     if (selectedFile === oldPath) {
       setSelectedFile(newPath);
     }
-    const t = await api.getFileTree(activeVaultId);
-    setTree(t);
-  }, [activeVaultId, selectedFile]);
+    await loadTree(activeVaultId);
+  }, [activeVaultId, selectedFile, loadTree]);
 
   const saveFile = useCallback(async (relPath: string, content: string) => {
     if (!activeVaultId) return;
@@ -685,6 +724,7 @@ export function useKnowledge(): UseKnowledgeReturn {
     activeVault,
     treeVaultId,
     tree,
+    treeError,
     selectedFile,
     fileContent,
     fileLoadError,
@@ -703,9 +743,11 @@ export function useKnowledge(): UseKnowledgeReturn {
     showCoseInstallPrompt,
     selectVault,
     createVault,
+    refreshVaults,
     deleteVault,
     selectFile,
     refreshTree,
+    treeRevision,
     checkWikiStatus,
     setPanelWidth,
     setSearchQuery,

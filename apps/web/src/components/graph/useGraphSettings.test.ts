@@ -4,6 +4,7 @@ import {
   DEFAULT_FORCE_PARAMS,
   DEFAULT_SETTINGS,
   SETTINGS_VERSION,
+  defaultSettings,
   LIGHT_THEME,
   DARK_THEME,
   resolveTheme,
@@ -53,6 +54,39 @@ describe('DEFAULT_SETTINGS', () => {
     assert.strictEqual(DEFAULT_SETTINGS.forces.linkDistance, DEFAULT_FORCE_PARAMS.linkDistance);
     // Different reference (deep copy via spread)
     assert.notStrictEqual(DEFAULT_SETTINGS.forces, DEFAULT_FORCE_PARAMS);
+  });
+});
+
+// ── defaultSettings()：设置面板「恢复默认设置」的取值来源 ──
+
+describe('defaultSettings()', () => {
+  it('内容就是出厂默认值', () => {
+    const s = defaultSettings();
+    assert.strictEqual(s.version, SETTINGS_VERSION);
+    assert.strictEqual(s.theme, DEFAULT_SETTINGS.theme);
+    assert.strictEqual(s.nodeScale, DEFAULT_SETTINGS.nodeScale);
+    assert.strictEqual(s.edgeWidth, DEFAULT_SETTINGS.edgeWidth);
+    assert.strictEqual(s.showOrphans, DEFAULT_SETTINGS.showOrphans);
+    assert.strictEqual(s.showDeadLinks, DEFAULT_SETTINGS.showDeadLinks);
+    assert.strictEqual(s.forces.repelStrength, DEFAULT_FORCE_PARAMS.repelStrength);
+  });
+
+  it('每次都是全新副本：改一份不污染另一份，也不污染 DEFAULT_* 常量', () => {
+    const a = defaultSettings();
+    const b = defaultSettings();
+    assert.deepStrictEqual(a, b);
+    assert.notStrictEqual(a.forces, b.forces);
+    assert.notStrictEqual(a.visibleTypes, b.visibleTypes);
+
+    // 直接改（模拟恢复默认后又调设置）——若返回的是共享引用，会写回常量，
+    // 下一次「恢复默认」就恢复成被改过的值：只能干净一次。
+    a.forces.repelStrength = -10;
+    a.visibleTypes.push('document');
+
+    assert.strictEqual(b.forces.repelStrength, DEFAULT_FORCE_PARAMS.repelStrength);
+    assert.deepStrictEqual(b.visibleTypes, []);
+    assert.strictEqual(DEFAULT_SETTINGS.forces.repelStrength, DEFAULT_FORCE_PARAMS.repelStrength);
+    assert.deepStrictEqual(DEFAULT_SETTINGS.visibleTypes, []);
   });
 });
 

@@ -1,0 +1,39 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.zhuzhaoyun/molio",
+  "title": "Molio Knowledge Base",
+  "description": "Read-only access to your Molio local knowledge base: search, read, browse, and AI Q&A.",
+  "repository": {
+    "url": "https://github.com/zhuzhaoyun/Molio",
+    "source": "github"
+  },
+  "websiteUrl": "https://molio.cn/",
+  "version": "0.1.2",
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "@molio/cli",
+      "version": "0.1.2",
+      "registryBaseUrl": "https://registry.npmjs.org",
+      "runtimeHint": "npx",
+      "transport": {
+        "type": "stdio"
+      },
+      "packageArguments": [
+        {
+          "type": "positional",
+          "value": "mcp"
+        }
+      ],
+      "environmentVariables": [
+        {
+          "name": "MOLIO_PORT",
+          "description": "Port of the Molio daemon HTTP API (default: 3100)",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": false
+        }
+      ]
+    }
+  ]
+}

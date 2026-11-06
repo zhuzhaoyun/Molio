@@ -24,8 +24,86 @@ export type MarketTint = (typeof MARKET_TINTS)[number];
 export type MarketListingSource = 'official' | 'community';
 export type MarketListingStatus = 'uploading' | 'active' | 'removed';
 
+/** 商品页「关键事实」：label/value 直接展示，也写进 Product JSON-LD 的 additionalProperty。 */
+export interface MarketContentFact {
+  label: string;
+  value: string;
+}
+
+/** 商品页「内容范围」主题：名称 + 范围说明 + 真实条目名。 */
+export interface MarketContentTheme {
+  name: string;
+  summary: string;
+  items: string[];
+}
+
+/** 商品页「典型问题」：知识问题，不是购买 FAQ。 */
+export interface MarketContentQuestion {
+  question: string;
+  answer: string;
+  source?: string;
+}
+
+/** 商品页「真实样例」：从资源中摘编的一段对比、关系链或解释。 */
+export interface MarketContentSample {
+  title: string;
+  body: string;
+  source?: string;
+}
+
+/** 商品页定位：这是什么、适合谁、不是什么。 */
+export interface MarketContentPositioning {
+  what: string;
+  who: string[];
+  notFor: string[];
+}
+
+/** 交付说明：格式、包含内容、使用要求、步骤。 */
+export interface MarketContentDelivery {
+  format: string;
+  includes: string[];
+  requirements: string[];
+  steps: string[];
+}
+
+/** 来源与核对状态：公开页展示 basis + reviewedAt；AI 自动草稿（draft + autoDrafted）会提示仍在核对。 */
+export interface MarketContentReview {
+  basis: string;
+  reviewedAt: string;
+  status: 'draft' | 'reviewed';
+  /** true = AI 自动起草；公开页仅在 draft + autoDrafted 时提示「仍在核对」 */
+  autoDrafted?: boolean;
+}
+
+/** 可选 SEO 覆盖：标题/描述/别名，不填则回退商品 name/summary。 */
+export interface MarketContentSeo {
+  title?: string;
+  description?: string;
+  aliases?: string[];
+}
+
+/**
+ * 商品页结构化内容。管理员维护，community 发布暂不写入。
+ * null/undefined 时 SSR 回退旧的 summary + overview + highlights 渲染。
+ */
+export interface MarketContent {
+  version: 1;
+  positioning: MarketContentPositioning;
+  facts: MarketContentFact[];
+  themes: MarketContentTheme[];
+  questions: MarketContentQuestion[];
+  samples?: MarketContentSample[];
+  delivery: MarketContentDelivery;
+  review: MarketContentReview;
+  seo?: MarketContentSeo;
+}
+
 /** 公开条目（列表/详情响应） */
 export interface MarketListing {
+  categoryId?: string | null;
+  resourceTypeId?: string | null;
+  category?: MarketTaxon | null;
+  resourceType?: MarketTaxon | null;
   id: string;
   source: MarketListingSource;
   name: string;
@@ -37,6 +115,8 @@ export interface MarketListing {
   overview: string[];
   /** 亮点列表（社区条目为空数组） */
   highlights: string[];
+  /** 结构化商品内容；null/undefined 时回退 overview/highlights */
+  content?: MarketContent | null;
   tags: string[];
   /** 预览图绝对 URL（1-4 张） */
   previews: string[];
@@ -50,6 +130,8 @@ export interface MarketListing {
   fileSize: number | null;
   /** ISO 时间；未上架为 null */
   publishedAt: string | null;
+  /** ISO 时间；最近更新时间（旧数据可能没有） */
+  updatedAt?: string;
 }
 
 /** 「我的上架」条目 = 公开字段 + 状态 */
@@ -69,6 +151,8 @@ export interface MarketUploadTarget {
 
 /** POST /market/listings 请求（Plan 1 仅社区场景；管理员扩展字段 Plan 2） */
 export interface MarketCreateRequest {
+  categoryId?: string;
+  resourceTypeId?: string;
   name: string;
   summary: string;
   icon: string;
@@ -80,6 +164,8 @@ export interface MarketCreateRequest {
   previews: { ext: string; size: number }[];
   /** 价格（分）；仅管理员可设 >0，非管理员服务端强制 0（§六 定价规则） */
   priceCents?: number;
+  /** 商品页结构化内容；随首发一起落库，云端校验失败返回 invalid_metadata */
+  content?: MarketContent;
 }
 
 export interface MarketCreateResponse {
@@ -95,9 +181,41 @@ export interface MarketMyResponse {
   listings: MarketMyListing[];
 }
 
+/**
+ * 「发布到资源库」身份门禁快照（GET /api/market/role）。
+ *
+ * `isAdmin: null` 表示**暂无法判定**（云端不可达且本地没有缓存），不是「非管理员」。
+ * 调用方必须按「未决」处理：把管理员误判成非管理员会把人踢到官网联系页，
+ * 页内发布配置页永远打不开（2026-10 用户报告）。
+ */
+export interface MarketRoleResponse {
+  loggedIn: boolean;
+  isAdmin: boolean | null;
+}
+
 export interface MarketDownloadResponse {
   url: string;
   expiresAt: number;
+}
+
+/**
+ * 「我的已购」条目（GET /market/purchases）。
+ * 购买归属来自 wxpay-fc 已购索引（下单时 attach 携带的 uid），云端合并目录元数据后下发。
+ * 下载永远拿最新版：资源更新会覆盖同一 OSS key，重新签名即最新内容。
+ */
+export interface MarketPurchase {
+  /** listing id（已购索引中的商品 id） */
+  id: string;
+  /** 首次购买时间（ISO）；索引缺失时为 null */
+  purchasedAt: string | null;
+  /** 条目仍在目录中时携带展示元数据；已删除/查不到时为 null（UI 显示"资源已下架"） */
+  listing: Pick<MarketListing, 'name' | 'icon' | 'tint' | 'version' | 'priceCents' | 'summary'> | null;
+  /** 是否可下载（条目 active 才可；removed/uploading 不可） */
+  available: boolean;
+}
+
+export interface MarketPurchasesResponse {
+  purchases: MarketPurchase[];
 }
 
 /** AI 起草的发布元数据（POST /api/market/publish-suggest 响应） */
@@ -110,4 +228,14 @@ export interface MarketPublishSuggestion {
   icon: string;
   /** 起草所用 agent id（前端提示用） */
   agentId: string;
+  /** 结构化商品页内容草稿；生成失败时缺省，不阻断发布 */
+  content?: MarketContent;
 }
+
+/** 云端注册表，ID 是开放字符串；新增项不要求客户端升级。 */
+export interface MarketTaxon { id: string; kind: 'category' | 'type'; name: string; position: number; }
+export interface MarketTaxonomy { categories: MarketTaxon[]; types: MarketTaxon[]; }
+export const INITIAL_MARKET_TAXA: MarketTaxon[] = [
+  ...[['history-literature','历史与文学'],['philosophy','哲学'],['medicine','医学'],['law','法律'],['education','教育'],['engineering','工程技术']].map(([id,name],position)=>({id:id!, name:name!, kind:'category' as const, position})),
+  {id:'knowledge',name:'知识库',kind:'type',position:0},
+];

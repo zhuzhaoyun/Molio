@@ -107,6 +107,12 @@ export interface MockRunOptions {
   /** 已持久化的会话历史消息（DB 加载 / 重挂载恢复用）。默认 [] —— 避免真实 daemon
    *  对未知 conv 404 → onLoadError 关标签。响应结构对齐 daemon：`{ messages: [...] }`。 */
   persistedMessages?: Array<{ id: string; role: 'user' | 'assistant'; content: string; timestamp: number }>;
+  /** 当前 agent 的模型列表 —— runtime/model pill 测试用（默认 []） */
+  agentModels?: Array<{ id: string; label: string; detail?: string }>;
+  /** 「跟随默认」实际会用的默认模型（AgentInfo.defaultModel） */
+  agentDefaultModel?: { id: string; label: string };
+  /** 额外的 agent —— 测「运行时」分组切换用；available=false 模拟未安装 */
+  extraAgents?: Array<{ id: string; name: string; available?: boolean; models?: Array<{ id: string; label: string; detail?: string }> }>;
   /** Turn scripts streamed over the SAME SSE connection, one per drained queued
    *  message, in drain order. Only supported with `frameDelay` set (needs a live
    *  streaming server). Each element is a full turn script (status running →
@@ -304,7 +310,13 @@ export async function mockChatRun(page: Page, opts: MockRunOptions = {}) {
   // 5) GET /api/agents → a fake available agent + defaultAgentId so the composer
   //    renders and is auto-selected (independent of the real runtime state).
   // 6) GET /api/config → same (mockAgent installs both).
-  await mockAgent(page, { agentId: 'claude', name: 'Claude' });
+  await mockAgent(page, {
+    agentId: 'claude',
+    name: 'Claude',
+    models: opts.agentModels,
+    defaultModel: opts.agentDefaultModel,
+    extraAgents: opts.extraAgents,
+  });
 
   // 7) GET /api/conversations/:convId/messages → persisted session history
   //    （重挂载恢复的 DB 加载源；默认空历史避免真实 daemon 对未知 conv 404 → onLoadError）
@@ -351,26 +363,44 @@ export async function mockRewindResend(
  * runtime state. Deterministic for tests that need the composer present
  * on a CI runner that has no agent installed.
  */
-export async function mockAgent(page: Page, opts: { agentId?: string; name?: string } = {}) {
+export async function mockAgent(page: Page, opts: {
+  agentId?: string;
+  name?: string;
+  /** 模型列表（RuntimeModelOption[]）——runtime/model pill 相关测试用 */
+  models?: Array<{ id: string; label: string; detail?: string }>;
+  /** 「跟随默认」实际会用的默认模型（AgentInfo.defaultModel） */
+  defaultModel?: { id: string; label: string };
+  /** 额外的 agent——测「运行时」分组切换用 */
+  extraAgents?: Array<{ id: string; name: string; available?: boolean; models?: Array<{ id: string; label: string; detail?: string }> }>;
+} = {}) {
   const agentId = opts.agentId ?? 'claude';
+  const agents = [
+    {
+      id: agentId,
+      name: opts.name ?? 'Claude',
+      available: true,
+      binary: '/usr/bin/claude',
+      source: 'path',
+      version: '1.0.0',
+      models: opts.models ?? [],
+      defaultModel: opts.defaultModel,
+      installUrl: 'https://claude.ai',
+    },
+    ...(opts.extraAgents ?? []).map((a) => ({
+      available: true,
+      binary: `/usr/bin/${a.id}`,
+      source: 'path',
+      version: '1.0.0',
+      models: [],
+      installUrl: '',
+      ...a,
+    })),
+  ];
   await page.route('**/api/agents', async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify({
-        agents: [
-          {
-            id: agentId,
-            name: opts.name ?? 'Claude',
-            available: true,
-            binary: '/usr/bin/claude',
-            source: 'path',
-            version: '1.0.0',
-            models: [],
-            installUrl: 'https://claude.ai',
-          },
-        ],
-      }),
+      body: JSON.stringify({ agents }),
     });
   });
   await page.route('**/api/config', async (route) => {
@@ -393,6 +423,41 @@ export async function mockNoAgents(page: Page) {
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({ agents: [] }),
+    });
+  });
+  await page.route('**/api/config', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ locale: 'zh' }),
+    });
+  });
+}
+
+/**
+ * Mock GET /api/agents → the shape a real daemon returns when nothing is
+ * installed: every known runtime is still listed, but `available` is false.
+ * `mockNoAgents` (empty array) is a shape the daemon never actually emits —
+ * use this one to test "已安装 0 个运行时" logic.
+ */
+export async function mockUnavailableAgents(page: Page) {
+  const agents = ['claude', 'codex', 'gemini', 'qwen', 'hermes', 'dsh'].map((id) => ({
+    id,
+    name: id,
+    available: false,
+    binary: '/dev/null',
+    source: 'env-override',
+    version: null,
+    probeError: 'spawn /dev/null EACCES',
+    models: [],
+    installUrl: '',
+    installable: true,
+  }));
+  await page.route('**/api/agents', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ agents }),
     });
   });
   await page.route('**/api/config', async (route) => {

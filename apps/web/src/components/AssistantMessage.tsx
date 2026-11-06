@@ -1,12 +1,16 @@
-import { useMemo, useCallback } from 'react';
-import type { ChatMessage } from '../hooks/useChat';
+import { useMemo, useState } from 'react';
+import type { ChatMessage } from '../hooks/useChatCore';
 import { renderMarkdown, splitContent } from '../utils/markdown';
+import { preprocessLocalImages } from '../utils/kbImage';
+import { useActiveVaultId } from '../stores/vaultStore';
 import { groupTools, isInteractive } from '../utils/toolGroups';
 import { splitMessageParts } from '../utils/messageText';
+import { extractSandboxSuggest } from '../utils/ruleSandbox';
 import { CodeBlock } from './CodeBlock';
+import { QuizCard } from './QuizCard';
+import { SandboxCard } from './SandboxCard';
+import { useWikiLinkClick } from '../hooks/useWikiLinkClick';
 import { useI18n } from '../i18n';
-import { useActiveVaultId } from '../stores/vaultStore';
-import { useFileNavigation } from '../hooks/useFileNavigation';
 import { ToolCard } from './ToolCard';
 import { WorkBlock } from './WorkBlock';
 import { WorkCompleteBanner } from './WorkCompleteBanner';
@@ -31,10 +35,20 @@ interface Props {
   onContinue?: () => void;
   /** Request to delete (opens selection mode with this message's pair). */
   onRequestDelete?: (id: string) => void;
+  /** Conversation id — scopes quiz localStorage keys. */
+  conversationId?: string | null;
+  /** 会话所属库（daemon 的 conversations.vault_id）——题卡取库的真相源。 */
+  conversationVaultId?: string | null;
+  /**
+   * First-run guide is on the save step: keep the toolbar visible and label the
+   * save action, so the next step is discoverable without hovering.
+   */
+  highlightSave?: boolean;
 }
 
-export function AssistantMessage({ message, isLast, onAnswerToolUse, onSubmitForm, onRegenerate, onContinue, onRequestDelete }: Props) {
+export function AssistantMessage({ message, isLast, onAnswerToolUse, onSubmitForm, onRegenerate, onContinue, onRequestDelete, conversationId, conversationVaultId, highlightSave }: Props) {
   const { t } = useI18n();
+  const vaultId = useActiveVaultId();
   const selectMode = useSelectMode();
   const selected = useIsSelected(message.id);
 
@@ -51,7 +65,38 @@ export function AssistantMessage({ message, isLast, onAnswerToolUse, onSubmitFor
   // AskUserQuestion 场景：fallback 抑制只对拼接文本有效，分段不传（工作块退回整块叙事）。
   const displayProcessSegs = hasAskUserQuestion ? undefined : processSegs;
 
-  const segments = useMemo(() => splitContent(displayAnswer), [displayAnswer]);
+  // sandbox-suggest 标记是协议内容（常驻规则约定模型在回答末尾追加），
+  // 从展示/复制/存库的正文里剥掉，末尾转成「做成可拖动演示」建议 chip。
+  const { text: answerText, suggest: sandboxSuggest } = useMemo(
+    () => extractSandboxSuggest(displayAnswer, !!message.streaming),
+    [displayAnswer, message.streaming],
+  );
+  const [suggestUsed, setSuggestUsed] = useState(false);
+
+  const segments = useMemo(() => splitContent(answerText), [answerText]);
+  // quiz / rule-sandbox 围栏可能出现在最后一个工具之前（模型出题/演示后又读了
+  // 一次文件）：splitMessageParts 会把这段归入过程叙事，WorkBlock 又把闭合围栏
+  // 剥掉 —— 不在这里捞出来，卡片就从活动会话里消失，直到整页刷新才回来。
+  // 运行中不捞（此围栏还在流式增长，WorkBlock 显示占位），结束后一次性提升为
+  // 消息级卡片。
+  const processQuizSegments = useMemo(
+    () => (message.streaming
+      ? []
+      : splitContent(displayProcess).filter(
+        (seg): seg is Extract<ReturnType<typeof splitContent>[number], { type: 'quiz' }> =>
+          seg.type === 'quiz' && seg.complete,
+      )),
+    [message.streaming, displayProcess],
+  );
+  const processSandboxSegments = useMemo(
+    () => (message.streaming
+      ? []
+      : splitContent(displayProcess).filter(
+        (seg): seg is Extract<ReturnType<typeof splitContent>[number], { type: 'sandbox' }> =>
+          seg.type === 'sandbox' && seg.complete,
+      )),
+    [message.streaming, displayProcess],
+  );
   const toolItems = useMemo(
     () => groupTools(message.tools || []),
     [message.tools]
@@ -64,33 +109,7 @@ export function AssistantMessage({ message, isLast, onAnswerToolUse, onSubmitFor
   // 有工作痕迹（思考 / 工具 / 运行中）时整块渲染；纯问答降级为独立 usage-footer。
   const hasWorkBlock = !!message.streaming || workItems.length > 0 || !!message.thinking;
 
-  const activeVaultId = useActiveVaultId();
-  const { openFile } = useFileNavigation();
-
-  const handleProseClick = useCallback(
-    (e: React.MouseEvent<HTMLDivElement>) => {
-      const target = e.target as HTMLElement;
-      const link = target.closest('.kb-wiki-link') as HTMLAnchorElement | null;
-      if (!link || !activeVaultId) return;
-
-      e.preventDefault();
-      const filePath = link.getAttribute('data-file-path') || link.textContent?.trim();
-      if (!filePath) return;
-
-      // Check if file exists before navigating (dead link handling)
-      const encoded = encodeURIComponent(filePath).replace(/%2F/g, '/');
-      fetch(`/api/knowledge/vaults/${activeVaultId}/resolve/${encoded}`)
-        .then((res) => {
-          if (res.status === 404) {
-            window.alert(`文件 "${filePath}" 不存在`);
-            return;
-          }
-          openFile(activeVaultId, filePath);
-        })
-        .catch(() => openFile(activeVaultId, filePath));
-    },
-    [openFile, activeVaultId],
-  );
+  const handleProseClick = useWikiLinkClick();
 
   return (
     <div
@@ -115,6 +134,26 @@ export function AssistantMessage({ message, isLast, onAnswerToolUse, onSubmitFor
         />
       )}
 
+      {processQuizSegments.map((seg, i) => (
+        <QuizCard
+          key={`process-quiz-${i}`}
+          raw={seg.raw}
+          complete
+          streaming={false}
+          conversationId={conversationId}
+          conversationVaultId={conversationVaultId}
+        />
+      ))}
+
+      {processSandboxSegments.map((seg, i) => (
+        <SandboxCard
+          key={`process-sandbox-${i}`}
+          raw={seg.raw}
+          complete
+          streaming={false}
+        />
+      ))}
+
       {selectMode && !message.streaming && (
         <MessageCheckbox id={message.id} />
       )}
@@ -132,13 +171,14 @@ export function AssistantMessage({ message, isLast, onAnswerToolUse, onSubmitFor
             <span className="assistant-error-label">错误</span>
           </div>
           <div className="assistant-error-body">
-            {splitContent(message.error).map((seg, i) =>
-              seg.type === 'text' ? (
-                <div key={i} dangerouslySetInnerHTML={{ __html: renderMarkdown(seg.content) }} />
-              ) : (
-                <CodeBlock key={i} lang={seg.lang} code={seg.code} streaming={false} />
-              ),
-            )}
+            {splitContent(message.error).map((seg, i) => {
+              if (seg.type === 'text') {
+                return <div key={i} dangerouslySetInnerHTML={{ __html: renderMarkdown(seg.content) }} />;
+              }
+              const code = seg.type === 'code' ? seg.code : seg.raw;
+              const lang = seg.type === 'code' ? seg.lang : seg.type === 'quiz' ? 'quiz' : 'rule-sandbox';
+              return <CodeBlock key={i} lang={lang} code={code} streaming={false} />;
+            })}
           </div>
         </div>
       )}
@@ -159,21 +199,64 @@ export function AssistantMessage({ message, isLast, onAnswerToolUse, onSubmitFor
         </div>
       )}
 
-      {displayAnswer && (
+      {answerText && (
         <div
           className="assistant-prose"
           data-testid="assistant-prose"
           onClick={handleProseClick}
           role="presentation"
         >
-          {segments.map((seg, i) =>
-            seg.type === 'text' ? (
-              <div key={i} dangerouslySetInnerHTML={{ __html: renderMarkdown(seg.content) }} />
-            ) : (
-              <CodeBlock key={i} lang={seg.lang} code={seg.code} streaming={message.streaming} />
-            ),
-          )}
+          {segments.map((seg, i) => {
+            if (seg.type === 'text') {
+              // 正文里的 ![alt](库内相对路径) 改写成 raw URL 才能加载（与 QuizCard、
+              // KB 查看器同款规则）；无活跃库时保持原文。
+              const html = vaultId
+                ? renderMarkdown(preprocessLocalImages(seg.content, vaultId))
+                : renderMarkdown(seg.content);
+              return <div key={i} dangerouslySetInnerHTML={{ __html: html }} />;
+            }
+            if (seg.type === 'quiz') {
+              return (
+                <QuizCard
+                  key={i}
+                  raw={seg.raw}
+                  complete={seg.complete}
+                  streaming={message.streaming}
+                  conversationId={conversationId}
+                  conversationVaultId={conversationVaultId}
+                />
+              );
+            }
+            if (seg.type === 'sandbox') {
+              return (
+                <SandboxCard
+                  key={i}
+                  raw={seg.raw}
+                  complete={seg.complete}
+                  streaming={message.streaming}
+                />
+              );
+            }
+            return <CodeBlock key={i} lang={seg.lang} code={seg.code} streaming={message.streaming} />;
+          })}
         </div>
+      )}
+
+      {/* 演示建议 chip：模型判定回答依赖某个明确边界、而用户没有要求演示时，
+          常驻规则让它在回答末尾追加 sandbox-suggest 标记 —— 原始标记不可见，
+          这里转成一键生成入口。点击后消失（后续回复里会出真卡）。 */}
+      {sandboxSuggest && !message.streaming && !selectMode && !suggestUsed && (
+        <button
+          type="button"
+          className="sandbox-suggest-chip"
+          data-testid="sandbox-suggest-chip"
+          onClick={() => {
+            setSuggestUsed(true);
+            onSubmitForm?.(`给我演示一下：${sandboxSuggest}`);
+          }}
+        >
+          {t('sandbox.suggest')}
+        </button>
       )}
 
       {/* 产物卡：移入消息内，逐消息 provenance */}
@@ -195,7 +278,7 @@ export function AssistantMessage({ message, isLast, onAnswerToolUse, onSubmitFor
           actions={[
             {
               key: 'copy', label: '复制', testid: 'msg-copy-btn',
-              text: displayAnswer, onClick: () => {},
+              text: answerText, onClick: () => {},
             },
             ...(isLast && onContinue
               ? [{
@@ -212,14 +295,15 @@ export function AssistantMessage({ message, isLast, onAnswerToolUse, onSubmitFor
           ]}
           extra={
             <>
-              <SaveToKbButton content={displayAnswer} />
-              <SaveAsSkillButton content={displayAnswer} />
+              <SaveToKbButton content={answerText} labeled={highlightSave} />
+              <SaveAsSkillButton content={answerText} />
             </>
           }
           overflow={onRequestDelete ? [{
             key: 'delete', label: '删除', testid: 'overflow-item-delete',
             text: '', onClick: () => onRequestDelete(message.id),
           }] : undefined}
+          highlighted={highlightSave}
         />
       )}
     </div>

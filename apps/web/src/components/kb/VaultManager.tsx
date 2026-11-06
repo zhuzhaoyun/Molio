@@ -15,6 +15,7 @@ import type { Vault } from '@molio/contracts';
 import { VaultList } from './VaultList';
 import { VaultActionPanel } from './VaultActionPanel';
 import { CreateVaultForm } from './CreateVaultForm';
+import { ConfirmDialog } from './KbModals';
 
 export type VaultManagerView = 'list' | 'create' | 'open';
 
@@ -45,6 +46,49 @@ export function VaultManagerModal({
 }: VaultManagerModalProps) {
   const [view, setView] = useState<VaultManagerView>('list');
   const [creating, setCreating] = useState(false);
+  const [openError, setOpenError] = useState<string | null>(null);
+
+  /**
+   * Both "open" entry points (native picker + browser form) funnel here so a
+   * daemon rejection surfaces in ONE place.
+   *
+   * Regression (2026-09): the Electron branch's cancel-handling catch also
+   * wrapped the `onOpen` call, so a rejected path (e.g. a dot-directory like
+   * `.claude`) was reported as "user cancelled" — silent no-op; and the browser
+   * form awaited `onOpen` with no catch at all (unhandled rejection, no UI).
+   * 「创建仓库」 always showed a message (CreateVaultForm catches), which is why
+   * only the open path looked broken.
+   */
+  const handleOpen = useCallback(
+    async (path: string) => {
+      setCreating(true);
+      try {
+        await onOpen(path);
+        setView('list');
+      } catch (err) {
+        setOpenError(err instanceof Error ? err.message : '打开知识库失败');
+      } finally {
+        setCreating(false);
+      }
+    },
+    [onOpen]
+  );
+
+  /** Native picker (Electron) or the inline path form (browser). */
+  const handlePickLocal = useCallback(async () => {
+    if (!window.__electron__?.showDirectoryPicker) {
+      // Browser: show inline path input form
+      setView('open');
+      return;
+    }
+    let pickedPath: string | null = null;
+    try {
+      pickedPath = await window.__electron__.showDirectoryPicker();
+    } catch {
+      return; // picker dismissed or failed — nothing to report to the user
+    }
+    if (pickedPath) await handleOpen(pickedPath);
+  }, [handleOpen]);
 
   // Escape closes the panel — but never on top of the delete confirmation,
   // which is a nested overlay that owns Escape while it is up.
@@ -86,7 +130,7 @@ export function VaultManagerModal({
 
   return (
     <div className="vm-overlay" onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="vm-modal">
+      <div className="vm-modal" data-testid="vault-manager-modal">
         {/* Left: Vault List */}
         <div className="vm-modal-left">
           <VaultList
@@ -116,22 +160,7 @@ export function VaultManagerModal({
                 hasVaults={vaults.length > 0}
                 onExternalRootsChanged={onExternalRootsChanged}
                 onCreate={() => setView('create')}
-                onOpenLocal={async () => {
-                  // Electron: use native directory picker
-                  if (window.__electron__?.showDirectoryPicker) {
-                    try {
-                      const pickedPath = await window.__electron__.showDirectoryPicker();
-                      if (pickedPath) {
-                        await onOpen(pickedPath);
-                        setView('list');
-                      }
-                    } catch { /* user cancelled */ }
-                    return;
-                  }
-
-                  // Browser: show inline path input form
-                  setView('open');
-                }}
+                onOpenLocal={handlePickLocal}
               />
             ) : view === 'create' ? (
               <CreateVaultForm
@@ -141,15 +170,7 @@ export function VaultManagerModal({
               />
             ) : (
               <OpenVaultForm
-                onOpen={async (path: string) => {
-                  setCreating(true);
-                  try {
-                    await onOpen(path);
-                    setView('list');
-                  } finally {
-                    setCreating(false);
-                  }
-                }}
+                onOpen={handleOpen}
                 onCancel={handleBackToList}
                 isLoading={creating}
               />
@@ -157,6 +178,17 @@ export function VaultManagerModal({
           </div>
         </div>
       </div>
+
+      {/* Sits outside the modal box but inside the overlay so it stacks above it. */}
+      <ConfirmDialog
+        show={!!openError}
+        title="无法打开知识库"
+        message={openError ?? ''}
+        confirmLabel="知道了"
+        hideCancel
+        onConfirm={() => setOpenError(null)}
+        onCancel={() => setOpenError(null)}
+      />
     </div>
   );
 }
@@ -187,7 +219,7 @@ function OpenVaultForm({
       <button className="vm-back-btn" onClick={onCancel}>
         ← 返回
       </button>
-      <h2 className="vm-create-title">打开本地仓库</h2>
+      <h2 className="vm-create-title">打开知识库</h2>
 
       <div className="vm-form-group">
         <label className="vm-form-label">文件夹路径</label>

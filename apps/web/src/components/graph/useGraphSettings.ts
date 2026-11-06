@@ -2,9 +2,9 @@
 
 import { useState, useCallback, useEffect } from 'react';
 import {
-  DEFAULT_SETTINGS,
   DEFAULT_FORCE_PARAMS,
   SETTINGS_VERSION,
+  defaultSettings,
   type GraphSettings,
   type ForceParams,
 } from './types.ts';
@@ -25,13 +25,14 @@ const STORAGE_KEY = 'molio.graph.settings';
  */
 export function migrateSettings(parsed: Partial<GraphSettings> | null | undefined): GraphSettings {
   if (!parsed || typeof parsed !== 'object') {
-    return { ...DEFAULT_SETTINGS, forces: { ...DEFAULT_FORCE_PARAMS } };
+    return defaultSettings();
   }
 
+  const base = defaultSettings();
   const merged: GraphSettings = {
-    ...DEFAULT_SETTINGS,
+    ...base,
     ...parsed,
-    forces: { ...DEFAULT_SETTINGS.forces, ...(parsed.forces ?? {}) },
+    forces: { ...base.forces, ...(parsed.forces ?? {}) },
   };
 
   if (parsed.version !== SETTINGS_VERSION) {
@@ -45,10 +46,10 @@ export function migrateSettings(parsed: Partial<GraphSettings> | null | undefine
 function loadSettings(): GraphSettings {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return { ...DEFAULT_SETTINGS, forces: { ...DEFAULT_FORCE_PARAMS } };
+    if (!raw) return defaultSettings();
     return migrateSettings(JSON.parse(raw));
   } catch {
-    return { ...DEFAULT_SETTINGS, forces: { ...DEFAULT_FORCE_PARAMS } };
+    return defaultSettings();
   }
 }
 
@@ -78,5 +79,10 @@ export function useGraphSettings() {
     }));
   }, []);
 
-  return { settings, updateSettings, updateForce };
+  /** 恢复默认设置：筛选 / 外观 / 力度全部回出厂（取值见 defaultSettings()） */
+  const resetSettings = useCallback(() => {
+    setSettings(defaultSettings());
+  }, []);
+
+  return { settings, updateSettings, updateForce, resetSettings };
 }

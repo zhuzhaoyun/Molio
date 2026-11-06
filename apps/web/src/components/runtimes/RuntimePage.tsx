@@ -24,6 +24,7 @@ const AGENT_ICONS: Record<string, string> = {
   gemini: '🔵',
   qwen: '🟠',
   hermes: '🟤',
+  dsh: '🐳',
 };
 
 function getStatusLabels(locale: Locale): Record<string, { label: string; className: string }> {

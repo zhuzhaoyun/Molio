@@ -1,7 +1,7 @@
 ---
 name: wiki-lint
 description: 对本地知识库的 Wiki 做健康检查/质量审查。查孤立页、断链、断引用、frontmatter 缺失、空段落、内容矛盾、过时内容、INDEX 偏差、知识缺口，生成 lint 报告并给出补充方向建议。Triggers on: 健康检查, 检查 wiki 健康状况, lint, clean up wiki, wiki 维护, check the wiki, wiki audit, find orphans, 审查 wiki.
-version: 2.0.0
+version: 2.4.0
 ---
 
 # wiki-lint: Wiki 健康检查
@@ -37,9 +37,21 @@ wiki 相关内容的目录结构：
    ```bash
    grep -roh '\[\[[^]]*\]\]' wiki/ | sort | uniq -c | sort -rn
    ```
-   这一步能同时得到：所有被引用的页面名、引用频次，用于检测断链/缺失页面和引用结构。**孤立页的判定不靠这里的计数**——grep 会把 INDEX 的枚举链接算进入度，导致"每个 stub 都被 INDEX 链过 → 永远测不出孤儿"，用专用脚本（口径：排除 INDEX/log/hot 结构页）：
+   这一步能同时得到：所有被引用的页面名、引用频次，用于检测断链/缺失页面和引用结构。注意 grep 不会跳过代码块——**代码块/行内代码里的 `[[...]]` 是字面文本、不算链接**（与 deadcheck、图谱同口径），数到它们不要当断链报；断链的精确判定直接用专用脚本：
+   ```bash
+   node ".claude/skills/wiki-build/scripts/deadcheck.mjs" --vault .
+   ```
+   **孤立页的判定不靠这里的计数**——grep 会把 INDEX 的枚举链接算进入度，导致"每个 stub 都被 INDEX 链过 → 永远测不出孤儿"，用专用脚本（口径：排除 INDEX/log/hot 结构页）：
    ```bash
    node ".claude/skills/wiki-build/scripts/orphan-audit.mjs" --vault .
+   ```
+   **加粗失效（CJK flanking）也用专用脚本**——`**` 定界符一侧贴括号/引号/逗号等标点、另一侧紧贴汉字的加粗，CommonMark 判定不生效、`**` 按字面渲染（如 `**生态位（萝卜坑）**的分配`）；口径与 deadcheck 一致，跳过 frontmatter/代码块/行内代码：
+   ```bash
+   node ".claude/skills/wiki-build/scripts/cjk-emphasis-check.mjs" --vault .
+   ```
+   含图库再查图版（悬空图片引用 / 孤儿图 / 裸文件名歧义 / `![](...)` 的笔记相对路径）：
+   ```bash
+   node ".claude/skills/wiki-build/scripts/media.mjs" check --vault .
    ```
 4. 使用 Bash 检查实际文件与索引的一致性（两层对比）：
    ```bash
@@ -57,10 +69,11 @@ wiki 相关内容的目录结构：
 |---|--------|--------|------|
 | 1 | 孤立页面 | info | 没有任何其他页面链接指向的 wiki 页面。**判定用 `orphan-audit.mjs`**（见检查方法 3：排除 INDEX/log/hot 的枚举链接，因为枚举链接会掩盖真实孤儿）。入度=0 的 stub 多为"背景挂点误建页"，详见 wiki-build「建页粒度」的孤儿审计 |
 | 2 | 无出链页面 | info | 页面没有引用任何其他页面的 [[wiki 链接]] |
-| 3 | 断链 | warning | [[wiki 链接]] 指向不存在的页面 |
+| 3 | 断链 | warning | [[wiki 链接]] 指向不存在的页面。**判定用 `deadcheck.mjs`（见检查方法 3）**：代码块/行内代码里的 `[[...]]` 是字面文本、不算链接，要跳过（与 deadcheck、图谱同口径） |
 | 4 | 缺失交叉引用 | info | 应该互相链接但没有链接的相关页面 |
 | 5 | INDEX.md 偏差 | warning | 存在但未列出的页面，或列出但不存在的页面（目录索引与目录文件两层都查） |
 | 13 | 旧单索引布局 | warning | 根 INDEX.md 仍逐页罗列、内容目录无 INDEX.md。建议触发一次「入库/归档」自动升级，或显式说「重构索引」（见 wiki-build 的索引分层迁移） |
+| 14 | 图版问题 | warning | `![[图片]]` 或普通 Markdown 图片指向不存在的文件（裂图）、裸文件名匹配到多张同名图。普通 Markdown 路径按笔记所在目录解析。**判定用 `media.mjs check`（见检查方法 3）**；孤儿图只报告不算错。规范见 wiki-build「含图源文件（图版）处理」 |
 
 ### 内容质量（深度检查）
 
@@ -71,6 +84,7 @@ wiki 相关内容的目录结构：
 | 8 | Frontmatter 不完整 | warning | 页面缺少必需的 frontmatter 字段（type/title/tags/related/sources） |
 | 9 | 空段落/占位内容 | info | 页面有空章节或只有标题没有实质内容 |
 | 10 | 论点缺失 | info | overview 页面只是摘要罗列，缺少跨源文件的综合论点 |
+| 15 | 加粗失效（CJK flanking） | info | 加粗边缘是括号/引号/逗号等标点且外侧紧贴汉字时，CommonMark 判定加粗不生效、`**` 按字面渲染（如 `**生态位（萝卜坑）**的分配`、`甲**「重点」**乙`）。**判定用 `cjk-emphasis-check.mjs`**（见检查方法 3），报告里 `side` 标明失效侧。修复：调整语序让加粗首尾都是文字；或按 side 补半角空格——close 在闭合 `**` 后补，open 在开启 `**` 前补，both 两侧都补 |
 
 ### 知识缺口
 

@@ -25,6 +25,27 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import { loadConfig, saveConfig, mergeConfig } from './config.js';
+import {
+  managedPythonExe,
+  managedPythonStagingPrefix,
+  provisionManagedPython,
+} from './python-provision.js';
+
+// ─── Test hooks (Phase 0 Python 发现/供给) ──────────────────────────────────
+//
+// 本机/CI 都装有系统 Python，Phase 0 的「无 Python → 自动供给」回退路径无法
+// 自然触发——测试通过这里注入假实现驱动该分支（默认真实实现）。
+interface PreloadPythonHooks {
+  findPython?: typeof findPythonAtLeast;
+  provision?: (opts: {
+    signal: AbortSignal;
+    onProgress: (pct: number, msg: string) => void;
+  }) => Promise<string>;
+}
+let _pyHooks: PreloadPythonHooks = {};
+export function __setPreloadPythonHooksForTest(hooks: PreloadPythonHooks): void {
+  _pyHooks = hooks;
+}
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -95,18 +116,20 @@ const SKILL_META: Record<PreloadableSkill, SkillMeta> = {
       // Phase 0: docling requires Python >=3.10. On a box whose only python3
       // is 3.9 (older macOS), installing into a 3.9 venv fails inside
       // pyobjc-core's source build on modern clang — a cryptic error that
-      // earlier swallowed the real cause. Detect up front and give an
-      // actionable message instead.
+      // earlier swallowed the real cause. Detect up front; when nothing
+      // qualifies, AUTO-PROVISION a standalone python-build-standalone
+      // interpreter (~22MB, CN mirror first) instead of asking non-technical
+      // users to install Python themselves (python-provision.ts).
       onProgress(2, '检测 Python 版本（docling 需要 ≥3.10）...');
-      const pyInfo = findPythonAtLeast(3, 10);
+      let pyInfo = (_pyHooks.findPython ?? findPythonAtLeast)(3, 10);
       if (!pyInfo.bin) {
         const have = pyInfo.version ? `${pyInfo.version[0]}.${pyInfo.version[1]}` : '未检测到 Python';
-        const how = process.platform === 'darwin'
-          ? 'brew install python@3.12（推荐，无需 sudo）或从 python.org 下载安装包'
-          : process.platform === 'win32'
-            ? '从 python.org 下载 3.12 安装包，或用 winget install Python.Python.3.12（安装时勾选 Add to PATH）'
-            : 'sudo apt install python3.12 python3.12-venv（Debian/Ubuntu）或对应包管理器';
-        throw new Error(`docling 需要 Python ≥3.10，但本机最高只检测到 ${have}。请先安装 Python 3.10+：${how}，安装后重试即可。`);
+        onProgress(3, `本机未找到 Python ≥3.10（最高：${have}），自动下载独立 Python 运行环境（国内源优先，约 22MB）...`);
+        const provision = _pyHooks.provision
+          ?? ((o: { signal: AbortSignal; onProgress: (pct: number, msg: string) => void }) =>
+            provisionManagedPython(o));
+        const managedPy = await provision({ signal, onProgress });
+        pyInfo = { bin: managedPy, version: [3, 12] };
       }
 
       // Phase 1: ensure a dedicated venv exists at ~/.molio/venv, built with a
@@ -118,15 +141,16 @@ const SKILL_META: Record<PreloadableSkill, SkillMeta> = {
       //  - no pollution of / conflict with the user's other Python projects
       // All python/pip/docling invocations use runArgv (no shell) so paths with
       // spaces (Windows usernames, conda env dirs) never break the command.
-      onProgress(5, `准备 Python ${pyInfo.version[0]}.${pyInfo.version[1]} 隔离环境...`);
+      // pct 11：Phase 0 的自动供给占 3-10 带宽，保持进度单调不回退。
+      onProgress(11, `准备 Python ${pyInfo.version[0]}.${pyInfo.version[1]} 隔离环境...`);
       const venvVer = fs.existsSync(venvPy) ? versionOfAbs(venvPy) : null;
       const venvStale = !venvVer || venvVer[0] < 3 || (venvVer[0] === 3 && venvVer[1] < 10);
       if (fs.existsSync(venvRoot()) && venvStale) {
-        onProgress(6, '旧 Python 环境版本过低，重建中...');
+        onProgress(11, '旧 Python 环境版本过低，重建中...');
         fs.rmSync(venvRoot(), { recursive: true, force: true });
       }
       if (!fs.existsSync(venvPy)) {
-        onProgress(8, '创建隔离 Python 环境...');
+        onProgress(11, '创建隔离 Python 环境...');
         await runArgv([pyInfo.bin, '-m', 'venv', venvRoot()], { timeout: 60_000, signal });
         if (!fs.existsSync(venvPy)) {
           throw new Error('无法创建 Python venv，请确认 Python 3.10+ 安装完整');
@@ -427,6 +451,16 @@ function deletePartial(skill: PreloadableSkill): void {
           }
         }
       }
+      // 中断的自动 Python 供给留下的 staging 目录也清掉；**保留**已完成的
+      // ~/.molio/python —— 它是可复用基建（重试免下载，未来其他 skill 也可用）。
+      const molioDir = path.join(os.homedir(), '.molio');
+      if (fs.existsSync(molioDir)) {
+        for (const entry of fs.readdirSync(molioDir)) {
+          if (entry.startsWith(managedPythonStagingPrefix())) {
+            fs.rmSync(path.join(molioDir, entry), { recursive: true, force: true });
+          }
+        }
+      }
     }
   } catch {
     // best-effort — partial deletion failure shouldn't block the stop flow
@@ -501,10 +535,15 @@ const cmpVer = (a: [number, number], b: [number, number]) =>
  * bare `python3.12` + a trailing `py`, missing `py -3.12` and install dirs, so
  * a Win box with 3.12 installed but a 3.9 default got a false "need 3.10+").
  */
-function buildPyProbes(): string[] {
+export function buildPyProbes(): string[] {
   const vers = ['3.13', '3.12', '3.11', '3.10'];
   const probes: string[] = [];
   const env = process.env;
+  // 之前自动供给的独立 Python（~/.molio/python，见 python-provision.ts）放第
+  // 一位——重启后 findPythonAtLeast 直接命中，不会重复触发下载。目录不存在时
+  // 不 push，零开销（versionOfAbs 会做真实验证）。
+  const managed = managedPythonExe();
+  if (fs.existsSync(path.dirname(managed))) probes.push(managed);
   if (process.platform === 'win32') {
     for (const v of vers) probes.push(`py -${v}`);
     for (const v of vers) probes.push(`python${v}`);

@@ -11,7 +11,9 @@ import type Database from 'better-sqlite3';
 import { getVault, listExternalRoots } from '../core/db.js';
 import { scanTree, resolveFilePath } from '../core/knowledge.js';
 import type { ExternalRootRef } from '../core/external-roots.js';
-import type { GraphNode, GraphEdge, GraphData, DeadLinkInfo } from '@molio/contracts';
+import { GraphCache } from '../core/graph-cache.js';
+import { codeIntervals, intervalOverlaps } from '../core/wikilink-text.js';
+import type { GraphNode, GraphEdge, GraphData, DeadLinkInfo, GraphScope } from '@molio/contracts';
 
 /**
  * 从知识图谱中剔除的文件名：index/log 这类文件只是导航/索引页，不代表知识点，
@@ -51,7 +53,33 @@ function inferNodeType(filePath: string, content: string): string | undefined {
   return 'document';
 }
 
-export function graphRoutes(db: Database.Database): Hono {
+/**
+ * 缓存只在「失效信号活着」的 vault 上生效：库内容变了必须有东西来告诉缓存。
+ * VaultWatcher 的 tree-changed 就是那个信号，但它在**监听就绪前、以及监听失败
+ * 后是不存在的**（watch() 是 fire-and-forget，失败只 warn）。没有信号还缓存，
+ * 就等于把「没有信号」当成「内容没变」——图谱会停在旧数据上直到 TTL 到期。
+ */
+function buildGraphCached(
+  cache: GraphCache,
+  vault: { id: string; path: string },
+  isCacheable: (vaultId: string) => boolean,
+  externalRoots: ExternalRootRef[],
+): GraphData {
+  if (!isCacheable(vault.id)) return buildGraph(vault.path, externalRoots);
+  return cache.getOrBuild(vault.id, () => buildGraph(vault.path, externalRoots));
+}
+
+/**
+ * @param cache 图谱缓存。默认自建一个（每个 app 实例一份）——server.ts 会把
+ *   VaultWatcher 的 tree-changed 接到同一个实例上做失效；测试可注入受控实例。
+ * @param isCacheable 该 vault 现在能不能吃缓存（默认总是可以）。server.ts 传
+ *   VaultWatcher.isReady；测试可注入受控判定。
+ */
+export function graphRoutes(
+  db: Database.Database,
+  cache: GraphCache = new GraphCache(),
+  isCacheable: (vaultId: string) => boolean = () => true,
+): Hono {
   const app = new Hono();
 
   // GET /api/graph/:vaultId — build graph from vault markdown files
@@ -63,10 +91,58 @@ export function graphRoutes(db: Database.Database): Hono {
 
     try {
       // Mounted folders contribute nodes too — the graph must match the tree.
-      const graphData = buildGraph(vault.path, externalRefs(db, vault.id));
+      const graphData = buildGraphCached(cache, vault, isCacheable, externalRefs(db, vault.id));
       return c.json(graphData);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to build graph';
+      return c.json({ error: { code: 'INTERNAL', message } }, 500);
+    }
+  });
+
+  // GET /api/graph/:vaultId/local — scoped sub-graph（file=1跳邻域 / dir=文件夹子图）
+  app.get('/:vaultId/local', (c) => {
+    const vault = getVault(db, c.req.param('vaultId'));
+    if (!vault) {
+      return c.json({ error: { code: 'NOT_FOUND', message: 'Vault not found' } }, 404);
+    }
+
+    const scopeType = c.req.query('scope');
+    if (scopeType !== 'file' && scopeType !== 'dir') {
+      return c.json(
+        { error: { code: 'BAD_REQUEST', message: "query 'scope' must be 'file' or 'dir'" } },
+        400,
+      );
+    }
+    const scopePath = (c.req.query('path') ?? '').trim().replace(/\/+$/, '');
+    if (!scopePath) {
+      return c.json({ error: { code: 'BAD_REQUEST', message: "query 'path' is required" } }, 400);
+    }
+    const depthRaw = c.req.query('depth');
+    let depth = 1;
+    if (depthRaw != null && depthRaw !== '') {
+      depth = Number(depthRaw);
+      if (!Number.isInteger(depth) || depth < 1) {
+        return c.json(
+          { error: { code: 'BAD_REQUEST', message: "query 'depth' must be a positive integer" } },
+          400,
+        );
+      }
+      if (depth > 1) {
+        return c.json(
+          { error: { code: 'BAD_REQUEST', message: 'depth > 1 is not supported yet' } },
+          400,
+        );
+      }
+    }
+
+    try {
+      const scope: GraphScope =
+        scopeType === 'file' ? { type: 'file', path: scopePath, depth } : { type: 'dir', path: scopePath };
+      // 局部图 = 同一张全量图做一次过滤：缓存全量图，切 scope 就不用重扫整库
+      const full = buildGraphCached(cache, vault, isCacheable, externalRefs(db, vault.id));
+      return c.json(filterLocalGraph(full, scope));
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to build local graph';
       return c.json({ error: { code: 'INTERNAL', message } }, 500);
     }
   });
@@ -138,13 +214,27 @@ export function buildGraph(vaultPath: string, externalRoots: ExternalRootRef[] =
     const absPath = resolveFilePath(vaultPath, f.path);
     if (!existsSync(absPath)) continue;
 
-    const content = readFileSync(absPath, 'utf-8');
+    // 单个文件读不了不该让整张图 500。existsSync 与 readFileSync 之间文件可能被删（TOCTOU），
+    // Windows 上还可能被别的进程占着（EBUSY/EPERM：同步盘、编辑器、杀软实时扫描），
+    // 移动盘休眠/掉线同理——读失败就跳过它的链接，节点本身仍留在图里。
+    // 与上面 node-type 那遍的 try/catch 同口径（那遍读了整份内容却只用 frontmatter）。
+    let content: string;
+    try {
+      content = readFileSync(absPath, 'utf-8');
+    } catch { /* unreadable / vanished / locked — node stays, links dropped */
+      continue;
+    }
     const sourceKey = pathToKey.get(f.path)!;
+
+    // 代码块/行内代码里的 [[...]] 是字面文本，不渲染成链接 —— 不进图、不算死链。
+    // 与 deadcheck.mjs 的链接扫描同口径：检查员放行的东西，图谱里也不该冒出假节点。
+    const code = codeIntervals(content);
 
     // Match [[Page Name]] and [[Page Name|display]]
     const linkRegex = /\[\[([^\]|#]+?)(?:\|[^\]]+)?\]\]/g;
     let match: RegExpExecArray | null;
     while ((match = linkRegex.exec(content)) !== null) {
+      if (intervalOverlaps([match.index, match.index + match[0].length], code)) continue;
       const rawName = (match[1] ?? '').trim();
       if (!rawName) continue;
 
@@ -217,6 +307,67 @@ export function buildGraph(vaultPath: string, externalRoots: ExternalRootRef[] =
   });
 
   return { nodes, edges: edgeList, deadLinks: deadLinksList };
+}
+
+/**
+ * 从**已算好的**全量图里裁出 scope 子图（纯函数、不读盘；设计 docs/2026-09-04-local-graph-scope-design.md §3）.
+ *
+ * - file scope：圆心（path 精确匹配）+ 1 跳闭邻域 + 诱导边；圆心不存在/被剔除/孤立（linkCount===0）→ 空图
+ * - dir scope：目录前缀下全部 .md 节点 + 它们之间的边；目录内节点引用的目录外死链目标并入；跨目录真实文件边界不含
+ * 返回必含 focusNodes：file=圆心单点；dir=子图全部节点；空图=[]（全量图接口不回填该字段）。
+ */
+// 返回类型收窄：局部图必含 focusNodes（GraphData 里是可选字段，全量图接口才不回填）
+export function filterLocalGraph(full: GraphData, scope: GraphScope): GraphData & { focusNodes: string[] } {
+  const inSet = new Set<string>();
+  let focus: string[] = [];
+
+  if (scope.type === 'file') {
+    const center = full.nodes.find((n) => !n.deadLink && n.path === scope.path);
+    if (!center || center.linkCount === 0) {
+      return { nodes: [], edges: [], deadLinks: [], focusNodes: [] };
+    }
+    inSet.add(center.key);
+    for (const e of full.edges) {
+      if (e.source === center.key) inSet.add(e.target);
+      else if (e.target === center.key) inSet.add(e.source);
+    }
+    focus = [center.key];
+  } else {
+    const prefix = `${scope.path.replace(/\/+$/, '')}/`;
+    for (const n of full.nodes) {
+      if (!n.deadLink && n.path.startsWith(prefix)) inSet.add(n.key);
+    }
+    if (inSet.size === 0) {
+      return { nodes: [], edges: [], deadLinks: [], focusNodes: [] };
+    }
+    // 目录内节点链到目录外死链目标 → 死链节点并入（点它可新建页面）；
+    // 真实文件的跨目录边界不含（后续增强）。死链节点无出边，不会级联扩散。
+    for (const e of full.edges) {
+      const sIn = inSet.has(e.source);
+      const tIn = inSet.has(e.target);
+      if (sIn === tIn) continue;
+      const otherKey = sIn ? e.target : e.source;
+      if (full.nodes.some((n) => n.key === otherKey && n.deadLink)) inSet.add(otherKey);
+    }
+    focus = Array.from(inSet);
+  }
+
+  const nodes = full.nodes.filter((n) => inSet.has(n.key));
+  const keys = new Set(nodes.map((n) => n.key));
+  const edges = full.edges.filter((e) => keys.has(e.source) && keys.has(e.target));
+  // deadLinks 元数据按「死链节点在子图内」过滤（不按 sourceFile——首见 source 可能不在子图）
+  const deadLinks = full.deadLinks.filter((d) => keys.has(`__dead__${d.targetName.toLowerCase()}`));
+  return { nodes, edges, deadLinks, focusNodes: focus };
+}
+
+/**
+ * 便利包装：自建全量图再裁剪。
+ *
+ * 路由**不走这里**——它拿 GraphCache 里的全量图直接过滤（切 scope 才不必重扫整库）。
+ * 保留给测试与一次性调用。
+ */
+export function buildLocalGraph(vaultPath: string, scope: GraphScope): GraphData & { focusNodes: string[] } {
+  return filterLocalGraph(buildGraph(vaultPath), scope);
 }
 
 /**

@@ -1,0 +1,92 @@
+# 把 @molio/cli 的 MCP server 元数据发布到官方 MCP Registry（registry.modelcontextprotocol.io）。
+#
+# 认证走 GitHub OIDC（namespace io.github.zhuzhaoyun/molio 按仓库身份校验），
+# 不需要任何个人 GitHub 账号 OAuth，也不需要本地网络直连 github.com。
+#
+# 触发：
+# - workflow_run：每次 "Publish @molio/cli"（cli-publish.yml，tag cli-v*）成功后自动跟发，
+#   checkout 上游 run 的 head_sha 保证 server.json 版本与刚发布的 npm 版本一致；
+# - workflow_dispatch：手动补发（用默认分支上的 server.json）。
+#
+# ⚠️ server.json 的 version 必须与 apps/cli/package.json 同步更新（有 guard 步骤校验），
+#    发新版 CLI 时两处一起改。
+name: Publish to MCP Registry
+
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows: ["Publish @molio/cli"]
+    types: [completed]
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    # 上游 npm 发布失败时跳过（手动触发不受影响）
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+    permissions:
+      id-token: write # OIDC 认证必需
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # workflow_run 事件默认 checkout 默认分支；改用上游 run 的 commit，
+          # 让 server.json 版本与刚发布的 npm 包一致
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || '' }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "lts/*"
+
+      - name: Guard — server.json version must match package.json
+        run: |
+          set -euo pipefail
+          SV=$(node -p "require('./apps/cli/server.json').version")
+          PV=$(node -p "require('./apps/cli/package.json').version")
+          PKG=$(node -p "require('./apps/cli/server.json').packages[0].version")
+          if [[ "$SV" != "$PV" || "$PKG" != "$PV" ]]; then
+            echo "❌ 版本漂移：server.json=$SV/packages=$PKG，package.json=$PV"
+            echo "   发版时 server.json 的两处 version 必须与 package.json 同步更新"
+            exit 1
+          fi
+          echo "✅ 版本一致：$PV"
+
+      - name: Install mcp-publisher
+        run: |
+          curl -sL "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_linux_amd64.tar.gz" | tar xz mcp-publisher
+          sudo mv mcp-publisher /usr/local/bin/
+          mcp-publisher --help | head -3
+
+      - name: Authenticate via GitHub OIDC
+        run: mcp-publisher login github-oidc
+
+      - name: Validate server.json
+        working-directory: apps/cli
+        run: mcp-publisher validate server.json
+
+      - name: Publish to MCP Registry
+        working-directory: apps/cli
+        run: mcp-publisher publish server.json
+
+      - name: Verify on registry
+        working-directory: apps/cli
+        run: |
+          set -euo pipefail
+          VERSION=$(node -p "require('./package.json').version")
+          # 服务名含 "/"，必须是路径里的单个段——只有 %2F 编码能被路由匹配
+          NAME=$(node -p "encodeURIComponent(require('./server.json').name)")
+          URL="https://registry.modelcontextprotocol.io/v0/servers/$NAME/versions/$VERSION"
+          for i in $(seq 1 6); do
+            STATUS=$(curl -s -o /dev/null -w '%{http_code}' "$URL")
+            if [[ "$STATUS" == "200" ]]; then
+              echo "✅ $NAME@$VERSION 已上 registry"
+              exit 0
+            fi
+            echo "第 $i 次回查未命中（HTTP $STATUS），继续等待传播…"
+            sleep 10
+          done
+          echo "❌ registry 回查超时（发布可能失败或仍在传播），请手动检查：$URL"
+          exit 1

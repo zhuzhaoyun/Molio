@@ -193,6 +193,14 @@ jobs:
     needs: smoke-test
     strategy:
       fail-fast: false
+      # Publish one platform at a time. Every matrix entry runs
+      # `electron-builder --publish always`, which creates the GitHub release
+      # itself and rejects with "422 already_exists" if it already exists — so
+      # running the entries in parallel makes them race on the same release.
+      # v0.3.59 (run 36685374706) lost that race: the macOS job's create landed
+      # 1s after the Windows job's release went public, failing the job and
+      # skipping the OSS upload. Guarded by test/release-workflow-publish-race.
+      max-parallel: 1
       matrix:
         include:
           - os: windows-2022
@@ -455,20 +463,17 @@ jobs:
           OSS_ACCESS_KEY_ID: ${{ env.OSS_ACCESS_KEY_ID }}
           OSS_ACCESS_KEY_SECRET: ${{ env.OSS_ACCESS_KEY_SECRET }}
           OSS_SECURITY_TOKEN: ${{ env.OSS_SECURITY_TOKEN }}
+          OSS_BUCKET: ${{ vars.OSS_BUCKET }}
+          OSS_ENDPOINT: ${{ vars.OSS_ENDPOINT }}
         run: |
           VERSION="${{ steps.version.outputs.version }}"
           TAG="v${VERSION}"
+          export TAG
 
-          # Upload all release assets
-          for file in ./release-assets/*; do
-            filename=$(basename "$file")
-            ossutil cp "$file" oss://${{ vars.OSS_BUCKET }}/releases/${TAG}/${filename} \
-              --endpoint=${{ vars.OSS_ENDPOINT }} \
-              -i "${OSS_ACCESS_KEY_ID}" \
-              -k "${OSS_ACCESS_KEY_SECRET}" \
-              -t "${OSS_SECURITY_TOKEN}" \
-              --update
-          done
+          # Transfers are parallel inside the script and it exits non-zero if any
+          # of them fails, so a partial upload aborts the step before the channel
+          # pointers below are rewritten. See the script header for why parallel.
+          bash scripts/upload-release-assets.sh ./release-assets
 
           # Determine update channel: stable → "latest", prerelease → prerelease type
           # electron-updater looks for <channel>.yml / <channel>-mac.yml / <channel>-linux.yml

@@ -2,19 +2,22 @@
 // 资源市场服务：校验/限频/状态机/签发（设计 §五§六）。限频走 store 查询（同 auth 哲学）。
 // 价格 Plan 1 恒 0；管理员定价为 Plan 2。
 import {
-  MARKET_ICONS, MARKET_TINTS,
+  MARKET_ICONS, MARKET_TINTS, type MarketContent, type MarketTaxon, type MarketTaxonomy,
   type MarketCreateRequest, type MarketCreateResponse, type MarketDownloadResponse,
-  type MarketListing, type MarketMyListing, type MarketMyResponse, type MarketUploadTarget,
+  type MarketListing, type MarketMyListing, type MarketMyResponse,
+  type MarketPurchase, type MarketPurchasesResponse, type MarketUploadTarget,
 } from '@molio/contracts';
 import { ulid } from '../crypto.js';
 import type { AuthStore } from '../store/types.js';
 import type { MarketListingRecord, MarketPendingUpdate, MarketStore } from '../store/market-types.js';
 import type { OssSigner } from './signer.js';
+import type { PayInternalClient } from './pay-client.js';
 
 export type MarketErrorCode =
   | 'invalid_metadata' | 'rate_limited' | 'too_many_active' | 'not_owner'
-  | 'listing_not_found' | 'upload_incomplete' | 'size_exceeded' | 'payment_required';
-export type MarketErrorStatus = 400 | 402 | 403 | 404 | 409 | 413 | 429;
+  | 'listing_not_found' | 'upload_incomplete' | 'size_exceeded' | 'payment_required'
+  | 'pay_unreachable';
+export type MarketErrorStatus = 400 | 402 | 403 | 404 | 409 | 413 | 429 | 502;
 
 export class MarketServiceError extends Error {
   constructor(public readonly code: MarketErrorCode, public readonly status: MarketErrorStatus,
@@ -37,9 +40,15 @@ const MAX_SUMMARY_CP = 500;
 const MAX_TAGS = 3;
 const MAX_PREVIEWS = 4;
 const MAX_PREVIEW_BYTES = 5 * 1024 * 1024;
+const MAX_CONTENT_JSON_BYTES = 60_000;
+const MAX_CONTENT_FACTS = 30;
+const MAX_CONTENT_THEMES = 30;
+const MAX_CONTENT_QUESTIONS = 20;
+const MAX_CONTENT_SAMPLES = 10;
+const MAX_CONTENT_ITEMS = 60;
 const UPLOAD_TTL_SEC = 60 * 60;
 const DOWNLOAD_TTL_SEC = 60 * 60;
-const LIST_LIMIT = 200;
+
 /** 单条上架设置价格上限（分=100 万元） */
 const MAX_PRICE_CENTS = 100_000_000;
 const STALE_UPLOADING_MS = 7 * 24 * 60 * 60 * 1000;
@@ -56,6 +65,8 @@ export interface MarketServiceDeps {
   signer: OssSigner;
   config: { market: MarketConfig };
   now: () => number;
+  /** wxpay-fc 已购索引客户端；未配置时「我的已购」为空、付费下载一律 402（与旧行为一致） */
+  pay?: PayInternalClient;
 }
 
 export class MarketService {
@@ -70,9 +81,29 @@ export class MarketService {
 
   // ── 公开查询 ──
 
+  async taxonomy(): Promise<MarketTaxonomy> {
+    const taxa = await this.deps.store.listTaxa();
+    return {categories: taxa.filter(t => t.kind === 'category'), types: taxa.filter(t => t.kind === 'type')};
+  }
+  async createTaxon(userId: string, input: {kind?: unknown; name?: unknown}): Promise<MarketTaxon> {
+    const user = await this.deps.users.findActiveUserById(userId);
+    if (!user || !this.isAdminEmail(user.email)) throw new MarketServiceError('not_owner', 403);
+    if (!input || (input.kind !== 'category' && input.kind !== 'type') || typeof input.name !== 'string') throw new MarketServiceError('invalid_metadata', 400);
+    const name = input.name.normalize('NFKC').trim().replace(/\s+/g, ' ');
+    if (!name || cpLen(name) > 30 || /[\u0000-\u001f\u007f]/.test(name)) throw new MarketServiceError('invalid_metadata', 400);
+    return this.deps.store.createTaxon({id:ulid(this.now), kind: input.kind, name, position:0});
+  }
+  private async validateTaxa(input: {categoryId?: unknown; resourceTypeId?: unknown}): Promise<void> {
+    const taxa = await this.deps.store.listTaxa();
+    for (const [key, kind] of [['categoryId','category'],['resourceTypeId','type']] as const) {
+      const id = input[key];
+      if (id !== undefined && (typeof id !== 'string' || !taxa.some(t => t.id === id && t.kind === kind))) throw new MarketServiceError('invalid_metadata', 400);
+    }
+  }
   async list(): Promise<MarketListing[]> {
-    const recs = await this.deps.store.listActiveListings(LIST_LIMIT);
-    return Promise.all(recs.map((r) => this.toPublic(r)));
+    const recs = await this.deps.store.listActiveListings();
+    const taxa = await this.deps.store.listTaxa();
+    return Promise.all(recs.map((r) => this.toPublic(r, taxa)));
   }
 
   async get(id: string): Promise<MarketListing> {
@@ -99,6 +130,9 @@ export class MarketService {
   async create(userId: string, req: MarketCreateRequest): Promise<MarketCreateResponse> {
     const { store, config: { market } } = this.deps;
     this.validateMetadata(req);
+    await this.validateTaxa(req);
+    // 结构化内容随首发一起校验落库：非法内容在创建阶段就拒绝，避免先占上传凭证再失败。
+    const content = req.content === undefined || req.content === null ? null : validateMarketContent(req.content);
     const user = await this.deps.users.findActiveUserById(userId);
     const admin = user !== null && this.isAdminEmail(user.email);
     if (!admin) {
@@ -120,9 +154,10 @@ export class MarketService {
     const priceCents = admin && Number.isInteger(req.priceCents) ? Math.max(0, req.priceCents!) : 0;
     const rec: MarketListingRecord = {
       id, userId, source: 'community',
+      categoryId: req.categoryId ?? null, resourceTypeId: req.resourceTypeId ?? 'knowledge',
       name: req.name.trim(), icon: req.icon, tint,
       summary: req.summary.trim(),
-      overview: [], highlights: [],
+      overview: [], highlights: [], content,
       tags: [...new Set(req.tags.map((t) => t.trim()))].slice(0, MAX_TAGS), // 自定义允许，去重截断
       previews: req.previews.map((p, i) => `next/${id}-p${i + 1}${p.ext}`), // uploading 期存暂存键
       version: 'v1.0', priceCents, payUrl: '', authorDisplay: null,
@@ -143,9 +178,12 @@ export class MarketService {
       req.tags.some((t) => typeof t !== 'string' || cpLen(t.trim()) < 1 || cpLen(t.trim()) > MAX_TAG_CP) ||
       !Array.isArray(req.previews) || req.previews.length < 1 || req.previews.length > MAX_PREVIEWS ||
       req.previews.some((p) => !(p.ext in PREVIEW_EXT_CT) || !(p.size > 0) || p.size > MAX_PREVIEW_BYTES) ||
-      typeof req.vaultSize !== 'number' || !(req.vaultSize > 0) || req.vaultSize > this.maxZipBytes ||
+      typeof req.vaultSize !== 'number' || !(req.vaultSize > 0) ||
       (req.priceCents !== undefined && (!Number.isInteger(req.priceCents) || req.priceCents < 0 || req.priceCents > MAX_PRICE_CENTS));
     if (bad) throw new MarketServiceError('invalid_metadata', 400);
+    // 包体上限的唯一权威是云端配置 MOLIO_MARKET_MAX_ZIP_MB（本地 daemon 只做 OOM 安全阀）。
+    // 单独报 size_exceeded，客户端才能提示「超过云端大小上限」而不是笼统的元数据非法。
+    if (req.vaultSize > this.maxZipBytes) throw new MarketServiceError('size_exceeded', 413);
   }
 
   private signUploads(rec: MarketListingRecord): MarketUploadTarget[] {
@@ -215,7 +253,12 @@ export class MarketService {
       previews = urls;
     }
     const updated = await this.deps.store.updateListing(rec.id, {
+      ...(pend.categoryId !== undefined ? {categoryId: pend.categoryId} : {}),
+      ...(pend.resourceTypeId !== undefined ? {resourceTypeId: pend.resourceTypeId} : {}),
       version: bumpVersion(rec.version), previews, pendingUpdate: null,
+      // 新版 zip 的大小必须一起写回：落地页/目录页的「大小」读的就是 file_size，
+      // 漏写会让升版后的体积永远停在首版（版本变了、大小不变）。
+      fileSize: zip.size,
       publishedAt: this.now,
       ...(pend.name !== undefined ? { name: pend.name } : {}),
       ...(pend.summary !== undefined ? { summary: pend.summary } : {}),
@@ -234,10 +277,13 @@ export class MarketService {
     summary?: string;
     icon?: string;
     tags?: string[];
+    categoryId?: string;
+    resourceTypeId?: string;
   }): Promise<MarketCreateResponse> {
     const rec = await this.mustFind(listingId);
     if (rec.userId !== userId) throw new MarketServiceError('not_owner', 403);
     if (rec.status !== 'active') throw new MarketServiceError('listing_not_found', 404);
+    await this.validateTaxa(input);
     const previews = input.previews ?? [];
     if (previews.length > MAX_PREVIEWS || previews.some((p) => !(p.ext in PREVIEW_EXT_CT) || !(p.size > 0) || p.size > MAX_PREVIEW_BYTES)) {
       throw new MarketServiceError('invalid_metadata', 400);
@@ -258,6 +304,8 @@ export class MarketService {
       }
     }
     const pending: MarketPendingUpdate = {
+      ...(input.categoryId !== undefined ? {categoryId: input.categoryId} : {}),
+      ...(input.resourceTypeId !== undefined ? {resourceTypeId: input.resourceTypeId} : {}),
       previews: previews.map((p, i) => ({ key: `next/${rec.id}-p${i + 1}${p.ext}` })),
     };
     if (input.name !== undefined) pending.name = input.name.trim();
@@ -284,14 +332,55 @@ export class MarketService {
 
   // ── 下载（登录门槛核心）──
 
-  async download(_userId: string, listingId: string): Promise<MarketDownloadResponse> {
+  async download(userId: string, listingId: string): Promise<MarketDownloadResponse> {
     const rec = await this.mustFind(listingId);
     if (rec.status !== 'active') throw new MarketServiceError('listing_not_found', 404);
-    // 付费资源不外发免费签名下载（Model A：付费走 payUrl 外链交付，应用内不外泄 zip）
-    if (rec.priceCents > 0) throw new MarketServiceError('payment_required', 402);
+    // 付费资源：已购放行（重复下载 = 最新版，更新覆盖同一 ossKey）；未购 402
+    if (rec.priceCents > 0 && !(await this.hasPurchased(userId, listingId))) {
+      throw new MarketServiceError('payment_required', 402);
+    }
     const filename = `${encodeURIComponent(rec.name)}-vault.zip`;
     const t = this.deps.signer.signGet(rec.ossKey, DOWNLOAD_TTL_SEC, `attachment; filename*=UTF-8''${filename}`);
     return { url: t.url, expiresAt: t.expiresAt };
+  }
+
+  // ── 我的已购（数据源 = wxpay-fc 已购索引，见 pay-client.ts 信任链说明）──
+
+  async purchases(userId: string): Promise<MarketPurchasesResponse> {
+    if (!this.deps.pay) return { purchases: [] };
+    const items = await this.listPurchasesOr502(userId);
+    const out: MarketPurchase[] = [];
+    for (const it of items) {
+      const rec = await this.deps.store.findListingById(it.id);
+      out.push({
+        id: it.id,
+        purchasedAt: typeof it.purchased_at === 'string' && it.purchased_at ? it.purchased_at : null,
+        listing: rec
+          ? { name: rec.name, icon: rec.icon, tint: rec.tint, version: rec.version, priceCents: rec.priceCents, summary: rec.summary }
+          : null,
+        available: rec?.status === 'active',
+      });
+    }
+    // 最近购买在前；无时间的沉底
+    out.sort((a, b) => (b.purchasedAt ?? '').localeCompare(a.purchasedAt ?? ''));
+    return { purchases: out };
+  }
+
+  /** 已购判定：pay 客户端未配置 = 无人购买过（保持旧 402 行为） */
+  private async hasPurchased(userId: string, listingId: string): Promise<boolean> {
+    if (!this.deps.pay) return false;
+    const items = await this.listPurchasesOr502(userId);
+    return items.some((it) => it.id === listingId);
+  }
+
+  /** wxpay-fc 不可达 → 502 pay_unreachable（不谎报 402，客户端可提示稍后重试） */
+  private async listPurchasesOr502(userId: string) {
+    try {
+      return await this.deps.pay!.listPurchases(userId);
+    } catch (e) {
+      console.error('[cloud] pay internal unreachable:', e);
+      throw new MarketServiceError('pay_unreachable', 502);
+    }
   }
 
   // ── 下架 / 恢复 / 管理员 ──
@@ -336,6 +425,24 @@ export class MarketService {
     return out;
   }
 
+  /** 发布者更新自己条目的商品页内容（编辑/重新生成后保存，不触发 zip 重传） */
+  async updateContent(userId: string, listingId: string, input: unknown): Promise<MarketMyListing> {
+    const rec = await this.mustFind(listingId);
+    if (rec.userId !== userId) throw new MarketServiceError('not_owner', 403);
+    const content = validateMarketContent(input);
+    const updated = await this.deps.store.updateListing(listingId, { content }, this.now);
+    return this.toMy(updated!);
+  }
+
+  /** 管理员维护商品页结构化内容（JSONB） */
+  async adminUpdateContent(adminEmail: string, listingId: string, input: unknown): Promise<MarketMyListing> {
+    this.assertAdmin(adminEmail);
+    const content = validateMarketContent(input);
+    await this.mustFind(listingId);
+    const updated = await this.deps.store.updateListing(listingId, { content }, this.now);
+    return this.toMy(updated!);
+  }
+
   private assertAdmin(email: string): void {
     if (!this.isAdminEmail(email)) throw new MarketServiceError('not_owner', 403);
   }
@@ -346,15 +453,20 @@ export class MarketService {
     return rec;
   }
 
-  private async toPublic(rec: MarketListingRecord): Promise<MarketListing> {
+  private async toPublic(rec: MarketListingRecord, knownTaxa?: MarketTaxon[]): Promise<MarketListing> {
+    const taxa = knownTaxa ?? await this.deps.store.listTaxa();
     const u = await this.deps.users.findActiveUserById(rec.userId);
     return {
+      categoryId: rec.categoryId ?? null, resourceTypeId: rec.resourceTypeId ?? "knowledge",
+      category: taxa.find(t => t.kind === "category" && t.id === rec.categoryId) ?? null,
+      resourceType: taxa.find(t => t.kind === "type" && t.id === (rec.resourceTypeId ?? "knowledge")) ?? null,
       id: rec.id, source: rec.source, name: rec.name, icon: rec.icon, tint: rec.tint,
-      summary: rec.summary, overview: rec.overview, highlights: rec.highlights, tags: rec.tags,
+      summary: rec.summary, overview: rec.overview, highlights: rec.highlights, content: rec.content, tags: rec.tags,
       previews: rec.previews, version: rec.version, priceCents: rec.priceCents, payUrl: rec.payUrl,
       author: rec.authorDisplay ?? u?.nickname ?? '墨友',
       fileSize: rec.fileSize,
       publishedAt: rec.publishedAt === null ? null : new Date(rec.publishedAt).toISOString(),
+      updatedAt: new Date(rec.updatedAt).toISOString(),
     };
   }
 
@@ -366,6 +478,94 @@ export class MarketService {
       status: rec.status, removedReason: rec.removedReason,
     };
   }
+}
+
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return !!v && typeof v === 'object' && !Array.isArray(v);
+}
+
+function isContentString(v: unknown, min: number, max: number): v is string {
+  return typeof v === 'string' && cpLen(v.trim()) >= min && cpLen(v.trim()) <= max;
+}
+
+function isContentStringArray(v: unknown, maxItems: number, maxLen: number): v is string[] {
+  return Array.isArray(v) && v.length <= maxItems && v.every((x) => isContentString(x, 1, maxLen));
+}
+
+/** 校验管理员提交的 MarketContent；非法一律 invalid_metadata 400。 */
+function contentArray(v: unknown, max: number, min = 0): unknown[] {
+  if (!Array.isArray(v) || v.length < min || v.length > max) {
+    throw new MarketServiceError('invalid_metadata', 400);
+  }
+  return v;
+}
+
+/** 校验管理员提交的 MarketContent；非法一律 invalid_metadata 400。 */
+function validateMarketContent(input: unknown): MarketContent {
+  const fail = (): never => { throw new MarketServiceError('invalid_metadata', 400); };
+  if (!isRecord(input) || input.version !== 1) fail();
+  const c = input as Record<string, unknown>;
+  if (JSON.stringify(c).length > MAX_CONTENT_JSON_BYTES) fail();
+
+  if (!isRecord(c.positioning)) fail();
+  const p = c.positioning as Record<string, unknown>;
+  if (!isContentString(p.what, 1, 2000)
+    || !isContentStringArray(p.who, 12, 200)
+    || !isContentStringArray(p.notFor, 12, 200)) fail();
+
+  const facts = contentArray(c.facts, MAX_CONTENT_FACTS, 1);
+  for (const f of facts) {
+    if (!isRecord(f) || !isContentString(f.label, 1, 40) || !isContentString(f.value, 1, 120)) fail();
+  }
+
+  const themes = contentArray(c.themes, MAX_CONTENT_THEMES);
+  for (const t of themes) {
+    if (!isRecord(t) || !isContentString(t.name, 1, 80)
+      || !isContentString(t.summary, 1, 600)
+      || !isContentStringArray(t.items, MAX_CONTENT_ITEMS, 100)) fail();
+  }
+
+  const questions = contentArray(c.questions, MAX_CONTENT_QUESTIONS);
+  for (const q of questions) {
+    if (!isRecord(q) || !isContentString(q.question, 1, 200)
+      || !isContentString(q.answer, 1, 3000)) fail();
+    const qObj = q as Record<string, unknown>;
+    if (qObj.source !== undefined && !isContentString(qObj.source, 1, 200)) fail();
+  }
+
+  if (c.samples !== undefined) {
+    const samples = contentArray(c.samples, MAX_CONTENT_SAMPLES);
+    for (const sample of samples) {
+      if (!isRecord(sample) || !isContentString(sample.title, 1, 200)
+        || !isContentString(sample.body, 1, 8000)) fail();
+      const sampleObj = sample as Record<string, unknown>;
+      if (sampleObj.source !== undefined && !isContentString(sampleObj.source, 1, 200)) fail();
+    }
+  }
+
+  if (!isRecord(c.delivery)) fail();
+  const delivery = c.delivery as Record<string, unknown>;
+  if (!isContentString(delivery.format, 1, 200)
+    || !isContentStringArray(delivery.includes, 30, 300)
+    || !isContentStringArray(delivery.requirements, 30, 300)
+    || !isContentStringArray(delivery.steps, 30, 300)) fail();
+
+  if (!isRecord(c.review)) fail();
+  const review = c.review as Record<string, unknown>;
+  if (!isContentString(review.basis, 1, 600)
+    || !isContentString(review.reviewedAt, 1, 40)
+    || (review.status !== 'draft' && review.status !== 'reviewed')
+    || (review.autoDrafted !== undefined && typeof review.autoDrafted !== 'boolean')) fail();
+
+  if (c.seo !== undefined) {
+    if (!isRecord(c.seo)) fail();
+    const seo = c.seo as Record<string, unknown>;
+    if (seo.title !== undefined && !isContentString(seo.title, 1, 200)) fail();
+    if (seo.description !== undefined && !isContentString(seo.description, 1, 300)) fail();
+    if (seo.aliases !== undefined && !isContentStringArray(seo.aliases, 20, 80)) fail();
+  }
+
+  return c as unknown as MarketContent;
 }
 
 function bumpVersion(v: string): string {

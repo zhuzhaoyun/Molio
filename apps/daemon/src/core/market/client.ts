@@ -1,14 +1,18 @@
 // apps/daemon/src/core/market/client.ts
 // 云端 /market/* 客户端：token 取自 AuthClient（唯一持有者），错误映射同 auth 纪律。
 import type {
-  MarketCreateResponse,
+  MarketCreateResponse, MarketTaxon, MarketTaxonomy,
   MarketDownloadResponse,
   MarketListing,
   MarketMyResponse,
+  MarketPurchasesResponse,
+  MarketContent,
 } from '@molio/contracts';
 import { AuthCloudError, type AuthClient } from '../auth/auth-client.js';
 
 export interface MarketCreateInput {
+  categoryId?: string;
+  resourceTypeId?: string;
   name: string;
   summary: string;
   icon: string;
@@ -17,6 +21,8 @@ export interface MarketCreateInput {
   previews: { ext: string; size: number }[];
   /** 价格（分）；仅管理员可设 >0，非管理员云端强制 0 */
   priceCents?: number;
+  /** 商品页结构化内容；随首发一起提交，云端校验后落库 */
+  content?: MarketContent;
 }
 
 /**
@@ -48,7 +54,7 @@ export class MarketClient {
   private async req(
     method: string,
     path: string,
-    opts: { auth: boolean; body?: unknown },
+    opts: { auth: boolean; body?: unknown; timeoutMs?: number },
   ): Promise<Response> {
     const headers: Record<string, string> = {};
     if (opts.body !== undefined) headers['content-type'] = 'application/json';
@@ -59,6 +65,9 @@ export class MarketClient {
         method,
         headers,
         body: opts.body === undefined ? undefined : JSON.stringify(opts.body),
+        // 超时归一为网络层失败（AbortSignal.timeout 触发 → fetch reject → cloud_unreachable），
+        // 由调用方决定降级路径（如 /listings 落缓存）。不传则不设超时（发布上传等大流量操作）。
+        ...(opts.timeoutMs !== undefined ? { signal: AbortSignal.timeout(opts.timeoutMs) } : {}),
       });
     } catch {
       throw new AuthCloudError(0, 'cloud_unreachable');
@@ -70,12 +79,19 @@ export class MarketClient {
     return resp;
   }
 
-  async list(): Promise<{ listings: MarketListing[] }> {
-    return (await (await this.req('GET', '/listings', { auth: false })).json()) as {
+  /** 目录列表（公开数据）。timeoutMs：读侧渲染链路的兜底超时，防止云端慢时无限挂起。 */
+  async list(opts?: { timeoutMs?: number }): Promise<{ listings: MarketListing[] }> {
+    return (await (await this.req('GET', '/listings', { auth: false, timeoutMs: opts?.timeoutMs })).json()) as {
       listings: MarketListing[];
     };
   }
 
+  async taxonomy(): Promise<MarketTaxonomy> {
+    return (await this.req('GET', '/taxonomy', {auth:false, timeoutMs:10000})).json() as Promise<MarketTaxonomy>;
+  }
+  async createTaxon(input: unknown): Promise<MarketTaxon> {
+    return (await this.req('POST', '/taxonomy', {auth:true, body:input, timeoutMs:10000})).json() as Promise<MarketTaxon>;
+  }
   async get(id: string): Promise<MarketListing> {
     return (await (await this.req('GET', `/listings/${id}`, { auth: false })).json()) as MarketListing;
   }
@@ -90,6 +106,11 @@ export class MarketClient {
     return (await (await this.req('GET', '/my', { auth: true })).json()) as MarketMyResponse;
   }
 
+  /** 我的已购（云端合并 wxpay-fc 已购索引 + 目录元数据） */
+  async purchases(): Promise<MarketPurchasesResponse> {
+    return (await (await this.req('GET', '/purchases', { auth: true })).json()) as MarketPurchasesResponse;
+  }
+
   async create(input: MarketCreateInput): Promise<MarketCreateResponse> {
     return (await (await this.req('POST', '/listings', { auth: true, body: input })).json()) as MarketCreateResponse;
   }
@@ -98,10 +119,17 @@ export class MarketClient {
     return (await this.req('POST', `/listings/${id}/confirm`, { auth: true })).json();
   }
 
-  async update(id: string, previews: { ext: string; size: number }[], extra?: { priceCents?: number; name?: string; summary?: string; icon?: string; tags?: string[] }): Promise<MarketCreateResponse> {
+  async update(id: string, previews: { ext: string; size: number }[], extra?: { priceCents?: number; name?: string; summary?: string; icon?: string; tags?: string[]; categoryId?: string; resourceTypeId?: string }): Promise<MarketCreateResponse> {
     return (await (
       await this.req('POST', `/listings/${id}/update`, { auth: true, body: { previews, ...extra } })
     ).json()) as MarketCreateResponse;
+  }
+
+  /** 发布者保存自己条目的商品页内容（编辑/重新生成后保存，不重传 zip） */
+  async setContent(id: string, content: MarketContent): Promise<MarketListing> {
+    return (await (
+      await this.req('POST', `/listings/${id}/content`, { auth: true, body: { content } })
+    ).json()) as MarketListing;
   }
 
   async remove(id: string): Promise<void> {

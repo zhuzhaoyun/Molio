@@ -47,7 +47,7 @@ test.describe('KB folder operations', () => {
   });
 
   test('smoke: synthetic folder drag does not crash the tree', async ({ page }) => {
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+    await page.goto(`/knowledge?vault=${vault.id}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
     await expect(page.locator('.kb-file-panel')).toBeVisible({ timeout: 5_000 });
     await expect(
@@ -92,7 +92,7 @@ test.describe('KB folder operations', () => {
   });
 
   test('delete-folder confirm dialog shows file + subfolder counts', async ({ page }) => {
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+    await page.goto(`/knowledge?vault=${vault.id}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
     await expect(
       page.locator('.kb-tree-group-label').filter({ hasText: 'sourceDir' }),
@@ -119,7 +119,7 @@ test.describe('KB folder operations', () => {
   });
 
   test('delete-folder dialog says "空文件夹" for empty directory', async ({ page }) => {
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+    await page.goto(`/knowledge?vault=${vault.id}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 10_000 });
     await expect(
       page.locator('.kb-tree-group-label').filter({ hasText: 'emptyDir' }),

@@ -11,19 +11,22 @@
 [![GitHub Stars](https://img.shields.io/github/stars/zhuzhaoyun/Molio?style=flat-square)](https://github.com/zhuzhaoyun/Molio/stargazers)
 [![Last Commit](https://img.shields.io/github/last-commit/zhuzhaoyun/Molio?style=flat-square)](https://github.com/zhuzhaoyun/Molio/commits)
 
+[![npm: @molio/cli — MCP server & CLI](https://img.shields.io/npm/v/%40molio/cli?style=flat-square&label=MCP%20%40molio%2Fcli&color=blue)](https://www.npmjs.com/package/@molio/cli)
+[![npm: dsh-plugin-molio — DeepSeek Harness 插件](https://img.shields.io/npm/v/dsh-plugin-molio?style=flat-square&label=dsh%20plugin&color=blue)](https://www.npmjs.com/package/dsh-plugin-molio)
+
 </div>
 
 ---
 
-每个人都有自己的经验、方法和专业积累，但它们长期散落在笔记、文档和聊天记录中——AI 看不见它们，于是每一次对话，都从零开始。
+你的积累不止一种形态：散落在笔记、文档和聊天记录里的经验与方法，也有整本书、带图表的 PDF、成堆的行业资料。它们大多以 AI 读不下去的形态存在，于是每一次对话，都从零开始。
 
-Molio 把这些积累加工成 AI 可读、可调用的**个人知识底座**：Claude Code、Codex 等 Agent 进入你的知识空间，基于你的全部积累做研究、写作、问答、分析，产出以 Markdown 写回沉淀，底座越用越厚。所有内容存在你自己的电脑上，不经过任何第三方服务器。
+Molio 把它们统一加工成 AI 可读、可调用的**个人知识底座**：Claude Code、Codex 等 Agent 进入你的知识空间，基于你的全部积累做研究、写作、问答、分析，产出以 Markdown 写回沉淀，底座越用越厚。所有内容存在你自己的电脑上，不经过任何第三方服务器。
 
 还没有现成积累？[知识图谱资源库](https://molio.cn/resources.html)里有持续上新的**现成知识底座**，一键导入、开箱即用。
 
 <div align="center">
 
-[<img src="docs/img/video-poster.webp" alt="资治通鉴知识库演示" width="100%" style="border-radius: 8px;" />](https://molio.cn/videos/zizhitongjian-overview.mp4)
+[<img src="docs/img/video-poster.webp" alt="资治通鉴知识库演示" width="100%" style="border-radius: 8px;" />](https://molio.cn/videos/zizhitongjian-overview-v2.mp4)
 
 **▶ 点击播放演示** — 一本书，一个知识宇宙：《资治通鉴》1362 年史料 · 由 Molio 加工成 AI 可探索的知识底座
 
@@ -31,9 +34,11 @@ Molio 把这些积累加工成 AI 可读、可调用的**个人知识底座**：
 
 ### 🔁 它如何工作
 
-**01 · 收集与加工 — 从散落碎片，到可调用的知识底座**
+**01 · 收集与加工 — 从散落碎片，到一整本书，都变成可调用的知识底座**
 
-Chrome 一键剪藏（[Web Clipper](https://chromewebstore.google.com/detail/pjdacbbkjpegfkogoieejajljplngbik)）、Obsidian 目录直接打开、本地文档批量导入——纯 Markdown，零迁移、无锁定，随时切回；Wiki 自动提取实体与概念、构建索引与摘要，知识图谱在它们之间建立关联。数据被加工，才开始成为底座。
+输入不被格式限制：Chrome 一键剪藏（[Web Clipper](https://chromewebstore.google.com/detail/pjdacbbkjpegfkogoieejajljplngbik)）、Obsidian 目录直接打开、本地文档批量导入；扫描版 PDF 与 Word / PPT / Excel 由内置的 docling 做版面解析、OCR 与表格还原，图片直接取字；百万字级的长书走分层预处理与分块摘要，可断点续传。落盘的是纯 Markdown，零迁移、无锁定，随时切回。
+
+Wiki 再从这个统一的 Markdown 层里提取实体与概念、建立密集交叉链接与分层索引——数据被加工，才开始成为底座。
 
 **02 · Agent 工作 — 基于你的数据运行**
 
@@ -43,13 +48,45 @@ Claude Code、Codex、Gemini CLI、Qwen Code 等 Agent 在你的知识空间里�
 
 每一次任务的产出都以 Markdown 写回知识空间，成为可复用的长期资产；知识图谱随之生长，下一次任务站得更高。想对外发布？doocs/md 排版 + doocs/cose 一键分发 30+ 平台，出口就在这里。
 
+### 📥 支持的输入
+
+| 输入 | 怎么处理 |
+|------|------|
+| Markdown / TXT / HTML / CSV 等文本 | 直接读入，也是知识库的默认形态 |
+| PDF | 版面解析 + OCR + 表格还原 → Markdown |
+| Word / PPT / Excel | 同一条管线，保留标题层级与表格结构 |
+| 图片（PNG / JPG / TIFF） | OCR 取字后入库 |
+| 网页 | Chrome 一键剪藏，或由微信文章提取器抓取正文 |
+| Obsidian 目录 | 直接打开，原文件只读、不改写 |
+| 百万字级长书 | 分层预处理 + 分块摘要，可断点续传 |
+
+> PDF / Office 的转换由内置的 docling 完成。首次转换需要下载 docling 与约 500MB 的模型，之后复用缓存。
+
 ### 📦 知识图谱资源库
 
 除了工具本身，Molio 还提供**现成的结构化知识图谱**——把一本书、一个专业领域预先整理成可直接导入 AI 的知识底座，开箱即用，不用从零搭建。
 
-涵盖**文学、历史、哲学、中医、医学**等专业领域，**持续上新**。代表性资源如本体知识库、资治通鉴知识体系、妇产超声知识体系等，既有免费入门资源，也有深度整理的精品图谱——完整与最新清单见资源库页面。
+涵盖**文学、历史、哲学、中医、医学、AI 工程**等专业领域，**持续上新**。代表性资源如本体知识库、资治通鉴知识体系、妇产超声知识体系等。完整与最新清单见资源库页面。
 
 > 这些是「人整理出来、AI 现搜不到现成结构」的独特内容。一键导入 Molio，立刻用 AI 做问答、关系查询、主题研究。
+
+- [《红楼梦》人物与意象关系图谱：120 回原著知识图鉴](https://molio.cn/resource/01M110NNMKNWXKBXT01HVJ06ZW.html)
+- [《金瓶梅》人物·商业·社会运行全景知识图谱](https://molio.cn/resource/01M2GAA83Q83CMQZPN40T9GQZ8.html)
+- [《史记》人物·制度·思想全景图谱](https://molio.cn/resource/01M10WWK7WNMM61QNJJJXHNWS2.html)
+- [《资治通鉴》千年兴亡：人物、事件与制度知识图谱](https://molio.cn/resource/01M10RZP9118BA6YRBZ1D4FKM2.html)
+- [《明史》帝国兴衰知识图谱：人物、制度与朝局演变](https://molio.cn/resource/01M111M5CSYX96FTKGC3V1QC2T.html)
+- [《周易》六十四卦全解｜卦变·象数·义理知识图谱](https://molio.cn/resource/01M12YMV1144F4RZMX1HBK8GQ0.html)
+- [老庄思想图谱：《道德经》与《庄子》核心概念体系](https://molio.cn/resource/01M114523M19P4J7GZMZ7E6188.html)
+- [中西哲学思想图谱：给你本地 AI 的哲学知识底座](https://molio.cn/resource/01M10MC4S9ZH54WVFCXJWZ2JWS.html)
+- [中医经典·六经·三焦辨证全景知识库·古文新编](https://molio.cn/resource/01M112AA9MV91T3FJD5Z2GSPY8.html)
+- [妇产超声知识图谱：胎儿畸形诊断、征象与鉴别体系](https://molio.cn/resource/01M1152PE8YE365S9ZXDMNYCW6.html)
+- [知识工程全景图谱-RAG-本体-Agent 工程](https://molio.cn/resource/01M13QT669Q6E94PWACEH00YJF.html)
+- [广东高考志愿填报·高校专业全景知识库](https://molio.cn/resource/01M2DFJ9E66FARK5SEBMPT92K0.html)
+- [三国人物关系图：120 回本的三国演义知识图谱](https://molio.cn/resource/01M35RVX9S3TQK6ZE0QT9J6NG4.html)
+- [图纸数据提取：工程图纸数字化与 AI 识别技术全景](https://molio.cn/resource/01M35QEB3RMK46SGCQ6WSZ3GZR.html)
+- [PCB 柔性制造全景图谱：从在线下单到黑灯工厂](https://molio.cn/resource/01M3VX66XMG5NHQ5HP9TK0Q2DC.html)
+- [法考刑法·131考点与主观题观点训练知识图谱](https://molio.cn/resource/01M2QAYVBMH2YCF68BEA393BY4.html)
+- [中国古典诗文集全景图谱](https://molio.cn/resource/01M3VY2DZXW6KN1X5AFP7PXJ05.html)
 
 **[浏览全部资源 →](https://molio.cn/resources.html)**
 
@@ -200,6 +237,38 @@ pnpm typecheck    # 全量类型检查
 pnpm build        # 构建所有子包
 pnpm test:e2e     # E2E 测试 (需先启动 pnpm dev)
 ```
+
+### 🔌 MCP server & Pi 插件
+
+Molio 知识库同时是一个只读 MCP server，Claude Code、Cursor、Pi 以及任何兼容 MCP 的 agent 都能在对话中搜索、读取你本机的知识库：
+
+```bash
+npx -y @molio/cli mcp                            # stdio MCP server，7 个只读工具
+claude mcp add molio -- npx -y @molio/cli mcp    # 注册到 Claude Code
+pi install npm:@molio/cli                        # Pi：自动注册 server + 附带 `molio-kb` 技能
+```
+
+其他 MCP 客户端：
+
+```json
+{
+  "mcpServers": {
+    "molio": { "command": "npx", "args": ["-y", "@molio/cli", "mcp"] }
+  }
+}
+```
+
+工具：`molio_status`、`kb_vaults`、`kb_tree`、`kb_read`、`kb_search`、`kb_ask_start`、`kb_ask_poll`——全部只读，已发布到官方 MCP Registry（`io.github.zhuzhaoyun/molio`）。需 Molio 服务（桌面端或 Docker）处于运行状态。详见 [`apps/cli/README.md`](apps/cli/README.md) · [npm: @molio/cli](https://www.npmjs.com/package/@molio/cli)
+
+### 🧩 DeepSeek Harness (dsh) 插件
+
+Molio 知识库同时封装为 DeepSeek Harness (dsh) 的只读插件，dsh agent 可在对话中直接搜索、读取你本机的 Molio 知识库：
+
+```bash
+dsh plugin add dsh-plugin-molio
+```
+
+提供 5 个只读工具（`molio_status`、`molio_kb_vaults`、`molio_kb_tree`、`molio_kb_search`、`molio_kb_read`），数据经本机 Molio daemon HTTP API 获取，需 Molio 服务（桌面端或 Docker）处于运行状态。详见 [`packages/dsh-plugin-molio/README.md`](packages/dsh-plugin-molio/README.md) · [npm: dsh-plugin-molio](https://www.npmjs.com/package/dsh-plugin-molio)
 
 ## 🏗️ 项目架构
 

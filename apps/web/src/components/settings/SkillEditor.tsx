@@ -1,7 +1,11 @@
-import { useState, useEffect, useRef, type ClipboardEvent } from 'react';
+import { useState, useEffect, useRef, useCallback, type ClipboardEvent, type DragEvent } from 'react';
 import { parseSkillMd } from '@molio/contracts';
-import type { SkillManifestEntry, PrefillResult, ImportSkillRequest } from '@molio/contracts';
+import type {
+  SkillManifestEntry, PrefillResult, ImportSkillRequest,
+  SkillImportPreview, SkillImportConflict, SkillImportIssueCode,
+} from '@molio/contracts';
 import { useI18n } from '../../i18n';
+import { api } from '../../api/client';
 
 export type SkillFormMode = 'create' | 'edit' | 'prefill' | 'new';
 
@@ -29,15 +33,18 @@ interface SkillEditorProps {
    * inline validation errors. The host clears it on close / retry.
    */
   externalError?: string | null;
+  /**
+   * Content-dir listing (edit/duplicate) — the folded "查看目录结构" view with
+   * a desktop reveal shortcut. View and edit share one surface. Absent (null)
+   * for new/create-from-scratch: there is no content dir yet.
+   */
+  files?: { dir: string; files: { path: string; size: number }[]; truncated: boolean } | null;
   onClose: () => void;
   /** create / edit / prefill / new(paste) → save a skill from form values. */
   onSave?: (values: SkillFormValues) => void | Promise<void>;
   /** new(import) → import from a local file / folder path. */
   onImport?: (req: ImportSkillRequest) => void | Promise<void>;
 }
-
-/** Where the new-skill dialog sources its content from. */
-type NewSource = 'paste' | 'import';
 
 function titleKey(mode: SkillFormMode): string {
   switch (mode) {
@@ -55,9 +62,11 @@ function titleKey(mode: SkillFormMode): string {
  * editor fills all remaining height (Ctrl/Cmd+S saves).
  *
  * Authoring surface — three explicit fields (name / description / instructions):
- *   - new           → the single "新建技能" surface: a source switch at the top
- *                     toggles between the three-field form (→ create via onSave)
- *                     and importing a local file / folder path (→ onImport).
+ *   - new           → the single "新建技能" surface: import (dropzone / path /
+ *                     preview card) and the manual three-field form live on ONE
+ *                     page; the primary button follows the last-produced source
+ *                     (a passing preview → 导入 via onImport, otherwise → 保存
+ *                     via onSave).
  *   - create / edit → the same three fields; `create` is reused by "duplicate"
  *                     (prefilled copy).
  *   - prefill       → three fields prefilled from the AI extraction of an
@@ -75,6 +84,7 @@ export function SkillEditor({
   initialValues,
   busy,
   externalError,
+  files,
   onClose,
   onSave,
   onImport,
@@ -84,8 +94,12 @@ export function SkillEditor({
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [instructions, setInstructions] = useState('');
-  const [source, setSource] = useState<NewSource>('paste');
   const [folderPath, setFolderPath] = useState('');
+  const [preview, setPreview] = useState<SkillImportPreview | null>(null);
+  const [previewConflict, setPreviewConflict] = useState<SkillImportConflict | null>(null);
+  const [previewing, setPreviewing] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  const [dragActive, setDragActive] = useState(false);
   const [fieldError, setFieldError] = useState<string | null>(null);
 
   // Reset fields exactly at the closed→open transition. Two hazards guarded:
@@ -103,8 +117,12 @@ export function SkillEditor({
     if (wasOpenRef.current) return; // already open — never reset mid-edit
     wasOpenRef.current = true;
     setFieldError(null);
-    setSource('paste');
     setFolderPath('');
+    setPreview(null);
+    setPreviewConflict(null);
+    setPreviewError(null);
+    setDropNotice(null);
+    setDragActive(false);
     if (mode === 'prefill' && prefillData) {
       setName(prefillData.name);
       setDescription(prefillData.description);
@@ -116,21 +134,96 @@ export function SkillEditor({
     }
   }, [show, mode, prefillData, initialValues]);
 
-  // The new-skill surface imports only when its source switch is on "import";
-  // otherwise (and for standalone create/edit) it authors via the three fields.
-  const isImportSource = mode === 'new' && source === 'import';
   // The desktop app exposes native pickers; a browser (Docker/NAS) does not, so
   // there we hide the browse buttons and let the user type the container path.
   const isDesktop = Boolean(window.__electron__?.showDirectoryPicker);
 
+  // Preview FILLS the form fields — there is no second card-form. ONLY a
+  // passing preview fills: a failed inspection must never wipe a hand-typed
+  // draft (the editor's own content-protection contract). A seq guard drops
+  // stale responses when previews overlap (drop during an in-flight preview).
+  const previewSeqRef = useRef(0);
+  const runPreview = useCallback(async (src: { folderPath: string }) => {
+    const seq = ++previewSeqRef.current;
+    setPreviewing(true);
+    setPreviewError(null);
+    try {
+      const resp = await api.previewSkillImport(src);
+      if (previewSeqRef.current !== seq) return;
+      setPreview(resp.preview);
+      setPreviewConflict(resp.conflict);
+      if (resp.preview.ok) {
+        setName(resp.preview.name);
+        setDescription(resp.preview.description);
+        setInstructions(resp.preview.instructions);
+      }
+    } catch (err) {
+      if (previewSeqRef.current !== seq) return;
+      setPreview(null);
+      setPreviewConflict(null);
+      setPreviewError((err as Error).message);
+    } finally {
+      if (previewSeqRef.current === seq) setPreviewing(false);
+    }
+  }, []);
+
+  const previewByPath = useCallback((picked: string) => {
+    setFolderPath(picked);
+    void runPreview({ folderPath: picked });
+  }, [runPreview]);
+
+  // Drop feedback lives NEXT TO the dropzone (where the user is looking), not
+  // in the bottom error strip — and outside previewError's lifecycle, which
+  // runPreview resets (the multi-drop notice used to be wiped before it could
+  // render). Re-drop replaces; × on the check strip clears.
+  const [dropNotice, setDropNotice] = useState<string | null>(null);
+
   const handleBrowseFolder = async () => {
     const picked = await window.__electron__?.showDirectoryPicker();
-    if (picked) setFolderPath(picked);
+    if (picked) previewByPath(picked);
   };
 
   const handleBrowseFile = async () => {
     const picked = await window.__electron__?.showSkillFilePicker?.();
-    if (picked) setFolderPath(picked);
+    if (picked) previewByPath(picked);
+  };
+
+  const ISSUE_KEY: Record<SkillImportIssueCode, string> = {
+    NO_ENTRY: 'skills.form.issueNoEntry',
+    EMPTY_BODY: 'skills.form.issueEmptyBody',
+    SOURCE_UNREADABLE: 'skills.form.issueSourceUnreadable',
+    UNSUPPORTED_TYPE: 'skills.form.issueUnsupportedType',
+    TOO_MANY_FILES: 'skills.form.issueTooManyFiles',
+    TOO_LARGE: 'skills.form.issueTooLarge',
+    NAME_FALLBACK: 'skills.form.previewNameFallback',
+    DESCRIPTION_FALLBACK: 'skills.form.previewDescFallback',
+  };
+
+  const issueText = (issue: SkillImportPreview['issues'][number]): string =>
+    issue.code === 'NAME_FALLBACK'
+      ? t('skills.form.previewNameFallback', { name: name.trim() || preview?.name || '' })
+      : t(ISSUE_KEY[issue.code], {}) || issue.message;
+
+  // Drop zone accepts exactly ONE entry: a folder or a single .md. Dragging
+  // non-files (text, page elements) yields an empty files list — a silent
+  // no-op, never an error (Review Focus #1).
+  const handleDrop = (e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setDragActive(false);
+    setDropNotice(null);
+    const list = e.dataTransfer.files;
+    if (!list || list.length === 0) return;
+    if (!isDesktop) {
+      setDropNotice(t('skills.form.dropDesktopOnly'));
+      return;
+    }
+    if (list.length > 1) setDropNotice(t('skills.form.dropOneOnly'));
+    const dropped = window.__electron__?.getPathForFile?.(list[0]);
+    if (!dropped) {
+      setDropNotice(t('skills.form.dropResolveFail'));
+      return;
+    }
+    previewByPath(dropped);
   };
 
   /**
@@ -176,15 +269,33 @@ export function SkillEditor({
     return true;
   };
 
+  // Multi-file imports copy the folder VERBATIM — the instructions box is then
+  // a read-only look at SKILL.md, and edits there cannot be honored.
+  const isMultiFileImport = !!preview && preview.files.length > 1;
+
+  // ONE merged new-skill surface: dropzone/path on top, the manual three-field
+  // form below (the preview FILLS these fields). The primary button follows
+  // whatever the user last produced — a passing preview switches it to 导入;
+  // without a preview it is the plain 保存. edit/prefill never produce a
+  // preview, so they always take the save path.
   const handleSubmit = () => {
-    if (isImportSource) {
-      const folder = folderPath.trim();
-      if (!folder) {
-        setFieldError(t('skills.form.folderRequired'));
-        return;
-      }
+    if (preview) {
+      // Confirm is only meaningful after a PASSING preview (Review Focus #3:
+      // if the source vanished since, onImport fails and the editor stays open
+      // with the error — same contract as save-failure). A failed preview
+      // no-ops here, matching the disabled primary button.
+      if (!preview.ok) return;
       setFieldError(null);
-      void onImport?.({ folderPath: folder });
+      // LONE-FILE sources import via the raw channel so EDITED instructions are
+      // honored. A folder — even one containing only SKILL.md — must go through
+      // folderPath: the raw channel regenerates frontmatter and would silently
+      // drop extra fields (allowed-tools, license, …) a verbatim copy preserves.
+      const singleFile = preview.sourceKind === 'file';
+      void onImport?.({
+        ...(singleFile ? { raw: instructions } : { folderPath: folderPath.trim() }),
+        ...(name.trim() ? { name: name.trim() } : {}),
+        ...(description.trim() ? { description: description.trim() } : {}),
+      });
       return;
     }
     if (!validateFields()) return;
@@ -211,7 +322,7 @@ export function SkillEditor({
 
   if (!show) return null;
 
-  const submitLabel = isImportSource ? t('skills.form.importAction') : t('skills.form.save');
+  const submitLabel = preview ? t('skills.form.importAction') : t('skills.form.save');
 
   return (
     <div
@@ -251,7 +362,7 @@ export function SkillEditor({
             className="kb-btn kb-btn-primary"
             data-testid="skill-form-submit"
             onClick={handleSubmit}
-            disabled={busy}
+            disabled={busy || (!!preview && !preview.ok)}
           >
             {busy ? t('skills.form.saving') : submitLabel}
           </button>
@@ -264,112 +375,193 @@ export function SkillEditor({
         )}
 
         {mode === 'new' && (
-          <div className="sk-import-switch" role="tablist">
-            <button
-              type="button"
-              role="tab"
-              className={`sk-import-switch__btn${source === 'paste' ? ' is-active' : ''}`}
-              data-testid="skill-source-paste"
-              onClick={() => setSource('paste')}
+          <div className="sk-import">
+            <div
+              className={`sk-import-dropzone${dragActive ? ' sk-import-dropzone--active' : ''}`}
+              data-testid="skill-import-dropzone"
+              onDragOver={(e) => { e.preventDefault(); setDragActive(true); }}
+              onDragLeave={() => setDragActive(false)}
+              onDrop={handleDrop}
             >
-              {t('skills.form.sourcePaste')}
-            </button>
-            <button
-              type="button"
-              role="tab"
-              className={`sk-import-switch__btn${source === 'import' ? ' is-active' : ''}`}
-              data-testid="skill-source-import"
-              onClick={() => setSource('import')}
-            >
-              {t('skills.form.sourceImport')}
-            </button>
+              <span className="sk-import-dropzone__icon">📥</span>
+              {/* Re-drag semantics are REPLACE: with a preview already on
+                  screen, say so at drag-time instead of leaving the user to
+                  guess whether the drop appends or overwrites. */}
+              <span>{t(dragActive && preview ? 'skills.form.dropReplace' : 'skills.form.dropHint')}</span>
+            </div>
+
+            {dropNotice && (
+              <p className="sk-form-hint sk-import-dropnotice" data-testid="skill-drop-notice">{dropNotice}</p>
+            )}
+
+            <div className="sk-field">
+              <span className="sk-field__label">{t('skills.form.importModeFolder')}</span>
+              <div className="sk-import-row">
+                <input
+                  className="sk-field__input"
+                  data-testid="skill-import-folder"
+                  type="text"
+                  value={folderPath}
+                  placeholder={t('skills.form.folderPlaceholder')}
+                  onChange={(e) => {
+                    setFolderPath(e.target.value);
+                    // A stale verdict must never outlive the path it described:
+                    // editing the path invalidates the preview (submit disables
+                    // until a fresh 预览).
+                    setPreview(null);
+                    setPreviewConflict(null);
+                  }}
+                />
+                <button
+                  type="button"
+                  className="sk-browse-btn"
+                  data-testid="skill-import-preview-btn"
+                  onClick={() => { const p = folderPath.trim(); if (p) void runPreview({ folderPath: p }); }}
+                  disabled={previewing}
+                >
+                  {previewing ? t('skills.form.previewing') : t('skills.form.previewAction')}
+                </button>
+                {isDesktop && (
+                  <>
+                    <button type="button" className="sk-browse-btn" data-testid="skill-import-browse-folder" onClick={handleBrowseFolder}>
+                      {t('skills.form.browseFolder')}
+                    </button>
+                    <button type="button" className="sk-browse-btn" data-testid="skill-import-browse-file" onClick={handleBrowseFile}>
+                      {t('skills.form.browseFile')}
+                    </button>
+                  </>
+                )}
+              </div>
+              {!isDesktop && <p className="sk-form-hint">{t('skills.form.browseDesktopOnly')}</p>}
+            </div>
+
+            {preview && (
+              <div className="sk-import-check" data-testid="skill-import-check">
+                {/* Clear the check result to drop back to plain manual authoring
+                    — the visible way out of import mode (re-drop replaces, this
+                    removes). Filled field values stay. */}
+                <button
+                  type="button"
+                  className="sk-preview__clear"
+                  data-testid="skill-import-preview-clear"
+                  onClick={() => { setPreview(null); setPreviewConflict(null); }}
+                  aria-label={t('skills.form.cancel')}
+                >
+                  ×
+                </button>
+
+                <div className={`sk-preview__verdict${preview.ok ? '' : ' sk-preview__verdict--error'}`}>
+                  {preview.ok
+                    ? (preview.files.length > 1
+                        ? t('skills.form.previewStructureOk', { count: String(preview.files.length - 1) })
+                        : t('skills.form.previewStructureSingle'))
+                    : t(ISSUE_KEY[(preview.issues.find((i) => i.level === 'error'))!.code], {}) || (preview.issues.find((i) => i.level === 'error'))!.message}
+                </div>
+
+                {preview.issues.filter((i) => i.level === 'warning').map((i) => (
+                  <div key={i.code} className="sk-preview__issue sk-preview__issue--warning">{issueText(i)}</div>
+                ))}
+
+                {preview.truncated && <div className="sk-preview__issue">{t('skills.form.previewTruncated')}</div>}
+
+                {previewConflict && (
+                  <div className="sk-preview__conflict" data-testid="skill-import-conflict">
+                    {t('skills.form.previewConflict', { name: previewConflict.existingName })}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {!preview && (
+              <p className="sk-form-hint sk-import__divider">{t('skills.form.manualHint')}</p>
+            )}
           </div>
         )}
 
-        {isImportSource ? (
-          <div className="sk-field">
-            <span className="sk-field__label">{t('skills.form.importModeFolder')}</span>
-            <div className="sk-import-row">
-              <input
-                className="sk-field__input"
-                data-testid="skill-import-folder"
-                type="text"
-                value={folderPath}
-                placeholder={t('skills.form.folderPlaceholder')}
-                onChange={(e) => setFolderPath(e.target.value)}
-              />
-              {isDesktop && (
-                <>
-                  <button
-                    type="button"
-                    className="sk-browse-btn"
-                    data-testid="skill-import-browse-folder"
-                    onClick={handleBrowseFolder}
-                  >
-                    {t('skills.form.browseFolder')}
-                  </button>
-                  <button
-                    type="button"
-                    className="sk-browse-btn"
-                    data-testid="skill-import-browse-file"
-                    onClick={handleBrowseFile}
-                  >
-                    {t('skills.form.browseFile')}
-                  </button>
-                </>
-              )}
-            </div>
-            {!isDesktop && (
-              <p className="sk-form-hint">{t('skills.form.browseDesktopOnly')}</p>
-            )}
-          </div>
-        ) : (
-          <>
-            <div className="sk-editor__meta">
-              <label className="sk-field">
-                <span className="sk-field__label">{t('skills.form.name')} *</span>
-                <input
-                  className="sk-field__input"
-                  data-testid="skill-name-input"
-                  type="text"
-                  value={name}
-                  placeholder={t('skills.form.namePlaceholder')}
-                  onChange={(e) => setName(e.target.value)}
-                />
-              </label>
+        {/* THE one form (no second card-form): a preview FILLS these fields.
+            new mode keeps the instructions box compact — an import's body comes
+            from SKILL.md and needs glanceability, not drafting height. */}
+        <div className="sk-editor__meta">
+          <label className="sk-field">
+            <span className="sk-field__label">{t('skills.form.name')} *</span>
+            <input
+              className="sk-field__input"
+              data-testid="skill-name-input"
+              type="text"
+              value={name}
+              placeholder={t('skills.form.namePlaceholder')}
+              onChange={(e) => setName(e.target.value)}
+            />
+          </label>
 
-              <label className="sk-field">
-                <span className="sk-field__label">{t('skills.form.description')} *</span>
-                <input
-                  className="sk-field__input"
-                  data-testid="skill-description-input"
-                  type="text"
-                  value={description}
-                  placeholder={t('skills.form.descriptionPlaceholder')}
-                  onChange={(e) => setDescription(e.target.value)}
-                />
-              </label>
-            </div>
+          <label className="sk-field">
+            <span className="sk-field__label">{t('skills.form.description')} *</span>
+            <input
+              className="sk-field__input"
+              data-testid="skill-description-input"
+              type="text"
+              value={description}
+              placeholder={t('skills.form.descriptionPlaceholder')}
+              onChange={(e) => setDescription(e.target.value)}
+            />
+          </label>
+        </div>
 
-            <label className="sk-field sk-field--grow">
-              <span className="sk-field__label">{t('skills.form.instructions')} *</span>
-              <textarea
-                className="sk-field__textarea sk-field__textarea--md"
-                data-testid="skill-instructions-input"
-                value={instructions}
-                placeholder={t('skills.form.instructionsPlaceholder')}
-                onChange={(e) => setInstructions(e.target.value)}
-                onPaste={handleInstructionsPaste}
-              />
-            </label>
-            {mode !== 'prefill' && (
-              <p className="sk-form-hint">{t('skills.form.pasteHint')}</p>
-            )}
-          </>
+        <label className="sk-field sk-field--grow">
+          <span className="sk-field__label">{t('skills.form.instructions')} *</span>
+          <textarea
+            className={`sk-field__textarea sk-field__textarea--md${mode === 'new' ? ' sk-field__textarea--compact' : ''}`}
+            data-testid="skill-instructions-input"
+            value={instructions}
+            placeholder={t('skills.form.instructionsPlaceholder')}
+            onChange={(e) => setInstructions(e.target.value)}
+            onPaste={handleInstructionsPaste}
+            readOnly={isMultiFileImport}
+          />
+        </label>
+        {isMultiFileImport && (
+          <p className="sk-form-hint">{t('skills.form.importMultiFileBody')}</p>
+        )}
+        {mode !== 'prefill' && (
+          <p className="sk-form-hint">{t('skills.form.pasteHint')}</p>
         )}
 
-        {(fieldError || externalError) && (
-          <div className="sk-form-error" data-testid="skill-form-error">{fieldError || externalError}</div>
+        {/* File listing at the BOTTOM — the same slot as the editor's folded
+            listing on the view/edit surface (one shared skeleton). */}
+        {preview && preview.files.length > 0 && (
+          <details className="sk-preview__files">
+            <summary data-testid="skill-import-files-toggle">
+              {t('skills.form.previewFilesToggle', { count: String(preview.files.length) })}
+            </summary>
+            <ul>
+              {preview.files.map((f) => <li key={f.path}>{f.path}</li>)}
+            </ul>
+          </details>
+        )}
+
+        {files && files.files.length > 0 && (
+          <details className="sk-preview__files">
+            <summary data-testid="skill-editor-files-toggle">
+              {t('skills.form.previewFilesToggle', { count: String(files.files.length) })}
+            </summary>
+            {isDesktop && files.dir && (
+              <button
+                type="button"
+                className="rt-btn rt-btn--sm rt-btn--ghost sk-files-reveal"
+                onClick={() => void window.__electron__?.showItemInFolder(files.dir)}
+              >
+                {t('skills.row.reveal')}
+              </button>
+            )}
+            {files.truncated && <div className="sk-preview__issue">{t('skills.form.previewTruncated')}</div>}
+            <ul>
+              {files.files.map((f) => <li key={f.path}>{f.path}</li>)}
+            </ul>
+          </details>
+        )}
+
+        {(fieldError || externalError || previewError) && (
+          <div className="sk-form-error" data-testid="skill-form-error">{fieldError || externalError || previewError}</div>
         )}
       </div>
     </div>

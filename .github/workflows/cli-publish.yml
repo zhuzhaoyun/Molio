@@ -1,0 +1,127 @@
+# @molio/cli npm 发布管线
+#
+# 触发：push tag `cli-v*`（如 cli-v0.1.0），或手动 workflow_dispatch。
+# 前置（一次性，人工）：
+#   1. npm 上注册 @molio scope（组织或用户）
+#   2. 仓库 Settings → Secrets 添加 NPM_TOKEN（automation 类型的 access token，需 @molio 发布权限）
+#
+# 版本规则：tag `cli-vX.Y.Z` 必须与 apps/cli/package.json version 一致（workflow 会校验）。
+# 含 `-` 的预发布版本（如 0.2.0-beta.1）发布到 `beta` dist-tag，不影响 `npx -y @molio/cli`
+# 默认安装的 latest。与桌面端 `v*` tag（release.yml）互不干扰。
+
+name: Publish @molio/cli
+
+on:
+  push:
+    tags: ['cli-v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+        env:
+          npm_config_registry: https://registry.npmjs.org
+
+      - name: Verify version consistency
+        shell: bash
+        run: |
+          set -euo pipefail
+          PKG_VERSION=$(node -p "require('./apps/cli/package.json').version")
+          echo "package.json version: $PKG_VERSION"
+
+          # src/version.ts 的 CLI_VERSION 与 package.json 手动同步（dist 不打包 package.json）
+          if ! grep -q "CLI_VERSION = '${PKG_VERSION}'" apps/cli/src/version.ts; then
+            echo "❌ apps/cli/src/version.ts CLI_VERSION != package.json version ($PKG_VERSION)"
+            exit 1
+          fi
+
+          # tag 触发时：tag 版本必须与 package.json 一致
+          REF="${GITHUB_REF_NAME:-}"
+          if [[ "$REF" == cli-v* ]]; then
+            TAG_VERSION="${REF#cli-v}"
+            if [[ "$TAG_VERSION" != "$PKG_VERSION" ]]; then
+              echo "❌ tag $REF ($TAG_VERSION) != apps/cli/package.json version ($PKG_VERSION)"
+              echo "   先改 package.json + src/version.ts 再打 tag"
+              exit 1
+            fi
+          fi
+
+      - name: Build contracts (CLI 测试吃 contracts dist)
+        run: pnpm --filter @molio/contracts build
+
+      - name: Build & test CLI
+        run: pnpm --filter @molio/cli test
+
+      - name: Guard NPM_TOKEN
+        shell: bash
+        run: |
+          if [ -z "$NPM_TOKEN_VALUE" ]; then
+            echo "❌ NPM_TOKEN secret 未配置。仓库 Settings → Secrets and variables → Actions 添加。"
+            exit 1
+          fi
+        env:
+          NPM_TOKEN_VALUE: ${{ secrets.NPM_TOKEN }}
+
+      - name: Copy root LICENSE into package
+        run: cp LICENSE apps/cli/LICENSE
+
+      - name: Show publish contents (dry run)
+        run: cd apps/cli && npm pack --dry-run 2>&1 | tail -40
+
+      - name: Publish to npm
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION=$(node -p "require('./apps/cli/package.json').version")
+          DIST_TAG_FLAG=""
+          # 预发布版本（含 -）走 beta dist-tag，latest 只留给正式版
+          if [[ "$VERSION" == *-* ]]; then
+            DIST_TAG_FLAG="--tag beta"
+          fi
+          # --registry 显式传 CLI flag：pnpm publish 解析 registry 时项目 .npmrc（npmmirror）
+          # 优先级高于 env 变量，仅靠 npm_config_registry 覆盖不掉（run 39446092169 实测）
+          pnpm --filter @molio/cli publish --no-git-checks --registry=https://registry.npmjs.org $DIST_TAG_FLAG
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          # 根 .npmrc 把 registry 指向 npmmirror（只读镜像，PUT 会 401）——发布必须显式回 npmjs
+          npm_config_registry: https://registry.npmjs.org
+
+      - name: Verify on registry
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION=$(node -p "require('./apps/cli/package.json').version")
+          # 显式查 npmjs：npmmirror 是同步镜像有延迟，且根 .npmrc 默认指向它。
+          # 传播通常 <10s 但偶发更久（dsh-plugin-v0.1.0 首发实测 sleep 10 单次
+          # 探测误报）——改为重试轮询，最长 ~2 分钟。
+          for i in $(seq 1 12); do
+            PUBLISHED=$(npm view @molio/cli@"$VERSION" version --registry=https://registry.npmjs.org 2>/dev/null || echo "")
+            if [[ "$PUBLISHED" == "$VERSION" ]]; then
+              echo "✅ @molio/cli@$VERSION 已发布"
+              exit 0
+            fi
+            echo "registry 暂未可见（第 $i/12 次），10s 后重试..."
+            sleep 10
+          done
+          echo "❌ registry 上未查到 @molio/cli@$VERSION（发布可能失败）"
+          exit 1

@@ -10,6 +10,8 @@ export type {
   InstallEvent,
   InstallSource,
   NpmNativeInstallSource,
+  ScriptInstallSource,
+  NpmJsInstallSource,
   PlatformRequirement,
   InstallConfig,
   InstallPhase,
@@ -22,6 +24,7 @@ export type {
   StreamHandler,
   ActivityInfo,
   SubagentActivity,
+  ApiRetryInfo,
 } from './event.js';
 
 export type {
@@ -90,6 +93,7 @@ export type {
   VaultListResponse,
   FileTreeResponse,
   KbHistoryListResponse,
+  SampleVaultResponse,
   // Wiki
   WikiOperationType,
   WikiStatusResponse,
@@ -103,6 +107,7 @@ export type {
   GraphNode,
   GraphEdge,
   GraphData,
+  GraphScope,
   DeadLinkInfo,
   // Search
   SearchResult,
@@ -111,7 +116,51 @@ export type {
   ExternalRoot,
   ExternalRootsResponse,
   AddExternalRootRequest,
+  // Quiz attempts
+  QuizAttemptInput,
+  SaveQuizAttemptsRequest,
 } from './knowledge.js';
+
+// Quiz 交互块协议（```quiz 围栏）+ 消息分段——daemon 与 web 共用同一套判定口径。
+export {
+  QUIZ_PROTOCOL_VERSION,
+  MAX_QUIZ_RAW_CHARS,
+  MAX_QUIZ_QUESTIONS,
+  MAX_QUIZ_OPTIONS,
+  MAX_FILL_ANSWERS,
+  MAX_SUBJECT_POINTS,
+  MAX_SUBJECT_POINT_CHARS,
+  MAX_QUIZ_KEY_CHARS,
+  MAX_QUIZ_ID_CHARS,
+  isSubjectQuestion,
+  quizStemOf,
+  parseQuizBlock,
+  normalizeFillText,
+  isFillAnswerCorrect,
+  gradeQuiz,
+  isQuizComplete,
+  canonicalQuizJson,
+  computeQuizFingerprint,
+  quizStorageKey,
+  parseStoredQuizState,
+  stripQuizForStreaming,
+  countQuizCards,
+} from './quiz.js';
+
+export type {
+  QuizQuestionType,
+  QuizOption,
+  QuizSource,
+  QuizQuestion,
+  Quiz,
+  InvalidQuestion,
+  QuizParseResult,
+  QuizSelections,
+  QuizGrade,
+} from './quiz.js';
+
+export { splitContent, stripQuizFences } from './messageSegments.js';
+export type { Segment } from './messageSegments.js';
 
 export type {
   SkillKind,
@@ -121,6 +170,11 @@ export type {
   ImportSkillRequest,
   PrefillRequest,
   PrefillResult,
+  SkillImportIssueCode,
+  SkillImportIssue,
+  SkillImportPreview,
+  SkillImportConflict,
+  SkillImportPreviewResponse,
   SkillListResponse,
   SkillResponse,
   SkillDetailResponse,
@@ -153,18 +207,45 @@ export type {
   CodexPresetId,
   CodexProviderPreset,
 } from './codex-provider.js';
+
+export { HERMES_PROVIDER_PRESETS, getHermesPreset } from './hermes-provider.js';
+export type {
+  HermesPresetId,
+  HermesProviderPreset,
+} from './hermes-provider.js';
 export type {
   MarketTag,
   MarketIcon,
   MarketTint,
   MarketListingSource,
   MarketListingStatus,
+  MarketContent,
+  MarketContentFact,
+  MarketContentTheme,
+  MarketContentQuestion,
+  MarketContentSample,
+  MarketContentPositioning,
+  MarketContentDelivery,
+  MarketContentReview,
+  MarketContentSeo,
   MarketListing,
   MarketMyListing,
   MarketUploadTarget,
   MarketCreateRequest,
   MarketCreateResponse,
   MarketMyResponse,
+  MarketRoleResponse,
   MarketDownloadResponse,
+  MarketPurchase,
+  MarketPurchasesResponse,
   MarketPublishSuggestion,
 } from './market.js';
+
+// Value exports — shared limits (single source of truth)
+export { MAX_IMPORT_FILE_SIZE, MAX_IMPORT_BATCH_SIZE } from './knowledge.js';
+
+export { INITIAL_MARKET_TAXA } from './market.js';
+export type { MarketTaxon, MarketTaxonomy } from './market.js';
+
+export { marketCatalogView } from './catalog.js';
+export type { CatalogQuery } from './catalog.js';

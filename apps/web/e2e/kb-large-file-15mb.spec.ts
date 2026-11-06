@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import * as fs from 'fs';
 import * as path from 'path';
-import { gotoHome, clickNav } from './helpers/navigation';
+import { gotoHome, gotoChatSpa, clickNav } from './helpers/navigation';
 import { createTempVault, cleanupTempVault, type TempVault } from './helpers/cleanup';
 
 /**
@@ -45,7 +45,7 @@ test.describe('KB 15MB text', () => {
 
     // Nav away is immediate (no main-thread block).
     const t0 = Date.now();
-    await clickNav(page, 'home');
+    await gotoChatSpa(page);
     await expect(page.locator('.kb-shell')).toHaveCount(0, { timeout: 3_000 });
     expect(Date.now() - t0).toBeLessThan(1500);
   });

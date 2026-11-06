@@ -76,8 +76,48 @@ export function buildSpawnEnv(
       }
     }
   }
+  if (def.id === 'hermes') {
+    // hermes runs every terminal command through bash (pm/shell.py) and on
+    // Windows the only real bash ships with Git for Windows. Its own
+    // resolution chain fails when: (a) its bundled PortableGit is extracted
+    // under %LOCALAPPDATA%\hermes\tools but NOT registered in tools/facts.json
+    // (observed on a real install — _staged_bash() then finds nothing),
+    // (b) Git is installed outside its fixed C:-based roots (e.g. D:\Program
+    // Files\Git), and (c) PATH's only bash.exe is the WSL launcher stub,
+    // which hermes correctly rejects. HERMES_GIT_BASH_PATH is hermes's
+    // first-priority explicit override — inject it the same way claude gets
+    // CLAUDE_CODE_GIT_BASH_PATH above.
+    if (process.platform === 'win32' && !env['HERMES_GIT_BASH_PATH']) {
+      const bashPath = findHermesGitBash();
+      if (bashPath) {
+        env['HERMES_GIT_BASH_PATH'] = bashPath;
+      }
+    }
+  }
   if (def.id === 'codex') {
     stripUnlessCustomBaseUrl(env, 'OPENAI_BASE_URL', ['OPENAI_API_KEY', 'CODEX_API_KEY']);
+  }
+  // NOTE: dsh deliberately has NO credential strip branch. claude/codex read
+  // credentials from files on disk (~/.claude/settings.json, ~/.codex/auth.json),
+  // so env vars are a redundant/hijackable override that stripUnlessCustomBaseUrl
+  // safely removes for the official endpoint. dsh is different: its LLM
+  // provider is configured with `apiKeyEnv: DEEPSEEK_API_KEY` — the env var is
+  // the SOLE credential channel, with no backing file. Stripping it would
+  // leave dsh keyless. The user's Molio-configured key (agents.dsh.env) wins
+  // over any host value because buildAgentEnv merges agentConfig.env AFTER
+  // process.env, so no leak-prevention strip is needed.
+  if (def.id === 'dsh') {
+    // dsh resolves its Messages endpoint as
+    // `config.baseURL ?? env.DEEPSEEK_BASE_URL ?? 'https://api.deepseek.com/anthropic'`.
+    // An EMPTY STRING is not nullish, so a persisted '' (the web provider form
+    // used to save it when the official preset was selected) reaches
+    // `new URL('')` → TypeError: Invalid URL → both llm-deepseek entries fail
+    // to activate → ACP initialize dies with -32603. Drop empty/whitespace
+    // values so dsh falls back to its built-in official root.
+    const baseUrl = env['DEEPSEEK_BASE_URL'];
+    if (typeof baseUrl === 'string' && baseUrl.trim() === '') {
+      delete env['DEEPSEEK_BASE_URL'];
+    }
   }
 
   // Ensure Molio-installed agent binaries are in PATH.
@@ -192,6 +232,43 @@ function findGitBash(): string | null {
     }
   }
   return null;
+}
+
+/**
+ * Resolve the bash.exe to hand hermes via HERMES_GIT_BASH_PATH (Windows only).
+ *
+ * Priority mirrors hermes's own pm/shell.py order:
+ * 1. hermes's staged PortableGit under %LOCALAPPDATA%\hermes\tools\git-*\ —
+ *    hermes-native and version-pinned. This rescues installs where the git
+ *    entry is missing from tools/facts.json (so hermes's own _staged_bash()
+ *    cannot see it) even though the extracted files are on disk.
+ * 2. System Git for Windows via findGitBash() — covers installs outside
+ *    hermes's fixed C:-based roots (e.g. Git on D:).
+ */
+function findHermesGitBash(): string | null {
+  const localAppData = process.env['LOCALAPPDATA'];
+  if (localAppData) {
+    const toolsDir = path.join(localAppData, 'hermes', 'tools');
+    try {
+      // Newest-looking version first; any working bash.exe is acceptable
+      // (hermes validates candidates with `bash -c "exit 0"` anyway).
+      const gitDirs = fs.readdirSync(toolsDir)
+        .filter((e) => e.startsWith('git-'))
+        .sort()
+        .reverse();
+      for (const dir of gitDirs) {
+        for (const sub of ['bin', path.join('usr', 'bin')]) {
+          const candidate = path.join(toolsDir, dir, sub, 'bash.exe');
+          if (fs.existsSync(candidate)) {
+            return candidate;
+          }
+        }
+      }
+    } catch {
+      // tools dir missing or unreadable — fall through to system Git
+    }
+  }
+  return findGitBash();
 }
 
 function stripUnlessCustomBaseUrl(

@@ -8,6 +8,7 @@
 import { useCallback, useRef, useEffect } from 'react';
 import type { TreeNode, IngestStatus } from '@molio/contracts';
 import { isExternalPath } from './kb-constants';
+import { useI18n } from '../../i18n';
 
 /** Directories that reject drag-and-drop operations. */
 const PROTECTED_DIRS = ['wiki', 'docling_output'];
@@ -54,6 +55,8 @@ interface KbFileTreeProps {
   onRenameComplete?: (oldPath: string, newName: string) => void;
   /** Called when the user cancels rename (ESC / blur with no value) */
   onRenameCancel?: () => void;
+  /** 清空搜索框（搜索无匹配空态里的「清空搜索」按钮） */
+  onClearSearch?: () => void;
   /** Called when a file is dropped on a directory (internal drag-move). */
   onMoveFile?: (srcPath: string, destDir: string) => void;
   /** Called when an external file drag hovers over a directory node. */
@@ -78,21 +81,52 @@ export function KbFileTree({
   renamingPath,
   onRenameComplete,
   onRenameCancel,
+  onClearSearch,
   onMoveFile,
   onNodeDragOver,
   onNodeDragLeave,
 }: KbFileTreeProps) {
+  const { t } = useI18n();
+
   if (nodes.length === 0) {
     return (
       <div className="kb-empty-state" style={{ padding: '32px 16px' }}>
         <div className="kb-empty-icon">📂</div>
-        <h3>Empty vault</h3>
-        <p>Import files or create new ones to get started.</p>
+        <h3>{t('kb.treeEmptyTitle')}</h3>
+        {/* 明说拖拽这件事——原来只有一句英文，既没本地化也没告诉你文件怎么进来 */}
+        <p data-testid="kb-tree-empty-hint">{t('kb.treeEmptyHint')}</p>
       </div>
     );
   }
 
   const filtered = searchQuery ? filterTree(nodes, searchQuery.toLowerCase()) : nodes;
+
+  // 搜索无匹配：不能只留一片空白。新建/导入不会清空搜索词，用户很容易在过滤态下
+  // 操作成功却「什么都看不见」——这里明说原因并给一键清空。
+  if (searchQuery.trim() && filtered.length === 0) {
+    return (
+      <div
+        className="kb-empty-state kb-tree-search-empty"
+        data-testid="kb-tree-search-empty"
+        style={{ padding: '32px 16px' }}
+      >
+        <div className="kb-empty-icon">🔍</div>
+        <h3>{t('kb.searchEmptyTitle')}</h3>
+        <p>{t('kb.searchEmptyHint')}</p>
+        {onClearSearch && (
+          <button
+            type="button"
+            className="kb-btn kb-btn-primary"
+            data-testid="kb-tree-search-clear"
+            onClick={onClearSearch}
+            style={{ marginTop: 8 }}
+          >
+            {t('kb.searchClear')}
+          </button>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -317,6 +351,14 @@ function TreeNodeItem({
       }
     }, [canDrag, node.path]);
 
+    // Ghost rows: an expanded-but-childless folder must say WHY, or the
+    // chevron flip alone is imperceptible and the click reads as "did
+    // nothing" — the exact report behind the entities-folder bug.
+    // Suppressed while searching: filterTree empties children for non-matching
+    // dirs, and "no search hits" is not "empty folder".
+    const searching = searchQuery.trim().length > 0;
+    const childless = (node.children?.length ?? 0) === 0;
+
     return (
       <div
           className="kb-tree-group"
@@ -330,7 +372,7 @@ function TreeNodeItem({
         >
         <div
           ref={labelRef}
-          className={`kb-tree-group-label ${revealMatch ? 'just-moved' : ''}`}
+          className={`kb-tree-group-label ${expanded ? 'is-open' : ''} ${revealMatch ? 'just-moved' : ''}`}
           onClick={() => onTogglePath(node.path)}
           onContextMenu={handleContextMenu}
         >
@@ -390,6 +432,19 @@ function TreeNodeItem({
               onNodeDragOver={onNodeDragOver}
               onNodeDragLeave={onNodeDragLeave}
             />
+          ))}
+          {expanded && !searching && childless && (node.pruned ? (
+            <div
+              className="kb-tree-ghost-row"
+              data-testid="kb-tree-pruned-hint"
+              title="该文件夹内文件过多，未在文件树中显示"
+            >
+              文件过多，未显示
+            </div>
+          ) : (
+            <div className="kb-tree-ghost-row" data-testid="kb-tree-empty-hint">
+              空文件夹
+            </div>
           ))}
         </div>
       </div>

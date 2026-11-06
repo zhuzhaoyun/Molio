@@ -4,6 +4,8 @@
 // 相关商品互链与 sitemap 内容 —— 这些是收录效果的核心契约，回归必须挡住。
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import { createApp } from '../src/app.js';
 import { MarketService } from '../src/market/service.js';
 import { OssSigner } from '../src/market/signer.js';
@@ -100,7 +102,8 @@ test('SSR 商品页：付费形态三选一 CTA', async () => {
   await marketStore.insertListing(listing({}));
   let html = await (await app.request('/resource/01JABCDE0000000000000001.html')).text();
   assert.ok(html.includes('id="pay-btn"'), '微信支付按钮');
-  assert.ok(html.includes('data-auth-gate="微信支付 ¥5.9"'), '登录门槛文案承载');
+  assert.ok(html.includes('data-auth-gate="立即购买 ¥5.9"'), '登录门槛文案不限定支付通道');
+  assert.ok(html.includes('/pay.js?v=20261103-copylink'), '支付脚本使用新版本以避开旧缓存');
   // 外链购买（有 payUrl）
   await marketStore.insertListing(listing({ id: '01JABCDE0000000000000002', payUrl: 'https://pay.example/x?a=1&b=2' }));
   html = await (await app.request('/resource/01JABCDE0000000000000002.html')).text();
@@ -115,12 +118,14 @@ test('SSR 商品页：付费形态三选一 CTA', async () => {
 
 test('SSR 商品页：相关商品互链排除自身、链接指向新格式', async () => {
   const { app, marketStore } = await bootSsrApp();
-  await marketStore.insertListing(listing({}));
-  await marketStore.insertListing(listing({ id: '01JABCDE0000000000000002', name: '唐诗三百首知识图谱' }));
+  await marketStore.insertListing(listing({ categoryId: 'history-literature' }));
+  await marketStore.insertListing(listing({ id: '01JABCDE0000000000000002', name: '唐诗三百首知识图谱', categoryId: 'history-literature' }));
+  await marketStore.insertListing(listing({ id: '01JABCDE0000000000000003', name: '光伏电站知识库', categoryId: 'engineering' }));
   const html = await (await app.request('/resource/01JABCDE0000000000000001.html')).text();
   const relatedBlock = html.slice(html.indexOf('相关资源'));
-  assert.ok(relatedBlock.includes('/resource/01JABCDE0000000000000002.html'), '互链指向新格式');
+  assert.ok(relatedBlock.includes('/resource/01JABCDE0000000000000002.html'), '同类商品互链指向新格式');
   assert.ok(relatedBlock.includes('唐诗三百首知识图谱'));
+  assert.ok(!relatedBlock.includes('光伏电站知识库'), '不拿跨类商品凑数');
   assert.ok(!relatedBlock.includes('/resource/01JABCDE0000000000000001.html'), '相关区不含自身');
 });
 
@@ -160,13 +165,26 @@ test('动态 sitemap：全量在售商品 + lastmod，非法/下架条目不出�
   assert.match(xml, /<lastmod>\d{4}-\d{2}-\d{2}<\/lastmod>/);
 });
 
+test('动态 sitemap：lastmod 取最近更新时间，内容改版才看得见', async () => {
+  const { app, marketStore } = await bootSsrApp();
+  // 2025 年上架、2026 年补内容：lastmod 必须是 2026。
+  // 若回落 publishedAt，老页面改版对爬虫就是隐形的（2026-10-27 商品页结构化内容上线踩过）。
+  await marketStore.insertListing(listing({
+    publishedAt: Date.parse('2025-01-02T12:00:00Z'),
+    updatedAt: Date.parse('2026-03-05T12:00:00Z'),
+  }));
+  const xml = await (await app.request('/sitemap-products.xml')).text();
+  assert.match(xml, /<lastmod>2026-03-0[56]<\/lastmod>/);
+  assert.ok(!xml.includes('2025-01-02'), 'lastmod 不应回落到上架日');
+});
+
 test('资源列表页 SSR：200 + SEO 要素 + 服务端商品卡片 + ItemList JSON-LD', async () => {
   const { app, marketStore } = await bootSsrApp();
   await marketStore.insertListing(listing({})); // 付费 ¥5.9
   await marketStore.insertListing(listing({ id: '01JABCDE0000000000000002', name: '免费示例图谱', priceCents: 0 }));
   const res = await app.request('/resources.html');
   assert.equal(res.status, 200);
-  assert.equal(res.headers.get('cache-control'), 'public, max-age=3600');
+  assert.equal(res.headers.get('cache-control'), 'no-store');
   const html = await res.text();
   // 爬虫零 JS 可读：商品名/价格/简介/详情内链直接在 HTML 里（CSR 时代是空壳）
   assert.ok(html.includes('红楼梦人物关系图谱'), '商品名在 HTML');
@@ -185,6 +203,9 @@ test('资源列表页 SSR：200 + SEO 要素 + 服务端商品卡片 + ItemList 
   assert.ok(html.includes('https://schema.org/InStock'));
   // 内嵌数据供筛选/购买交互层使用
   assert.ok(html.includes('window.__LISTINGS__'));
+  // 关键词搜索框 + 无匹配空态（客户端过滤已渲染卡片，不重新拉取）
+  assert.ok(html.includes('id="rl-search"'), '搜索框挂载点');
+  assert.ok(html.includes('id="rl-no-match"'), '无匹配空态挂载点');
   // 与静态页平权：导航登录入口挂载点（auth.js 渲染）+ 支付后端地址（缺失则付费按钮降级"联系购买"）
   assert.ok(html.includes('id="nav-auth"'), '导航登录入口挂载点');
   assert.ok(html.includes("window.MOLIO_PAY_BASE = 'https://pay.molio.cn'"), '支付后端地址内嵌');
@@ -239,4 +260,82 @@ test('llms.txt：用户提交内容做 HTML 转义', async () => {
   const txt = await (await app.request('/llms.txt')).text();
   assert.ok(!txt.includes('<script>alert(1)</script>'), '不得出现未转义脚本');
   assert.ok(txt.includes('&lt;script&gt;alert(1)&lt;/script&gt;'), 'name 转义');
+});
+
+
+test('catalog API and SSR keep every active resource beyond the former 200 limit', async () => {
+  const {app,marketStore}=await bootSsrApp();
+  for(let i=0;i<217;i++) await marketStore.insertListing(listing({id:String(i).padStart(26,'0'),categoryId:'history-literature'}));
+  const body=await (await app.request('/market/listings')).json() as {listings:unknown[]};
+  assert.equal(body.listings.length,217);
+  const html=await (await app.request('/resources.html')).text();
+  assert.equal((html.match(/data-resource-id=/g)??[]).length,217);
+});
+test('catalog upstream failure returns 503, not an empty successful catalog', async () => {
+  const {app,marketStore}=await bootSsrApp();
+  marketStore.listActiveListings=async()=>{throw new Error('offline');};
+  const res=await app.request('/resources.html');
+  assert.equal(res.status,503);
+  assert.equal(res.headers.get('cache-control'),'no-store');
+});
+
+test('SSR 商品页：MarketContent 渲染事实卡/问答/范围/样例/FAQ', async () => {
+  const { app, marketStore } = await bootSsrApp();
+  const content = JSON.parse(readFileSync(
+    path.resolve(process.cwd(), '../../content/market/01M4PZPNGWR1YZ1W9GGVTJG82N.json'),
+    'utf8',
+  ));
+  await marketStore.insertListing(listing({
+    id: '01M4PZPNGWR1YZ1W9GGVTJG82N',
+    name: '人教版高中数学五册知识图谱',
+    tags: ['高中数学', '高数', '知识图谱'],
+    content,
+    updatedAt: 1_760_000_000_000,
+  }));
+  const html = await (await app.request('/resource/01M4PZPNGWR1YZ1W9GGVTJG82N.html')).text();
+  assert.ok(html.includes('res-facts'), '事实卡');
+  assert.ok(html.includes('200 个'), '事实值');
+  assert.ok(html.includes('互斥事件和对立事件有什么区别？'), '知识问答');
+  assert.ok(html.includes('集合与逻辑'), '内容范围主题');
+  assert.ok(html.includes('先读一段，再决定'), '真实样例');
+  assert.ok(html.includes('"@type":"FAQPage"'), 'FAQPage JSON-LD');
+  // 别称进结构化数据：AI/Google 才能把「高中数学知识图谱」这类另一种说法
+  // 映射到同一份资源（content.seo.aliases → Product.alternateName）。
+  assert.ok(html.includes('"alternateName"'), 'Product alternateName 来自 seo.aliases');
+  assert.ok(html.includes('高中数学知识图谱'), '别名值原样输出');
+  // 标签是检索词（同义词/简称）的另一条通道：进 Product.keywords，
+  // AI 摘录与 Google 实体匹配能直接读到，而不只是页面上的可见 span。
+  assert.ok(html.includes('"keywords":"高中数学, 高数, 知识图谱"'), 'Product keywords 来自 tags');
+  assert.ok(html.includes('"dateModified"'), 'dateModified');
+  assert.ok(!html.includes('概述</h2>'), 'content 模式不再渲染旧概述');
+});
+
+
+test('SSR 商品页：只有 AI 自动起草的 draft 显示核对提示', async () => {
+  const { app, marketStore } = await bootSsrApp();
+  const base = JSON.parse(readFileSync(
+    path.resolve(process.cwd(), '../../content/market/01M4PZPNGWR1YZ1W9GGVTJG82N.json'),
+    'utf8',
+  ));
+  await marketStore.insertListing(listing({
+    id: '01JABCDE0000000000000021',
+    name: 'AI 草稿内容商品',
+    content: { ...base, review: { ...base.review, status: 'draft', autoDrafted: true } },
+  }));
+  await marketStore.insertListing(listing({
+    id: '01JABCDE0000000000000022',
+    name: '人工草稿内容商品',
+    content: { ...base, review: { ...base.review, status: 'draft', autoDrafted: undefined } },
+  }));
+  await marketStore.insertListing(listing({
+    id: '01JABCDE0000000000000023',
+    name: '已核对内容商品',
+    content: { ...base, review: { ...base.review, status: 'reviewed', autoDrafted: true } },
+  }));
+  const autoDraft = await (await app.request('/resource/01JABCDE0000000000000021.html')).text();
+  const manualDraft = await (await app.request('/resource/01JABCDE0000000000000022.html')).text();
+  const reviewed = await (await app.request('/resource/01JABCDE0000000000000023.html')).text();
+  assert.ok(autoDraft.includes('仍在核对中'), 'AI draft 明确提示');
+  assert.ok(!manualDraft.includes('仍在核对中'), '存量人工 draft 不加提示，避免 19 个线上商品页突然降级');
+  assert.ok(!reviewed.includes('仍在核对中'), 'reviewed 不提示');
 });

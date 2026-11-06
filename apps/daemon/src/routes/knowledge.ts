@@ -7,7 +7,8 @@ import { stream } from 'hono/streaming';
 import { createReadStream, existsSync, lstatSync, mkdirSync, readdirSync, realpathSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import type Database from 'better-sqlite3';
-import type { CreateVaultRequest, ExternalRoot, ExternalRootsResponse } from '@molio/contracts';
+import type { CreateVaultRequest, ExternalRoot, ExternalRootsResponse, TreeNode } from '@molio/contracts';
+import { MAX_IMPORT_FILE_SIZE, MAX_IMPORT_BATCH_SIZE } from '@molio/contracts';
 import {
   listVaults,
   getVault,
@@ -41,18 +42,38 @@ import {
   deleteFile,
   createDirectory,
   deleteDirectory,
+  validateVaultPath,
   renamePath,
   ensureVaultDir,
-  searchFiles,
   importFiles,
   isInsideProtected,
+  listPublishableTopDirs,
   type ImportResult,
 } from '../core/knowledge.js';
+import { searchVaultFiles, indexVaultFile, removeVaultFile, removeVaultDir, ensureVaultIndexed, hasInflightBuild } from '../core/vault-search.js';
 import { annotateTreeStatus } from '../core/wiki-status.js';
+import { TreeCache } from '../core/tree-cache.js';
 import { VAULT_TREE_CHANGED_EVENT, type VaultWatcher } from '../core/vault-watcher.js';
 import type { RunManager } from '../core/RunManager.js';
 import { reconcileVault } from '../core/skills/vault-config.js';
 import { FileTooLargeError } from '../core/encoding.js';
+import { createSampleVault, SampleVaultPathError } from '../core/sample-vault.js';
+import { ThrottledWarn } from '../core/throttled-warn.js';
+
+/**
+ * 树扫描失败是**静默**的（前端 refreshTree 的 catch 吞掉），日志是唯一线索。
+ * 按 vault 限频——扫描失败通常成串出现（同一个坏路径被反复重试）。
+ */
+const treeErrorWarn = new ThrottledWarn();
+
+/** 扫描 + wiki 状态标注（annotateTreeStatus 原地改树，两者必须一起重算）。 */
+async function buildAnnotatedTree(vaultPath: string, externalRoots: ExternalRootRef[] = []): Promise<TreeNode[]> {
+  // Mounted folders are part of the tree (external/<label>/...).
+  const tree = scanTree(vaultPath, '', { externalRoots });
+  // Annotate with ingest status (only if the vault has a wiki).
+  await annotateTreeStatus(vaultPath, tree);
+  return tree;
+}
 
 /** Characters a mount label may not contain (Windows-illegal + path separators). */
 const ILLEGAL_LABEL = /[\\/:*?"<>|]/;
@@ -61,6 +82,14 @@ export function knowledgeRoutes(
   db: Database.Database,
   runManager: RunManager,
   vaultWatcher: VaultWatcher,
+  /**
+   * @param treeCache 文件树缓存。默认自建一个（每个 app 实例一份）——server.ts 会
+   *   把 VaultWatcher 的 tree-changed 接到同一个实例上做失效；测试可注入受控实例。
+   * @param isTreeCacheable 该 vault 现在能不能吃树缓存（默认总是可以）。server.ts 传
+   *   VaultWatcher.isReady——watcher 未就绪时没有失效信号，必须每次重扫。
+   */
+  treeCache: TreeCache = new TreeCache(),
+  isTreeCacheable: (vaultId: string) => boolean = () => true,
 ): Hono {
   const app = new Hono();
 
@@ -82,6 +111,14 @@ export function knowledgeRoutes(
       return c.json({ error: { code: 'BAD_REQUEST', message: 'name and path are required' } }, 400);
     }
 
+    // Reject dot-dir roots and vault nesting/overlap before touching disk —
+    // 2026-09 support incident: a user registered `<vault>\.claude` as a
+    // standalone vault and every reference then resolved against the wrong root.
+    const pathIssue = validateVaultPath(body.path, listVaults(db));
+    if (pathIssue) {
+      return c.json({ error: { code: pathIssue.code, message: pathIssue.message } }, 400);
+    }
+
     try {
       ensureVaultDir(body.path);
       const vault = createVault(db, body.name, body.path, body.description);
@@ -94,6 +131,22 @@ export function knowledgeRoutes(
       return c.json({ ...vault, fileCount: 0 }, 201);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to create vault';
+      return c.json({ error: { code: 'INTERNAL', message } }, 500);
+    }
+  });
+
+  // POST /api/knowledge/sample-vault — provision the built-in sample vault.
+  // Idempotent by design: the activation CTA can be clicked twice (or from two
+  // windows) and must never create duplicate registrations or overwrite edits.
+  app.post('/sample-vault', (c) => {
+    try {
+      const result = createSampleVault(db, vaultWatcher);
+      return c.json(result, result.created ? 201 : 200);
+    } catch (err) {
+      if (err instanceof SampleVaultPathError) {
+        return c.json({ error: { code: err.code, message: err.message } }, 400);
+      }
+      const message = err instanceof Error ? err.message : 'Failed to create sample vault';
       return c.json({ error: { code: 'INTERNAL', message } }, 500);
     }
   });
@@ -155,13 +208,18 @@ export function knowledgeRoutes(
     }
 
     try {
-      // Mounted folders are part of the tree (external/<label>/...).
-      const tree = scanTree(vault.path, '', { externalRoots: externalRefs(db, vault.id) });
-      // Annotate with ingest status (only if the vault has a .git repo).
-      await annotateTreeStatus(vault.path, tree);
+      // 树缓存与图谱缓存（#337）同一套规矩：watcher 未就绪 → 没有失效信号 →
+      // 每次重扫（= 无缓存时的行为），绝不让「没有信号」冒充「内容没变」。
+      const tree = isTreeCacheable(vault.id)
+        ? await treeCache.getOrBuild(vault.id, () => buildAnnotatedTree(vault.path, externalRefs(db, vault.id)))
+        : await buildAnnotatedTree(vault.path, externalRefs(db, vault.id));
       return c.json({ tree });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to scan vault';
+      treeErrorWarn.warn(
+        `tree:${vault.id}`,
+        `[knowledge] GET /vaults/${vault.id}/tree failed (${vault.path}): ${message}`,
+      );
       return c.json({ error: { code: 'INTERNAL', message } }, 500);
     }
   });
@@ -174,15 +232,7 @@ export function knowledgeRoutes(
       return c.json({ error: { code: 'NOT_FOUND', message: 'Vault not found' } }, 404);
     }
     try {
-      const dirs: string[] = [];
-      for (const entry of readdirSync(vault.path, { withFileTypes: true })) {
-        if (!entry.isDirectory()) continue;
-        // 隐藏目录排除，但 .molio 显式放行
-        if (entry.name.startsWith('.') && entry.name !== '.molio') continue;
-        dirs.push(entry.name);
-      }
-      dirs.sort();
-      return c.json({ dirs });
+      return c.json({ dirs: listPublishableTopDirs(vault.path) });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to scan vault';
       return c.json({ error: { code: 'INTERNAL', message } }, 500);
@@ -269,6 +319,10 @@ export function knowledgeRoutes(
     try {
       const body = await c.req.json<{ content: string }>();
       writeFile(vault.path, relPath, body.content);
+      // 检索 P0 层1：经 Molio API 的写入即时更新索引（不等 watcher/sweep）
+      indexVaultFile(db, vault.id, vault.path, relPath);
+      // 树缓存就地失效（同上：不等 chokidar 的 ~1s 轮询，否则刚建的文件刷新树看不到）
+      treeCache.invalidate(vault.id);
       addKbHistory(db, vault.id, 'edit', `File "${relPath}" saved`);
       return c.json({ ok: true });
     } catch (err) {
@@ -294,6 +348,8 @@ export function knowledgeRoutes(
 
     try {
       await deleteFile(vault.path, relPath);
+      removeVaultFile(db, vault.id, relPath);
+      treeCache.invalidate(vault.id);
       addKbHistory(db, vault.id, 'edit', `File "${relPath}" deleted`);
       return c.body(null, 204);
     } catch (err) {
@@ -329,7 +385,26 @@ export function knowledgeRoutes(
       if (isInsideProtected(body.newPath)) {
         return c.json({ error: { code: 'BAD_REQUEST', message: `Cannot move files into protected directory: ${body.newPath}` } }, 400);
       }
+      // renamePath 同时服务文件与目录——先判源类型再改名（改名后源路径即消失）。
+      const oldAbs = path.resolve(path.join(vault.path, relPath));
+      const wasDir = existsSync(oldAbs) && statSync(oldAbs).isDirectory();
       renamePath(vault.path, relPath, body.newPath);
+      treeCache.invalidate(vault.id);
+      if (wasDir) {
+        // 目录改名/移动：清旧子树索引 + 重建（新子树路径全变，需重新索引）。
+        // 构建走单行道（ensureVaultIndexed）而不是裸 reindexVault：同一 vault 同时
+        // 只允许一次 walk。直接并发 walk 的话，先启动的那个构建收尾时会把它没走到的
+        // 路径当「已删除」清掉——包括这次刚索引的新路径（静默漏结果）。
+        // 先等在跑的收工（它可能经过了改名前的位置，未必看得到新树），再由这次
+        // ——起点在改名之后——重建。
+        removeVaultDir(db, vault.id, relPath);
+        await hasInflightBuild(db, vault.id);
+        await ensureVaultIndexed(db, vault.id, vault.path);
+      } else {
+        // 先清旧路径再索引新路径——否则旧路径残留幽灵命中
+        removeVaultFile(db, vault.id, relPath);
+        indexVaultFile(db, vault.id, vault.path, body.newPath);
+      }
       addKbHistory(db, vault.id, 'edit', `Renamed "${relPath}" → "${body.newPath}"`);
       return c.json({ ok: true });
     } catch (err) {
@@ -356,12 +431,32 @@ export function knowledgeRoutes(
     }
 
     try {
-      // A mounted binary (image / PDF / video) lives physically outside the
-      // vault, so map the virtual `external/<label>/...` path to its real
-      // target first; everything else is an ordinary vault path.
+      // Mounted binaries (image / PDF / video) live physically outside the
+      // vault: map the virtual `external/<label>/...` path to its real target
+      // first. Vault paths go through the canonical resolver so bare
+      // ![[image.png]] embeds can find nested attachments (same resolution as
+      // text files).
       const roots = externalRefs(db, vault.id);
-      const absPath =
-        resolveVirtualToReal(vault.path, roots, relPath) ?? resolveFilePath(vault.path, relPath);
+      const virtual = resolveVirtualToReal(vault.path, roots, relPath);
+      const canonical = virtual ? null : resolveCanonicalPath(vault.path, relPath, roots);
+      // canonical is vault-relative; virtual is already an absolute real target.
+      let absPath: string | null = virtual
+        ?? (canonical ? resolveFilePath(vault.path, canonical) : null);
+      if (!absPath) {
+        // The canonical resolver folds "not found" and "refused at the
+        // readable boundary" into the same null. Recover the stream's explicit
+        // 403 for escapes: a file that exists lexically but whose realpath
+        // leaves the boundary is FORBIDDEN, not a bare 404.
+        try {
+          const lexical = resolveFilePath(vault.path, relPath);
+          if (existsSync(lexical)) absPath = lexical;
+        } catch {
+          // lexical escape (`../…`) — fall through to the 404
+        }
+      }
+      if (!absPath) {
+        return c.json({ error: { code: 'NOT_FOUND', message: `File not found: ${relPath}` } }, 404);
+      }
       // Same readable boundary as readFile: the realpath (following the mount
       // link, and any symlink nested inside the vault) must land inside the
       // vault or a registered root. Without this the stream served whatever a
@@ -654,7 +749,10 @@ export function knowledgeRoutes(
 
   // ─── File import (drag-and-drop / ImportModal) ───
 
-  const MAX_IMPORT_SIZE = 50 * 1024 * 1024; // 50 MB
+  // Limits live in @molio/contracts — shared with the web pre-flight checks
+  // so the UI filters files against exactly what the daemon enforces.
+  const MAX_IMPORT_SIZE = MAX_IMPORT_FILE_SIZE;
+  const MAX_BATCH_SIZE = MAX_IMPORT_BATCH_SIZE;
 
   // POST /api/knowledge/vaults/:id/import — import files via multipart
   app.post('/vaults/:id/import', async (c) => {
@@ -667,8 +765,11 @@ export function knowledgeRoutes(
     const rawLen = c.req.header('Content-Length');
     if (rawLen != null) {
       const contentLength = parseInt(rawLen, 10);
-      if (contentLength > MAX_IMPORT_SIZE) {
-        return c.json({ error: { code: 'PAYLOAD_TOO_LARGE', message: 'Upload too large (max 50MB)' } }, 413);
+      if (contentLength > MAX_BATCH_SIZE) {
+        return c.json(
+          { error: { code: 'PAYLOAD_TOO_LARGE', message: 'File too large (max 100MB)' } },
+          413,
+        );
       }
     }
 
@@ -719,6 +820,7 @@ export function knowledgeRoutes(
       }
 
       const result = importFiles(vault.path, fileEntries, targetDir, conflict);
+      treeCache.invalidate(vault.id);
       // Per-file reasons ride along verbatim (`unsupported_format`,
       // `protected_dir`, …, `external_readonly`). The mounted source roots are
       // read-only, so an import naming one lands here as `external_readonly`
@@ -726,6 +828,10 @@ export function knowledgeRoutes(
       // success. User-facing copy for the reason is Task 8's; the route's job
       // is only to not swallow it.
       result.errors = [...perFileErrors, ...result.errors];
+      // 导入的每个落盘文件（含改名后的）即时入索引
+      for (const p of [...result.imported, ...result.renamed.map((r) => r.to)]) {
+        indexVaultFile(db, vault.id, vault.path, p);
+      }
 
       // If conflict: "ask" and conflicts were found, return 409
       if (result.conflicts && result.conflicts.length > 0) {
@@ -755,6 +861,7 @@ export function knowledgeRoutes(
 
     try {
       createDirectory(vault.path, relPath);
+      treeCache.invalidate(vault.id);
       return c.json({ ok: true });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to create directory';
@@ -779,6 +886,8 @@ export function knowledgeRoutes(
 
     try {
       await deleteDirectory(vault.path, relPath);
+      treeCache.invalidate(vault.id);
+      removeVaultDir(db, vault.id, relPath);
       addKbHistory(db, vault.id, 'edit', `Directory "${relPath}" deleted`);
       return c.body(null, 204);
     } catch (err) {
@@ -821,7 +930,7 @@ export function knowledgeRoutes(
   });
 
   // GET /api/knowledge/vaults/:id/search — 全文搜索
-  app.get('/vaults/:id/search', (c) => {
+  app.get('/vaults/:id/search', async (c) => {
     const vault = getVault(db, c.req.param('id'));
     if (!vault) {
       return c.json({ error: { code: 'NOT_FOUND', message: 'Vault not found' } }, 404);
@@ -837,7 +946,7 @@ export function knowledgeRoutes(
       : Math.min(rawLimit, 100);
 
     try {
-      const { results, truncated } = searchFiles(vault.path, q, limit, externalRefs(db, vault.id));
+      const { results, truncated } = await searchVaultFiles(db, vault.id, vault.path, q, limit);
       return c.json({ results, truncated });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to search vault';
@@ -866,7 +975,17 @@ export function knowledgeRoutes(
 
     return stream(c, async (s) => {
       c.req.raw.signal.addEventListener('abort', sseStream.cleanup);
-      await s.pipe(sseStream.stream);
+      try {
+        await s.pipe(sseStream.stream);
+      } catch (err) {
+        // Client disconnected mid-stream — cleanup() already tore down the
+        // watcher listener and ping interval. Swallow ERR_INVALID_STATE
+        // ("ReadableStream is already closed") so the uncaughtException
+        // handler doesn't kill the daemon process.
+        if ((err as NodeJS.ErrnoException)?.code !== 'ERR_INVALID_STATE') {
+          throw err;
+        }
+      }
     });
   });
 
@@ -921,6 +1040,17 @@ function createVaultSSEStream(
   let ping: ReturnType<typeof setInterval> | null = null;
   let listener: ((changedId: string) => void) | null = null;
 
+  const doCleanup = () => {
+    if (ping) {
+      clearInterval(ping);
+      ping = null;
+    }
+    if (listener) {
+      vaultWatcher.off(VAULT_TREE_CHANGED_EVENT, listener);
+      listener = null;
+    }
+  };
+
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
       listener = (changedId: string) => {
@@ -944,28 +1074,16 @@ function createVaultSSEStream(
       ping.unref?.();
     },
     cancel() {
-      if (ping) {
-        clearInterval(ping);
-        ping = null;
-      }
-      if (listener) {
-        vaultWatcher.off(VAULT_TREE_CHANGED_EVENT, listener);
-        listener = null;
-      }
+      doCleanup();
     },
   });
 
   return {
     stream,
+    // cleanup() is the external API for Hono route handlers — triggers cancel()
+    // which does the actual teardown. cancel() resolves silently on closed streams.
     cleanup: () => {
-      if (ping) {
-        clearInterval(ping);
-        ping = null;
-      }
-      if (listener) {
-        vaultWatcher.off(VAULT_TREE_CHANGED_EVENT, listener);
-        listener = null;
-      }
+      stream.cancel().catch(() => {});
     },
   };
 }

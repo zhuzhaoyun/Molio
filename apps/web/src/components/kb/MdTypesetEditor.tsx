@@ -28,6 +28,7 @@ export function MdTypesetEditor({
   initialContent,
   onContentChange,
   vaultId,
+  selectedFile,
   onNavigateToFile,
 }: MdTypesetEditorProps) {
   const [content, setContent] = useState(initialContent);
@@ -35,6 +36,16 @@ export function MdTypesetEditor({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const previewBodyRef = useRef<HTMLDivElement>(null);
   const syncingRef = useRef(false);
+  /**
+   * 本次挂载内用户是否已经编辑过。`initialContent` 是**异步到达**的：文件内容 fetch
+   * 回来之前，编辑器就已用空串挂载并可交互（首屏去掉 configLoaded 白屏 gate 后，这段
+   * 「树可见、正文未达」的窗口成了常态）。若晚到的 fetch 结果再无条件同步进来，就会
+   * 静默覆盖用户已敲下的未保存编辑——表现为输入内容凭空回退成文件原文，而
+   * useKnowledge 的 editedContent 仍非空（切文件照样弹「放弃修改」，正文却没了）。
+   * 故一旦脏就不再被 initialContent 覆盖。组件按 `key={selectedFile}` 重挂载，
+   * 切文件时 dirty 天然复位，无需额外清理。
+   */
+  const dirtyRef = useRef(false);
 
   // Capture-phase handler for wiki link clicks in the typeset preview.
   useEffect(() => {
@@ -69,6 +80,7 @@ export function MdTypesetEditor({
   }, [onNavigateToFile, vaultId]);
 
   useEffect(() => {
+    if (dirtyRef.current) return; // 用户已在编辑，晚到的文件内容不得覆盖（见 dirtyRef 注释）
     setContent(initialContent);
   }, [initialContent]);
 
@@ -100,6 +112,7 @@ export function MdTypesetEditor({
   const handleSourceChange = useCallback(
     (e: React.ChangeEvent<HTMLTextAreaElement>) => {
       const newContent = e.target.value;
+      dirtyRef.current = true;
       setContent(newContent);
       onContentChange?.(newContent);
     },
@@ -117,6 +130,7 @@ export function MdTypesetEditor({
       textarea.value = newValue;
       textarea.selectionStart = textarea.selectionEnd = start + 2;
       // Fire synthetic change
+      dirtyRef.current = true;
       setContent(newValue);
       onContentChange?.(newValue);
     }
@@ -131,8 +145,11 @@ export function MdTypesetEditor({
   // preprocessKbMarkdown keeps any leading YAML frontmatter block verbatim —
   // rewriting [[wikilinks]] inside it would corrupt the YAML (see useKnowledge).
   const previewContent = useMemo(
-    () => preprocessKbMarkdown(content, vaultId),
-    [content, vaultId],
+    // selectedFile lets `![](图.png)` resolve against this note's folder
+    // (Obsidian's rule) instead of the SPA origin. Preview and the read view
+    // must agree, or images appear while editing and vanish once saved.
+    () => preprocessKbMarkdown(content, vaultId, selectedFile ?? undefined),
+    [content, vaultId, selectedFile],
   );
 
   return (

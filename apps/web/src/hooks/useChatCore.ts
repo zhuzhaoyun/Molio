@@ -14,6 +14,7 @@ import { api } from '../api/client';
 import { subscribeToRun } from '../api/sse';
 import { ACP_MODELS_UPDATED_EVENT, type AcpModelsUpdatedDetail } from './useAgents';
 import { messageSelectionStore } from '../stores/messageSelectionStore';
+import { buildIdleFallbackMessage } from './idleTimeoutMessage';
 
 export interface ToolEvent {
   id: string;
@@ -169,6 +170,11 @@ export function useChatCore(options: UseChatCoreOptions) {
   // Last received SSE seq — used as ?after= when the watchdog reconnects, so
   // daemon replays only the events missed during the dead connection.
   const lastSeqRef = useRef<number>(0);
+  // Timestamp of the most recent keepalive PING on the current connection.
+  // Pings prove the daemon side is alive even when the agent child produces
+  // zero events — the idle fallback uses this to say "model unresponsive"
+  // instead of the misleading "check the daemon" (see idleTimeoutMessage.ts).
+  const lastKeepaliveAtRef = useRef<number | null>(null);
   // Watchdog timer — fires when no frame (event or ping) arrives for WATCHDOG_MS.
   const watchdogTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Scheduled reconnect (exponential backoff). Cleared on clean shutdown so a
@@ -239,9 +245,10 @@ export function useChatCore(options: UseChatCoreOptions) {
           console.debug('[chat] idle fallback noop — no longer running');
           return prev;
         }
+        const fallbackMessage = buildIdleFallbackMessage(lastKeepaliveAtRef.current);
         const messages = prev.messages.map((msg) =>
           msg.id === assistantIdRef.current && msg.streaming
-            ? { ...msg, streaming: false, error: msg.error ?? '响应超时，请重试或检查 daemon 是否运行' }
+            ? { ...msg, streaming: false, error: msg.error ?? fallbackMessage }
             : msg
         );
         return { ...prev, messages, isRunning: false, runId: null, runAgentId: null };
@@ -278,6 +285,7 @@ export function useChatCore(options: UseChatCoreOptions) {
     clearWatchdog();
     reconnectAttemptRef.current = 0;
     lastSeqRef.current = 0;
+    lastKeepaliveAtRef.current = null;
 
     setState((prev) => ({
       ...prev,
@@ -353,6 +361,7 @@ export function useChatCore(options: UseChatCoreOptions) {
     const onKeepaliveCb = () => {
       // ping frame — connection alive. Same reset as a real event.
       reconnectAttemptRef.current = 0;
+      lastKeepaliveAtRef.current = Date.now();
       armWatchdog();
     };
 

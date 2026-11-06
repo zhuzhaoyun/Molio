@@ -46,7 +46,7 @@ test.describe('Chat — multi-turn', () => {
     await expect(userMessages.nth(1).locator('.user-text')).toContainText('Second message');
   });
 
-  test('new chat button clears messages and returns to landing', async ({ page }) => {
+  test('new chat button clears messages and stays in the fullscreen shell', async ({ page }) => {
     await gotoHome(page);
     await sendMessage(page, 'Test message');
 
@@ -54,10 +54,12 @@ test.describe('Chat — multi-turn', () => {
     await expect(page.locator('.chat-active')).toBeVisible({ timeout: 10_000 });
 
     // Click new chat button
-    await page.locator('[data-testid="new-chat-btn"]').click();
+    await page.locator('[data-testid="kb-chat-session-new"]').click();
 
-    // Should return to landing view
-    await expect(page.locator('.home-landing')).toBeVisible({ timeout: 5_000 });
+    // 清空后仍留在全屏 shell：landing 只服务「真的一条会话都没有」的情况，
+    // 而这里活动标签还在（只是没有消息），所以 shell 继续承载。
+    await expect(page.locator('.home-page.chat-active')).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('.home-landing')).toHaveCount(0);
 
     // No messages should be present
     await expect(page.locator('[data-testid="user-message"]')).toHaveCount(0);
@@ -70,8 +72,8 @@ test.describe('Chat — multi-turn', () => {
     await expect(page.locator('[data-testid="usage-footer"]')).toBeVisible({ timeout: 10_000 });
 
     // Click new chat
-    await page.locator('[data-testid="new-chat-btn"]').click();
-    await expect(page.locator('.home-landing')).toBeVisible();
+    await page.locator('[data-testid="kb-chat-session-new"]').click();
+    await expect(page.locator('.home-page.chat-active')).toBeVisible();
 
     // Composer should be focused and ready
     const textarea = page.locator('[data-testid="composer-input"]');
@@ -79,16 +81,17 @@ test.describe('Chat — multi-turn', () => {
     await expect(textarea).toBeEnabled();
   });
 
-  test('header shows active agent name during chat', async ({ page }) => {
+  test('composer pill shows active agent name during chat', async ({ page }) => {
     await gotoHome(page);
     await sendMessage(page, 'Test message');
 
     await expect(page.locator('.chat-active')).toBeVisible({ timeout: 10_000 });
 
-    // The active agent badge should be visible in the header
-    const agentBadge = page.locator('.home-active-agent');
-    await expect(agentBadge).toBeVisible();
+    // The runtime/model pill in the composer should show the agent name
+    // （原顶栏 .home-active-agent 已移除——信息移到 composer pill，见 model-switcher.spec）
+    const pill = page.locator('[data-testid="composer-model-pill"]');
+    await expect(pill).toBeVisible();
     // Agent name should be non-empty (depends on which agent is available)
-    await expect(agentBadge).not.toHaveText('');
+    await expect(pill).not.toHaveText('');
   });
 });

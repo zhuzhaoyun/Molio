@@ -1,13 +1,19 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { api } from '../../api/client';
 import { useI18n } from '../../i18n';
 import {
   CLAUDE_PROVIDERS,
   CODEX_PROVIDERS,
+  HERMES_PROVIDERS,
+  DSH_PROVIDERS,
   detectProvider,
+  detectDshProvider,
   buildProviderEnv,
+  buildDshEnv,
   type ProviderPreset,
   type CodexProviderPreset,
+  type HermesProviderPreset,
+  type DshProviderPreset,
 } from './providers';
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'error';
@@ -28,7 +34,7 @@ export function ProviderConfig({ agentId }: ProviderConfigProps) {
   const { t } = useI18n();
   const [expanded, setExpanded] = useState(false);
 
-  // Form state
+  // Form state — hermes defaults to the first 国内 preset (deepseek); claude to deepseek.
   const [providerId, setProviderId] = useState('deepseek');
   const [apiKey, setApiKey] = useState('');
   const [customBaseUrl, setCustomBaseUrl] = useState('');
@@ -37,17 +43,59 @@ export function ProviderConfig({ agentId }: ProviderConfigProps) {
   const [saveState, setSaveState] = useState<SaveState>('idle');
 
   const isCodex = agentId === 'codex';
+  const isHermes = agentId === 'hermes';
+  const isDsh = agentId === 'dsh';
   const [codexModel, setCodexModel] = useState('');
+  const [hermesModel, setHermesModel] = useState('');
   const [codexWireApi, setCodexWireApi] = useState<'responses' | 'chat'>('responses');
   // auth.json already holds an OPENAI_API_KEY — the key field stays empty by
   // design (secrets are never sent back to the UI), so show a hint instead of
   // letting the blank field look like "nothing was saved".
   const [hasSavedKey, setHasSavedKey] = useState(false);
+  // Hermes only: whether a real provider has been chosen. A fresh install ships
+  // `provider: auto` + a built-in base_url — that is NOT configured, and the
+  // collapsed card must say so instead of showing a misleading provider name.
+  const [hermesConfigured, setHermesConfigured] = useState(false);
+
+  /**
+   * 用户是否已经动过表单。挂载期的配置加载是异步的，而卡片本身要等 agent 扫描
+   * 结果才渲染——用户完全可能在响应落地之前就已经展开面板、选好了 provider、填了
+   * key。此时晚到的响应会把 providerId / apiKey 一并覆盖回磁盘上的旧值（表现：
+   * 刚选的 provider 自己跳回去、刚清的 key 又冒出来）。故一旦脏就丢弃这次加载结果。
+   */
+  const touchedRef = useRef(false);
+  const markTouched = useCallback(() => {
+    touchedRef.current = true;
+    setSaveState('idle');
+  }, []);
 
   // Load current config on mount
   useEffect(() => {
+    if (isHermes) {
+      api.getAgentProvider(agentId).then((raw) => {
+        const s = raw as { presetHint: string; provider: string | null; baseUrl: string | null; model: string | null; hasKey: boolean; configured?: boolean };
+        // Factual disk state — always refresh (drives the collapsed "not
+        // configured" label even if the user is mid-edit).
+        setHermesConfigured(!!s.configured);
+        if (touchedRef.current) return; // 用户已在编辑，不覆盖表单字段
+        // Only adopt the backend's preset when hermes is ACTUALLY configured.
+        // A fresh install reports provider:'auto' + a built-in base_url
+        // (configured:false) — adopting it would show a deliberate-looking
+        // 'custom (OpenAI compatible)' choice that was never made.
+        if (s.configured && HERMES_PROVIDERS.some((p) => p.id === s.presetHint)) {
+          setProviderId(s.presetHint);
+        }
+        if (s.model) setHermesModel(s.model);
+        if (s.baseUrl) setCustomBaseUrl(s.baseUrl);
+        if (s.hasKey) setHasSavedKey(true);
+      }).catch(() => {
+        // Ignore — defaults are fine
+      });
+      return;
+    }
     if (isCodex) {
       api.getAgentProvider(agentId).then((raw) => {
+        if (touchedRef.current) return; // 用户已在编辑，不覆盖
         const s = raw as { presetHint: string; baseUrl: string | null; model: string | null; wireApi: string | null; hasKey: boolean };
         const matched = CODEX_PROVIDERS.find((p) => p.id === s.presetHint);
         if (matched) setProviderId(s.presetHint);
@@ -66,7 +114,20 @@ export function ProviderConfig({ agentId }: ProviderConfigProps) {
       });
       return;
     }
+    if (isDsh) {
+      api.getAgentConfig(agentId).then((config) => {
+        if (touchedRef.current) return; // 用户已在编辑，不覆盖
+        const env = (config.env ?? {}) as Record<string, string>;
+        setProviderId(detectDshProvider(env));
+        setApiKey(env['DEEPSEEK_API_KEY'] ?? '');
+        if (env['DEEPSEEK_BASE_URL']) setCustomBaseUrl(env['DEEPSEEK_BASE_URL']);
+      }).catch(() => {
+        // Ignore — defaults are fine
+      });
+      return;
+    }
     api.getAgentConfig(agentId).then((config) => {
+      if (touchedRef.current) return; // 用户已在编辑，不覆盖
       const env = (config.env ?? {}) as Record<string, string>;
       const detected = detectProvider(env);
       setProviderId(detected);
@@ -87,25 +148,55 @@ export function ProviderConfig({ agentId }: ProviderConfigProps) {
     }).catch(() => {
       // Ignore — defaults are fine
     });
-  }, [agentId, isCodex]);
+  }, [agentId, isCodex, isHermes, isDsh]);
 
-  const provider: ProviderPreset | CodexProviderPreset = isCodex
-    ? CODEX_PROVIDERS.find((p) => p.id === providerId) ?? CODEX_PROVIDERS[0]
-    : CLAUDE_PROVIDERS.find((p) => p.id === providerId) ?? CLAUDE_PROVIDERS[0];
+  const provider: ProviderPreset | CodexProviderPreset | HermesProviderPreset | DshProviderPreset = isDsh
+    ? DSH_PROVIDERS.find((p) => p.id === providerId) ?? DSH_PROVIDERS[0]
+    : isCodex
+      ? CODEX_PROVIDERS.find((p) => p.id === providerId) ?? CODEX_PROVIDERS[0]
+      : isHermes
+        ? HERMES_PROVIDERS.find((p) => p.id === providerId) ?? HERMES_PROVIDERS[0]
+        : CLAUDE_PROVIDERS.find((p) => p.id === providerId) ?? CLAUDE_PROVIDERS[0];
 
-  const providers: { id: string; name: string }[] = isCodex ? CODEX_PROVIDERS : CLAUDE_PROVIDERS;
+  const providers: { id: string; name: string }[] = isDsh
+    ? DSH_PROVIDERS
+    : isCodex
+      ? CODEX_PROVIDERS
+      : isHermes
+        ? HERMES_PROVIDERS
+        : CLAUDE_PROVIDERS;
+
+  /** Hermes preset driving the current selection (baseUrl field visibility etc.). */
+  const hermesPreset = isHermes ? HERMES_PROVIDERS.find((p) => p.id === providerId) : undefined;
 
   const handleProviderChange = useCallback((id: string) => {
+    if (isHermes) {
+      setProviderId(id);
+      markTouched();
+      setApiKey('');
+      // Pre-fill the preset's default base url (e.g. zai → bigmodel.cn 国内
+      // endpoint); presets without one clear the field.
+      const p = HERMES_PROVIDERS.find((x) => x.id === id);
+      setCustomBaseUrl(p?.defaultBaseUrl ?? '');
+      return;
+    }
+    if (isDsh) {
+      setProviderId(id);
+      markTouched();
+      setApiKey('');
+      setCustomBaseUrl('');
+      return;
+    }
     if (isCodex) {
       setProviderId(id);
-      setSaveState('idle');
+      markTouched();
       setApiKey('');
       const p = CODEX_PROVIDERS.find((x) => x.id === id);
       setCodexModel(p && !p.isCustom && !p.isOfficial ? (p.models[0]?.id ?? '') : '');
       return;
     }
     setProviderId(id);
-    setSaveState('idle');
+    markTouched();
     setApiKey('');
     if (id !== 'custom') {
       const p = CLAUDE_PROVIDERS.find((p) => p.id === id);
@@ -123,12 +214,30 @@ export function ProviderConfig({ agentId }: ProviderConfigProps) {
     } else {
       setMapping(EMPTY_MAPPING);
     }
-  }, [isCodex]);
+  }, [isCodex, isHermes, isDsh, markTouched]);
 
   const handleSave = useCallback(async () => {
     setSaveState('saving');
     try {
-      if (isCodex) {
+      if (isHermes) {
+        const body: Record<string, unknown> = { presetId: providerId };
+        if (hermesModel.trim()) body.model = hermesModel.trim();
+        if (apiKey) body.apiKey = apiKey;
+        // Only send baseUrl where the daemon will actually use it: custom
+        // (model.base_url) or presets with a *_BASE_URL env override.
+        const p = HERMES_PROVIDERS.find((x) => x.id === providerId);
+        if (customBaseUrl.trim() && (p?.isCustom || p?.baseUrlEnvKey)) {
+          body.baseUrl = customBaseUrl.trim();
+        }
+        await api.updateAgentProvider(agentId, body);
+        if (apiKey) setHasSavedKey(true);
+        // A real provider was just written — the card should stop saying
+        // "not configured" once collapsed.
+        setHermesConfigured(true);
+      } else if (isDsh) {
+        const env = buildDshEnv(providerId, apiKey, customBaseUrl);
+        await api.updateAgentConfig(agentId, { env });
+      } else if (isCodex) {
         const body: Record<string, unknown> = { presetId: providerId };
         if (providerId === 'custom') {
           body.baseUrl = customBaseUrl;
@@ -152,11 +261,16 @@ export function ProviderConfig({ agentId }: ProviderConfigProps) {
     } catch (err) {
       setSaveState('error');
     }
-  }, [agentId, isCodex, providerId, apiKey, customBaseUrl, mapping, codexModel, codexWireApi]);
+  }, [agentId, isCodex, isHermes, isDsh, providerId, apiKey, customBaseUrl, mapping, codexModel, codexWireApi, hermesModel]);
 
   const isThirdParty = providerId !== 'anthropic';
 
   if (!expanded) {
+    // A fresh hermes install is not configured — say so instead of showing the
+    // form-default provider name (which reads like a saved, working choice).
+    const currentLabel = isHermes && !hermesConfigured
+      ? t('runtimes.providerNotConfigured')
+      : provider.name;
     return (
       <button
         className="rt-btn rt-btn--sm rt-btn--ghost rt-provider-toggle"
@@ -164,8 +278,8 @@ export function ProviderConfig({ agentId }: ProviderConfigProps) {
       >
         <span className="rt-provider-toggle__icon">⚙</span>
         {t('runtimes.provider')}
-        <span className="rt-provider-toggle__current">
-          {provider.name}
+        <span className="rt-provider-toggle__current" data-testid="provider-current-label">
+          {currentLabel}
         </span>
       </button>
     );
@@ -202,6 +316,50 @@ export function ProviderConfig({ agentId }: ProviderConfigProps) {
           <p className="rt-provider-form__hint">{t('runtimes.codexConfigHint')}</p>
         )}
 
+        {isHermes && (
+          <p className="rt-provider-form__hint" data-testid="hermes-config-hint">
+            {t('runtimes.hermesConfigHint')}
+          </p>
+        )}
+
+        {isHermes && (
+          <>
+            {/* Model — free-form; blank = hermes default (session/new returns
+                the live model list, so no per-preset suggestions here) */}
+            <label className="rt-provider-form__field">
+              <span className="rt-provider-form__label">{t('runtimes.model')}</span>
+              <input
+                data-testid="hermes-model-field"
+                type="text"
+                className="rt-provider-form__input"
+                value={hermesModel}
+                onChange={(e) => { setHermesModel(e.target.value); markTouched(); }}
+                placeholder="deepseek-chat"
+              />
+              <span className="rt-provider-form__hint">{t('runtimes.hermesModelHint')}</span>
+            </label>
+
+            {/* Base URL — required for custom; optional override for presets
+                that support a *_BASE_URL env (hidden for anthropic/openrouter) */}
+            {(hermesPreset?.isCustom || hermesPreset?.baseUrlEnvKey) && (
+              <label className="rt-provider-form__field">
+                <span className="rt-provider-form__label">
+                  {t('runtimes.baseUrl')}
+                  {hermesPreset?.isCustom && ' *'}
+                </span>
+                <input
+                  data-testid="hermes-baseurl-field"
+                  type="url"
+                  className="rt-provider-form__input"
+                  value={customBaseUrl}
+                  onChange={(e) => { setCustomBaseUrl(e.target.value); markTouched(); }}
+                  placeholder="https://api.example.com/v1"
+                />
+              </label>
+            )}
+          </>
+        )}
+
         {isCodex && providerId === 'official' && (
           <p className="rt-provider-form__hint">{t('runtimes.officialHint')}</p>
         )}
@@ -219,7 +377,7 @@ export function ProviderConfig({ agentId }: ProviderConfigProps) {
                     data-testid="codex-model-field"
                     className="rt-provider-form__select"
                     value={inList || !codexModel ? (codexModel || options[0]?.id || '') : ''}
-                    onChange={(e) => { setCodexModel(e.target.value); setSaveState('idle'); }}
+                    onChange={(e) => { setCodexModel(e.target.value); markTouched(); }}
                   >
                     {options.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
                   </select>
@@ -231,7 +389,7 @@ export function ProviderConfig({ agentId }: ProviderConfigProps) {
                   type="text"
                   className="rt-provider-form__input"
                   value={codexModel}
-                  onChange={(e) => { setCodexModel(e.target.value); setSaveState('idle'); }}
+                  onChange={(e) => { setCodexModel(e.target.value); markTouched(); }}
                   placeholder="deepseek-v4-flash"
                 />
               );
@@ -247,7 +405,7 @@ export function ProviderConfig({ agentId }: ProviderConfigProps) {
                 type="url"
                 className="rt-provider-form__input"
                 value={customBaseUrl}
-                onChange={(e) => { setCustomBaseUrl(e.target.value); setSaveState('idle'); }}
+                onChange={(e) => { setCustomBaseUrl(e.target.value); markTouched(); }}
                 placeholder="https://api.example.com/v1"
               />
             </label>
@@ -257,7 +415,7 @@ export function ProviderConfig({ agentId }: ProviderConfigProps) {
                 data-testid="codex-wire-api-field"
                 className="rt-provider-form__select"
                 value={codexWireApi}
-                onChange={(e) => { setCodexWireApi(e.target.value as 'responses' | 'chat'); setSaveState('idle'); }}
+                onChange={(e) => { setCodexWireApi(e.target.value as 'responses' | 'chat'); markTouched(); }}
               >
                 <option value="responses">responses</option>
                 <option value="chat">chat</option>
@@ -266,8 +424,8 @@ export function ProviderConfig({ agentId }: ProviderConfigProps) {
           </>
         )}
 
-        {/* API Key */}
-        {(isCodex ? providerId !== 'official' : providerId !== 'anthropic') && (
+        {/* API Key — hermes presets all take a key, so always show it there; dsh always too */}
+        {(isDsh || (isCodex ? providerId !== 'official' : isHermes ? true : providerId !== 'anthropic')) && (
           <label className="rt-provider-form__field">
             <span className="rt-provider-form__label">
               {t('runtimes.apiKey')}
@@ -279,7 +437,7 @@ export function ProviderConfig({ agentId }: ProviderConfigProps) {
               type="password"
               className="rt-provider-form__input"
               value={apiKey}
-              onChange={(e) => { setApiKey(e.target.value); setSaveState('idle'); }}
+              onChange={(e) => { setApiKey(e.target.value); markTouched(); }}
               placeholder={provider.apiKeyHint ?? 'sk-...'}
               autoComplete="off"
             />
@@ -293,30 +451,48 @@ export function ProviderConfig({ agentId }: ProviderConfigProps) {
                 {t('runtimes.getApiKey')} →
               </a>
             )}
-            {isCodex && hasSavedKey && !apiKey && (
-              <p className="rt-provider-form__hint" data-testid="codex-key-saved-hint">
-                {t('runtimes.codexKeySavedHint')}
+            {(isCodex || isHermes) && hasSavedKey && !apiKey && (
+              <p
+                className="rt-provider-form__hint"
+                data-testid={isCodex ? 'codex-key-saved-hint' : 'hermes-key-saved-hint'}
+              >
+                {isCodex ? t('runtimes.codexKeySavedHint') : t('runtimes.hermesKeySavedHint')}
               </p>
             )}
           </label>
         )}
 
-        {/* Base URL (for custom provider) */}
-        {!isCodex && providerId === 'custom' && (
+        {/* Base URL (for claude custom provider) */}
+        {!isCodex && !isHermes && !isDsh && providerId === 'custom' && (
           <label className="rt-provider-form__field">
             <span className="rt-provider-form__label">{t('runtimes.baseUrl')}</span>
             <input
               type="url"
               className="rt-provider-form__input"
               value={customBaseUrl}
-              onChange={(e) => { setCustomBaseUrl(e.target.value); setSaveState('idle'); }}
+              onChange={(e) => { setCustomBaseUrl(e.target.value); markTouched(); }}
               placeholder="https://api.example.com/anthropic"
             />
           </label>
         )}
 
-        {/* Model mapping for third-party providers */}
-        {!isCodex && isThirdParty && (
+        {/* Base URL (dsh custom endpoint — Messages-compatible root) */}
+        {isDsh && providerId === 'custom' && (
+          <label className="rt-provider-form__field">
+            <span className="rt-provider-form__label">{t('runtimes.baseUrl')}</span>
+            <input
+              data-testid="dsh-base-url-field"
+              type="url"
+              className="rt-provider-form__input"
+              value={customBaseUrl}
+              onChange={(e) => { setCustomBaseUrl(e.target.value); markTouched(); }}
+              placeholder="https://api.deepseek.com/anthropic"
+            />
+          </label>
+        )}
+
+        {/* Model mapping for claude third-party providers */}
+        {!isCodex && !isHermes && !isDsh && isThirdParty && (
           <div className="rt-provider-form__mapping">
             <button
               type="button"
@@ -338,7 +514,7 @@ export function ProviderConfig({ agentId }: ProviderConfigProps) {
                       value={mapping[alias]}
                       onChange={(e) => {
                         setMapping({ ...mapping, [alias]: e.target.value });
-                        setSaveState('idle');
+                        markTouched();
                       }}
                       placeholder={`${alias} model id`}
                     />

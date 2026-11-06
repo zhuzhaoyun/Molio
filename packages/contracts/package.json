@@ -13,6 +13,7 @@
   },
   "scripts": {
     "build": "tsc",
+    "build:fresh": "tsc -b --force",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

@@ -8,11 +8,12 @@ import { setupAutoUpdater } from './updater.js';
 import { log, getLogPath } from './logger.js';
 import { startFetchServer } from './wiki-fetcher.js';
 import { openFeishuLogin, getFeishuLoginStatus } from './wiki-fetcher-login.js';
-import { startDaemonMetricsPolling } from './daemon-metrics.js';
 import { startCryptoServer, stopCryptoServer } from './crypto-server.js';
 import { startAuthStatusPolling } from './auth-status-watch.js';
 import { CappedBuffer } from './capped-buffer.js';
 import { createVaultRecency } from './vault-recency.js';
+import { createRendererReadiness } from './renderer-readiness.js';
+import { createRevealGate, APP_LOAD_REVEAL_TIMEOUT_MS } from './window-reveal.js';
 
 const errMsg = (err) => (err instanceof Error ? err.message : String(err));
 
@@ -37,8 +38,9 @@ const DEV_APP_ICON = path.join(__dirname, '..', 'build', 'icon.png');
 
 const PROTOCOL = 'molio';
 
-/** Local daemon port (dev and production both bind :3100). Single source — no magic copies. */
-const DAEMON_PORT = 3100;
+/** Local daemon port (dev and production both bind :3100). Single source — no magic copies.
+ *  MOLIO_PORT overrides it (E2E runs a second instance beside the installed app). */
+const DAEMON_PORT = Number(process.env.MOLIO_PORT) || 3100;
 
 /** Base URL of the local daemon. */
 const DAEMON_BASE = `http://localhost:${DAEMON_PORT}`;
@@ -53,23 +55,40 @@ const DEFAULT_AUTH_URL = 'https://auth.molio.cn';
 /** Rebuild the macOS dock menu at most this often (vault list changes live in the web layer). */
 const DOCK_REFRESH_THROTTLE_MS = 3000;
 
+/**
+ * Bounded wait for ARMS SDK init before creating the first window (ms).
+ * autoInject requires init to precede window creation, but a hung init
+ * (weak network / SDK issue) must never hold startup hostage — after the
+ * timeout we create the window anyway and accept losing renderer-side
+ * collectors for it (main-process collectors are unaffected).
+ */
+const MONITORING_INIT_TIMEOUT_MS = 2000;
+
 // Set app name before any other app API calls — this controls the display name
 // shown in Windows protocol association dialogs ("要打开 Molio 吗?").
 app.name = 'Molio';
+
+// Windows: the AppUserModelID must equal build.appId in package.json. The NSIS
+// installer stamps that ID onto its shortcuts; without it, windows get an
+// auto-generated AUMID matching no shortcut, so the taskbar Jump List name,
+// pinning and toast notifications fall back to the exe's FileDescription
+// (which older unpatched builds show as "Electron").
+// The trailing marker comment is load-bearing: packaging tests assert on it.
+app.setAppUserModelId('com.molio.desktop'); // molio:aumid-call
 
 /** All open application windows (feishu login windows are NOT tracked here). */
 const appWindows = new Set();
 /** Most recently focused application window — target for second-instance/activate. */
 let lastFocusedAppWindow = null;
 /**
- * Per-webContents renderer readiness. A full page load (cold-start loadApp or
- * any reload) recreates the renderer context, so the previous molio:navigate
- * listener is gone and molio:renderer-ready fires again once the SPA re-mounts.
- * Map<webContentsId, { ready: boolean, pending: { vaultId, filePath } | null }>
+ * Per-webContents renderer readiness — decides whether a molio://open can be
+ * delivered in-page (IPC) or must fall back to a full loadURL. The clearing
+ * rules live in renderer-readiness.js; they are what makes the difference
+ * between "the clip opens the file" and "the clip reloads the window and wipes
+ * the reply the user is watching".
  */
-const rendererStates = new Map();
+const rendererStates = createRendererReadiness();
 let daemonProcess = null;
-let stopDaemonMetrics = null;
 let stopAuthStatusPolling = null;
 
 // 当前登录的 Molio userId（ULID，未登录为 null）。由 auth-status-watch 轮询
@@ -103,48 +122,52 @@ async function startDaemonProduction() {
   log('info', 'main', `Starting daemon: ${daemonEntry}`);
   log('info', 'main', `Using Electron binary: ${process.execPath}`);
 
-  // Start the wiki/docx fetcher HTTP server on a random 127.0.0.1 port.
-  // Port 0 → OS assigns a free port; we pass it to the daemon via env so the
-  // feishu service can pre-fetch wiki content before dispatching to the agent.
-  // Failure here is non-fatal — daemon simply skips the pre-fetch step and
-  // the agent sees the bare URL (with a "未启用桌面端抓取" note).
-  let wikiFetchPort = null;
-  try {
-    wikiFetchPort = await startFetchServer();
-  } catch (err) {
-    log('warn', 'main', `wiki fetch server failed to start: ${err?.message ?? err}`);
-  }
-
-  // Start the safeStorage crypto HTTP server on a random 127.0.0.1 port.
-  // daemon (ELECTRON_RUN_AS_NODE) has no Electron API, so it RPC's us to
-  // encrypt/decrypt the auth token file (Win=DPAPI / mac=Keychain).
-  // Only start when encryption is actually available — on Linux without a
-  // keychain we deliberately fall back to the plaintext baseline (设计 §八 D3)
-  // by NOT setting the port env, instead of advertising crypto that 503s
-  // every call (which would leave tokens unpersisted).
-  let cryptoPort = null;
-  let cryptoToken = null;
-  try {
-    if (safeStorage.isEncryptionAvailable()) {
-      // Per-launch fresh shared secret: injected into daemon env alongside the
-      // port; crypto-server validates the Bearer on every call. The random port
-      // alone is not a security boundary (local processes can scan for it) —
-      // the secret is what stops other local processes using encrypt/decrypt.
-      cryptoToken = randomBytes(24).toString('base64url');
-      cryptoPort = await startCryptoServer(
-        {
-          isEncryptionAvailable: () => safeStorage.isEncryptionAvailable(),
-          encryptString: (plaintext) => safeStorage.encryptString(plaintext),
-          decryptString: (data) => safeStorage.decryptString(data),
-        },
-        { token: cryptoToken },
-      );
-    } else {
-      log('info', 'main', 'safeStorage encryption unavailable — auth tokens use plaintext baseline (D3)');
-    }
-  } catch (err) {
-    log('warn', 'main', `crypto server failed to start: ${err?.message ?? err}`);
-  }
+  // Start both helper servers IN PARALLEL — they are independent (wiki/docx
+  // fetcher for feishu pre-fetch; safeStorage crypto RPC for auth tokens) and
+  // each is just a random-port listen. Sequential awaits here added latency
+  // to the cold-start serial chain for no reason.
+  //
+  // - wiki fetcher: Port 0 → OS assigns a free port; passed to the daemon via
+  //   env so the feishu service can pre-fetch wiki content before dispatching
+  //   to the agent. Failure is non-fatal — daemon skips the pre-fetch step and
+  //   the agent sees the bare URL (with a "未启用桌面端抓取" note).
+  // - crypto server: daemon (ELECTRON_RUN_AS_NODE) has no Electron API, so it
+  //   RPC's us to encrypt/decrypt the auth token file (Win=DPAPI / mac=Keychain).
+  //   Only started when encryption is actually available — on Linux without a
+  //   keychain we deliberately fall back to the plaintext baseline (设计 §八 D3)
+  //   by NOT setting the port env, instead of advertising crypto that 503s
+  //   every call (which would leave tokens unpersisted).
+  const [wikiFetchPort, cryptoInfo] = await Promise.all([
+    startFetchServer().catch((err) => {
+      log('warn', 'main', `wiki fetch server failed to start: ${err?.message ?? err}`);
+      return null;
+    }),
+    (async () => {
+      try {
+        if (!safeStorage.isEncryptionAvailable()) {
+          log('info', 'main', 'safeStorage encryption unavailable — auth tokens use plaintext baseline (D3)');
+          return null;
+        }
+        // Per-launch fresh shared secret: injected into daemon env alongside the
+        // port; crypto-server validates the Bearer on every call. The random port
+        // alone is not a security boundary (local processes can scan for it) —
+        // the secret is what stops other local processes using encrypt/decrypt.
+        const token = randomBytes(24).toString('base64url');
+        const port = await startCryptoServer(
+          {
+            isEncryptionAvailable: () => safeStorage.isEncryptionAvailable(),
+            encryptString: (plaintext) => safeStorage.encryptString(plaintext),
+            decryptString: (data) => safeStorage.decryptString(data),
+          },
+          { token },
+        );
+        return { port, token };
+      } catch (err) {
+        log('warn', 'main', `crypto server failed to start: ${err?.message ?? err}`);
+        return null;
+      }
+    })(),
+  ]);
 
   return new Promise((resolve, reject) => {
     // Use Electron's embedded Node.js to run the daemon.
@@ -155,6 +178,7 @@ async function startDaemonProduction() {
       ELECTRON_RUN_AS_NODE: '1',
       MOLIO_PORT: String(DAEMON_PORT),
       MOLIO_STATIC_DIR: webStaticDir,
+      MOLIO_DOCUMENTS_DIR: app.getPath('documents'),
     };
     // 云端认证地址：显式设置的 MOLIO_AUTH_URL（私有化/Docker/测试）优先；
     // 缺省或纯空白（与 daemon auth-client 的 trim 语义一致）时注入内置官方地址，
@@ -163,9 +187,9 @@ async function startDaemonProduction() {
       daemonEnv.MOLIO_AUTH_URL = DEFAULT_AUTH_URL;
     }
     if (wikiFetchPort) daemonEnv.MOLIO_DESKTOP_FETCH_PORT = String(wikiFetchPort);
-    if (cryptoPort) {
-      daemonEnv.MOLIO_DESKTOP_CRYPTO_PORT = String(cryptoPort);
-      daemonEnv.MOLIO_DESKTOP_CRYPTO_TOKEN = cryptoToken;
+    if (cryptoInfo) {
+      daemonEnv.MOLIO_DESKTOP_CRYPTO_PORT = String(cryptoInfo.port);
+      daemonEnv.MOLIO_DESKTOP_CRYPTO_TOKEN = cryptoInfo.token;
     }
     daemonProcess = spawn(process.execPath, [daemonEntry], {
       env: daemonEnv,
@@ -374,6 +398,49 @@ async function refreshDockMenu() {
   app.dock.setMenu(buildDockMenu(ranked));
 }
 
+/**
+ * Vault id → display name cache for per-window titles. Fetched lazily from the
+ * daemon; a cache miss (vault created/renamed after the first fetch) triggers
+ * one refetch. Stays null while the daemon is unreachable so the next
+ * navigation retries.
+ */
+let vaultNameCache = null;
+
+async function resolveVaultName(vaultId) {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    if (!vaultNameCache) {
+      try {
+        const res = await fetch(`${DAEMON_BASE}/api/knowledge/vaults`, { signal: AbortSignal.timeout(2500) });
+        const body = res.ok ? await res.json() : {};
+        const vaults = Array.isArray(body.vaults) ? body.vaults : [];
+        vaultNameCache = new Map(vaults.map((v) => [v.id, v.name || v.id]));
+      } catch {
+        return null;
+      }
+    }
+    if (vaultNameCache.has(vaultId)) return vaultNameCache.get(vaultId);
+    vaultNameCache = null;
+  }
+  return null;
+}
+
+/**
+ * Windows taskbar hover previews and Alt+Tab show the per-window title — with
+ * N windows all titled "Molio" there is no way to tell them apart. Lead with
+ * the vault name; non-vault pages (home/chat) keep the plain app name. The
+ * sequence number drops stale async results when navigations arrive faster
+ * than the daemon answers.
+ */
+const windowTitleSeq = new WeakMap();
+
+async function updateWindowTitle(win, vaultId) {
+  const seq = (windowTitleSeq.get(win) || 0) + 1;
+  windowTitleSeq.set(win, seq);
+  const name = vaultId ? await resolveVaultName(vaultId) : null;
+  if (win.isDestroyed() || windowTitleSeq.get(win) !== seq) return;
+  win.setTitle(name ? `${name} — Molio` : 'Molio');
+}
+
 /** Throttled refresh — vault list changes happen inside web windows we can't observe. */
 function throttleRefreshDockMenu() {
   const now = Date.now();
@@ -461,18 +528,32 @@ function createWindow({ url = '' } = {}) {
 
   appWindows.add(win);
   // webContents.id is stable for the life of this window; capture it once so the
-  // closed/did-start-loading handlers below don't touch win.webContents after
+  // closed/navigation handlers below don't touch win.webContents after
   // destruction (reading webContents.id post-destroy is unreliable).
   const wcId = win.webContents.id;
   win.on('focus', () => { lastFocusedAppWindow = win; });
   win.on('closed', () => {
     appWindows.delete(win);
     if (lastFocusedAppWindow === win) lastFocusedAppWindow = null;
-    rendererStates.delete(wcId);
+    rendererStates.forget(wcId);
   });
 
-  win.webContents.on('did-start-loading', () => {
-    rendererStates.delete(wcId);
+  // Readiness is cleared ONLY when the renderer really goes away. Deliberately
+  // NOT `did-start-loading`: that also fires for same-document SPA navigation
+  // (pushState / hash) and subframe loads, which leave the React tree — and its
+  // molio:navigate listener — perfectly alive. Clearing there made every clip
+  // after one in-app route change reload the window and kill the in-flight
+  // reply. See renderer-readiness.js.
+  win.webContents.on('did-start-navigation', (details) => {
+    if (rendererStates.onNavigationStarted(wcId, details)) {
+      log('info', 'main', `renderer state cleared — document navigating to ${details.url}`);
+    }
+  });
+  // A dead renderer keeps no listener: without this the stale `ready` flag would
+  // send molio:navigate into a corpse and the clip would silently never open.
+  win.webContents.on('render-process-gone', (_event, details) => {
+    rendererStates.forget(wcId);
+    log('warn', 'main', `renderer process gone (${details?.reason ?? 'unknown'}) — readiness cleared`);
   });
 
   // Intercept window.open() — open in system browser instead of Electron
@@ -484,17 +565,25 @@ function createWindow({ url = '' } = {}) {
     return { action: 'deny' };
   });
 
-  // Feed the macOS dock 「最近使用的知识库」 menu. Record the vault in the URL on
-  // ANY navigation: full loads (did-navigate — initial open, molio://, cloned
-  // windows) and SPA vault switches (did-navigate-in-page — pushState).
+  // Record the vault in the URL on ANY navigation: full loads (did-navigate —
+  // initial open, molio://, cloned windows) and SPA vault switches
+  // (did-navigate-in-page — pushState). Drives two consumers: the macOS dock
+  // 「最近使用的知识库」 menu (recency) and the per-window title (taskbar hover
+  // previews distinguish windows by vault name).
   const recordVaultNavigation = (_event, url, isMainFrame) => {
-    if (!isMainFrame || !vaultRecency) return;
+    if (!isMainFrame) return;
     let vaultId = null;
-    try { vaultId = new URL(url).searchParams.get('vault'); } catch { return; }
-    if (vaultId) vaultRecency.touch(vaultId);
+    try { vaultId = new URL(url).searchParams.get('vault'); } catch { /* fall through — still resets the title below */ }
+    if (vaultId && vaultRecency) vaultRecency.touch(vaultId);
+    void updateWindowTitle(win, vaultId);
   };
   win.webContents.on('did-navigate', recordVaultNavigation);
   win.webContents.on('did-navigate-in-page', recordVaultNavigation);
+
+  // The page's static <title>Molio</title> fires page-title-updated after every
+  // full load and would clobber the per-vault title set above. The web layer
+  // never sets document.title dynamically, so the main process owns the title.
+  win.on('page-title-updated', (event) => event.preventDefault());
 
   // F12 / Ctrl+Shift+I toggles DevTools in production builds for debugging.
   win.webContents.on('before-input-event', (event, input) => {
@@ -530,6 +619,19 @@ function createWindow({ url = '' } = {}) {
   return win;
 }
 
+/**
+ * Show a window that was created with show:false — with a warning when the
+ * fallback timer beat the page load (the daemon is busy / unresponsive).
+ */
+function revealAppWindow(win, reason) {
+  if (!win || win.isDestroyed()) return;
+  if (reason === 'timeout' && !win.isVisible()) {
+    log('warn', 'main',
+      `app window revealed by ${APP_LOAD_REVEAL_TIMEOUT_MS}ms fallback — page load still in flight (daemon busy?)`);
+  }
+  win.show();
+}
+
 /** Load the real app URL after daemon is ready (production only). */
 function loadAppWindow(win, url = '') {
   if (!win || win.isDestroyed()) return;
@@ -539,9 +641,18 @@ function loadAppWindow(win, url = '') {
   // Show the window once the app has rendered. This is the first (and
   // only) navigation for this webContents in production, so the ARMS
   // Browser SDK injection fires on the real app — not a throwaway splash.
+  //
+  // ...but "once it has rendered" cannot be the ONLY path to visibility: while
+  // the daemon's single thread is busy (a whole-vault cold index blocks it for
+  // seconds — see core/vault-search.ts), even the SPA's own assets are stuck
+  // behind it, so did-finish-load can be many seconds late. A window that stays
+  // show:false until then is invisible AND absent from the taskbar — the user
+  // just sees nothing happen (2026-10-16 Windows report: "切库不弹新窗口").
+  // The gate reveals it on a timeout as well, so slow always beats invisible.
+  const gate = createRevealGate({ onReveal: (reason) => revealAppWindow(win, reason) });
   const onFinish = () => {
     wc.removeListener('did-fail-load', onFail);
-    win.show();
+    gate.loaded();
   };
   // If the load fails — e.g. the daemon crashes between the readiness check
   // and the page actually loading, or a transient network error — Electron
@@ -550,10 +661,14 @@ function loadAppWindow(win, url = '') {
   const onFail = (_event, code, desc) => {
     wc.removeListener('did-finish-load', onFinish);
     log('error', 'main', `app load failed: code=${code} desc=${desc}`);
+    // The error page shows the window itself; we deliberately leave the gate
+    // armed as a second line of defence — if even daemon-error.html fails to
+    // load, the timeout still puts a (blank, but present) window on screen.
     showDaemonErrorPage(win);
   };
   wc.once('did-finish-load', onFinish);
   wc.once('did-fail-load', onFail);
+  win.once('closed', () => gate.cancel());
 }
 
 /**
@@ -576,8 +691,12 @@ function showDaemonErrorPage(win) {
   const errorPage = path.join(__dirname, 'daemon-error.html');
   const query = logPath ? { log: logPath } : undefined;
   win.loadFile(errorPage, query ? { query } : undefined);
+  // Same visibility gate as loadAppWindow: a failed error-page load must not
+  // leave the window hidden (that is precisely the "app looks dead" state this
+  // page exists to prevent).
+  const gate = createRevealGate({ onReveal: (reason) => revealAppWindow(win, reason) });
   win.webContents.once('did-finish-load', () => {
-    win.show();
+    gate.loaded();
   });
 }
 
@@ -639,15 +758,14 @@ function buildKnowledgeUrlFromProtocolTarget(target) {
  */
 function deliverNavigation(win, target) {
   if (!win || win.isDestroyed()) return;
-  const state = rendererStates.get(win.webContents.id);
-  if (state?.ready) {
+  if (rendererStates.isReady(win.webContents.id)) {
     log('info', 'main', `in-page navigate: vault=${target.vaultId ?? '(active)'} file=${target.filePath}`);
     win.webContents.send('molio:navigate', {
       vaultId: target.vaultId,
       filePath: target.filePath,
     });
   } else {
-    rendererStates.set(win.webContents.id, { ready: false, pending: { ...target } });
+    rendererStates.queue(win.webContents.id, target);
     log('info', 'main', `renderer not ready — queued navigate: vault=${target.vaultId ?? '(active)'} file=${target.filePath}`);
   }
 }
@@ -670,7 +788,7 @@ function navigateFromProtocolUrl(protocolUrl, win) {
   try {
     const target = parseMolioProtocolUrl(protocolUrl);
     if (target?.action === 'open-file') {
-      const state = rendererStates.get(targetWin.webContents.id);
+      const ready = rendererStates.isReady(targetWin.webContents.id);
       // App not yet loaded, or renderer not yet ready: the in-page IPC path
       // can't deliver (no SPA listener, or a non-SPA page like the daemon
       // error page that never sends molio:renderer-ready, so a queued nav
@@ -678,10 +796,15 @@ function navigateFromProtocolUrl(protocolUrl, win) {
       // a full loadURL of the knowledge route — the SPA reads ?vault=&file=
       // and opens the file. Reload is fine here since the renderer is already
       // in a broken/transient state; the warm healthy path uses IPC below.
-      if (isWaitingForApp(targetWin) || !state?.ready) {
+      //
+      // "Not ready" now means exactly that: the React tree is gone (cold start,
+      // real reload, error page, dead renderer). Same-document SPA navigation
+      // and iframe loads no longer clear it, so a clip during an in-flight reply
+      // takes the IPC path and the reply keeps streaming.
+      if (isWaitingForApp(targetWin) || !ready) {
         const appUrl = buildKnowledgeUrlFromProtocolTarget(target);
-        log('info', 'main', `navigating to ${appUrl} (renderer ${state?.ready ? 'waiting for app' : 'not ready'})`);
-        rendererStates.set(targetWin.webContents.id, { ready: false, pending: null }); // loadURL supersedes stale queued nav
+        log('info', 'main', `navigating to ${appUrl} (renderer ${ready ? 'waiting for app' : 'not ready'})`);
+        rendererStates.forget(targetWin.webContents.id); // loadURL supersedes any queued nav
         targetWin.loadURL(appUrl);
       } else {
         deliverNavigation(targetWin, target);
@@ -814,15 +937,48 @@ app.whenReady().then(async () => {
     }
   }
 
-  // 监控初始化必须在 createWindow 之前——SDK autoInject 监听 web-contents-created
-  // 注入 Browser SDK，init 之前创建的窗口会错过注入。
-  const armsRum = await initMonitoring({
+  // 监控初始化必须**完成于 createWindow 之前**——SDK autoInject 监听
+  // web-contents-created 注入 Browser SDK，init 之前创建的窗口会错过注入。
+  // 但它与 daemon 启动互不依赖：两者并行发起，ARMS 用有界等待（见下），
+  // daemon（最长的一段）在窗口创建期间继续跑——串行改并行后 ARMS 耗时
+  // 从启动关键路径上消失。
+  let armsRum = null;
+  const monitoringReady = initMonitoring({
     isDev: isDevMode(),
     version: app.getVersion(),
     log,
     // 闭包读模块级 molioUserId（由下方 auth-status-watch 轮询维护）。
     getUserId: () => molioUserId,
-  });
+  }).then(
+    (r) => { armsRum = r; return 'ok'; },
+    () => null, // initMonitoring 内部已吞错并写日志；双保险防 unhandled rejection
+  );
+
+  // ⑤' Daemon 提前并行启动（原第⑤步在窗口创建之后才 spawn——冷启动最重的
+  //     一段被白白排在 ARMS/菜单/建窗后面）。失败不抛出：置 null，由下方
+  //     daemonReady 判定走错误页；updater 不受影响。
+  const daemonStartPromise = isDevMode()
+    ? null
+    : startDaemonProduction()
+      .then(() => true)
+      .catch((err) => {
+        log('error', 'main', `daemon startup failed: ${err?.message ?? err}`);
+        return false;
+      });
+
+  // 有界等待 ARMS init：正常是本地 SDK 装配（数百 ms）；弱网/SDK 异常时
+  // 最多等 MONITORING_INIT_TIMEOUT_MS 就建窗——错过注入只损失该窗口的
+  // 渲染端采集（主进程 collectors 不受影响），监控降级可接受、启动卡死不可接受。
+  const monitoringT0 = Date.now();
+  const monitorOutcome = await Promise.race([
+    monitoringReady,
+    new Promise((resolve) => setTimeout(() => resolve('timeout'), MONITORING_INIT_TIMEOUT_MS)),
+  ]);
+  if (monitorOutcome === 'timeout') {
+    log('warn', 'main', `ARMS init exceeded ${MONITORING_INIT_TIMEOUT_MS}ms — creating window without it (renderer-side collectors may miss this window)`);
+  } else {
+    log('info', 'main', `monitoring init settled in ${Date.now() - monitoringT0}ms`);
+  }
 
   // ② Build the app menu (文件 → 新窗口, click-only — no ⌘N accelerator)
   //    before creating windows.
@@ -846,28 +1002,25 @@ app.whenReady().then(async () => {
   //    In production the window stays hidden until the daemon is ready.
   const firstWindow = createWindow();
 
-  // ④ Set up auto-updater IMMEDIATELY — before daemon.
+  // ④ Set up auto-updater IMMEDIATELY — before awaiting the daemon result.
   // Even if daemon fails to start, the updater must be operational
   // so we can push fixes to users.
   // Pass killDaemon so the updater can release file locks before install.
   setupAutoUpdater(() => lastFocusedAppWindow ?? (appWindows.values().next().value ?? null), killDaemon);
 
-  // ⑤ Start daemon last — failure here must not affect updater
+  // ⑤ Await the daemon start that was kicked off IN PARALLEL with monitoring
+  //    init (see daemonStartPromise above) — failure here must not affect the
+  //    updater, which is already wired by now.
   if (!isDevMode()) {
-    try {
-      await startDaemonProduction();
-      daemonReady = true;
-    } catch (err) {
-      log('error', 'main', `daemon startup failed: ${err?.message ?? err}`);
-      // Daemon failure is not fatal for the updater.
-    }
+    daemonReady = (await daemonStartPromise) === true;
 
-    // ⑥ Bridge daemon memory metrics to ARMS (daemon has no ARMS SDK).
-    //    Also poll login state so ARMS events carry the Molio userId.
-    //    Both are gated on daemonReady && armsRum: no daemon → nothing to
-    //    poll; no ARMS (dev mode) → nothing to inject into.
+    // ⑥ Poll login state so ARMS events carry the Molio userId.
+    //    Gated on daemonReady && armsRum: no daemon → nothing to poll;
+    //    no ARMS (dev mode) → nothing to inject into.
+    //    （原第⑥步的 daemon 内存 sendCustom 上报已移除：ARMS memory 采集器已按
+    //    30min 窗口覆盖主进程 + 子进程（含 daemon）的 working_set，那个每 60s 一次的
+    //    自定义上报重复且是持续的额度消耗源。见 monitoring.js 降本注释。）
     if (daemonReady && armsRum) {
-      stopDaemonMetrics = startDaemonMetricsPolling({ armsRum, log });
       stopAuthStatusPolling = startAuthStatusPolling({
         daemonPort: DAEMON_PORT,
         log,
@@ -967,7 +1120,12 @@ function killDaemon() {
     requestDaemonShutdown();
 
     // Hard timeout: ensure we never block app quit indefinitely.
-    let forceTimer = setTimeout(() => forceKillDaemon(pid), 5000);
+    let forceTimer = setTimeout(() => {
+      forceKillDaemon(pid);
+      // The exit event may never fire (daemon ignores SIGKILL / already a
+      // zombie) — resolve anyway so quit can't hang forever.
+      done();
+    }, 5000);
   });
 }
 
@@ -998,7 +1156,6 @@ app.on('before-quit', (event) => {
   // Signal the window close handler to actually close the window instead
   // of hiding it (macOS hide-on-close behavior).
   forceQuit = true;
-  if (stopDaemonMetrics) { stopDaemonMetrics(); stopDaemonMetrics = null; }
   if (stopAuthStatusPolling) { stopAuthStatusPolling(); stopAuthStatusPolling = null; }
   if (daemonProcess) {
     // Prevent the default quit until daemon is fully terminated.
@@ -1010,6 +1167,11 @@ app.on('before-quit', (event) => {
       // crypto-server 服务 daemon 的 token 加解密，必须等 daemon 完全退出后再关：
       // 优雅关闭窗口内 daemon 仍可能落盘 token（加密失败会降级明文基线）。
       await stopCryptoServer();
+      app.quit();
+    }).catch((err) => {
+      // 关闭链里任何一环抛错（如 stopCryptoServer）都不能让 app 永远活着：
+      // 上游更新脚本只等有限时间就开始换文件，挂死的 app 会被脚下换包。
+      log('error', 'main', `before-quit shutdown chain failed: ${err instanceof Error ? err.message : String(err)}`);
       app.quit();
     });
   } else {
@@ -1050,9 +1212,7 @@ ipcMain.handle('app:new-window', (_event, payload) => {
 ipcMain.on('molio:renderer-ready', (event) => {
   const wc = event.sender;
   const id = wc.id;
-  const state = rendererStates.get(id) ?? { ready: false, pending: null };
-  const nav = state.pending;
-  rendererStates.set(id, { ready: true, pending: null });
+  const nav = rendererStates.markReady(id);
   if (nav && !wc.isDestroyed()) {
     log('info', 'main', `renderer ready — flushing queued navigate: vault=${nav.vaultId ?? '(active)'} file=${nav.filePath}`);
     wc.send('molio:navigate', nav);

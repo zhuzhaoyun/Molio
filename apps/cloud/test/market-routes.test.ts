@@ -3,6 +3,8 @@
 // 可编程 mock（时钟/store/邮件）装配；登录取 token 走 /auth/send-code + /auth/verify（devCode）。
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import { createApp } from '../src/app.js';
 import { MarketService } from '../src/market/service.js';
 import { OssSigner } from '../src/market/signer.js';
@@ -84,4 +86,155 @@ test('GET /market/listings/:id/download：未登录 401', async () => {
 test('market 未配置（无 OSS 凭证）→ 404（路由未挂载）', async () => {
   const { appNoMarket } = await bootMarketApp();
   assert.equal((await appNoMarket.request('/market/listings')).status, 404);
+});
+
+test('GET /market/purchases：未登录 401；登录 200 + no-store（pay 未配置 → 空列表）', async () => {
+  const { app, token } = await bootMarketApp();
+  assert.equal((await app.request('/market/purchases')).status, 401);
+  const res = await app.request('/market/purchases', { headers: { authorization: `Bearer ${token}` } });
+  assert.equal(res.status, 200);
+  assert.equal(res.headers.get('cache-control'), 'no-store');
+  assert.deepEqual((await res.json()) as { purchases: unknown[] }, { purchases: [] });
+});
+
+
+test('taxonomy routes: public registry, protected creation, duplicate reuse and kind validation', async () => {
+  const {app,token}=await bootMarketApp();
+  const send=(bearer:string,body:unknown)=>app.request('/market/taxonomy',{method:'POST',headers:{'content-type':'application/json',authorization:'Bearer '+bearer},body:JSON.stringify(body)});
+  const reg=await (await app.request('/market/taxonomy')).json() as {categories:unknown[]};
+  assert.equal(reg.categories.length,6);
+  assert.equal((await send('',{kind:'category',name:'数学'})).status,401);
+  assert.equal((await send(token,{kind:'category',name:'数学'})).status,403);
+  const admin=await register(app,'admin@x.com');
+  const first=await send(admin.accessToken,{kind:'category',name:' 数学 '});
+  assert.equal(first.status,201);
+  const a=await first.json() as {id:string};
+  const b=await (await send(admin.accessToken,{kind:'category',name:'数学'})).json() as {id:string};
+  assert.equal(a.id,b.id);
+  assert.equal((await send(admin.accessToken,{kind:'invalid',name:'数学'})).status,400);
+});
+
+test('POST /market/admin/listings/:id/content：管理员写入结构化内容，非管理员 403，非法内容 400', async () => {
+  const { app, token, marketStore } = await bootMarketApp();
+  const id = '01JABCDE0000000000000009';
+  await marketStore.insertListing({
+    id, userId: 'u1', source: 'community', name: '数学', icon: '📖', tint: '#eee',
+    summary: 's', overview: [], highlights: [], content: null, tags: [], previews: [],
+    version: 'v1.0', priceCents: 0, payUrl: '', authorDisplay: 'a',
+    ossKey: 'zips/x.zip', fileSize: 1, status: 'active', removedReason: null,
+    createdAt: 1, updatedAt: 1, publishedAt: 1,
+  });
+  const content = {
+    version: 1,
+    positioning: { what: '一份测试知识库', who: ['测试者'], notFor: ['不是题库'] },
+    facts: [{ label: '概念页', value: '10 个' }],
+    themes: [{ name: '主题', summary: '范围', items: ['条目'] }],
+    questions: [{ question: '问题？', answer: '答案。', source: '《测试》' }],
+    delivery: { format: 'Markdown', includes: ['内容'], requirements: [], steps: ['打开'] },
+    review: { basis: '测试', reviewedAt: '2026-10-26', status: 'draft' },
+  };
+  const send = (bearer: string, body: unknown) => app.request(`/market/admin/listings/${id}/content`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', authorization: `Bearer ${bearer}` },
+    body: JSON.stringify(body),
+  });
+  assert.equal((await send(token, { content })).status, 403, '普通用户不能写内容');
+  const admin = await register(app, 'admin@x.com');
+  const ok = await send(admin.accessToken, { content });
+  assert.equal(ok.status, 200);
+  const row = await ok.json() as { content?: { version: number; facts: unknown[] } };
+  assert.equal(row.content?.version, 1);
+  assert.equal(row.content?.facts.length, 1);
+  assert.equal((await send(admin.accessToken, { content: { version: 2 } })).status, 400, '非法内容拒绝');
+});
+
+test('admin content: 高中数学样例通过 MarketContent 校验', async () => {
+  const { app, marketStore } = await bootMarketApp();
+  const id = '01M4PZPNGWR1YZ1W9GGVTJG82N';
+  await marketStore.insertListing({
+    id, userId: 'u1', source: 'community', name: '高中数学', icon: '📖', tint: '#eee',
+    summary: 's', overview: [], highlights: [], content: null, tags: [], previews: [],
+    version: 'v1.0', priceCents: 9850, payUrl: '', authorDisplay: 'a',
+    ossKey: 'zips/x.zip', fileSize: 1, status: 'active', removedReason: null,
+    createdAt: 1, updatedAt: 1, publishedAt: 1,
+  });
+  const content = JSON.parse(readFileSync(
+    path.resolve(process.cwd(), '../../content/market/01M4PZPNGWR1YZ1W9GGVTJG82N.json'),
+    'utf8',
+  ));
+  const admin = await register(app, 'admin@x.com');
+  const res = await app.request(`/market/admin/listings/${id}/content`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', authorization: `Bearer ${admin.accessToken}` },
+    body: JSON.stringify({ content }),
+  });
+  assert.equal(res.status, 200);
+  const row = await res.json() as { content?: { facts: unknown[]; themes: unknown[]; questions: unknown[] } };
+  assert.equal(row.content?.facts.length, 6);
+  assert.equal(row.content?.themes.length, 8);
+  assert.equal(row.content?.questions.length, 4);
+});
+
+
+test('POST /market/listings：content 随首发校验并落库；非法 content 400', async () => {
+  const { app, token, marketStore } = await bootMarketApp();
+  const content = {
+    version: 1,
+    positioning: { what: '一份测试知识库', who: ['测试者'], notFor: ['不是题库'] },
+    facts: [{ label: '概念页', value: '10 个' }],
+    themes: [{ name: '主题', summary: '范围', items: ['条目'] }],
+    questions: [{ question: '问题？', answer: '答案。' }],
+    delivery: { format: 'Markdown 知识库（.zip）', includes: ['内容'], requirements: [], steps: ['打开'] },
+    review: { basis: '测试', reviewedAt: '2026-10-27', status: 'draft' },
+  };
+  const create = (body: unknown) => app.request('/market/listings', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', authorization: 'Bearer ' + token },
+    body: JSON.stringify(body),
+  });
+  const base = { name: 'n', summary: 's', icon: '📖', tags: [], vaultSize: 10, previews: [{ ext: '.png', size: 5 }] };
+  const ok = await create({ ...base, content });
+  assert.equal(ok.status, 201);
+  const { listingId } = await ok.json() as { listingId: string };
+  const rec = await marketStore.findListingById(listingId);
+  assert.equal(rec?.content?.facts[0]?.label, '概念页', 'content 应随首发落库');
+
+  const bad = await create({ ...base, content: { version: 1, facts: [] } });
+  assert.equal(bad.status, 400);
+  assert.equal(((await bad.json()) as { error: string }).error, 'invalid_metadata');
+});
+
+test('POST /market/listings/:id/content：发布者可写自己的内容；他人 403；非法 400', async () => {
+  const { app, marketStore } = await bootMarketApp();
+  const owner = await register(app, 'owner@x.com');
+  const other = await register(app, 'other@x.com');
+  const id = '01JABCDE0000000000000011';
+  await marketStore.insertListing({
+    id, userId: owner.user.id, source: 'community', name: '数学', icon: '📖', tint: '#eee',
+    summary: 's', overview: [], highlights: [], content: null, tags: [], previews: [],
+    version: 'v1.0', priceCents: 0, payUrl: '', authorDisplay: 'a',
+    ossKey: 'zips/x.zip', fileSize: 1, status: 'active', removedReason: null,
+    createdAt: 1, updatedAt: 1, publishedAt: 1,
+  });
+  const content = {
+    version: 1,
+    positioning: { what: '一份测试知识库', who: ['测试者'], notFor: [] },
+    facts: [{ label: '概念页', value: '10 个' }],
+    themes: [{ name: '主题', summary: '范围', items: ['条目'] }],
+    questions: [],
+    delivery: { format: 'Markdown 知识库（.zip）', includes: [], requirements: [], steps: [] },
+    review: { basis: '测试', reviewedAt: '2026-10-27', status: 'draft' },
+  };
+  const send = (bearer: string, body: unknown) => app.request('/market/listings/' + id + '/content', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', authorization: 'Bearer ' + bearer },
+    body: JSON.stringify(body),
+  });
+  assert.equal((await send(other.accessToken, { content })).status, 403);
+  assert.equal((await send(owner.accessToken, { content: { version: 1 } })).status, 400);
+  const ok = await send(owner.accessToken, { content });
+  assert.equal(ok.status, 200);
+  const row = await ok.json() as { content?: { facts: unknown[]; review: { status: string } } };
+  assert.equal(row.content?.facts.length, 1);
+  assert.equal(row.content?.review.status, 'draft');
 });

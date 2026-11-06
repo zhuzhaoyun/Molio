@@ -1,6 +1,6 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
+import { molioDataDir } from './data-dir.js';
 
 /**
  * Pruning for per-run JSONL event logs under ~/.molio/runs/.
@@ -16,7 +16,7 @@ import path from 'node:path';
  * untouched for maxAgeDays belongs to a long-finished run.
  */
 
-export const DEFAULT_RUNS_LOG_DIR = path.join(os.homedir(), '.molio', 'runs');
+export const DEFAULT_RUNS_LOG_DIR = path.join(molioDataDir(), 'runs');
 export const DEFAULT_MAX_AGE_DAYS = 7;
 
 export interface PruneRunLogsOptions {

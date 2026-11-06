@@ -17,7 +17,8 @@
  *   - hover 高亮节点与连线（焦点模式，hover 优先于搜索选中）；单击节点跳转文档；
  *     点击空白清除搜索选中；双击空白 fit
  */
-import { Application, Container, Graphics, Text, Circle } from 'pixi.js';
+import { Application, Container, Graphics, Text, Circle, Rectangle } from 'pixi.js';
+import { computeExportRect, resolveExportScale, viewportWorldRect, type Bounds } from './exportImage';
 import {
   forceSimulation,
   forceManyBody,
@@ -82,7 +83,8 @@ export interface EngineOptions {
 }
 
 export interface GraphSnapshot {
-  nodes: Array<{ x: number; y: number }>;
+  /** key 让 e2e 能按节点身份比对坐标（Minimap 只用 x/y） */
+  nodes: Array<{ key: string; x: number; y: number }>;
   /** 当前视口（simulation 坐标） */
   view: { x: number; y: number; w: number; h: number };
 }
@@ -168,6 +170,10 @@ const LABEL_PAD = 2;
 const K_MIN = 0.1;
 const K_MAX = 4;
 const FIT_PADDING = 80;
+/** 出图：内容四周留白（屏幕 px，换算成 world 单位后使用） */
+const EXPORT_MARGIN_SCREEN = 48;
+/** 出图：目标输出长边（device px）；不卡死，实际受 1:1 下限与 4096 上限夹逼 */
+const EXPORT_TARGET_LONG_EDGE = 2000;
 /** v6 配方：forceX/Y 谐波约束强度 —— 让长弹簧向心屈服，整体紧凑、局部由 collide 撑开 */
 const CONTAIN_STRENGTH = 0.06;
 /** v6 配方：collide 半径 = 绘制半径 × MULT + PAD —— 远看均布、放大后节点彼此分离（Obsidian 同款空气感） */
@@ -239,9 +245,15 @@ export class PixiGraphEngine {
     durationMs: number;
   } | null = null;
 
+  /** 下一次 setData 是否让同名节点继承当前坐标（一次性开关，读取后立刻复位）。
+   *  刷新（库变了）要继承——否则「只加了一个文件、整个布局重炸」；换 vault 不能继承——
+   *  两个库的图没有可比性，沿用旧坐标会让新库长成旧库的形状。 */
+  private inheritPositions = true;
   private hasUserInteracted = false;
   private hasFitFirstLayout = false;
   private refitTimer: ReturnType<typeof setTimeout> | null = null;
+  /** 仿真收敛后要执行的取景（见 reframeAfterSettle）；用户中途交互则放弃 */
+  private pendingReframe: (() => void) | null = null;
   private rafId = 0;
   private dragStartTime = 0;
   private dragging = false;
@@ -357,9 +369,15 @@ export class PixiGraphEngine {
   setData(nodes: EngineNode[], edges: EngineEdge[]): void {
     if (this.destroyed) return;
 
+    // 上一批节点（此刻 this.nodeById 还是旧的）——用来给同名节点播种坐标。
+    // 读的是「用户眼前这份布局」而非某个初始快照：布局被拖过、平移过，都该被继承。
+    const prevNodes = this.inheritPositions ? this.nodeById : null;
+    this.inheritPositions = true;
+
     const nodeById = new Map<string, SimNode>();
     const simNodes: SimNode[] = [];
     for (const n of nodes) {
+      const prev = prevNodes?.get(n.key);
       simNodes.push({
         id: n.key,
         text: n.label,
@@ -369,6 +387,12 @@ export class PixiGraphEngine {
         dead: n.dead,
         radius: this.radiusOf(n),
         rank: 0,
+        // 老节点从原位继续仿真（刷新只微调，不重炸）；新节点不给坐标，
+        // 交给 d3 默认的 phyllotaxis 散布，自然长在既有布局之外。
+        x: prev?.x,
+        y: prev?.y,
+        vx: prev?.vx,
+        vy: prev?.vy,
       });
     }
     for (const n of simNodes) nodeById.set(n.id, n);
@@ -413,7 +437,46 @@ export class PixiGraphEngine {
     this.selectedId = null;
     this.hoveredNodeId = null;
     this.hasFitFirstLayout = false;
+    // 只在紧随其后的那次 setData 生效（setData 读取后立刻复位）。
+    // 防御性：当前切库会连图谱页一起卸载（引擎本该新建、无缓存），这行是「resetPositions
+    // 的语义 = 上下文已换、别继承」的自洽保证——将来若图谱页改成跨库常驻，它就是唯一防线。
+    this.inheritPositions = false;
     this.updateFocusAndRender();
+  }
+
+  /**
+   * 注册「仿真收敛后再取景」：数据上下文已换（如局部图 ⇄ 全量图），旧视口无意义，
+   * 故先清掉交互标记；布局稳定后执行 reframe（通常是一次动画取景，此时范围才正确）。
+   * 期间用户若自己平移/缩放，收敛时放弃这次自动取景（让位给用户）。
+   * 注意：布局收敛前节点坐标仍在变，早取景会落在错误位置——所以必须等收敛。
+   */
+  reframeAfterSettle(reframe: () => void): void {
+    this.hasUserInteracted = false;
+    this.pendingReframe = reframe;
+    if (this.refitTimer) {
+      clearTimeout(this.refitTimer);
+      this.refitTimer = null;
+    }
+  }
+
+  /**
+   * 同步跑完仿真并停表（小图 / 对照副格用）：布局一次到位，取景即可正确，省掉
+   * 「先落位 → 收敛后再取景」的两段式过渡——副格随主格文档高频重锚定时后者很拖沓。
+   * 顺带标记首屏已 fit 并清掉自动 refit 定时器，避免后续多余动画。
+   */
+  preSettle(maxTicks = 1000): void {
+    const sim = this.sim;
+    if (!sim) return;
+    const min = sim.alphaMin();
+    let ticks = 0;
+    while (sim.alpha() > min && ticks++ < maxTicks) sim.tick();
+    sim.alpha(0);
+    sim.stop();
+    this.hasFitFirstLayout = true;
+    if (this.refitTimer) {
+      clearTimeout(this.refitTimer);
+      this.refitTimer = null;
+    }
   }
 
   setForces(f: ForceParams): void {
@@ -490,13 +553,21 @@ export class PixiGraphEngine {
     }
   }
 
+  /** 选中节点：置选中态 + 高亮关联（不动相机）。与 fitView 搭配用于「框全子图 + 高亮圆心」。 */
+  selectNode(key: string): boolean {
+    if (this.destroyed) return false;
+    if (!this.nodeById.has(key)) return false;
+    this.selectedId = key;
+    this.updateFocusAndRender();
+    return true;
+  }
+
   /** 定位并选中节点（搜索用）：平滑居中缩放 */
   focusNode(key: string, opts?: { targetK?: number; durationMs?: number }): boolean {
     if (this.destroyed) return false;
     const node = this.nodeById.get(key);
     if (!node || node.x == null || node.y == null) return false;
-    this.selectedId = key;
-    this.updateFocusAndRender();
+    this.selectNode(key);
     const targetK = clamp(opts?.targetK ?? 1.5, K_MIN, K_MAX);
     const tx = this.width / 2 - (node.x + this.width / 2) * targetK;
     const ty = this.height / 2 - (node.y + this.height / 2) * targetK;
@@ -529,7 +600,7 @@ export class PixiGraphEngine {
     if (this.nodes.length === 0) return null;
     const t = this.currentTransform;
     return {
-      nodes: this.nodes.map((n) => ({ x: n.x ?? 0, y: n.y ?? 0 })),
+      nodes: this.nodes.map((n) => ({ key: n.id, x: n.x ?? 0, y: n.y ?? 0 })),
       view: {
         x: (0 - t.x) / t.k - this.width / 2,
         y: (0 - t.y) / t.k - this.height / 2,
@@ -537,6 +608,61 @@ export class PixiGraphEngine {
         h: this.height / t.k,
       },
     };
+  }
+
+  /**
+   * 把当前图谱渲染成一张位图（整图、已按主题铺底），交给调用方去排版。
+   * 无可导出内容时返回 null。
+   *
+   * 引擎只产出「图」；标题卡、图例、署名由 exportCard.ts 合成 —— 那些是版式，
+   * 不该跟 Pixi 生命周期纠缠，也才能在 node:test 里覆盖。
+   *
+   * 三个决定实现形状的事实：
+   *  1. **导出的是整张图，不是用户当前取景框** —— 分享出去是给人看懂的，框外的
+   *     东西对方补不回来。所以先 fitView 把整图收进视口，再据此取景。
+   *  2. **`extract` 的 frame 是 world 空间的**（见 exportImage.ts 头注）：取景矩形
+   *     按 world 单位算并夹在可见区域内，倍率按 frame 长边定，与当前缩放 k 无关。
+   *  3. **不往 stage 里加任何东西** —— 不碰实时场景，就不会闪、无需清理；
+   *     导出结束（含失败）视口一律还原成用户眼前那一帧。
+   *
+   * 背景必须显式传 clearColor：`extract` 的默认清屏色是**全透明**（不是 app 的
+   * background）。透明底在多数看图器与发布平台上会被合成到白底上——深色主题的
+   * 浅色标签会直接消失。
+   */
+  captureImage(): HTMLCanvasElement | null {
+    if (this.destroyed || this.nodes.length === 0) return null;
+    // 隐藏的 pane 尺寸为 0，取景会退化成空矩形
+    if (!(this.width > 0) || !(this.height > 0)) return null;
+
+    const prev = this.getViewport();
+    let frame: Bounds | null = null;
+    let resolution = 1;
+    try {
+      this.fitView({ animate: false });
+      const viewport = viewportWorldRect(this.getViewport(), { w: this.width, h: this.height });
+      const bounds = this.stage.getLocalBounds();
+      frame = computeExportRect(
+        { x: bounds.x, y: bounds.y, w: bounds.width, h: bounds.height },
+        viewport,
+        EXPORT_MARGIN_SCREEN / this.currentTransform.k,
+      );
+      if (frame) {
+        resolution = resolveExportScale(Math.max(frame.w, frame.h), { target: EXPORT_TARGET_LONG_EDGE });
+      }
+    } finally {
+      this.setTransform(prev.tx, prev.ty, prev.k);
+    }
+    if (!frame) return null;
+
+    // WebGL 画布默认 preserveDrawingBuffer:false，canvas.toDataURL 只会得到空白；
+    // 必须走 Pixi 的 render-to-texture（extract）重渲染一遍。
+    return this.app.renderer.extract.canvas({
+      target: this.stage,
+      frame: new Rectangle(frame.x, frame.y, frame.w, frame.h),
+      resolution,
+      antialias: true,
+      clearColor: this.theme.bg,
+    }) as unknown as HTMLCanvasElement;
   }
 
   /**
@@ -554,6 +680,7 @@ export class PixiGraphEngine {
     this.destroyed = true;
     if (this.refitTimer) clearTimeout(this.refitTimer);
     if (this.hoverLingerTimer) clearTimeout(this.hoverLingerTimer);
+    this.pendingReframe = null;
     this.viewportAnim = null;
     this.tweens.forEach((t) => t.stop());
     this.tweens.clear();
@@ -562,7 +689,23 @@ export class PixiGraphEngine {
     cancelAnimationFrame(this.rafId);
     this.sim?.stop();
     if (this.app) {
-      this.app.destroy(true, { children: true });
+      // 步骤断开 + 各自吞错：销毁是终态操作，任何一步失败都只记日志——异常逃逸出 React
+      // effect cleanup 会卸载整棵树（v0.3.56 线上全局白屏）。
+      // 注意不要在用户侧销毁 Text 的托管纹理（{texture:true} 等）：v8 文本纹理由
+      // CanvasTextPipe 引用计数管理，用户侧触碰会扰乱计数，令 app.destroy 内部的
+      // GC 清扫在纹理池上抛 returnTexture TypeError（日志可见，纯上游缺陷）。
+      // 这里只把标签从舞台摘除（Container 级），纹理交给管道自己的销毁清扫。
+      try {
+        this.labelsLayer.removeChildren().forEach((c) => c.destroy({ children: true }));
+        this.nodeRenderData = [];
+      } catch (err) {
+        console.warn('[graph] engine destroy: label cleanup failed', err);
+      }
+      try {
+        this.app.destroy(true, { children: true });
+      } catch (err) {
+        console.warn('[graph] engine destroy: app destroy failed', err);
+      }
     }
   }
 
@@ -605,9 +748,18 @@ export class PixiGraphEngine {
       .force('y', forceY<SimNode>(0).strength(CONTAIN_STRENGTH))
       .force('collide', forceCollide<SimNode>().radius(collideRadius).iterations(COLLIDE_ITERATIONS));
     // 仿真收敛后布局范围才稳定 —— 若用户未交互过，重新 fit 一次，
-    // 避免「早期小范围 fit 的缩放」看「后期大范围布局」导致放大叠团的错觉
+    // 避免「早期小范围 fit 的缩放」看「后期大范围布局」导致放大叠团的错觉。
+    // 若宿主注册了 pendingReframe（scope 切换：局部图 ⇄ 全量图），优先执行它
+    // （file-scope 要的是「圆心居中放大」而非 fit，目标不同）。
     sim.on('end', () => {
-      if (!this.hasUserInteracted && !this.destroyed) this.fitView({ animate: true });
+      if (this.destroyed) return;
+      const pending = this.pendingReframe;
+      this.pendingReframe = null;
+      if (pending) {
+        if (!this.hasUserInteracted) pending();
+        return;
+      }
+      if (!this.hasUserInteracted) this.fitView({ animate: true });
     });
     this.sim = sim;
 

@@ -8,9 +8,11 @@ import type { ReactNode } from 'react';
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState, useCallback } from 'react';
 import type { TreeNode } from '@molio/contracts';
 import { useI18n } from '../../i18n';
+import { useOnboardingHint } from '../../hooks/useOnboardingHint';
 import { KbFileTree } from './KbFileTree';
 import { OpenNewWindowIcon } from '../icons';
 import { openInNewWindow } from '../../utils/openWindow';
+import { DEFAULT_ROUTE } from '../../routes';
 
 type SortBy = 'name' | 'modified' | 'size';
 
@@ -43,10 +45,25 @@ interface KbFilePanelProps {
   onRenameCancel?: () => void;
   /** Called when files are dropped from the OS file manager. */
   onImportFiles?: (files: File[], targetDir: string) => void;
+  /** Open the import dialog. Kept separate from `onImportFiles` (which runs the
+   *  ingest itself) — this one is the explicit, visible entry point. */
+  onImportClick?: () => void;
   /** Called when a file is dragged from one directory to another within the tree. */
   onMoveFile?: (srcPath: string, destDir: string) => void;
+  /** 最近一次拉树失败的原因；null/undefined = 正常。 */
+  treeError?: string | null;
+  /** 重试拉树（错误条上的「重试」）。 */
+  onRetryTree?: () => void;
   /** Publish the current vault to the resources hub. */
   onPublishVault: () => void;
+  /**
+   * 「发布到资源库」门禁的当前判定结果：
+   * - admin：页内发布 tab；contact：系统浏览器打开官网联系页；
+   * - pending / error：身份还没判定出来（登录态或管理员身份未决 / 判定失败）。
+   *   这两种状态下点击不会直接分流，调用方会等判定结果（见 KnowledgeBasePage）。
+   * 渲染成属性，调用方/E2E 才能等门禁落定后再点。undefined = 调用方未提供。
+   */
+  publishGate?: 'admin' | 'contact' | 'pending' | 'error';
   children?: ReactNode;
 }
 
@@ -76,11 +93,18 @@ export const KbFilePanel = forwardRef<KbFilePanelHandle, KbFilePanelProps>(funct
   onRenameComplete,
   onRenameCancel,
   onImportFiles,
+  onImportClick,
   onMoveFile,
+  treeError,
+  onRetryTree,
   onPublishVault,
+  publishGate,
   children,
 }, ref) {
   const { t } = useI18n();
+  // 引导要指向真实入口，而不是 checklist 上的中转按钮：引导消失后，
+  // 用户日常用的就是这颗「导入」。
+  const guideImport = useOnboardingHint() === 'import';
   // Expansion state is owned here so the toggle button can read it directly.
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set());
   const anyExpanded = expandedPaths.size > 0;
@@ -378,6 +402,30 @@ export const KbFilePanel = forwardRef<KbFilePanelHandle, KbFilePanelProps>(funct
               data-testid="kb-create-dropdown"
               role="menu"
             >
+              {/* 导入文件 — 置于首位。＋ 是通用的「添加」形状、又是工具栏第一颗按钮，
+                  想「把已有的文件拿进来」的人第一反应就是点它；菜单里若只有新建项，
+                  用户会在最显眼的控件上再次走进死胡同（原客户反馈的死因）。
+                  与下方「新建/新窗口」用分隔线分组：拿进来 vs 造新的。 */}
+              {onImportClick && (
+                <>
+                  <button
+                    type="button"
+                    className="kb-create-item kb-create-item--accent"
+                    role="menuitem"
+                    data-testid="kb-create-import"
+                    onClick={() => { setCreateMenuOpen(false); setCreateMenuPos(null); onImportClick(); }}
+                  >
+                    {/* folder-input — 与工具栏那颗同一个形状 */}
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M2 9V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H20a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-1" />
+                      <path d="M2 13h10" />
+                      <path d="m9 16 3-3-3-3" />
+                    </svg>
+                    <span>{t('kb.importTitle')}…</span>
+                  </button>
+                  <div className="kb-create-divider" />
+                </>
+              )}
               <button
                 type="button"
                 className="kb-create-item"
@@ -412,14 +460,16 @@ export const KbFilePanel = forwardRef<KbFilePanelHandle, KbFilePanelProps>(funct
 
               <div className="kb-create-divider" />
 
-              {/* 新窗口 — opens a fresh desktop window with no vault forced;
-                  the user picks a vault in the new window via the normal nav. */}
+              {/* 新窗口 — opens a fresh desktop window onto the knowledge base.
+                  目标是显式的 DEFAULT_ROUTE 而不是 `'/'`：`/` 现在是入口重定向
+                  （见 src/routes.ts），落点取决于新窗口那份 localStorage 里的
+                  上次路由，等于把「新窗口开到哪」交给历史状态。 */}
               <button
                 type="button"
                 className="kb-create-item"
                 role="menuitem"
                 data-testid="kb-create-window"
-                onClick={() => { setCreateMenuOpen(false); setCreateMenuPos(null); openInNewWindow('/'); }}
+                onClick={() => { setCreateMenuOpen(false); setCreateMenuPos(null); openInNewWindow(DEFAULT_ROUTE); }}
               >
                 <OpenNewWindowIcon size={15} />
                 <span>{t('kb.newWindow')}</span>
@@ -427,6 +477,34 @@ export const KbFilePanel = forwardRef<KbFilePanelHandle, KbFilePanelProps>(funct
             </div>
           )}
         </div>
+        {/* 导入 — the explicit entry point. Drag-and-drop alone was undiscoverable:
+            users reported not knowing how to get files into the knowledge base.
+
+            跟「＋ 菜单首位的导入项」刻意重复，**别把其中任一处当冗余删掉**（2026-10-03 拍板）：
+            两处位置相邻、图标相同，确实会让菜单项读起来像重复——但重复的代价只是观感，
+            而删掉的代价是重演这次的事故（客户卡一小时）。分工是：这颗按钮管「一眼扫到、
+            一次点到」，菜单项管「带文字的说明，接住点 ＋ 的反射动作」——图标可以看不懂，
+            文字不会，而 tooltip 要悬停才出现、对「不知道有这功能」的人等于不存在。
+            删按钮 → 导入退成两级菜单；删菜单项 → 只剩一个抽象图标。 */}
+        {onImportClick && (
+          <button
+            type="button"
+            className={`kb-btn-import kb-toolbar-btn-accent${guideImport ? ' kb-guide-pulse' : ''}`}
+            title={t('kb.import')}
+            onClick={onImportClick}
+            data-testid="kb-btn-import"
+          >
+            {/* folder-input — 横向箭头进入文件夹 =「把文件放进这个库」。
+                刻意不用「托盘 + 向下箭头」：那是 download 的标准画法，而本工具栏右侧的
+                「发布」正是它的镜像（托盘 + 向上箭头 = upload），两颗按钮会读成一对
+                下载/上传；何况资源市场里真的有一个「下载」。横向箭头没有这种读法。 */}
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M2 9V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H20a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-1" />
+              <path d="M2 13h10" />
+              <path d="m9 16 3-3-3-3" />
+            </svg>
+          </button>
+        )}
         <button
           type="button"
           title={selectedFile ? t('kb.locateFile') : t('kb.locateFileNeedFile')}
@@ -508,9 +586,12 @@ export const KbFilePanel = forwardRef<KbFilePanelHandle, KbFilePanelProps>(funct
           <button
             type="button"
             className="kb-btn kb-btn-publish"
-            title={t('vault.publish')}
+            title={publishGate === 'pending' ? t('vault.publishRolePending')
+              : publishGate === 'error' ? t('vault.publishRoleFailed')
+                : t('vault.publish')}
             onClick={onPublishVault}
             data-testid="kb-btn-publish-vault"
+            data-publish-gate={publishGate}
           >
             {/* upload — publish to resources */}
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -526,6 +607,7 @@ export const KbFilePanel = forwardRef<KbFilePanelHandle, KbFilePanelProps>(funct
       <div className="kb-search-bar">
         <input
           type="text"
+          data-testid="kb-tree-search"
           placeholder={t('kb.searchPlaceholder')}
           value={searchQuery}
           onChange={(e) => onSearchChange(e.target.value)}
@@ -543,12 +625,30 @@ export const KbFilePanel = forwardRef<KbFilePanelHandle, KbFilePanelProps>(funct
         </div>
       )}
 
+      {/* 拉树失败：错误条常驻到下一次成功刷新为止（以前这里完全静默） */}
+      {treeError ? (
+        <div className="kb-tree-error" role="alert" data-testid="kb-tree-error">
+          <span className="kb-tree-error__msg">目录加载失败：{treeError}</span>
+          {onRetryTree && (
+            <button
+              type="button"
+              className="kb-btn kb-btn-ghost kb-tree-error__retry"
+              data-testid="kb-tree-retry"
+              onClick={onRetryTree}
+            >
+              重试
+            </button>
+          )}
+        </div>
+      ) : null}
+
       {/* File tree */}
       <div className="kb-tree-scroll" onContextMenu={handleTreeBlankContextMenu}>
         <KbFileTree
           nodes={sortedTree}
           selectedFile={selectedFile}
           searchQuery={searchQuery}
+          onClearSearch={() => onSearchChange('')}
           expandedPaths={expandedPaths}
           hasExternalRoots={hasExternalRoots}
           revealToken={revealToken}
@@ -574,7 +674,7 @@ export const KbFilePanel = forwardRef<KbFilePanelHandle, KbFilePanelProps>(funct
           <path d="M2 7h12" />
           <circle cx="5" cy="10" r="0.8" fill="currentColor" />
         </svg>
-        <span className="kb-vault-bar__name">{vaultName || 'No vault selected'}</span>
+        <span className="kb-vault-bar__name">{vaultName || t('kb.noVaultSelected')}</span>
         <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5">
           <polyline points="3 5 6 8 9 5" />
         </svg>

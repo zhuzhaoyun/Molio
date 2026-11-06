@@ -21,11 +21,17 @@ export interface BufferedEvent {
 
 /**
  * ACP-specific state for runs using transport: 'acp-jsonrpc'.
- * 1 Molio run = 1 AcpTransport = 1 ACP session = 1 long-running agent process.
+ * 1 Molio run = 1 ACP session — but the process is SHARED: an AcpPool entry
+ * (one warm process per agentId) owns the AcpTransport, and multiple runs
+ * attach their sessions to it. Cancelling/finishing a run detaches its
+ * session; the process survives for the other runs and is evicted after the
+ * pool's idle TTL.
  */
 export interface RunAcpState {
   transport: AcpTransport;
   sessionId: string;
+  /** AcpPool entry id owning the shared process (liveness checks, stderr lookup, detach). */
+  poolEntryId: string;
 }
 
 /**
@@ -86,4 +92,19 @@ export interface RunState {
    *  activity while the parent stream is silent. Started on the stream init
    *  event; finalized + stopped in finishRun. */
   activityWatcher?: TranscriptWatcher;
+
+  // --- Spawn-path idle watchdog (stdio-jsonl runs only; ACP has its own
+  // promptIdle/absolute timeouts on the transport) ---
+  /** Pending idle-watchdog timer. Cleared on disarm and every terminal path
+   *  (finishRun / cancelRun) so a finished run never leaks a timer. */
+  idleWatchdog?: ReturnType<typeof setTimeout> | null;
+  /** True while the watchdog is armed: from spawn (or sendMessage /
+   *  submitToolResult) until turn_end for multiTurn agents, until child close
+   *  for single-turn agents. Disarmed while waiting for a host answer
+   *  (AskUserQuestion) — that wait is user-driven and unbounded.
+   *  emitEvent re-arms (resets the countdown) on every event while armed. */
+  watchdogArmed?: boolean;
+  /** tool_use ids awaiting their tool_result — drives the phase-aware idle
+   *  timeout (tool phase gets a longer budget than model-generation phase). */
+  pendingToolUses?: Set<string>;
 }

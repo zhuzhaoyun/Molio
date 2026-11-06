@@ -1,16 +1,20 @@
 // apps/web/src/components/SessionOutputPanel.tsx
 // 会话产出聚合面板（主页 dock）——本次会话 Molio 写入的 KB 文件 rollup。
-// 与逐消息 WorkCompleteBanner/SourceChips 共存：dock = 会话级汇总，消息内 = 单条 provenance
-// （外部引用只在消息内联的 SourceChips 展示，不在此重复）。
+// 与逐消息 WorkCompleteBanner/SourceChips 共存：dock = 会话级汇总（概览/变更/引用三 tab），
+// 消息内 = 单条 provenance。引用（读入）在独立「引用」tab，不与「概览」（产出）同屏。
 // 纯前端聚合（aggregateSessionOutput），零 daemon/contracts。
 import { useMemo, useState, useRef, useCallback, useEffect } from 'react';
-import type { ChatMessage } from '../hooks/useChat';
-import { aggregateSessionOutput, extractChanges, disambiguateLabels, type ChangeEntry } from '../utils/workSteps';
+import type { ChatMessage } from '../hooks/useChatCore';
+import { aggregateSessionOutput, extractChanges, disambiguateLabels, type ChangeEntry, type SessionWrite } from '../utils/workSteps';
+import { aggregateSessionSources } from '../utils/sessionSources';
 import type { DiffLine } from '../utils/diff';
+import type { WriteKind } from '../utils/toolRefs';
 import { useActiveVault, useActiveVaultId } from '../stores/vaultStore';
 import { useI18n } from '../i18n';
 import { api } from '../api/client';
+import { isRevealAvailable, revealInFolder } from '../utils/reveal';
 import { MdRenderer } from './kb/MdRenderer';
+import { FolderIcon } from './icons';
 
 /** dock 宽度：默认 280，可拖宽 200–480 并持久化（复用 KbChatSessionsPanel 存储模式） */
 const DOCK_W_DEFAULT = 280;
@@ -63,11 +67,85 @@ function readDockWidth(): number {
   return DOCK_W_DEFAULT;
 }
 
+/** 折叠区条目的 testid —— 与主列表区分，E2E 计数才不会被展开态影响。 */
+const OTHER_ITEM_TESTID = 'session-output-other-item';
+
+/**
+ * 写入清单行 —— 概览的「写入」与折叠区的「其他写入」共用同一套交互
+ * （点击预览 / ⌖ 定位回对话 / 资源管理器中显示），只有 testid 与样式档位不同。
+ */
+function WriteItem({
+  write,
+  testId,
+  onOpen,
+}: {
+  write: SessionWrite;
+  testId: string;
+  onOpen: (kind: WriteKind, path: string, label: string) => void;
+}) {
+  const { t } = useI18n();
+  const activeVault = useActiveVault();
+  // 「在资源管理器中显示」：仅桌面壳（window.__electron__）且选中 vault 时渲染
+  const revealReady = isRevealAvailable() && !!activeVault?.path;
+  const open = () => onOpen(write.kind, write.path, write.label);
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      className={`session-output-item${testId === OTHER_ITEM_TESTID ? ' is-other' : ''}`}
+      data-testid={testId}
+      data-kind={write.kind}
+      data-path={write.path}
+      title={write.path}
+      onClick={open}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          open();
+        }
+      }}
+    >
+      <span className="session-output-item-icon" aria-hidden>{write.kind === 'create' ? '＋' : '✎'}</span>
+      <span className="session-output-item-label">{write.label}</span>
+      <button
+        type="button"
+        className="session-output-item-locate"
+        data-testid="session-output-locate"
+        title={t('output.locate')}
+        aria-label={t('output.locate')}
+        onClick={(e) => {
+          e.stopPropagation();
+          window.dispatchEvent(new CustomEvent('molio:evidence-target', {
+            detail: { toolId: write.toolId, messageId: write.messageId },
+          }));
+        }}
+      >
+        <span aria-hidden>⌖</span>
+      </button>
+      {revealReady && (
+        <button
+          type="button"
+          className="session-output-item-reveal"
+          data-testid="session-output-reveal"
+          title={t('output.reveal')}
+          aria-label={`${t('output.reveal')} · ${write.path}`}
+          onClick={(e) => {
+            e.stopPropagation();
+            if (activeVault?.path) revealInFolder(activeVault.path, write.path);
+          }}
+        >
+          <FolderIcon size={12} />
+        </button>
+      )}
+    </div>
+  );
+}
+
 interface Props {
   messages: ChatMessage[];
 }
 
-type PanelTab = 'overview' | 'changes';
+type PanelTab = 'overview' | 'changes' | 'sources';
 
 export function SessionOutputPanel({ messages }: Props) {
   const { t } = useI18n();
@@ -82,13 +160,26 @@ export function SessionOutputPanel({ messages }: Props) {
     disambiguateLabels(cs);
     return groupChangesByPath(cs);
   }, [messages, activeVault?.path]);
+  // 会话级「引用」（读入面）—— 与产出（写入面）成对，独立 tab 呈现（不与产出同屏）
+  // refs = 展示清单；meta = 登记骨架（INDEX/log/hot，折叠展示）；omitted = 被过滤掉的
+  // 引用（库外文件 / 隐藏目录 / 检索目录），面板要自己说明「少了什么」，否则同一屏里
+  // 用户看到的引用标签比面板多、像面板漏了。
+  const { refs: sourceRefs, meta: sourceMeta, media: sourceMedia, omitted: omittedSources } = useMemo(
+    () => aggregateSessionSources(messages, activeVault?.path),
+    [messages, activeVault?.path],
+  );
+  const sourceFiles = useMemo(() => sourceRefs.filter((s) => s.kind === 'file'), [sourceRefs]);
+  const sourceUrls = useMemo(() => sourceRefs.filter((s) => s.kind === 'url'), [sourceRefs]);
+  // 引用总次数（= 各文件 count 之和）—— 统计行用
+  const sourceReads = useMemo(() => sourceFiles.reduce((n, s) => n + s.count, 0), [sourceFiles]);
   const [tab, setTab] = useState<PanelTab>('overview');
   // 变更 tab 的手风琴：单开（点开一个收起其它），null = 全部折叠
   const [expandedPath, setExpandedPath] = useState<string | null>(null);
-  // 概览统计条：新建/更新来自去重后的写入清单，追加来自变更序列
+  // 概览的「其他写入」折叠区（脚本 / 登记元文件等）默认收起 —— 用户要的是文档产出
+  const [othersOpen, setOthersOpen] = useState(false);
+  // 概览分段计数：新建 / 更新来自去重后的写入清单（kind 由会话级判据给出）
   const creates = output.writes.filter((w) => w.kind === 'create').length;
   const updates = output.writes.filter((w) => w.kind === 'update').length;
-  const appends = changes.reduce((n, g) => n + g.items.filter((c) => c.kind === 'append').length, 0);
   // 早期会话判定：有 assistant 消息但整段对话没有任何过程数据（tools/thinking
   // 均未持久化的旧数据）→ 空态下附提示，避免误读为「丢了产出」的 bug。
   const legacyConversation = useMemo(
@@ -144,11 +235,13 @@ export function SessionOutputPanel({ messages }: Props) {
     if (e.key === 'ArrowRight') { e.preventDefault(); commitWidth(width + 20); }
   }, [width, commitWidth]);
 
-  const empty = output.writes.length === 0;
+  // 空态 = 这份会话什么都没写：只看 docs 清单会与折叠区自相矛盾
+  // （「没有写入产出的记录」+「其他写入 1 项」同时出现）。
+  const empty = output.writes.length === 0 && output.others.length === 0;
 
   // 内嵌预览：点击写入项 → 面板切到预览视图（不跳转知识库，保持对话注意力）。
   const [preview, setPreview] = useState<{
-    target: { kind: 'create' | 'update'; path: string; label: string };
+    target: { kind: 'create' | 'update' | 'read'; path: string; label: string };
     content: string;
     loading: boolean;
     error: boolean;
@@ -174,7 +267,7 @@ export function SessionOutputPanel({ messages }: Props) {
     return () => { cancelled = true; };
   }, [preview?.target.path]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const openPreview = useCallback((kind: 'create' | 'update', path: string, label: string) => {
+  const openPreview = useCallback((kind: 'create' | 'update' | 'read', path: string, label: string) => {
     if (!vaultId) return;
     if (width < 420) commitWidth(420); // 预览态自动加宽到 md 渲染舒适宽度；返回不缩回
     setPreview({ target: { kind, path, label }, content: '', loading: false, error: false, tooLarge: false });
@@ -225,9 +318,14 @@ export function SessionOutputPanel({ messages }: Props) {
       ) : (
         <>
           <header className="session-output-header">
-            <span className="session-output-title">{t('output.title')}</span>
+            {/* 标题/统计随 tab 变：引用 tab 里写「会话产出 · 写入 0 · 1 轮」是错的 */}
+            <span className="session-output-title" data-testid="session-output-title">
+              {tab === 'sources' ? t('output.titleSources') : t('output.title')}
+            </span>
             <span className="session-output-stats" data-testid="session-output-stats">
-              {t('output.stats', { writes: output.writes.length, turns: output.turns })}
+              {tab === 'sources'
+                ? t('output.statsSources', { files: sourceFiles.length, reads: sourceReads })
+                : t('output.stats', { writes: output.writes.length, turns: output.turns })}
             </span>
             {/* 分段控制：概览 / 变更（WorkBuddy 式多投影；280px dock 用分段而非下拉） */}
             <nav className="session-output-tabs" role="tablist" aria-label={t('output.title')}>
@@ -252,10 +350,144 @@ export function SessionOutputPanel({ messages }: Props) {
                 {t('output.tabChanges')}
                 {changes.length > 0 && <span className="session-output-tab-count">{changes.length}</span>}
               </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={tab === 'sources'}
+                className={`session-output-tab${tab === 'sources' ? ' is-active' : ''}`}
+                data-testid="session-output-tab-sources"
+                onClick={() => setTab('sources')}
+              >
+                {t('output.tabSources')}
+                {sourceFiles.length > 0 && <span className="session-output-tab-count">{sourceFiles.length}</span>}
+              </button>
             </nav>
           </header>
 
-          {tab === 'changes' ? (
+          {tab === 'sources' ? (
+            /* ── 引用 tab：本会话读入的文件（count 降序）+ URL 折叠组 + 未展示说明 ── */
+            <div className="session-output-body" data-testid="session-output-sources">
+              {sourceFiles.length === 0 && sourceUrls.length === 0 && sourceMeta.length === 0 && sourceMedia.length === 0 ? (
+                <p className="session-output-empty">{t('output.sourcesEmpty')}</p>
+              ) : (
+                <>
+                  {sourceFiles.map((s) => (
+                    <button
+                      key={s.target}
+                      type="button"
+                      className="session-output-item"
+                      data-testid="session-output-source"
+                      title={s.target}
+                      disabled={!vaultId}
+                      onClick={() => { if (vaultId) openPreview('read', s.target, s.label); }}
+                    >
+                      <span className="session-output-item-icon" aria-hidden>📄</span>
+                      <span className="session-output-item-label">{s.label}</span>
+                      <span
+                        className="session-output-item-count"
+                        data-testid="session-output-source-count"
+                        title={t('output.sourceCount', { n: s.count })}
+                      >
+                        {s.count}
+                      </span>
+                    </button>
+                  ))}
+                  {/* 登记骨架（INDEX/log/hot）：wiki 技能每次启动必读，用户不关心 ——
+                      与产出面板折叠这三个 basename 同款处理，主列表只留真实内容 */}
+                  {sourceMeta.length > 0 && (
+                    <details className="session-output-sources-meta" data-testid="session-output-sources-meta">
+                      <summary title={t('output.sourcesMetaHint')}>
+                        {t('output.sourcesMeta', { n: sourceMeta.length })}
+                      </summary>
+                      {sourceMeta.map((s) => (
+                        <button
+                          key={s.target}
+                          type="button"
+                          className="session-output-item"
+                          data-testid="session-output-meta-item"
+                          title={s.target}
+                          disabled={!vaultId}
+                          onClick={() => { if (vaultId) openPreview('read', s.target, s.label); }}
+                        >
+                          <span className="session-output-item-icon" aria-hidden>📄</span>
+                          <span className="session-output-item-label">{s.label}</span>
+                          <span className="session-output-item-count">{s.count}</span>
+                        </button>
+                      ))}
+                    </details>
+                  )}
+                  {/* 媒体与数据文件（png/tsv/.mis）：过程产物不是「依据」——
+                      与消息内联引用区同构折起来，否则一次 wiki 构建能灌满整屏 */}
+                  {sourceMedia.length > 0 && (
+                    <details className="session-output-sources-meta" data-testid="session-output-sources-media">
+                      <summary title={t('output.sourcesMediaHint')}>
+                        {t('output.sourcesMedia', { n: sourceMedia.length })}
+                      </summary>
+                      {sourceMedia.map((s) => (
+                        <button
+                          key={s.target}
+                          type="button"
+                          className="session-output-item"
+                          data-testid="session-output-media-item"
+                          title={s.target}
+                          disabled={!vaultId}
+                          onClick={() => { if (vaultId) openPreview('read', s.target, s.label); }}
+                        >
+                          <span className="session-output-item-icon" aria-hidden>📄</span>
+                          <span className="session-output-item-label">{s.label}</span>
+                          <span className="session-output-item-count">{s.count}</span>
+                        </button>
+                      ))}
+                    </details>
+                  )}
+                  {sourceUrls.length > 0 && (
+                    <details className="session-output-sources-urls" data-testid="session-output-sources-urls">
+                      <summary>{t('output.sourcesUrls', { n: sourceUrls.length })}</summary>
+                      {sourceUrls.map((s) => (
+                        <a
+                          key={s.target}
+                          href={s.target}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="session-output-item"
+                          data-testid="session-output-source-url"
+                          title={s.target}
+                        >
+                          <span className="session-output-item-icon" aria-hidden>🔗</span>
+                          <span className="session-output-item-label">{s.label}</span>
+                          <span className="session-output-item-count">{s.count}</span>
+                        </a>
+                      ))}
+                    </details>
+                  )}
+                </>
+              )}
+              {/* 未展示的引用：库外文件 / 隐藏目录 / 检索路径 —— 消息内联的引用标签里
+                  看得见它们，面板不列就必须说明，否则用户会以为面板漏了。 */}
+              {omittedSources.length > 0 && (
+                <details
+                  className="session-output-sources-omitted"
+                  data-testid="session-output-sources-omitted"
+                >
+                  <summary title={t('output.sourcesOmittedHint')}>
+                    {t('output.sourcesOmitted', { n: omittedSources.length })}
+                  </summary>
+                  {omittedSources.map((s) => (
+                    <div
+                      key={s.target}
+                      className="session-output-item session-output-item--omitted"
+                      data-testid="session-output-omitted-item"
+                      title={s.target}
+                    >
+                      <span className="session-output-item-icon" aria-hidden>🚫</span>
+                      <span className="session-output-item-label">{s.label}</span>
+                      <span className="session-output-item-count">{s.count}</span>
+                    </div>
+                  ))}
+                </details>
+              )}
+            </div>
+          ) : tab === 'changes' ? (
             /* ── 变更 tab：文件级概要行（±行数）→ 点击展开逐条 diff（WorkBuddy 式两级） ── */
             <div className="session-output-body" data-testid="session-output-changes">
               {changes.length === 0 ? (
@@ -328,74 +560,75 @@ export function SessionOutputPanel({ messages }: Props) {
                 })
               )}
             </div>
-          ) : empty ? (
-            <>
-              <p className="session-output-empty" data-testid="session-output-empty">{t('output.empty')}</p>
-              {legacyConversation && (
-                <p className="session-output-legacy-hint" data-testid="session-output-legacy-hint">
-                  {t('output.legacyHint')}
-                </p>
-              )}
-            </>
           ) : (
             <div className="session-output-body">
-              {output.writes.length > 0 && (
-                <section className="session-output-section">
-                  {/* 概览统计条：新建 / 更新 / 追加（纯前端聚合，WorkBuddy 概览式读数） */}
-                  <div className="session-output-statbar" data-testid="session-output-statbar">
-                    {creates > 0 && (
-                      <span className="session-output-stat" data-testid="session-output-stat-creates">
-                        {t('output.statCreates')} <b>{creates}</b>
-                      </span>
-                    )}
-                    {updates > 0 && (
-                      <span className="session-output-stat" data-testid="session-output-stat-updates">
-                        {t('output.statUpdates')} <b>{updates}</b>
-                      </span>
-                    )}
-                    {appends > 0 && (
-                      <span className="session-output-stat" data-testid="session-output-stat-appends">
-                        {t('output.statAppends')} <b>{appends}</b>
-                      </span>
-                    )}
-                  </div>
-                  <h3 className="session-output-section-label">{t('output.writesLabel')}</h3>
-                  {output.writes.map((w) => (
-                    <div
+              {empty && (
+                <>
+                  <p className="session-output-empty" data-testid="session-output-empty">{t('output.empty')}</p>
+                  {legacyConversation && (
+                    <p className="session-output-legacy-hint" data-testid="session-output-legacy-hint">
+                      {t('output.legacyHint')}
+                    </p>
+                  )}
+                </>
+              )}
+              {/* 写入清单分两段（新建在前、更新在后）：产出面板的主角是「新写出来的文档」，
+                  「改过的文档」是维护动作，混在一列里前者就不再突出；也不能合成一句
+                  「新建 N」压在清单上方 —— 那会被读成整个清单都是新建。 */}
+              {creates > 0 && (
+                <section className="session-output-section" data-testid="session-output-section-creates">
+                  <h3 className="session-output-section-label">
+                    {t('output.sectionCreates', { count: creates })}
+                  </h3>
+                  {output.writes.filter((w) => w.kind === 'create').map((w) => (
+                    <WriteItem
                       key={w.path}
-                      role="button"
-                      tabIndex={0}
-                      className="session-output-item"
-                      data-testid="session-output-write"
-                      data-kind={w.kind}
-                      data-path={w.path}
-                      title={w.path}
-                      onClick={() => { if (vaultId) openPreview(w.kind, w.path, w.label); }}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                          e.preventDefault();
-                          if (vaultId) openPreview(w.kind, w.path, w.label);
-                        }
-                      }}
-                    >
-                      <span className="session-output-item-icon" aria-hidden>{w.kind === 'create' ? '＋' : '✎'}</span>
-                      <span className="session-output-item-label">{w.label}</span>
-                      <button
-                        type="button"
-                        className="session-output-item-locate"
-                        data-testid="session-output-locate"
-                        title={t('output.locate')}
-                        aria-label={t('output.locate')}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          window.dispatchEvent(new CustomEvent('molio:evidence-target', {
-                            detail: { toolId: w.toolId, messageId: w.messageId },
-                          }));
-                        }}
-                      >
-                        <span aria-hidden>⌖</span>
-                      </button>
-                    </div>
+                      write={w}
+                      testId="session-output-write"
+                      onOpen={(kind, path, label) => { if (vaultId) openPreview(kind, path, label); }}
+                    />
+                  ))}
+                </section>
+              )}
+              {updates > 0 && (
+                <section className="session-output-section" data-testid="session-output-section-updates">
+                  <h3 className="session-output-section-label">
+                    {t('output.sectionUpdates', { count: updates })}
+                  </h3>
+                  {output.writes.filter((w) => w.kind === 'update').map((w) => (
+                    <WriteItem
+                      key={w.path}
+                      write={w}
+                      testId="session-output-write"
+                      onOpen={(kind, path, label) => { if (vaultId) openPreview(kind, path, label); }}
+                    />
+                  ))}
+                </section>
+              )}
+              {/* 「其他写入」折叠区：库内脚本 / 数据 / 登记元文件（INDEX.md·log.md·hot.md）。
+                  默认收起——产出面板的主角是文档，但完全藏起来会让「agent 到底写了什么」
+                  失去可追溯性。 */}
+              {output.others.length > 0 && (
+                <section className="session-output-others" data-testid="session-output-others">
+                  <button
+                    type="button"
+                    className="session-output-others-toggle"
+                    data-testid="session-output-others-toggle"
+                    aria-expanded={othersOpen}
+                    onClick={() => setOthersOpen((o) => !o)}
+                  >
+                    <span className="session-output-others-chevron" aria-hidden>{othersOpen ? '▾' : '▸'}</span>
+                    <span className="session-output-others-label">
+                      {t('output.othersLabel', { count: output.others.length })}
+                    </span>
+                  </button>
+                  {othersOpen && output.others.map((w) => (
+                    <WriteItem
+                      key={w.path}
+                      write={w}
+                      testId={OTHER_ITEM_TESTID}
+                      onOpen={(kind, path, label) => { if (vaultId) openPreview(kind, path, label); }}
+                    />
                   ))}
                 </section>
               )}

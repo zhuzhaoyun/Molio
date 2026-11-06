@@ -66,7 +66,13 @@ export function scanTree(vaultPath: string, relBase = '', opts: ScanOpts = {}): 
     maxTotal: opts.maxTotal ?? MAX_TOTAL,
     roots: opts.externalRoots ?? [],
     seen: new Set<string>([safeRealpath(vaultPath)]),
-  });
+  }).nodes;
+}
+
+interface ScanResult {
+  nodes: TreeNode[];
+  /** This directory itself was pruned (over the per-dir entry cap). */
+  selfPruned?: true;
 }
 
 /**
@@ -78,7 +84,7 @@ export function scanTree(vaultPath: string, relBase = '', opts: ScanOpts = {}): 
  * `linkReal` is non-null only for symlink-derived entries and is what the
  * callers' cycle guards key on (a plain directory can never close a loop).
  */
-function resolveEntry(
+export function resolveEntry(
   entry: fs.Dirent,
   absDir: string,
   vaultPath: string,
@@ -117,24 +123,25 @@ function resolveEntry(
   return { isDir, isFile, linkReal };
 }
 
-function scanTreeInner(vaultPath: string, relBase: string, ctx: ScanCtx): TreeNode[] {
-  if (ctx.stopped) return [];
+function scanTreeInner(vaultPath: string, relBase: string, ctx: ScanCtx): ScanResult {
+  if (ctx.stopped) return { nodes: [] };
   const absDir = relBase ? path.join(vaultPath, relBase) : vaultPath;
   let entries: fs.Dirent[];
   try {
     entries = fs.readdirSync(absDir, { withFileTypes: true });
   } catch {
-    return [];
+    return { nodes: [] };
   }
-  const nodes: TreeNode[] = [];
 
   // Backstop: prune oversized subtrees instead of stat-ing thousands of files.
-  // Return empty children — the parent call still pushes a directory node (now
-  // empty), which surfaces the dir as pruned without stat-ing its contents.
+  // Return empty children flagged selfPruned — the parent still pushes the
+  // directory node (now empty + pruned) so the UI can show a "too many files"
+  // hint instead of a silent blank that reads as "the click did nothing".
   if (entries.length > ctx.maxDirEntries) {
     warnOversizedDir('scanTree', absDir, entries.length, ctx.maxDirEntries);
-    return [];
+    return { nodes: [], selfPruned: true };
   }
+  const nodes: TreeNode[] = [];
 
   for (const entry of entries) {
     const relPath = relBase ? `${relBase}/${entry.name}` : entry.name;
@@ -160,13 +167,19 @@ function scanTreeInner(vaultPath: string, relBase: string, ctx: ScanCtx): TreeNo
         if (ctx.seen.has(entryInfo.linkReal)) continue;
         ctx.seen.add(entryInfo.linkReal);
       }
-      const children = scanTreeInner(vaultPath, relPath, ctx);
+      const child = scanTreeInner(vaultPath, relPath, ctx);
       // Release on unwind: cycles still terminate (an ancestor stays on the
       // stack while its descendant re-enters), but the same real dir reached
       // through two sibling links is no longer silently dropped, and the
       // winner no longer depends on readdir order.
       if (entryInfo.linkReal) ctx.seen.delete(entryInfo.linkReal);
-      nodes.push({ name: entry.name, path: relPath, type: 'directory', children });
+      nodes.push({
+        name: entry.name,
+        path: relPath,
+        type: 'directory',
+        children: child.nodes,
+        pruned: child.selfPruned || undefined,
+      });
       if (ctx.stopped) break;
     } else if (entryInfo.isFile && isSupportedFile(entry.name)) {
       ctx.visited++;
@@ -181,7 +194,15 @@ function scanTreeInner(vaultPath: string, relBase: string, ctx: ScanCtx): TreeNo
         break;
       }
       const absFile = path.join(absDir, entry.name);
-      const stat = fs.statSync(absFile);
+      // readdir 与 stat 之间文件可能已被删/移走（agent 直写、回收站删除、外部
+      // 编辑器）：单个文件消失不该让整棵树的请求 500 —— 跳过它即可，下一次扫描
+      // 自然收敛。前端刷新失败是静默的，500 会让用户看到一棵不动的旧树。
+      let stat: fs.Stats;
+      try {
+        stat = fs.statSync(absFile);
+      } catch {
+        continue;
+      }
       nodes.push({
         name: entry.name,
         path: relPath,
@@ -198,7 +219,7 @@ function scanTreeInner(vaultPath: string, relBase: string, ctx: ScanCtx): TreeNo
     return a.name.localeCompare(b.name);
   });
 
-  return nodes;
+  return { nodes };
 }
 
 /**
@@ -345,10 +366,49 @@ function readSample(filePath: string, n: number): Buffer {
 }
 
 /**
+ * Candidate relPaths to try for a requested file, in priority order:
+ *   1. the path as requested;
+ *   2. with Windows separators normalized to '/' — AI citations of Windows
+ *      paths often keep backslashes ('work\raw\a.txt') on any host OS;
+ *   3. with a leading vault-directory-name segment stripped — truncated
+ *      absolute citations arrive as '<vaultDir>/raw/a.txt' (2026-09 support
+ *      incident: '01M10…-vault/raw/…' references were unresolvable forever
+ *      even though the file sat at 'raw/…' inside the vault).
+ */
+function citationCandidates(vaultPath: string, relPath: string): string[] {
+  const out = new Set<string>([relPath]);
+  const normalized = relPath.replace(/\\/g, '/');
+  out.add(normalized);
+  const vaultDirName = path.basename(vaultPath);
+  const ci = process.platform === 'win32';
+  const eq = (a: string, b: string): boolean =>
+    ci ? a.toLowerCase() === b.toLowerCase() : a === b;
+  const segs = normalized.split('/');
+  for (let i = segs.length - 2; i >= 0; i--) {
+    const seg = segs[i];
+    if (seg && eq(seg, vaultDirName)) {
+      out.add(segs.slice(i + 1).join('/'));
+      break;
+    }
+  }
+  return [...out];
+}
+
+/**
  * Try multiple fallback strategies to find a file that may be missing
  * an extension, in a subdirectory, or have case mismatches.
  */
 function resolveWithFallbacks(vaultPath: string, relPath: string): string {
+  for (const candidate of citationCandidates(vaultPath, relPath)) {
+    const hit = tryResolveCandidate(vaultPath, candidate);
+    if (hit) return hit;
+  }
+  // Return the original resolved path if all fallbacks fail
+  return resolveFilePath(vaultPath, relPath);
+}
+
+/** Run the per-candidate fallback strategies (prefixes, .md, case, stem). */
+function tryResolveCandidate(vaultPath: string, relPath: string): string | null {
   const ext = path.extname(relPath).toLowerCase();
   const hasExt = !!ext;
 
@@ -427,8 +487,8 @@ function resolveWithFallbacks(vaultPath: string, relPath: string): string {
     if (found) return found;
   }
 
-  // Return the original resolved path if all fallbacks fail
-  return resolveFilePath(vaultPath, relPath);
+  // All strategies missed for this candidate
+  return null;
 }
 
 /**
@@ -802,6 +862,104 @@ export function isInsideProtected(relPath: string): boolean {
   return PROTECTED_DIRS.some(
     d => relPath === d || relPath.startsWith(d + '/')
   );
+}
+
+/** Molio 工作区目录——点目录里唯一参与发布的例外（内含 assets 等被正文引用的资源）。 */
+export const MOLIO_WORKSPACE_DIR = '.molio';
+
+/**
+ * Vault 一级「可发布目录」：非隐藏目录 + `.molio`，按名排序。
+ *
+ * 发布页的目录选择（GET /vaults/:id/top-dirs）与升版打包的 include 兜底共用这条规则。
+ * 两处必须一致：打包器对点目录的默认排除只认 `include` 里的显式项，一旦某条路径拿不到
+ * 这份清单，`.molio` 就会被静默丢掉（2026-10 明史升版丢 .molio 的根因）。
+ */
+export function listPublishableTopDirs(vaultPath: string): string[] {
+  const dirs: string[] = [];
+  for (const entry of fs.readdirSync(vaultPath, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    if (entry.name.startsWith('.') && entry.name !== MOLIO_WORKSPACE_DIR) continue;
+    dirs.push(entry.name);
+  }
+  return dirs.sort();
+}
+
+// ─── Vault root path validation ───
+
+/** Why validateVaultPath rejected a candidate vault root. */
+export interface VaultPathIssue {
+  code: 'VAULT_PATH_DOT_DIR' | 'VAULT_PATH_NESTED' | 'VAULT_PATH_EXISTS';
+  message: string;
+}
+
+/** Minimal vault snapshot validateVaultPath needs — satisfied by db Vault rows. */
+export interface ExistingVaultRef {
+  id: string;
+  name: string;
+  path: string;
+}
+
+/**
+ * Validate a candidate vault ROOT path before registration. Returns the first
+ * issue found, or null when the path is acceptable.
+ *
+ * Regression guard (2026-09 support incident): a user registered
+ * `<vault>\.claude` as a standalone vault — Windows Explorer does NOT hide
+ * dot-prefixed dirs — and the overlapping roots made stored references resolve
+ * against the wrong root, surfacing as "无法打开文件" across four vaults.
+ * Rejects:
+ *   - any path segment starting with '.' — dot-dirs are tool-internal
+ *     (.claude / .molio / .git / …), never knowledge roots;
+ *   - exact duplicates and nesting in EITHER direction (candidate inside an
+ *     existing vault, or an existing vault inside the candidate) — the same
+ *     relative path must never mean two different disk locations.
+ *
+ * Pure function over paths: existing vaults are passed in, so tests need no
+ * database. Comparison is case-insensitive where the filesystem is
+ * (Windows), exact elsewhere.
+ */
+export function validateVaultPath(
+  vaultPath: string,
+  existingVaults: ExistingVaultRef[] = [],
+  opts: { excludeVaultId?: string } = {},
+): VaultPathIssue | null {
+  const resolved = path.resolve(vaultPath);
+  const ci = process.platform === 'win32';
+  const norm = (p: string): string => (ci ? p.toLowerCase() : p);
+
+  // Dot-segment check — split on both separators so Windows-style input
+  // ('D:\AI\Molio\work\.claude') segments correctly on any platform.
+  const segments = resolved.split(/[\\/]+/).filter(Boolean);
+  const dotSegment = segments.find((s) => s.startsWith('.'));
+  if (dotSegment) {
+    return {
+      code: 'VAULT_PATH_DOT_DIR',
+      message:
+        `不能把「${dotSegment}」设为知识库文件夹：以点开头的文件夹（如 .claude、.molio）` +
+        '是软件或工具的内部目录，请选择存放资料的业务文件夹',
+    };
+  }
+
+  const cand = norm(resolved);
+  const candPrefix = cand.endsWith(path.sep) ? cand : cand + path.sep;
+  for (const v of existingVaults) {
+    if (opts.excludeVaultId && v.id === opts.excludeVaultId) continue;
+    const existing = norm(path.resolve(v.path));
+    if (cand === existing) {
+      return {
+        code: 'VAULT_PATH_EXISTS',
+        message: `该目录已被知识库「${v.name}」使用，请选择其他文件夹`,
+      };
+    }
+    const existingPrefix = existing.endsWith(path.sep) ? existing : existing + path.sep;
+    if (cand.startsWith(existingPrefix) || existing.startsWith(candPrefix)) {
+      return {
+        code: 'VAULT_PATH_NESTED',
+        message: `与知识库「${v.name}」的文件夹互相嵌套，请为知识库选择独立的文件夹`,
+      };
+    }
+  }
+  return null;
 }
 
 export function isTextFile(filePath: string): boolean {

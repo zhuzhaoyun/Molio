@@ -11,19 +11,22 @@
 [![GitHub Stars](https://img.shields.io/github/stars/zhuzhaoyun/Molio?style=flat-square)](https://github.com/zhuzhaoyun/Molio/stargazers)
 [![Last Commit](https://img.shields.io/github/last-commit/zhuzhaoyun/Molio?style=flat-square)](https://github.com/zhuzhaoyun/Molio/commits)
 
+[![npm: @molio/cli — MCP server & CLI](https://img.shields.io/npm/v/%40molio/cli?style=flat-square&label=MCP%20%40molio%2Fcli&color=blue)](https://www.npmjs.com/package/@molio/cli)
+[![npm: dsh-plugin-molio — DeepSeek Harness plugin](https://img.shields.io/npm/v/dsh-plugin-molio?style=flat-square&label=dsh%20plugin&color=blue)](https://www.npmjs.com/package/dsh-plugin-molio)
+
 </div>
 
 ---
 
-Your experience, methods, and professional insights are scattered across notes, documents, and chat logs — invisible to AI, so every conversation starts from zero.
+What you've accumulated isn't one kind of thing: experience and methods scattered across notes, documents, and chat logs — and also whole books, PDFs full of figures, piles of industry material. Most of it sits in a form AI can't read, so every conversation starts from zero.
 
-Molio turns that scattered material into a **personal knowledge base** that AI can read and use: Claude Code, Codex, and other agents enter your knowledge space, work on top of everything you've accumulated — researching, writing, answering, analyzing — and write their results back as Markdown, so the base grows thicker with every task. Everything runs on your machine, never through a third-party server.
+Molio turns all of it into a **personal knowledge base** that AI can read and use: Claude Code, Codex, and other agents enter your knowledge space, work on top of everything you've accumulated — researching, writing, answering, analyzing — and write their results back as Markdown, so the base grows thicker with every task. Everything runs on your machine, never through a third-party server.
 
 Starting from zero? The [resource library](https://molio.cn/resources.html) ships ready-made knowledge bases that keep growing — import one and start asking.
 
 <div align="center">
 
-[<img src="docs/img/video-poster.webp" alt="Zizhi Tongjian knowledge base demo" width="100%" style="border-radius: 8px;" />](https://molio.cn/videos/zizhitongjian-overview.mp4)
+[<img src="docs/img/video-poster.webp" alt="Zizhi Tongjian knowledge base demo" width="100%" style="border-radius: 8px;" />](https://molio.cn/videos/zizhitongjian-overview-v2.mp4)
 
 **▶ Click to watch the demo** — one book, one knowledge universe: 1,362 years of history from the *Zizhi Tongjian*, processed by Molio into an AI-explorable knowledge base
 
@@ -31,9 +34,11 @@ Starting from zero? The [resource library](https://molio.cn/resources.html) ship
 
 ### 🔁 How It Works
 
-**01 · Collect & Process — from scattered fragments to a callable knowledge base**
+**01 · Collect & Process — scattered fragments, or a whole book, all become a callable knowledge base**
 
-Clip pages with one click via the [Web Clipper](https://chromewebstore.google.com/detail/pjdacbbkjpegfkogoieejajljplngbik), open your Obsidian vault directly, or batch-import local documents — pure Markdown, zero migration, no lock-in. The Wiki engine extracts entities and concepts, builds indexes and summaries, and the knowledge graph links everything together. Data becomes a foundation only after it's processed.
+Input isn't limited by format: clip pages with one click via the [Web Clipper](https://chromewebstore.google.com/detail/pjdacbbkjpegfkogoieejajljplngbik), open your Obsidian vault directly, or batch-import local documents. Scanned PDFs and Word / PPT / Excel files go through the bundled docling for layout analysis, OCR, and table reconstruction; images are read by OCR; million-word books run through a chunked preprocessing and digest pipeline with resumable progress. What lands on disk is plain Markdown — zero migration, no lock-in.
+
+The Wiki engine then extracts entities and concepts from that unified Markdown layer, weaving dense cross-links and layered indexes — data becomes a foundation only after it's processed.
 
 **02 · Work & Task — agents run on your data**
 
@@ -43,13 +48,45 @@ Claude Code, Codex, Gemini CLI, Qwen Code — agents work inside your knowledge 
 
 Every task's output is written back as Markdown — a reusable, long-term asset. The knowledge graph keeps growing, so the next task starts from higher ground. Ready to publish? Typeset with doocs/md and distribute to 30+ platforms in one click.
 
+### 📥 Supported Inputs
+
+| Input | What happens |
+|-------|--------------|
+| Markdown / TXT / HTML / CSV and other text | Read as-is — the default shape of a knowledge base |
+| PDF | Layout analysis + OCR + table reconstruction → Markdown |
+| Word / PPT / Excel | Same pipeline, heading hierarchy and tables preserved |
+| Images (PNG / JPG / TIFF) | OCR text extraction |
+| Web pages | One-click clip, or article extraction for WeChat posts |
+| Obsidian vault | Opened in place — original files are read-only |
+| Million-word books | Chunked preprocessing + digest pipeline, resumable |
+
+> PDF and Office conversion is handled by the bundled docling skill. The first conversion downloads the tool plus ~500MB of models; later runs reuse the cache.
+
 ### 📦 Ready-made Knowledge Bases
 
 Beyond the tool itself, Molio offers **ready-made structured knowledge graphs** — entire books and professional domains pre-organized into AI-ready knowledge bases you can import in one click, no building from scratch.
 
-Covering **literature, history, philosophy, traditional Chinese medicine, and medicine**, with **new resources added regularly**. Highlights include the ontology knowledge base, the *Zizhi Tongjian* knowledge system, and an obstetric-ultrasound knowledge base — free starter sets and premium deep-dive graphs alike. See the resource library for the full, always-current catalog.
+Covering **literature, history, philosophy, traditional Chinese medicine, medicine, and AI engineering**, with **new resources added regularly**. Highlights include the ontology knowledge base, the *Zizhi Tongjian* knowledge system, and an obstetric-ultrasound knowledge base. See the resource library for the full, always-current catalog.
 
 > These are uniquely structured assets that AI cannot conjure on its own. Import one into Molio and instantly run AI Q&A, relationship lookup, and topical research.
+
+- [*Dream of the Red Chamber*: characters and imagery across all 120 chapters](https://molio.cn/resource/01M110NNMKNWXKBXT01HVJ06ZW.html)
+- [*Jin Ping Mei*: people, commerce and social structure](https://molio.cn/resource/01M2GAA83Q83CMQZPN40T9GQZ8.html)
+- [*Shiji* (Records of the Grand Historian): people, institutions, thought](https://molio.cn/resource/01M10WWK7WNMM61QNJJJXHNWS2.html)
+- [*Zizhi Tongjian*: 1,362 years of rise and fall](https://molio.cn/resource/01M10RZP9118BA6YRBZ1D4FKM2.html)
+- [*History of Ming*: empire, institutions and court politics](https://molio.cn/resource/01M111M5CSYX96FTKGC3V1QC2T.html)
+- [*Zhouyi*: all 64 hexagrams, with line-change and image-number analysis](https://molio.cn/resource/01M12YMV1144F4RZMX1HBK8GQ0.html)
+- [Laozi & Zhuangzi: core concept system](https://molio.cn/resource/01M114523M19P4J7GZMZ7E6188.html)
+- [Chinese and Western philosophy: a knowledge base for local AI](https://molio.cn/resource/01M10MC4S9ZH54WVFCXJWZ2JWS.html)
+- [Traditional Chinese medicine classics: six-meridian and triple-burner pattern differentiation](https://molio.cn/resource/01M112AA9MV91T3FJD5Z2GSPY8.html)
+- [Obstetric and gynecologic ultrasound: fetal anomalies, signs and differential diagnosis](https://molio.cn/resource/01M1152PE8YE365S9ZXDMNYCW6.html)
+- [Knowledge engineering: ontology, RAG, GraphRAG and agent engineering](https://molio.cn/resource/01M13QT669Q6E94PWACEH00YJF.html)
+- [Guangdong gaokao application planning: universities and majors](https://molio.cn/resource/01M2DFJ9E66FARK5SEBMPT92K0.html)
+- [*Romance of the Three Kingdoms*: character relationship map, all 120 chapters](https://molio.cn/resource/01M35RVX9S3TQK6ZE0QT9J6NG4.html)
+- [Drawing data extraction: from engineering drawings to computable data](https://molio.cn/resource/01M35QEB3RMK46SGCQ6WSZ3GZR.html)
+- [PCB flexible manufacturing: from online order to lights-out factory](https://molio.cn/resource/01M3VX66XMG5NHQ5HP9TK0Q2DC.html)
+- [Bar exam criminal law: 131 exam points and subjective-question training](https://molio.cn/resource/01M2QAYVBMH2YCF68BEA393BY4.html)
+- [Chinese classical poetry and prose: a panoramic knowledge base](https://molio.cn/resource/01M3VY2DZXW6KN1X5AFP7PXJ05.html)
 
 **[Browse all resources →](https://molio.cn/resources.html)**
 
@@ -200,6 +237,38 @@ pnpm typecheck    # Type checking
 pnpm build        # Build all packages
 pnpm test:e2e     # E2E tests (requires pnpm dev running)
 ```
+
+### 🔌 MCP server & Pi package
+
+Molio's knowledge base is also available as a read-only MCP server, so Claude Code, Cursor, Pi, and any MCP-compatible agent can search and read your local vaults mid-conversation:
+
+```bash
+npx -y @molio/cli mcp                            # stdio MCP server, 7 read-only tools
+claude mcp add molio -- npx -y @molio/cli mcp    # register it in Claude Code
+pi install npm:@molio/cli                        # Pi: auto-registers the server + a `molio-kb` skill
+```
+
+Any other MCP client:
+
+```json
+{
+  "mcpServers": {
+    "molio": { "command": "npx", "args": ["-y", "@molio/cli", "mcp"] }
+  }
+}
+```
+
+Tools: `molio_status`, `kb_vaults`, `kb_tree`, `kb_read`, `kb_search`, `kb_ask_start`, `kb_ask_poll` — strictly read-only, published to the official MCP Registry as `io.github.zhuzhaoyun/molio`. Requires a running Molio service (desktop app or Docker). Details: [`apps/cli/README.md`](apps/cli/README.md) · [npm: @molio/cli](https://www.npmjs.com/package/@molio/cli)
+
+### 🧩 DeepSeek Harness (dsh) plugin
+
+Molio's knowledge base is also available as a read-only plugin for DeepSeek Harness (dsh), so dsh agents can search and read your local Molio vaults during a conversation:
+
+```bash
+dsh plugin add dsh-plugin-molio
+```
+
+It exposes 5 read-only tools (`molio_status`, `molio_kb_vaults`, `molio_kb_tree`, `molio_kb_search`, `molio_kb_read`) backed by the local Molio daemon HTTP API. Requires a running Molio service (desktop app or Docker). Details: [`packages/dsh-plugin-molio/README.md`](packages/dsh-plugin-molio/README.md) · [npm: dsh-plugin-molio](https://www.npmjs.com/package/dsh-plugin-molio)
 
 ## 🏗️ Architecture
 

@@ -4,7 +4,7 @@
  * Coverage:
  * - Single/multi-file import to root and subdirectories
  * - Unsupported format errors (non-blocking)
- * - 50MB size guard (413)
+ * - 50MB size guard (413) — raised to 100MB/file + 400MB batch (2026-09-25)
  * - Illegal filename chars
  * - Protected directory rejection (wiki/, docling_output/)
  * - conflict: rename / skip / replace / ask strategies
@@ -18,6 +18,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { Hono } from 'hono';
+import { MAX_IMPORT_FILE_SIZE } from '@molio/contracts';
 import { knowledgeRoutes } from '../../src/routes/knowledge.js';
 import { openDatabase, closeDatabase, createVault } from '../../src/core/db.js';
 import { RunManager } from '../../src/core/RunManager.js';
@@ -145,17 +146,52 @@ describe('Knowledge routes — file import', () => {
   });
 
   // ─── size guard ───
+  // 2026-09-25: per-file cap 50MB → 100MB (docling handles 200MB+ PDFs; the
+  // upload layer was the only bottleneck). Batch Content-Length backstop
+  // decoupled to 400MB so several large files can travel in one upload.
 
-  it('returns 413 when Content-Length exceeds 50MB', async () => {
+  it('no longer 413s at the old 50MB batch level (limit raised to 100MB/file)', async () => {
     const fd = new FormData();
-    fd.append('files', new File([Buffer.alloc(100)], 'huge.bin'));
+    fd.append('files', new File([Buffer.alloc(100)], 'book.pdf'));
     const req = new Request(`http://localhost/api/knowledge/vaults/${vaultId}/import`, {
       method: 'POST',
       body: fd,
       headers: { 'Content-Length': String(51 * 1024 * 1024) },
     });
     const res = await app.request(req);
+    assert.equal(res.status, 200);
+  });
+
+  it('returns 413 when Content-Length exceeds the 400MB batch cap', async () => {
+    const fd = new FormData();
+    fd.append('files', new File([Buffer.alloc(100)], 'huge.bin'));
+    const req = new Request(`http://localhost/api/knowledge/vaults/${vaultId}/import`, {
+      method: 'POST',
+      body: fd,
+      headers: { 'Content-Length': String(401 * 1024 * 1024) },
+    });
+    const res = await app.request(req);
     assert.equal(res.status, 413);
+  });
+
+  it('per-file guard: rejects a file just over 100MB, keeps smaller files', async () => {
+    const oversize = Buffer.alloc(MAX_IMPORT_FILE_SIZE + 1);
+    const fd = makeFormData({
+      files: [makeFile('huge-book.pdf', oversize), makeFile('ok.md', '# Ok')],
+    });
+    const req = new Request(`http://localhost/api/knowledge/vaults/${vaultId}/import`, {
+      method: 'POST',
+      body: fd,
+    });
+    const res = await app.request(req);
+    assert.equal(res.status, 200);
+    const data = await json(res);
+    const imported = data['imported'] as string[];
+    assert.deepEqual(imported, ['ok.md']);
+    const errors = data['errors'] as Array<{ file: string; reason: string }>;
+    assert.equal(errors.length, 1);
+    assert.equal(errors[0]!.file, 'huge-book.pdf');
+    assert.equal(errors[0]!.reason, 'file_too_large');
   });
 
   // ─── illegal chars ───

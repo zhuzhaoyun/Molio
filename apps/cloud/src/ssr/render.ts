@@ -1,3 +1,4 @@
+import { marketCatalogView } from '@molio/contracts';
 // apps/cloud/src/ssr/render.ts
 // 商品详情页 / 动态 sitemap 的服务端渲染（设计：docs/2026-09-01-ssr-product-pages-design.md）。
 // 纯函数模块：只吃 MarketListing 吐字符串，不发请求、不碰时钟 → 可单测。
@@ -10,7 +11,11 @@
 // 安全：商品 name/summary/tags 等是用户提交内容，拼 HTML 一律过 escapeHtml；
 // 内嵌 JSON 额外把 '<' 转成 < 防 </script> 逃逸。
 
-import type { MarketListing } from '@molio/contracts';
+import type {
+  MarketContent, MarketContentDelivery, MarketContentFact, MarketContentPositioning,
+  MarketContentQuestion, MarketContentReview, MarketContentSample, MarketContentTheme,
+  MarketListing,
+} from '@molio/contracts';
 
 export const SITE_BASE = 'https://molio.cn';
 // 与官网 resources-data.js 的 MOLIO_PAY_BASE 保持一致（支付后端正式域名）
@@ -63,15 +68,34 @@ function formatDate(iso: string | null): string {
 // ── 结构化数据 ──
 
 function productJsonLd(m: MarketListing): string {
+  const content = m.content ?? null;
   const image = m.previews.length > 0 ? m.previews : [`${SITE_BASE}/images/brand.webp`];
   const ld = {
     '@context': 'https://schema.org',
     '@type': 'Product',
     name: m.name,
-    description: metaDescription(m.summary, 500),
+    description: content?.seo?.description ?? metaDescription(m.summary, 500),
+    // 同义/别称（如「高中数学知识图谱」）：schema.org Thing 的标准属性，
+    // Google 与 AI 搜索用它把用户的另一种说法映射到这份资源上。
+    ...(content?.seo?.aliases?.length ? { alternateName: content.seo.aliases } : {}),
+    // 检索词（同义词/简称）也让结构化数据能读到，而不只是页面上一个可见标签：
+    // AI 摘录与 Google 实体匹配都会用到 Product.keywords。
+    ...(m.tags.length > 0 ? { keywords: m.tags.join(', ') } : {}),
     image,
     sku: m.id,
     brand: { '@type': 'Brand', name: 'Molio 墨流' },
+    // 以下都是页面上已经可见的事实（侧栏、事实卡与分类标签）。
+    ...(m.category?.name ? { category: m.category.name } : {}),
+    ...(m.updatedAt ? { dateModified: m.updatedAt } : {}),
+    itemCondition: 'https://schema.org/NewCondition',
+    additionalProperty: [
+      { '@type': 'PropertyValue', name: '交付形式', value: content?.delivery.format ?? 'Markdown 文件夹（.zip）' },
+      { '@type': 'PropertyValue', name: '兼容', value: 'Molio / Obsidian' },
+      ...(m.resourceType?.name
+        ? [{ '@type': 'PropertyValue', name: '资源类型', value: m.resourceType.name }]
+        : []),
+      ...(content?.facts ?? []).map((f) => ({ '@type': 'PropertyValue', name: f.label, value: f.value })),
+    ],
     offers: {
       '@type': 'Offer',
       url: productUrl(m.id),
@@ -96,6 +120,22 @@ function breadcrumbJsonLd(m: MarketListing): string {
   return `<script type="application/ld+json">${safeJson(ld)}</script>`;
 }
 
+/** FAQPage 只表达页面上真实可见的知识问答；没有问答时不输出。 */
+function faqJsonLd(m: MarketListing): string {
+  const qs = m.content?.questions ?? [];
+  if (qs.length === 0) return '';
+  const ld = {
+    '@context': 'https://schema.org',
+    '@type': 'FAQPage',
+    mainEntity: qs.map((q) => ({
+      '@type': 'Question',
+      name: q.question,
+      acceptedAnswer: { '@type': 'Answer', text: q.answer },
+    })),
+  };
+  return `<script type="application/ld+json">${safeJson(ld)}</script>`;
+}
+
 // ── 页面骨架（与官网静态页同款 nav/footer；资源引用一律根相对路径，页面在 /resource/ 目录下）──
 
 const NAV = `
@@ -105,7 +145,6 @@ const NAV = `
     <div class="nav-links">
       <a href="/index.html" class="nav-link">首页</a>
       <a href="/resources.html" class="nav-link active">资源</a>
-      <a href="/help.html" class="nav-link">使用指南</a>
       <a href="/blog/index.html" class="nav-link">博客</a>
       <a href="/enterprise.html" class="nav-link">定制服务</a>
       <span id="nav-auth"></span><a href="https://github.com/zhuzhaoyun/Molio" target="_blank" rel="noopener noreferrer" class="nav-gh" aria-label="GitHub 仓库"><svg viewBox="0 0 24 24"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.102 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg></a>
@@ -124,22 +163,20 @@ const FOOTER = `
       <h4>产品</h4>
       <a href="/index.html">首页</a>
       <a href="/resources.html">资源</a>
-      <a href="/help.html">使用指南</a>
       <a href="/enterprise.html">定制服务</a>
       <a href="https://github.com/zhuzhaoyun/Molio" target="_blank" rel="noopener noreferrer">GitHub 开源</a>
     </div>
     <div class="footer-links">
       <h4>资源</h4>
-      <a href="/help.html">快速入门</a>
-      <a href="/help.html#step-3">排版发布</a>
-      <a href="/help.html#connect">连接微信</a>
+      <a href="https://www.bilibili.com/video/BV1M68H6nEGs/" target="_blank" rel="noopener noreferrer">2 分钟上手视频</a>
+      <a href="/resources.html">现成知识底座</a>
       <a href="https://github.com/zhuzhaoyun/Molio/issues" target="_blank" rel="noopener noreferrer">问题反馈</a>
     </div>
     <div class="footer-links">
       <h4>关于</h4>
       <a href="/blog/index.html">博客</a>
       <a href="/privacy.html">隐私政策</a>
-      <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer">粤ICP备2023134483号</a>
+      <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer">粤ICP备2023134483号-4</a>
     </div>
   </div>
   <div class="footer-bottom">
@@ -170,6 +207,23 @@ var _hmt = _hmt || [];
 // ── 商品页 ──
 
 /** 购买/下载 CTA：按付费形态三选一（与旧 resource.html renderMarketDetail 同逻辑） */
+/** 通用交付边界（2026-10-08 补）。
+ *
+ *  为什么放模板：这一类边界本来写在 15 份商品页**文案**里（每件措辞不同），
+ *  但那要卖家逐个粘贴。而**这一条对全部 17 件都成立** ——
+ *  本库 2026-10-08 实测：17 个商品页登记的交付格式**全部是「Markdown（.zip）」**
+ *  （`curl` 逐页取 `<span class="k">格式</span>` 的登记值）。
+ *
+ *  与商品**目录/条目数**无关，所以不涉及那些还在核的口径问题。
+ *  商品特有的边界（图纸不是识别软件、PCB 不含 MES、妇产超声不是诊断工具、
+ *  广东高考不是填报工具、古典诗文/金瓶梅不含全文）**仍走文案**，此处不替代它们。 */
+const DELIVERY_BOUNDARY = `<p class="res-boundary"><strong>这是一份 Markdown 知识资料，不是可运行的软件</strong>，
+        不包含程序、模型权重或 AI 调用服务。买到的是一个解压即可阅读的文件夹。</p>
+      <p class="res-boundary">解压后，Obsidian 与 Molio（墨流）可以直接打开；
+        <strong>放进你自己的环境，Claude Code、Codex 这类 Agent 也能直接读它</strong>。
+        这是它和电子书最根本的区别。
+        <strong>数据全程在你自己电脑上，不需要上传，也不需要注册任何服务。</strong></p>`;
+
 function renderCta(m: MarketListing): { cta: string; note: string } {
   const price = formatPriceYuan(m.priceCents);
   if (m.priceCents > 0 && m.payUrl) {
@@ -180,8 +234,8 @@ function renderCta(m: MarketListing): { cta: string; note: string } {
   }
   if (m.priceCents > 0) {
     return {
-      cta: `<button type="button" class="btn btn-primary" id="pay-btn" data-auth-gate="微信支付 ¥${escapeHtml(price)}">微信支付 ¥${escapeHtml(price)}</button>`,
-      note: '扫码支付成功后自动解锁下载，下载链接 1 小时内有效。',
+      cta: `<button type="button" class="btn btn-primary" id="pay-btn" data-testid="resource-pay-btn" data-auth-gate="立即购买 ¥${escapeHtml(price)}">立即购买 ¥${escapeHtml(price)}</button>`,
+      note: '支付成功后自动解锁下载，下载链接 1 小时内有效。',
     };
   }
   return {
@@ -190,25 +244,170 @@ function renderCta(m: MarketListing): { cta: string; note: string } {
   };
 }
 
+/**
+ * 商品 → 配套解释文的映射（2026-10-07 补，对应本库 action-board 的 S05）。
+ *
+ * 为什么需要它：此前 17 个商品页**没有一个链到配套文章**。
+ * 而文章是「这套东西怎么用、为什么这样整理」的唯一说明，
+ * 也是搜索与 AI 抓取的主要对象。商品页已被 Bing 收录，从它链出去
+ * 是一条能立刻建立的发现路径（本库 2026-10-07 实测：全站外链只有 6 条）。
+ *
+ * ⚠️ **这是第二处真相，会漂。** 权威清单在本库的 `seo/product-content-map.md`
+ * 与文章自己的 frontmatter。改文章标题或换配套文章时，**这里要跟着改**。
+ * 只有 8 件商品有配套文章；其余 9 件没有对应文章，此处留空是正常的。
+ */
+const RELATED_ARTICLES: Record<string, { slug: string; title: string }> = {
+  '01M10MC4S9ZH54WVFCXJWZ2JWS': { slug: 'western-philosophy-history-map', title: '西方哲学史梳理：2500 年只有几条主线，人物要按对手关系记' },
+  '01M10RZP9118BA6YRBZ1D4FKM2': { slug: 'zizhitongjian-people-graph', title: '资治通鉴人物关系图：294 卷、626 个人物，一张图为什么不够用' },
+  '01M10WWK7WNMM61QNJJJXHNWS2': { slug: 'shiji-knowledge-system', title: '史记知识体系：130 篇、近 3000 年，怎么读才不乱' },
+  '01M110NNMKNWXKBXT01HVJ06ZW': { slug: 'hongloumeng-knowledge-graph', title: '红楼梦知识图谱：60 个人物、6 组对照，怎么把人物读明白' },
+  '01M111M5CSYX96FTKGC3V1QC2T': { slug: 'mingshi-people-and-institutions', title: '明史人物与制度：列传 220 卷、311 个人物条目，每条都能回到原文' },
+  '01M13QT669Q6E94PWACEH00YJF': { slug: 'ontology-modeling-guide', title: '本体论怎么落地：GB/T 48000 要求的三类构件，和 Palantir 多出的那个“动作”' },
+  '01M35QEB3RMK46SGCQ6WSZ3GZR': { slug: 'drawing-data-extraction', title: '图纸数据提取：为什么直接读 DWG 拿不到门窗表，从解析到导出 Excel 的完整链路' },
+  '01M35RVX9S3TQK6ZE0QT9J6NG4': { slug: 'sanguo-people-graph', title: '三国人物关系图：关羽与曹操的关系怎样随事件变化' },
+};
+
+function renderArticleLink(m: MarketListing): string {
+  const art = RELATED_ARTICLES[m.id];
+  if (!art) return '';
+  return `
+<section class="res-section">
+  <h2 class="res-section-title">这套东西怎么用</h2>
+  <p><a href="${SITE_BASE}/blog/${escapeHtml(art.slug)}.html">${escapeHtml(art.title)}</a></p>
+  <p>配套长文讲的是：这份知识库为什么这样整理、它能回答哪类问题、不能回答哪类，
+  以及实际用起来是什么样。买之前可以先读一遍。</p>
+</section>`;
+}
+
+/** 购买决策点上的「免费样品」入口（2026-10-08 补）。
+ *
+ *  为什么放在模板里、而不是只写进商品页文案：
+ *  文案要靠卖家逐个粘贴（15 份），而**模板一次部署就覆盖全部商品页**。
+ *
+ *  本库 2026-10-08 实测：两件免费商品（周易、老庄）的源目录结构与付费品**完全一致**
+ *  （entities / concepts / comparisons / sources 四类目录相同），是现成的同格式样品。
+ *  数字商品最大的购买顾虑是「我到底买到什么」，这一行直接回答它。
+ *
+ *  ⚠️ 免费品自己不需要这一行（它本来就是样品）。 */
+const FREE_SAMPLE_IDS = ['01M12YMV1144F4RZMX1HBK8GQ0', '01M114523M19P4J7GZMZ7E6188'];
+
+function renderSampleHint(m: MarketListing): string {
+  if (m.priceCents === 0 || FREE_SAMPLE_IDS.indexOf(m.id) >= 0) return '';
+  return `<p class="res-side-note" style="margin-top:12px;padding-top:10px;border-top:1px solid rgba(0,0,0,.08)">想先看清到手是什么形式？可以先下载免费的两套：<a href="/resource/01M12YMV1144F4RZMX1HBK8GQ0.html">《周易》六十四卦全解</a> · <a href="/resource/01M114523M19P4J7GZMZ7E6188.html">老庄思想图谱</a>。结构与这件商品一致。</p>`;
+}
+
 function renderRelated(related: MarketListing[]): string {
   if (related.length === 0) return '';
-  const cards = related.map((r) => {
-    const paid = r.priceCents > 0;
-    return `<article class="rl-card">
-      <div class="rl-top">
-        <div class="rl-icon" style="background:${escapeHtml(r.tint)}">${escapeHtml(r.icon)}</div>
-        <div class="rl-titles"><h3 class="rl-name">${escapeHtml(r.name)}</h3></div>
-        <span class="rl-price ${paid ? 'paid' : 'free'}">${paid ? '¥' + escapeHtml(formatPriceYuan(r.priceCents)) : '免费'}</span>
-      </div>
-      <p class="rl-desc">${escapeHtml(metaDescription(r.summary, 80))}</p>
-      <div class="rl-actions"><a class="rl-detail" href="/resource/${encodeURIComponent(r.id)}.html">查看详情 →</a></div>
-    </article>`;
-  }).join('\n');
+  // 复用列表页的卡片：全站一种卡片一套样式（原型 .card）
+  const cards = related.map(renderResourceCard).join('\n');
   return `
 <section class="res-section">
   <h2 class="res-section-title">相关资源</h2>
   <div class="res-grid">${cards}</div>
 </section>`;
+}
+
+function contentParagraphs(text: string): string {
+  return text.split(/\n{2,}/).map((p) => p.trim()).filter(Boolean)
+    .map((p) => `<p>${escapeHtml(p)}</p>`).join('');
+}
+
+function renderContentFacts(facts: MarketContentFact[]): string {
+  if (facts.length === 0) return '';
+  return `<dl class="res-facts">${facts.map((f) => `<div class="res-fact"><dt>${escapeHtml(f.label)}</dt><dd>${escapeHtml(f.value)}</dd></div>`).join('')}</dl>`;
+}
+
+function renderContentPositioning(p: MarketContentPositioning): string {
+  const who = p.who.length > 0
+    ? `<div><h3>适合谁</h3><ul>${p.who.map((x) => `<li>${escapeHtml(x)}</li>`).join('')}</ul></div>`
+    : '';
+  const notFor = p.notFor.length > 0
+    ? `<div><h3>不是什么</h3><ul>${p.notFor.map((x) => `<li>${escapeHtml(x)}</li>`).join('')}</ul></div>`
+    : '';
+  return `<section class="res-section res-c-section" id="what">
+  <div class="res-kicker">01 / 这是什么</div>
+  <h2 class="res-section-title">先把边界说清楚</h2>
+  <div class="res-c-lead">${contentParagraphs(p.what)}</div>
+  <div class="res-c-two-col">${who}${notFor}</div>
+</section>`;
+}
+
+function renderContentQuestions(qs: MarketContentQuestion[]): string {
+  if (qs.length === 0) return '';
+  return `<section class="res-section res-c-section" id="questions">
+  <div class="res-kicker">02 / 常见问题</div>
+  <h2 class="res-section-title">你可能想先弄明白</h2>
+  ${qs.map((q) => `<article class="res-c-question">
+    <h3>${escapeHtml(q.question)}</h3>
+    ${contentParagraphs(q.answer)}
+    ${q.source ? `<p class="res-c-source">依据：${escapeHtml(q.source)}</p>` : ''}
+  </article>`).join('')}
+</section>`;
+}
+
+function renderContentThemes(themes: MarketContentTheme[]): string {
+  if (themes.length === 0) return '';
+  return `<section class="res-section res-c-section" id="scope">
+  <div class="res-kicker">03 / 内容范围</div>
+  <h2 class="res-section-title">你需要的内容，在不在里面</h2>
+  <p class="res-c-desc">以下按知识主题整理。条目名称来自真实知识库；完整正文在资源包内。</p>
+  <div class="res-c-themes">${themes.map((t, i) => `<details class="res-c-theme"${i === 0 ? ' open' : ''}>
+    <summary><strong>${escapeHtml(t.name)}</strong><span>${t.items.length} 条</span></summary>
+    <p>${escapeHtml(t.summary)}</p>
+    <ul>${t.items.map((x) => `<li>${escapeHtml(x)}</li>`).join('')}</ul>
+  </details>`).join('')}</div>
+</section>`;
+}
+
+function renderContentSamples(samples: MarketContentSample[]): string {
+  if (samples.length === 0) return '';
+  return `<section class="res-section res-c-section" id="samples">
+  <div class="res-kicker">04 / 真实样例</div>
+  <h2 class="res-section-title">先读一段，再决定</h2>
+  ${samples.map((sample) => `<article class="res-c-sample">
+    <h3>${escapeHtml(sample.title)}</h3>
+    ${contentParagraphs(sample.body)}
+    ${sample.source ? `<p class="res-c-source">摘编自：${escapeHtml(sample.source)}</p>` : ''}
+  </article>`).join('')}
+</section>`;
+}
+
+function renderContentDelivery(d: MarketContentDelivery): string {
+  const includes = d.includes.length > 0
+    ? `<div><h3>包含什么</h3><ul>${d.includes.map((x) => `<li>${escapeHtml(x)}</li>`).join('')}</ul></div>`
+    : '';
+  const requirements = d.requirements.length > 0
+    ? `<div><h3>使用要求</h3><ul>${d.requirements.map((x) => `<li>${escapeHtml(x)}</li>`).join('')}</ul></div>`
+    : '';
+  return `<section class="res-section res-c-section" id="delivery">
+  <div class="res-kicker">05 / 交付与使用</div>
+  <h2 class="res-section-title">你会拿到什么</h2>
+  <p class="res-c-format"><strong>格式：</strong>${escapeHtml(d.format)}</p>
+  <p class="res-c-format"><strong>打开方式：</strong>下载 .zip 解压后，在 Molio 中选择「打开本地仓库」；也可用 Obsidian 等 Markdown 工具打开。</p>
+  <div class="res-c-two-col">${includes}${requirements}</div>
+</section>`;
+}
+
+function renderContentReview(r: MarketContentReview): string {
+  const draftNote = r.status === 'draft' && r.autoDrafted === true
+    ? '<p class="res-c-source">内容由发布者整理，仍在核对中；如与资源原文有出入，以原文为准。</p>'
+    : '';
+  return `<section class="res-section res-c-section" id="source">
+  <div class="res-kicker">06 / 来源与核对</div>
+  <h2 class="res-section-title">这份内容是怎么来的</h2>
+  <p>${escapeHtml(r.basis)}</p>
+  <p class="res-c-source">整理日期：${escapeHtml(r.reviewedAt)}</p>
+  ${draftNote}
+</section>`;
+}
+
+function renderContentSections(content: MarketContent): string {
+  return [
+    renderContentPositioning(content.positioning),
+    renderContentQuestions(content.questions),
+    renderContentThemes(content.themes),
+    renderContentSamples(content.samples ?? []),
+  ].join('\n');
 }
 
 /**
@@ -218,8 +417,9 @@ function renderRelated(related: MarketListing[]): string {
  */
 export function renderProductPage(m: MarketListing, related: MarketListing[]): string {
   const url = productUrl(m.id);
-  const title = `${m.name} — 知识图谱下载 | Molio`;
-  const desc = metaDescription(m.summary);
+  const content = m.content ?? null;
+  const title = content?.seo?.title ?? `${m.name} — 知识图谱下载 | Molio`;
+  const desc = content?.seo?.description ?? metaDescription(m.summary);
   const ogImage = m.previews.length > 0 ? m.previews[0]! : `${SITE_BASE}/images/brand.webp`;
   const paid = m.priceCents > 0;
   const price = formatPriceYuan(m.priceCents);
@@ -236,6 +436,9 @@ export function renderProductPage(m: MarketListing, related: MarketListing[]): s
     ? `<div class="res-tags">${m.tags.map((t) => `<span>${escapeHtml(t)}</span>`).join('')}</div>`
     : '';
   const previews = m.previews.map((p) => `<figure><a href="${escapeHtml(p)}" target="_blank" rel="noopener noreferrer"><img src="${escapeHtml(p)}" alt="${escapeHtml(m.name)} 效果预览" loading="lazy"></a></figure>`).join('');
+
+  // 交互层只需要商品/价格/预览等字段；content 已在正文 SSR 输出，避免在 __LISTING__ 里重复一遍。
+  const hydrationListing = { ...m, content: null };
 
   return `<!DOCTYPE html>
 <html lang="zh-CN">
@@ -254,7 +457,7 @@ export function renderProductPage(m: MarketListing, related: MarketListing[]): s
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="icon" type="image/png" href="/images/favicon-32.png">
 <link rel="apple-touch-icon" href="/images/favicon-180.png">
-<link rel="stylesheet" href="/styles.css?v=20260828a">
+<link rel="stylesheet" href="/styles.css?v=20261103-copylink">
 
 <!-- Open Graph -->
 <meta property="og:title" content="${escapeHtml(title)}">
@@ -273,6 +476,7 @@ export function renderProductPage(m: MarketListing, related: MarketListing[]): s
 
 ${productJsonLd(m)}
 ${breadcrumbJsonLd(m)}
+${faqJsonLd(m)}
 </head>
 <body>
 ${NAV}
@@ -289,32 +493,37 @@ ${NAV}
         ${tags}
       </div>
     </div>
+    ${content ? renderContentFacts(content.facts) : ''}
     <div class="res-detail-grid">
       <div class="res-main">
-        <h2 class="res-section-title">概述</h2>
-        <div class="article-body">${summaryParas}${overviewParas}${highlights}</div>
+        ${content ? renderContentSections(content) : `<h2 class="res-section-title">概述</h2>
+        <div class="article-body">${summaryParas}${overviewParas}${highlights}</div>`}
         ${previews ? `<h2 class="res-section-title">效果预览</h2>
         <div class="res-preview-grid">${previews}</div>` : ''}
-        <h2 class="res-section-title">资源包导入说明</h2>
+        ${content ? renderContentDelivery(content.delivery) : `<h2 class="res-section-title">资源包导入说明</h2>
+        ${DELIVERY_BOUNDARY}
         <div class="step-card"><ol>
           <li>下载资源包 <code>.zip</code> 并解压到本地任意目录</li>
           <li>打开 Molio，在知识库管理界面选择“打开本地仓库”</li>
           <li>选择（或输入）解压后的文件夹路径，资源包立即加载</li>
-        </ol></div>
+        </ol></div>`}
+        ${content ? renderContentReview(content.review) : ''}
       </div>
       <aside class="res-side">
-        <div class="res-side-card reveal">${cta}<p class="res-side-note">${escapeHtml(note)}</p></div>
+        <div class="res-side-card res-purchase-card">${cta}<p class="res-side-note">${escapeHtml(note)}</p>${renderSampleHint(m)}</div>
         <div class="res-side-card reveal">
           <div class="res-info-row"><span class="k">作者</span><span class="v">${escapeHtml(m.author)}</span></div>
           <div class="res-info-row"><span class="k">版本</span><span class="v">${escapeHtml(m.version)}</span></div>
           <div class="res-info-row"><span class="k">大小</span><span class="v">${formatSize(m.fileSize)}</span></div>
           <div class="res-info-row"><span class="k">发布时间</span><span class="v">${formatDate(m.publishedAt)}</span></div>
+          ${m.updatedAt ? `<div class="res-info-row"><span class="k">更新时间</span><span class="v">${formatDate(m.updatedAt)}</span></div>` : ''}
           <div class="res-info-row"><span class="k">格式</span><span class="v">Markdown（.zip）</span></div>
           <div class="res-info-row"><span class="k">兼容</span><span class="v">Molio / Obsidian</span></div>
           <div class="res-info-row"><span class="k">价格</span><span class="v">${paid ? '¥' + escapeHtml(price) : '免费'}</span></div>
         </div>
       </aside>
     </div>
+    ${renderArticleLink(m)}
     ${renderRelated(related)}
   </div>
 </main>
@@ -328,10 +537,10 @@ ${NAV}
 ${FOOTER}
 
 <!-- 交互层：登录门槛 / 微信支付 / 签名下载 / 灯箱。内嵌 __LISTING__ 避免二次请求 -->
-<script>window.MOLIO_PAY_BASE = '${PAY_BASE}';window.__LISTING__ = ${safeJson(m)};</script>
+<script>window.MOLIO_PAY_BASE = '${PAY_BASE}';window.__LISTING__ = ${safeJson(hydrationListing)};</script>
 <script src="/vendor/qrcode.min.js"></script>
 <script src="/auth.js?v=20260824a"></script>
-<script src="/pay.js?v=20260905a"></script>
+<script src="/pay.js?v=20261103-copylink"></script>
 <script src="/resource-hydrate.js?v=20260901a"></script>
 <script src="/shared.js?v=20260813a"></script>
 ${ANALYTICS}
@@ -349,7 +558,7 @@ export function renderNotFoundPage(): string {
 <title>资源不存在 — Molio 资源</title>
 <meta name="robots" content="noindex">
 <link rel="icon" type="image/png" href="/images/favicon-32.png">
-<link rel="stylesheet" href="/styles.css?v=20260828a">
+<link rel="stylesheet" href="/styles.css?v=20261027b">
 </head>
 <body>
 ${NAV}
@@ -381,6 +590,9 @@ function itemListJsonLd(listings: MarketListing[]): string {
         url: productUrl(m.id),
         image,
         description: metaDescription(m.summary, 160),
+        // 列表页卡片**可见**「分类 / 类型」，结构化数据里此前没有。
+        // 对「Molio 有哪些历史类资源」这类问句，category 是机器可用的分组依据。
+        ...(m.category?.name ? { category: m.category.name } : {}),
         offers: {
           '@type': 'Offer',
           url: productUrl(m.id),
@@ -400,25 +612,44 @@ function itemListJsonLd(listings: MarketListing[]): string {
   return `<script type="application/ld+json">${safeJson(ld)}</script>`;
 }
 
-/** 单个商品卡片（与官网 resources.html 的 resCard() 同款结构） */
+/**
+ * 单个商品卡片 —— 结构对齐设计原型 docs/prototype/resources-catalog.html 的 .card：
+ * 元信息条（符号 + 分类 / 类型 + 版本）、衬线标题、描述（3 行截断）、标签、底栏（价格 + 动作）。
+ * 列表页与详情页「相关资源」共用这一份（renderRelated 直接复用），全站一种卡片一套样式。
+ *
+ * 两个钩子不能动：data-resource-id（resource-catalog.js 据此索引 SSR 卡片节点）、
+ * .rl-buy[data-id]（内联脚本在 #res-grid 上做购买/下载事件委托）。
+ * 详情入口在标题的 <a> 上 —— 底栏再放一个「查看详情」是同一个去处的重复，也挤占底栏宽度。
+ */
+/** 卡片级的长文入口：复用 rl-desc 样式，不引入新 CSS。
+ *  放在卡片上而不是只放商品详情页，是因为这个组件同时被列表页与商品页复用，
+ *  两处都能把链接带出去（见本库 audits/2026-10-07/internal-link-gap.md）。 */
+function renderCardArticleLink(m: MarketListing): string {
+  const art = RELATED_ARTICLES[m.id];
+  if (!art) return '';
+  return `<p class="rl-desc"><a href="/blog/${escapeHtml(art.slug)}.html">这套是怎么整理出来的 →</a></p>`;
+}
+
 function renderResourceCard(m: MarketListing): string {
   const paid = m.priceCents > 0;
   const price = formatPriceYuan(m.priceCents);
   const gate = paid ? `购买 ¥${price}` : '下载';
-  const tags = m.tags.length > 0 ? m.tags.map((t) => escapeHtml(t)).join(' · ') : '';
-  return `<article class="rl-card" data-price="${m.priceCents}">
-    <div class="rl-top">
-      <div class="rl-icon" style="background:${escapeHtml(m.tint)}">${escapeHtml(m.icon)}</div>
-      <div class="rl-titles">
-        <h3 class="rl-name">${escapeHtml(m.name)}</h3>
-        <span class="rl-sub">${tags}<em class="rl-ver">${escapeHtml(m.version)}</em></span>
-      </div>
-      <span class="rl-price ${paid ? 'paid' : 'free'}">${paid ? '¥' + escapeHtml(price) : '免费'}</span>
+  const tags =
+    m.tags.length > 0
+      ? `<div class="rl-tags">${m.tags.map((t) => `<span>${escapeHtml(t)}</span>`).join('')}</div>`
+      : '';
+  return `<article class="rl-card" data-resource-id="${escapeHtml(m.id)}" data-price="${m.priceCents}">
+    <div class="rl-cardmeta">
+      <span class="rl-stamp"><span class="rl-symbol" style="background:${escapeHtml(m.tint)}">${escapeHtml(m.icon)}</span>${escapeHtml(m.category?.name ?? '未分类')} / ${escapeHtml(m.resourceType?.name ?? '知识库')}</span>
+      <span class="rl-ver">${escapeHtml(m.version)}</span>
     </div>
-    <p class="rl-desc">${escapeHtml(metaDescription(m.summary, 120))}</p>
-    <div class="rl-actions">
+    <h3 class="rl-name"><a href="/resource/${encodeURIComponent(m.id)}.html">${escapeHtml(m.name)}</a></h3>
+    <p class="rl-desc">${escapeHtml(metaDescription(m.summary, 160))}</p>
+    ${renderCardArticleLink(m)}
+    ${tags}
+    <div class="rl-cardfoot">
+      <span class="rl-price ${paid ? 'paid' : 'free'}">${paid ? '¥' + escapeHtml(price) : '免费'}</span>
       <button type="button" class="rl-buy" data-id="${encodeURIComponent(m.id)}" data-auth-gate="${escapeHtml(gate)}">${escapeHtml(gate)}</button>
-      <a class="rl-detail" href="/resource/${encodeURIComponent(m.id)}.html">查看详情 →</a>
     </div>
   </article>`;
 }
@@ -430,7 +661,16 @@ function renderResourceCard(m: MarketListing): string {
  * 驱动的轻量脚本渐进增强，脚本加载前商品已完整可见。
  */
 export function renderListingPage(listings: MarketListing[]): string {
-  const cards = listings.map(renderResourceCard).join('\n');
+  const catalog = marketCatalogView(listings);
+  // 这里必须输出**全部**卡片，不能按分类截断到 6 条：列表页的 SEO 价值就在于这些
+  // 指向商品详情页的内链（见 docs/2026-09-03-seo-strategy-resources.md），
+  // 「每类只露 6 条」是 resource-catalog.js 拿到 DOM 之后的交互裁剪。
+  const cards = catalog.categories
+    .map((c) => {
+      const items = listings.filter((m) => (m.category?.id ?? 'uncategorized') === c.id);
+      return `<section class="rl-section"><header><h2>${escapeHtml(c.name)}<small>${items.length} 个资源</small></h2></header><div class="rl-grid">${items.map(renderResourceCard).join('')}</div></section>`;
+    })
+    .join('');
   const grid = listings.length > 0
     ? cards
     : '<p class="rl-empty">资源整理中，稍后回来看看。</p>';
@@ -454,7 +694,7 @@ export function renderListingPage(listings: MarketListing[]): string {
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="icon" type="image/png" href="/images/favicon-32.png">
 <link rel="apple-touch-icon" href="/images/favicon-180.png">
-<link rel="stylesheet" href="/styles.css?v=20260828b">
+<link rel="stylesheet" href="/styles.css?v=20261027b">
 
 <!-- Open Graph -->
 <meta property="og:title" content="${escapeHtml(title)}">
@@ -477,19 +717,39 @@ ${itemListJsonLd(listings)}
 ${NAV}
 
 <main class="rl-page">
-  <section class="rl-hero">
-    <h1>你读得懂、<em>AI 用得上</em>的现成知识底座</h1>
-    <p class="rl-sub">从经史典籍与专业资料中提取实体与概念、建立关联，加工成结构化的知识底座：你顺着图谱阅读探索，Claude Code、Codex 立即在它上面工作。</p>
-    <p class="rl-meta">下载 · 解压 · 加载 · 微信支付成功后自动解锁 · 兼容 Obsidian</p>
-  </section>
+  <header class="rl-hero">
+    <div>
+      <div class="rl-eyebrow">MOLIO / RESOURCE LIBRARY</div>
+      <h1>让知识，<span>即刻可用。</span></h1>
+      <p class="rl-intro">为学习、研究与工作，找到下一份有用的积累。</p>
+      <p class="rl-sub">从经史典籍与专业资料中提取实体与概念、建立关联，加工成结构化的知识底座：你顺着图谱阅读探索，Claude Code、Codex 立即在它上面工作。</p>
+    </div>
+    <div>
+      <div class="rl-searchbox">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="10" cy="10" r="6.5"/><path d="m15 15 6 6"/></svg>
+        <input type="search" id="rl-search" aria-label="搜索资源" placeholder="搜索名称、关键词或简介" autocomplete="off">
+        <button type="button" id="rl-search-clear" hidden>清空</button>
+      </div>
+      <div class="rl-searchhint">试试<button type="button" data-query="红楼梦">红楼梦</button><button type="button" data-query="知识工程">知识工程</button><button type="button" data-query="哲学">哲学</button></div>
+    </div>
+  </header>
 
-  <div class="rl-filters" role="tablist" aria-label="资源筛选">
-    <button class="rl-tab active" role="tab" aria-selected="true" data-filter="all">全部</button>
-    <button class="rl-tab" role="tab" aria-selected="false" data-filter="free">免费</button>
-    <button class="rl-tab" role="tab" aria-selected="false" data-filter="paid">付费</button>
+  <div class="rl-filters">
+    <div class="rl-filterrow">
+      <div id="rl-categories" class="rl-quick" role="group" aria-label="资源分类"></div>
+      <button id="rl-all-categories" class="rl-allcats" type="button">全部分类 ▾</button>
+    </div>
+    <div class="rl-types" id="rl-type-label" hidden><label for="rl-type">资源类型</label><select id="rl-type" aria-label="资源类型"></select><span>可与分类、搜索组合使用</span></div>
   </div>
 
-  <div class="rl-grid" id="res-grid">${grid}</div>
+  <div class="rl-resultbar">
+    <div class="rl-scope"><strong id="rl-scope"></strong><span id="rl-count" role="status"></span></div>
+    <button id="rl-clear" class="rl-clear" type="button" hidden>清除条件</button>
+  </div>
+  <div id="res-grid">${grid}</div>
+  <div class="rl-empty" id="rl-no-match" hidden><h2>暂时没有找到匹配的资源</h2><p>试试更短的关键词，或扩大搜索范围。</p><button class="primary" id="rl-search-all" type="button">搜索全部资源</button><button id="rl-empty-clear" type="button">清除条件</button></div>
+  <div id="rl-sentinel" aria-hidden="true"></div>
+  <dialog id="rl-dialog"><div class="rl-dialoghead"><h2>全部分类</h2><button type="button" id="rl-close" aria-label="关闭分类">×</button></div><input type="search" id="rl-cat-search" class="rl-dialogsearch" aria-label="查找分类" placeholder="查找分类"><div id="rl-cat-list" class="rl-categorylist"></div></dialog>
 
   <section class="rl-cta">
     <p>没找到想要的底座？想把你自己的积累加工成底座上架？<a href="/enterprise.html#contact">请联系我们</a></p>
@@ -498,10 +758,11 @@ ${NAV}
 
 ${FOOTER}
 
-<script>window.MOLIO_PAY_BASE = '${PAY_BASE}';window.__LISTINGS__ = ${safeJson(listings)};</script>
+<script>window.MOLIO_PAY_BASE = '${PAY_BASE}';window.__LISTINGS__ = ${safeJson(listings)};window.MolioCatalogView = ${marketCatalogView.toString()};</script>
+<script src="/resource-catalog.js?v=20261003a" defer></script>
 <script src="/vendor/qrcode.min.js"></script>
 <script src="/auth.js?v=20260824a"></script>
-<script src="/pay.js?v=20260905a"></script>
+<script src="/pay.js?v=20261103-copylink"></script>
 <script>
 (function () {
   'use strict';
@@ -526,25 +787,6 @@ ${FOOTER}
       })
       .catch(function () { window.MolioAuth.requireAuth().catch(function () { /* 用户取消 */ }); });
   }
-
-  // 筛选：只切换已服务端渲染卡片的显隐，不重新拉取
-  var tabs = document.querySelectorAll('.rl-tab');
-  function applyFilter(f) {
-    document.querySelectorAll('#res-grid .rl-card').forEach(function (card) {
-      var price = parseInt(card.getAttribute('data-price'), 10) || 0;
-      var show = f === 'all' || (f === 'paid' ? price > 0 : price === 0);
-      card.style.display = show ? '' : 'none';
-    });
-  }
-  tabs.forEach(function (tab) {
-    tab.addEventListener('click', function () {
-      tabs.forEach(function (t) {
-        t.classList.toggle('active', t === tab);
-        t.setAttribute('aria-selected', t === tab ? 'true' : 'false');
-      });
-      applyFilter(tab.getAttribute('data-filter'));
-    });
-  });
 
   // 购买/下载：与官网 resources.html 同逻辑，改读内嵌 __LISTINGS__
   var grid = document.getElementById('res-grid');
@@ -574,13 +816,22 @@ ${ANALYTICS}
 
 // ── 动态 sitemap ──
 
-/** 商品 sitemap：实时全量在售商品；lastmod 取 publishedAt（上架日） */
+/**
+ * 商品 sitemap：实时全量在售商品。
+ *
+ * lastmod 取「最近更新时间」而不是上架日 —— 老页面改内容（补结构化信息、改标题/简介）时，
+ * 只有 lastmod 变了爬虫才认为这个 URL 值得重抓；只取 publishedAt 会让改版对爬虫完全不可见。
+ * 老数据没有 updatedAt 就回落 publishedAt，两者都没有则省略 lastmod。
+ */
 export function renderProductsSitemap(listings: MarketListing[]): string {
-  const urls = listings.map((m) => `  <url>
+  const urls = listings.map((m) => {
+    const lastmod = m.updatedAt ?? m.publishedAt;
+    return `  <url>
     <loc>${productUrl(m.id)}</loc>
-    ${m.publishedAt ? `<lastmod>${formatDate(m.publishedAt)}</lastmod>` : ''}
+    ${lastmod ? `<lastmod>${formatDate(lastmod)}</lastmod>` : ''}
     <changefreq>weekly</changefreq>
-  </url>`).join('\n');
+  </url>`;
+  }).join('\n');
   return `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
 ${urls}
@@ -591,12 +842,76 @@ ${urls}
 // ── llms.txt ──
 
 /**
+ * 博客文章清单 —— **兜底用**。正常情况下走不到这里（见 loadBlogPosts）。
+ *
+ * 真相在静态站的 /blog/posts.json：由 molio-seo-geo 的 tools/blog_deploy.py
+ * **扫描 blog/*.html 自动生成**，不手工维护。
+ *
+ * 为什么不手工维护一份：人工清单必然过期。这份常量就漏过 2 篇
+ * （web-clipper-guide、wechat-formatting 上线后一直没登记）。
+ *
+ * 请求时 fetch posts.json，失败才退回这里——保证 llms.txt 永远是合法内容，不会 5xx。
+ * 于是：**新增博客只需重新部署静态站，不必重新部署本函数**。
+ *
+ * ⚠️ 这份兜底不必每次加文章都改，但建议随大版本顺手同步。
+ * 按时间倒序排列（最新的在前）。
+ */
+const BLOG_POSTS: { title: string; slug: string }[] = [
+  { title: '资治通鉴人物关系图：294 卷、626 个人物，一张图为什么不够用', slug: 'zizhitongjian-people-graph' },
+  { title: '史记知识体系：130 篇、近 3000 年，怎么读才不乱', slug: 'shiji-knowledge-system' },
+  { title: '明史人物与制度：列传 220 卷、311 个人物条目，每条都能回到原文', slug: 'mingshi-people-and-institutions' },
+  { title: '红楼梦知识图谱：60 个人物、6 组对照，怎么把人物读明白', slug: 'hongloumeng-knowledge-graph' },
+  { title: '2026 年最佳 Obsidian 替代方案推荐', slug: 'obsidian-alternative' },
+  { title: 'Molio vs Obsidian 深度对比：AI 时代知识库工具该怎么选', slug: 'molio-vs-obsidian' },
+  { title: '为什么本地知识库才是你的最佳选择', slug: 'local-knowledge-base' },
+  { title: 'Claude Code 图形界面完全指南', slug: 'claude-code-gui-guide' },
+  { title: '2026 年最佳网页剪藏工具推荐', slug: 'web-clipper-guide' },
+  { title: '微信公众号排版工具对比', slug: 'wechat-formatting' },
+];
+
+/**
+ * 拉取静态站的博客清单。
+ *
+ * 为什么不把博客清单也写成本文件的常量：博客是**静态内容**，放常量里等于
+ * 「发布一篇静态文章要重新部署整个函数」——而本函数同时服务 auth.molio.cn，
+ * 一次部署会把认证的常驻实例全部销毁重建。代价和收益完全不成比例。
+ *
+ * posts.json 由 nginx 直接吐出（静态文件），不会回环到本函数。
+ * 任何失败都退回 BLOG_POSTS，llms.txt 不会因此挂掉。
+ */
+async function loadBlogPosts(): Promise<{ title: string; slug: string }[]> {
+  try {
+    const res = await fetch(`${SITE_BASE}/blog/posts.json`, {
+      signal: AbortSignal.timeout(3000),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data: unknown = await res.json();
+    if (Array.isArray(data)) {
+      const ok = data.filter(
+        (p): p is { title: string; slug: string } =>
+          !!p &&
+          typeof (p as Record<string, unknown>).title === 'string' &&
+          typeof (p as Record<string, unknown>).slug === 'string' &&
+          ((p as Record<string, unknown>).title as string).length > 0,
+      );
+      if (ok.length > 0) return ok;
+    }
+    throw new Error('posts.json 格式不符或为空');
+  } catch (e) {
+    console.error('[cloud] llms.txt 拉取博客清单失败，退回内置常量:', e);
+    return BLOG_POSTS;
+  }
+}
+
+/**
  * llms.txt：给 AI 爬虫 / 大模型读的站点说明书（设计：docs/2026-09-01-llms-txt-dynamic-design.md）。
  * 与 /sitemap-products.xml 对称 —— 运行时实时拼出全部在售商品，新上架自动出现，零手工维护。
+ * 商品段是真动态（读库）；博客段读静态站的 posts.json（见 loadBlogPosts）——
+ * 两者都不需要「改内容就得改代码」。
  * 定位「资源重心」：知识图谱商品是营收主角，Molio 软件降级为免费载体。
  * 纯文本 Markdown（text/plain），不产出 HTML；name/summary 是用户提交内容，过 escapeHtml 防注入。
  */
-export function renderLlmsTxt(listings: MarketListing[]): string {
+export async function renderLlmsTxt(listings: MarketListing[]): Promise<string> {
   const sorted = [...listings].sort((a, b) => a.priceCents - b.priceCents);
   const free = sorted.filter((m) => m.priceCents === 0);
   const paid = sorted.filter((m) => m.priceCents > 0);
@@ -606,7 +921,7 @@ export function renderLlmsTxt(listings: MarketListing[]): string {
   const out: string[] = [
     '# Molio 墨流 · 知识图谱资源库',
     '',
-    '> 本站是「结构化知识图谱 / 知识体系」资源库。提供《红楼梦》人物关系图谱、《资治通鉴》知识体系、妇产超声知识图谱、知识工程全景图谱等，Markdown 格式，购买后可一键导入 Molio 或 Obsidian 等本地 AI 知识库。',
+    '> 本站是“结构化知识图谱 / 知识体系”资源库。提供《红楼梦》人物关系图谱、《资治通鉴》知识体系、妇产超声知识图谱、知识工程全景图谱等，Markdown 格式，购买后可一键导入 Molio 或 Obsidian 等本地 AI 知识库。',
     '',
     '## 本站卖什么',
     '',
@@ -615,7 +930,10 @@ export function renderLlmsTxt(listings: MarketListing[]): string {
     '',
     '## 与免费开源资源的区别',
     '',
-    '免费开源图谱（如 OpenKG、HonglouData）是「原始数据集」，需自行清洗、建关系、写导读；本站资源是「成品」——已结构化、带导读、可直接导入 AI 知识库做问答与联想。',
+    '免费开源的知识图谱项目很多，各有其定位与取舍，本站不对它们作评价。',
+    '本站资源要回答的是另一个问题：**买回来就是一个能直接读、能直接喂给 AI 的本地文件夹**。',
+    '已经结构化、条目之间互相链接、带导读，导入 Obsidian 或 Molio 即可查阅，也能直接放进 Agent 的环境。',
+    '如果你要的是可编程、可二次开发的数据集，免费开源项目往往是更好的起点；如果你要的是一份拿来就能用的成品，这里是成品。',
     '',
     '## 资源品类',
     '',
@@ -652,15 +970,18 @@ export function renderLlmsTxt(listings: MarketListing[]): string {
     '',
     '- [首页](https://molio.cn/)：产品介绍、下载入口。',
     '- [资源市场](https://molio.cn/resources.html)：全部在售知识图谱资源。',
-    '- [使用指南](https://molio.cn/help.html)',
     '- [博客](https://molio.cn/blog/index.html)',
     '',
     '## 博客文章',
     '',
-    '- [Obsidian 替代方案](https://molio.cn/blog/obsidian-alternative.html)',
-    '- [Molio vs Obsidian 对比](https://molio.cn/blog/molio-vs-obsidian.html)',
-    '- [Claude Code 图形界面指南](https://molio.cn/blog/claude-code-gui-guide.html)',
-    '- [本地知识库搭建](https://molio.cn/blog/local-knowledge-base.html)',
+  );
+
+  const blogPosts = await loadBlogPosts();
+  for (const p of blogPosts) {
+    out.push(`- [${p.title}](${SITE_BASE}/blog/${p.slug}.html)`);
+  }
+
+  out.push(
     '',
     '## 关键信息',
     '',

@@ -6,7 +6,9 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 
-const DAEMON = 'http://localhost:3100';
+/** 与 playwright.config 的 MOLIO_E2E_DAEMON_PORT 同源 —— 端口整体平移时
+ *  cleanup 的直连不能落在主会话/桌面端的 daemon 上（见 ERR 备忘）。 */
+const DAEMON = `http://localhost:${Number(process.env.MOLIO_E2E_DAEMON_PORT ?? 3100)}`;
 
 // ── Delete helpers ─────────────────────────────────────────────────────
 

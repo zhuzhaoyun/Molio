@@ -5,7 +5,7 @@
  * - Binary (pdf/docx/pptx): file info card + "open with system app" button
  */
 
-import { useEffect, useState, useRef, useMemo, useCallback, lazy, Suspense } from 'react';
+import { useEffect, useState, useRef, useMemo, useCallback, lazy, Suspense, type RefObject } from 'react';
 import { MAX_ASK_SELECTION } from './kb-constants';
 import type { FileContent } from '@molio/contracts';
 import type { ThemeConfig } from './MdStylePanel';
@@ -18,10 +18,20 @@ import { TooLargeCard } from './TooLargeCard';
 import { ViewerErrorBoundary } from './ViewerErrorBoundary';
 import type { KbCodeMirrorViewerHandle } from './KbCodeMirrorViewer';
 import { KbFrontmatterCard } from './KbFrontmatterCard';
+import { exportDocument, ExportError } from './docExport';
+import {
+  countDocWords,
+  formatHeaderDate,
+  readingMinutes,
+  type ExportHeaderData,
+} from './docExport/header.ts';
+import type { ExportPreset } from './docExport/layout.ts';
 import { formatFileSize } from '../../utils/format';
 import { preprocessKbMarkdown } from '../../hooks/useKnowledge';
+import { useScrollMemory, type ScrollIntent } from '../../hooks/useScrollMemory';
 import { api } from '../../api/client';
 import { useI18n } from '../../i18n';
+import { useActiveVault } from '../../stores/vaultStore';
 import { useNavigationHistory, navigationHistoryStore } from '../../stores/navigationHistoryStore';
 import TurndownService from 'turndown';
 import { gfm } from 'turndown-plugin-gfm';
@@ -92,6 +102,28 @@ function formatReadTime(words: number, suffix: string): string {
   return `~${mins} ${suffix}`;
 }
 
+// ── 文档出图的版式选择（长图 / 3:4 竖卡）与头卡开关 ──
+// 存储读取只做全等比较 + try/catch：隐私模式、损坏字符串、localStorage 整个
+// 不可用时一律回退默认，绝不抛错把页面炸白。
+const DOC_EXPORT_PRESET_KEY = 'molio.docExport.preset';
+const DOC_EXPORT_HEADER_KEY = 'molio.docExport.header';
+
+function readStoredPreset(): ExportPreset {
+  try {
+    return localStorage.getItem(DOC_EXPORT_PRESET_KEY) === 'card34' ? 'card34' : 'long';
+  } catch {
+    return 'long';
+  }
+}
+
+function readStoredHeaderOn(): boolean {
+  try {
+    return localStorage.getItem(DOC_EXPORT_HEADER_KEY) !== 'off';
+  } catch {
+    return true;
+  }
+}
+
 interface KbMainContentProps {
   fileContent: FileContent | null;
   selectedFile: string | null;
@@ -111,6 +143,17 @@ interface KbMainContentProps {
   onCopy: () => void;
   onPublish: () => void;
   onBuildWiki: () => void;
+  /** Open the import dialog (file panel toolbar's 导入 按钮的双生入口)。 */
+  onImport?: () => void;
+  /** 打开知识库管理器（建库/打开已有库）。用于「一个库都没有」的空态。 */
+  onOpenVaultManager?: () => void;
+  /** 创建内置示例知识库（仅零库空态）。 */
+  onCreateSampleVault?: () => void;
+  /** 示例库创建中（按钮 loading + 禁用）。 */
+  creatingSampleVault?: boolean;
+  /** vault 里有没有文件。false 时空库主 CTA 换成「导入文件」——
+   *  空库推「构建 Wiki」是错的：没有素材，AI 无从扫起。 */
+  hasFiles?: boolean;
   /** 当 tab bar 存在时，可选择隐藏 header 中的文件名 */
   showFileName?: boolean;
   /** 是否为编辑模式（仅文本文件） */
@@ -128,6 +171,9 @@ interface KbMainContentProps {
   onOpenOutline?: () => void;
   /** Open the unified KB chat panel in QA mode for the current file. */
   onAskAboutFile?: () => void;
+  /** First-run guide is on the ask step and a runtime is available: pulse the
+   *  real document-level ask button (not the checklist's proxy button). */
+  guideAsk?: boolean;
   /** 编辑后的内容（用于阅读模式显示未保存的更改） */
   editedContent?: string | null;
   /** Force-load a too-large file past the safe cap (wired to useKnowledge.forceLoadFile). */
@@ -141,6 +187,12 @@ interface KbMainContentProps {
   companion?: boolean;
   /** 副视图（分屏）时头部右侧的关闭 ×（而非独立的副格标题栏）。 */
   onCloseCompanion?: () => void;
+  /**
+   * 本次导航的滚动落位意图（restore = 切回已开着的文档；fresh = 开进没有它的
+   * 标签）。由 KnowledgeBasePage 在触发选择前**同步**写入（ref，不是 state；
+   * 原因见 useScrollMemory 约束 5）。缺省 = restore。
+   */
+  scrollIntentRef?: RefObject<ScrollIntent>;
 }
 
 export function KbMainContent({
@@ -159,6 +211,11 @@ export function KbMainContent({
   onCopy,
   onPublish,
   onBuildWiki,
+  onImport,
+  onOpenVaultManager,
+  onCreateSampleVault,
+  creatingSampleVault,
+  hasFiles,
   showFileName = true,
   isEditMode = false,
   onToggleEdit,
@@ -166,14 +223,16 @@ export function KbMainContent({
   onAskAboutSelection,
   onOpenOutline,
   onAskAboutFile,
+  guideAsk = false,
   editedContent,
   onForceLoad,
   onCloseTab,
   onNavigateToFile,
   companion = false,
   onCloseCompanion,
+  scrollIntentRef,
 }: KbMainContentProps) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const { canGoBack, canGoForward } = useNavigationHistory();
   const contentRef = useRef<HTMLDivElement>(null);
   const cmRef = useRef<KbCodeMirrorViewerHandle>(null);
@@ -194,6 +253,13 @@ export function KbMainContent({
   const [ctxMenu, setCtxMenu] = useState<
     { x: number; y: number; source: 'doocs' | 'codemirror' | 'pdf'; selectedText?: string } | null
   >(null);
+  const [exporting, setExporting] = useState(false);
+  const [exportNotice, setExportNotice] = useState<string | null>(null);
+  // 版式与头卡开关：显式选择立即持久化（localStorage），未配置过时用默认值。
+  const [exportPreset, setExportPreset] = useState<ExportPreset>(readStoredPreset);
+  const [exportHeaderOn, setExportHeaderOn] = useState(readStoredHeaderOn);
+  const [exportMenuOpen, setExportMenuOpen] = useState(false);
+  const activeVault = useActiveVault();
 
   // Routing flags — computed from extension + size + tooLarge.
   const fileName = selectedFile ? (selectedFile.split('/').pop() ?? selectedFile) : '';
@@ -205,22 +271,87 @@ export function KbMainContent({
   // CM path: text category, not too-large, and (large md OR non-markdown).
   const isCmPath = category === 'text' && !fileContent?.tooLarge && (isLargeMd || !isMarkdown);
 
-  // Raw text used by the CM viewer — NO doocs preprocessing (those transforms
-  // mutate HTML/rendered markdown, not raw source).
-  const rawContent = useMemo(
-    () => editedContent ?? fileContent?.content ?? '',
-    [editedContent, fileContent?.content],
-  );
-
   // Memoize the rendered markdown content so MdRenderer (wrapped in memo)
   // doesn't see a new string prop on unrelated re-renders. Preprocessing only
   // runs for the small-.md doocs path — never for the CM source view.
   const renderedContent = useMemo(
     () => isSmallMd
-      ? preprocessKbMarkdown(editedContent ?? fileContent?.content ?? '', vaultId ?? undefined)
+      ? preprocessKbMarkdown(
+          editedContent ?? fileContent?.content ?? '',
+          vaultId ?? undefined,
+          // The note's own vault-relative path — needed so `![](图.png)`
+          // resolves against this note's folder (Obsidian's rule) rather than
+          // the SPA origin, which always 404s.
+          selectedFile ?? undefined,
+        )
       : '',
-    [editedContent, fileContent?.content, vaultId, isSmallMd],
+    [editedContent, fileContent?.content, vaultId, isSmallMd, selectedFile],
   );
+
+  // Raw text used by the CM viewer — NO doocs preprocessing (those transforms
+  // mutate HTML/rendered markdown, not raw source).
+  // （位置记忆的 CM 就绪判定要拿它比对，故声明在此处、滚动记忆之前。）
+  const rawContent = useMemo(
+    () => editedContent ?? fileContent?.content ?? '',
+    [editedContent, fileContent?.content],
+  );
+
+  // 「已上屏的内容」——MdRenderer 渲染完一篇后回传的那一份内容串。
+  // 位置记忆靠它判断容器里到底画的是哪一篇（见下 scrollMemoryReady）。
+  const [mdRenderedSource, setMdRenderedSource] = useState<string | null>(null);
+
+  // ── 阅读视窗位置记忆（小 .md 阅读路径 + 源码视图两条路） ──
+  // key 带 pane 前缀：同一文档同时出现在主格与副格时两者位置互不覆盖。
+  // vaultId + 相对路径 = 文档身份（文件 tab 的 id 本就是 `file:${path}`，等价）。
+  // 源码视图额外加 `cm:` 段：同一篇文档在阅读视图与源码视图里是两套高度模型，
+  // 位置不可互换。
+  // 不在记忆范围的：PDF / 图片（容器是 PDF 阅读器 / 图片查看器，PDF 还得连页码和缩放
+  // 一起记，另排期）、排版与编辑模式。这些路径 key 为 null，hook 整个让位。
+  const isReadingPath = category === 'text' && isSmallMd && !isTypesetMode && !isEditMode && !!selectedFile;
+  const isCmMemoryPath = isCmPath && !!selectedFile;
+  const panePrefix = companion ? 'companion' : 'main';
+  const scrollMemoryKey = isReadingPath
+    ? `${panePrefix}:${vaultId ?? ''}:${selectedFile ?? ''}`
+    : isCmMemoryPath
+      ? `${panePrefix}:cm:${vaultId ?? ''}:${selectedFile ?? ''}`
+      : null;
+
+  // 指纹（size:modifiedAt）：文档被 AI/外部改写过则旧位置作废，回顶部。
+  const scrollMemoryFp =
+    fileContent != null ? `${fileContent.size}:${fileContent.modifiedAt}` : null;
+  // 源码视图的滚动元素由 CM 自己交出（量过一遍之后，见 KbCodeMirrorViewer.onMeasured）。
+  // 这里用 state 而不是 ref：容器到位那一刻要触发 hook 的 effect 重跑（挂监听 + 落位），
+  // 而 ref 的 current 变化不会让任何 effect 重跑。故按元素身份造一个新的 ref 对象。
+  const [cmScrollHost, setCmScrollHost] = useState<{ el: HTMLElement; source: string } | null>(null);
+  const cmContainerRef = useMemo<RefObject<HTMLElement | null>>(
+    () => ({ current: cmScrollHost?.el ?? null }),
+    [cmScrollHost],
+  );
+  const handleCmMeasured = useCallback((el: HTMLElement | null, source: string | null) => {
+    setCmScrollHost(el && source != null ? { el, source } : null);
+  }, []);
+
+  // 内容已就绪 = ①手上这份 fileContent 正是当前选中的文件，且②它真的已经画到容器里了。
+  // ②不能省：MdRenderer 把渲染结果放在自己的 state 里、在 effect 中异步写入
+  // （见 MdRenderer「Render markdown content」），所以 fileContent 到手那一帧容器里
+  // 还是上一篇——此时落位会被上一篇的 scrollHeight 截断（上一篇越短截得越狠，
+  // 无滚动条的短文档直接截到 0，表现为「切回长文档却回到顶部」）。
+  // 用「已上屏的内容串 === 当前要渲染的内容串」判定，字符串相等即同一篇，
+  // 换文档自动失效，不会误判为就绪。
+  // 源码视图同理，判据换成「CM 量过的那份内容 === 当前内容」（CM 侧不变量见 onMeasured）。
+  const scrollMemoryReady = isCmMemoryPath
+    ? cmScrollHost != null && cmScrollHost.source === rawContent
+    : fileContent != null &&
+      fileContent.path === selectedFile &&
+      mdRenderedSource != null &&
+      mdRenderedSource === renderedContent;
+  const { scrollToTop } = useScrollMemory({
+    containerRef: isCmMemoryPath ? cmContainerRef : contentRef,
+    key: scrollMemoryKey,
+    fingerprint: scrollMemoryFp,
+    ready: scrollMemoryReady,
+    intentRef: scrollIntentRef,
+  });
 
   // Parse YAML frontmatter from the raw source for the property card.
   // Only meaningful for small .md files (doocs path).
@@ -335,10 +466,133 @@ export function KbMainContent({
 
   const closeContextMenu = useCallback(() => setCtxMenu(null), []);
 
+  // 头卡数据：标题 + 元信息行（库名 · 日期 · 字数 · 阅读时长）+ 标签。
+  // meta 串在这里拼——i18n 留在 React 层，docExport 层不碰本地化。
+  const buildExportHeader = useCallback(
+    (target: HTMLElement, title: string): ExportHeaderData => {
+      const words = countDocWords(target.innerText ?? '');
+      const rawTags = frontmatterData.tags;
+      const tags = Array.isArray(rawTags)
+        ? rawTags.map((tag) => String(tag)).filter(Boolean)
+        : typeof rawTags === 'string'
+          ? rawTags.split(/,\s*/).filter(Boolean)
+          : [];
+      const meta = [
+        activeVault?.name,
+        formatHeaderDate(new Date(), locale),
+        words > 0 ? t('kb.exportWords', { words }) : '',
+        t('kb.exportMinutes', { minutes: readingMinutes(words) }),
+      ]
+        .filter(Boolean)
+        .join(' · ');
+      return { title, meta, tags };
+    },
+    [activeVault?.name, frontmatterData.tags, locale, t],
+  );
+
+  const handleExportImage = useCallback(async () => {
+    // 文档出图：把当前渲染出来的 #output 导出成 1080px 宽的长图。
+    // 排版模式的目标在 MdTypesetEditor 的预览里（两条路径互斥，同屏只有一个 #output）。
+    const target = (
+      isTypesetMode
+        ? document.querySelector('.kb-typeset-preview-body #output')
+        : contentRef.current?.querySelector('#output')
+    ) as HTMLElement | null;
+
+    if (!target) {
+      setExportNotice(t('kb.exportUnsupported'));
+      window.setTimeout(() => setExportNotice(null), 4_000);
+      return;
+    }
+
+    setExporting(true);
+    setExportMenuOpen(false);
+    setExportNotice(t('kb.exporting'));
+    try {
+      // 文件名优先用渲染后的 H1（读者认得的标题），没有 H1 才退回文件 stem。
+      const h1 = target.querySelector('h1')?.textContent?.trim();
+      const stem = fileName.replace(/\.[^.]+$/, '');
+      const title = h1 || stem;
+      // 头卡：图上第一次出现「截图拿不到」的信息——库名、日期、字数/阅读时长、标签。
+      // meta 串在这里拼（i18n 留 React 层，docExport 层不碰本地化）。
+      const header = exportHeaderOn ? buildExportHeader(target, title) : undefined;
+      const result = await exportDocument(target, {
+        title,
+        preset: exportPreset,
+        header,
+        onProgress: (done, total) =>
+          setExportNotice(t('kb.exportProgress', { done, total })),
+      });
+      setExportNotice(
+        result.pages > 1 ? t('kb.exportPages', { pages: result.pages }) : t('kb.exportDone'),
+      );
+    } catch (error) {
+      console.warn('Document export failed:', error);
+      // 「文档没有内容可导」和「导出过程失败」是两件事，给用户的下一步不同。
+      setExportNotice(
+        error instanceof ExportError && error.code === 'no-output'
+          ? t('kb.exportUnsupported')
+          : t('kb.exportFailed'),
+      );
+    } finally {
+      setExporting(false);
+      window.setTimeout(() => setExportNotice(null), 4_000);
+    }
+  }, [contentRef, fileName, isTypesetMode, t, exportHeaderOn, exportPreset, buildExportHeader]);
+
+  const chooseExportPreset = useCallback((preset: ExportPreset) => {
+    setExportPreset(preset);
+    try {
+      localStorage.setItem(DOC_EXPORT_PRESET_KEY, preset);
+    } catch {
+      // 隐私模式 / 存储不可用：本次会话内仍然生效，只是下次不记得。
+    }
+    // 不收气泡：选完版式人还要点「导出图片」（对齐图谱出图）。
+  }, []);
+
+  const toggleExportHeader = useCallback(() => {
+    setExportHeaderOn((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem(DOC_EXPORT_HEADER_KEY, next ? 'on' : 'off');
+      } catch {
+        // 同上。
+      }
+      return next;
+    });
+  }, []);
+
+  // 版式菜单开着时：点外面 / Esc 收起（对齐 kb-tab-dropdown 的既有行为）。
+  const exportMenuWrapRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!exportMenuOpen) return;
+    const onPointer = (e: MouseEvent) => {
+      if (exportMenuWrapRef.current?.contains(e.target as Node)) return;
+      setExportMenuOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setExportMenuOpen(false);
+    };
+    document.addEventListener('mousedown', onPointer);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onPointer);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [exportMenuOpen]);
+
   const selectionText = useCallback(() => {
     const sel = window.getSelection();
     return sel ? sel.toString().trim() : '';
   }, []);
+
+  // 这里曾有一段「selectedFile 变即 scrollTo 顶部」的 effect（#274）：它修掉了
+  // 容器复用导致的 scrollTop 残留，但把「点标签切回」「后退回到刚才那篇」也一并
+  // 顶回了顶部。现在滚动位置统一由 useScrollMemory 负责（见上方「阅读视窗位置
+  // 记忆」）：新开文档回顶、切回已有标签/前进后退恢复，残留由它的无记录分支兜住。
+  // 不要再把无条件回顶改回来——那会让恢复永远看不到效果。
+  // （CM / 源码路径的滚动容器是 CodeMirror 自己的 .cm-scroller，不在 contentRef
+  //   上，本 hook 对它 key 为 null、整体让位——那条路径的位置记忆尚未做。）
 
   // Capture-phase click handler: intercept wiki link clicks within the KB
   // shell. Prevents native <a href> navigation, checks if the file exists
@@ -405,6 +659,50 @@ export function KbMainContent({
   };
 
   const isElectron = !!window.__electron__?.openPath;
+
+  /**
+   * 空态的两颗动作按钮。两者互为「主/次」，在同一个 flex 行里按状态对调主次
+   * （见下方 !wikiInitialized 分支）——所以用同一对构造器，避免两处样式漂移。
+   *
+   * primary=false 时「构建 Wiki」还会置灰：知识库里一个文件都没有时，AI 没有素材
+   * 可读，这个动作根本不成立。置灰而非隐藏，是因为它顺带说明了「先导文件、再建 Wiki」
+   * 这个先后关系——隐藏掉的话，用户永远不会知道这个知识库能产出 Wiki。
+   */
+  // key 固定（不随主次对调变化）：这两个按钮在同一 flex 行里互相对调位置，
+  // key 若跟随主次变化会导致对调时 React 卸载/重建按钮而非复用。
+  const buildWikiButton = (primary: boolean) => (
+    <button
+      key="build-wiki"
+      type="button"
+      className={primary ? 'wiki-cta-btn' : 'wiki-cta-btn wiki-cta-btn--outline'}
+      data-testid="kb-empty-build-cta"
+      onClick={onBuildWiki}
+      disabled={!primary}
+      title={primary ? undefined : t('kb.buildWikiNeedsFiles')}
+    >
+      {t('kb.buildWikiCta')}
+    </button>
+  );
+
+  const importButton = (primary: boolean) =>
+    onImport ? (
+      <button
+        key="import"
+        type="button"
+        className={primary ? 'wiki-cta-btn' : 'wiki-cta-btn wiki-cta-btn--outline'}
+        data-testid="kb-empty-import-cta"
+        onClick={onImport}
+      >
+        {t('kb.emptyImportCta')}
+      </button>
+    ) : null;
+
+  /**
+   * 是否把「导入文件」当成这屏的主推。没有文件才需要导入；但没有 onImport 调用方时
+   * （对照分屏那份 KbMainContent 就不传）不能硬推——否则屏上只剩一颗置灰的
+   * 「构建 Wiki」，正是这一整轮修复要消灭的死胡同。此时退回旧的「构建 Wiki 为主」。
+   */
+  const importFirst = !hasFiles && !!onImport;
 
   return (
     <main className="kb-main">
@@ -479,6 +777,24 @@ export function KbMainContent({
           {/* ── File edit / output actions (text files only, small-.md doocs path) ── */}
           {category === 'text' && selectedFile && !isCmPath && (
             <>
+              {/* 阅读路径的「回到顶部」—— 与 CM 路径的 kb-btn-top 同款同 testid
+                  （两条路径互斥，不会同时渲染）。有了位置记忆后，这是「我想从头
+                  重读」的显式逃逸口：CM 路径本来就有，阅读路径此前没有。 */}
+              {isReadingPath && (
+                <button
+                  type="button"
+                  className="kb-btn kb-btn-ghost"
+                  onClick={scrollToTop}
+                  title={t('kb.scrollToTop')}
+                  data-testid="kb-btn-top"
+                >
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="14" height="14">
+                    <line x1="12" y1="19" x2="12" y2="5" />
+                    <polyline points="5 12 12 5 19 12" />
+                  </svg>
+                </button>
+              )}
+
               {/* Save — only in editing modes (read mode has nothing to save) */}
               {onSave && !readonly && (isEditMode || isTypesetMode) && (
                 <button
@@ -512,6 +828,75 @@ export function KbMainContent({
                     </svg>
                   </button>
                 </>
+              )}
+
+              {/* 导出图片 —— 阅读与排版模式都可用；排版模式导出的就是右侧预览。
+                  一个按钮开气泡（对齐图谱出图）：版式二选一是分段控件并排可比，
+                  头卡开关一行，底部是导出动作。 */}
+              {(isReadingPath || isTypesetMode) && (
+                <div className="kb-export-ctrl" ref={exportMenuWrapRef}>
+                  {exportMenuOpen && (
+                    <div className="kb-export-menu">
+                      <div
+                        className="kb-export-aspects"
+                        role="group"
+                        aria-label={t('kb.exportPreset')}
+                      >
+                        <button
+                          type="button"
+                          className={`kb-export-aspect${exportPreset === 'long' ? ' is-active' : ''}`}
+                          data-testid="kb-export-preset-long"
+                          aria-pressed={exportPreset === 'long'}
+                          onClick={() => chooseExportPreset('long')}
+                        >
+                          {t('kb.exportPresetLong')}
+                        </button>
+                        <button
+                          type="button"
+                          className={`kb-export-aspect${exportPreset === 'card34' ? ' is-active' : ''}`}
+                          data-testid="kb-export-preset-card34"
+                          aria-pressed={exportPreset === 'card34'}
+                          onClick={() => chooseExportPreset('card34')}
+                        >
+                          {t('kb.exportPresetCard34')}
+                        </button>
+                      </div>
+                      <label className="kb-export-toggle" data-testid="kb-export-header-toggle">
+                        <input
+                          type="checkbox"
+                          checked={exportHeaderOn}
+                          onChange={toggleExportHeader}
+                        />
+                        <span>{t('kb.exportHeader')}</span>
+                      </label>
+                      <button
+                        type="button"
+                        className="kb-export-item"
+                        data-testid="kb-export-download"
+                        onClick={handleExportImage}
+                        disabled={exporting}
+                      >
+                        {t('kb.exportImage')}
+                      </button>
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    className={`kb-btn kb-btn-ghost${exportMenuOpen ? ' is-active' : ''}`}
+                    onClick={() => setExportMenuOpen((open) => !open)}
+                    disabled={exporting}
+                    title={t('kb.exportImage')}
+                    aria-label={t('kb.exportImage')}
+                    aria-expanded={exportMenuOpen}
+                    data-testid="kb-btn-export-image"
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="14" height="14">
+                      <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                      <circle cx="8.5" cy="8.5" r="1.5" />
+                      <polyline points="21 15 16 10 5 21" />
+                    </svg>
+                  </button>
+                </div>
               )}
 
               {/* Typeset toggle — signature action. Read mode: T icon + "排版"
@@ -806,7 +1191,7 @@ export function KbMainContent({
           {onAskAboutFile && selectedFile && (
             <button
               type="button"
-              className="kb-btn kb-btn-ghost"
+              className={`kb-btn kb-btn-ghost${guideAsk ? ' kb-guide-pulse' : ''}`}
               onClick={onAskAboutFile}
               title={t('kb.askButton')}
               data-testid="kb-btn-ask"
@@ -840,36 +1225,82 @@ export function KbMainContent({
       {/* ── Body: empty states / error / content ── */}
       {!selectedFile ? (
         !vaultId ? (
-          <div className="kb-empty-state">
+          <div className="kb-empty-state kb-empty-state--welcome">
             <div className="kb-empty-icon">📚</div>
-            <h3>欢迎使用知识库</h3>
-            <p>创建一个知识库来管理你的文档和笔记。</p>
-            <p className="kb-empty-hint">知识库是存储和组织文档的地方，支持 Markdown 文件管理、AI 辅助阅读和 Wiki 生成。</p>
+            <h3>{t('kb.welcomeTitle')}</h3>
+            <p>{t('kb.welcomeBody')}</p>
+
+            <div className="kb-empty-actions kb-empty-actions--cards">
+              <div className="kb-empty-card">
+                <div className="kb-empty-card__title">{t('kb.sampleVaultTitle')}</div>
+                <p className="kb-empty-card__body">{t('kb.sampleVaultBody')}</p>
+                <button
+                  type="button"
+                  className="wiki-cta-btn"
+                  data-testid="kb-empty-sample-vault-cta"
+                  disabled={creatingSampleVault || !onCreateSampleVault}
+                  onClick={onCreateSampleVault}
+                >
+                  {creatingSampleVault ? t('kb.sampleVaultCreating') : t('kb.sampleVaultCta')}
+                </button>
+              </div>
+
+              <div className="kb-empty-card">
+                <div className="kb-empty-card__title">{t('kb.ownVaultTitle')}</div>
+                <p className="kb-empty-card__body">{t('kb.ownVaultBody')}</p>
+                {onOpenVaultManager && (
+                  <button
+                    type="button"
+                    className="wiki-cta-btn wiki-cta-btn--ghost"
+                    data-testid="kb-empty-create-vault-cta"
+                    onClick={onOpenVaultManager}
+                  >
+                    {t('kb.createVaultCta')}
+                  </button>
+                )}
+              </div>
+            </div>
           </div>
         ) : !wikiInitialized ? (
+          /* 未建 Wiki 的两个状态合成一处：同一套结构、同一组按钮，只对调主次。
+             没有文件时构建 Wiki 是死路（AI 没有素材可读），所以它不是「次要选项」，
+             而是「还不成立的动作」——置灰并在 title 里说明前置条件，让「先导文件、
+             再建 Wiki」这个先后关系本身成为引导。
+
+             原先这两态是两段各写各的硬编码中文，英文用户看到的是中文；
+             现在共用一份 i18n 文案，也对齐了「这一屏属于同一个页面」的观感。 */
           <div className="kb-empty-state">
-            <div className="kb-empty-icon">🏗</div>
-            <h3>构建知识库 Wiki</h3>
-            <p>使用 AI 自动扫描 vault 中的文件，生成结构化的 wiki 页面。</p>
-            <button type="button" className="wiki-cta-btn" onClick={onBuildWiki}>
-              开始构建 Wiki
-            </button>
-            {/* 库级问答 CTA —— 不建 Wiki 也能直接对话（ghost 次级样式，主推仍是构建 Wiki） */}
+            <div className="kb-empty-icon">{importFirst ? '📥' : '🏗'}</div>
+            <h3>{importFirst ? t('kb.emptyImportTitle') : t('kb.buildWikiTitle')}</h3>
+            <p>{importFirst ? t('kb.emptyImportBody') : t('kb.buildWikiBody')}</p>
+
+            <div className="kb-empty-actions">
+              {importFirst
+                ? [importButton(true), buildWikiButton(false)]
+                : [buildWikiButton(true), importButton(false)]}
+            </div>
+
+            {/* 库级问答 CTA —— 不建 Wiki 也能直接对话 */}
             {onAskAboutFile && (
-              <button type="button" className="wiki-cta-btn wiki-cta-btn--ghost" data-testid="kb-empty-ask-cta" onClick={onAskAboutFile}>
-                💬 与知识库问答
+              <button
+                type="button"
+                className="wiki-cta-btn wiki-cta-btn--ghost"
+                data-testid="kb-empty-ask-cta"
+                onClick={onAskAboutFile}
+              >
+                💬 {t('kb.askVault')}
               </button>
             )}
           </div>
         ) : (
           <div className="kb-empty-state">
             <div className="kb-empty-icon">📄</div>
-            <h3>未选择文件</h3>
-            <p>从左侧文件树中选择一个文件查看内容。</p>
+            <h3>{t('kb.noFileTitle')}</h3>
+            <p>{t('kb.noFileBody')}</p>
             {/* 库级问答 CTA —— 未打开文件时也能对话（样式复用「开始构建 Wiki」） */}
             {onAskAboutFile && (
               <button type="button" className="wiki-cta-btn" data-testid="kb-empty-ask-cta" onClick={onAskAboutFile}>
-                💬 与知识库问答
+                💬 {t('kb.askVault')}
               </button>
             )}
           </div>
@@ -919,7 +1350,11 @@ export function KbMainContent({
           <div className="kb-content-area" ref={contentRef} onContextMenu={handleContextMenu}>
             {fileContent ? (
               // 优先使用编辑后的内容（未保存的更改），否则使用原始文件内容
-              <MdRenderer content={renderedContent} themeConfig={themeConfig} />
+              <MdRenderer
+                content={renderedContent}
+                themeConfig={themeConfig}
+                onRendered={setMdRenderedSource}
+              />
             ) : (
               <div className="kb-empty-state"><p>Loading...</p></div>
             )}
@@ -949,6 +1384,7 @@ export function KbMainContent({
                 fileName={fileName}
                 wrap={wrap}
                 onRequestContextMenu={handleCmContextMenu}
+                onMeasured={handleCmMeasured}
               />
             </Suspense>
           </ViewerErrorBoundary>
@@ -1157,6 +1593,12 @@ export function KbMainContent({
               </>
             );
           })()}
+        </div>
+      )}
+
+      {exportNotice && (
+        <div className="kb-save-toast" data-testid="kb-export-notice" role="status">
+          {exportNotice}
         </div>
       )}
     </main>

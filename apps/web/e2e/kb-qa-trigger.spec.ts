@@ -9,8 +9,10 @@ import * as path from 'path';
  * @priority P1
  *
  * qa 模式的 wiki-query 确定性触发语（useKbChat WIKI_QUERY_TRIGGER）只应包裹会话首轮：
- * - 首轮 POST /api/runs 的 message 带「（知识库问答：请用 wiki-query skill…）」前缀
+ * - 首轮 POST /api/runs 的 message 带「（知识库问答：…wiki-query…）」条件式前缀
+ *   （涉及库内容才检索，明显无关的通用问题可直接回答）
  * - 多轮 follow-up POST /api/runs/:id/messages 的 message 为用户原文，不再带触发语
+ * - 用户气泡只显示问题本身——触发语是给 agent 的指令，展示层剥离（stripWikiQueryTrigger）
  *
  * 每轮都带前缀会污染对话历史（用户反馈的 bug）。
  * Prerequisites: `pnpm dev`.
@@ -58,6 +60,11 @@ test.describe('KB qa — wiki-query trigger wraps only the first turn', () => {
     expect(firstBody.message).toContain('First question');
     // Trigger phrase is a prefix — agent sees the directive before the question.
     expect(firstBody.message.indexOf('知识库问答')).toBeLessThan(firstBody.message.indexOf('First question'));
+
+    // 用户气泡只显示问题本身：触发语是给 agent 的指令，展示层剥离。
+    const firstUserBubble = panel.locator('[data-testid="user-message"]').first();
+    await expect(firstUserBubble).toContainText('First question');
+    await expect(firstUserBubble).not.toContainText('知识库问答');
 
     // Wait for turn 1 to finish (mock SSE turn_end → input unlocks).
     await expect(panel.locator('[data-testid="assistant-prose"]')).toBeVisible({ timeout: 10_000 });

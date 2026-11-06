@@ -1,7 +1,7 @@
 // apps/web/src/utils/toolGroups.ts
 // 工具分组逻辑 —— 从 AssistantMessage 抽出，供 AssistantMessage / WorkBlock 共享，
 // 避免两个组件互相导入形成循环依赖。
-import type { ToolEvent } from '../hooks/useChat';
+import type { ToolEvent } from '../hooks/useChatCore';
 
 // Tools that should never be grouped (always shown individually)
 export const UNGROUPABLE = new Set(['AskUserQuestion', 'ask_user_question']);

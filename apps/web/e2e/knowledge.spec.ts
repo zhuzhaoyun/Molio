@@ -111,7 +111,7 @@ test.describe('Knowledge Base', () => {
 
     // Navigate directly with URL params (same pendingUrlNav mechanism
     // used by the location.state handler for graph double-click navigation)
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=test.md`);
+    await page.goto(`/knowledge?vault=${vault.id}&file=test.md`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
 
     // Wait for file tree to load and file to be selected — the transient ?file=

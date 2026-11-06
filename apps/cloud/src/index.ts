@@ -3,6 +3,7 @@ import pg from 'pg';
 import { createApp } from './app.js';
 import { loadConfig } from './config.js';
 import { createMailer } from './mailer.js';
+import { createPayInternalClient } from './market/pay-client.js';
 import type { MarketRoutesDeps } from './market/routes.js';
 import { MarketService } from './market/service.js';
 import { OssSigner } from './market/signer.js';
@@ -50,10 +51,12 @@ let marketDeps: MarketRoutesDeps | undefined;
 if (config.market) {
   const marketStore: MarketStore = pool ? new PgMarketStore(pool) : new MemoryMarketStore();
   const signer = new OssSigner(config.market.oss);
+  // wxpay-fc 已购索引客户端（「我的已购」+ 付费已购下载放行）；未配置 → 已购为空、付费一律 402
+  const pay = config.market.payInternal ? createPayInternalClient(config.market.payInternal) : undefined;
   marketDeps = {
-    service: new MarketService({ store: marketStore, users: store, signer, config: { market: config.market }, now }),
+    service: new MarketService({ store: marketStore, users: store, signer, config: { market: config.market }, now, pay }),
   };
-  console.log(`[cloud] market enabled (bucket=${config.market.oss.bucket})`);
+  console.log(`[cloud] market enabled (bucket=${config.market.oss.bucket}, purchases=${pay ? 'on' : 'off'})`);
 }
 const app = createApp({ service, config, storeKind, now, market: marketDeps });
 

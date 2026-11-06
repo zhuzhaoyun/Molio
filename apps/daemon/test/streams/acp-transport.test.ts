@@ -3,14 +3,20 @@ import assert from 'node:assert/strict';
 import { AcpTransport } from '../../src/core/streams/acp-transport.js';
 import type { AgentEvent } from '@molio/contracts';
 
-/** Builds a transport with an in-memory stdin sink, capturing both sent frames and emitted events. */
+/**
+ * Builds a transport with an in-memory stdin sink, capturing both sent frames
+ * and emitted events. Transport-level diagnostics (hooks.onTransportEvent)
+ * and a default registered session 's' both push into the same `events` array
+ * — matching the pre-pool behavior where a single run owned everything.
+ */
 function harness() {
   const sent: string[] = [];
   const events: AgentEvent[] = [];
   const transport = new AcpTransport(
     (json) => sent.push(json),
-    (ev) => events.push(ev),
+    { onTransportEvent: (ev) => events.push(ev) },
   );
+  transport.registerSession('s', (ev) => events.push(ev));
   return { transport, sent, events };
 }
 
@@ -126,6 +132,7 @@ describe('AcpTransport', () => {
   describe('feed / framing', () => {
     it('handles chunked input split across a frame boundary', () => {
       const { transport, events } = harness();
+      transport.registerSession('s1', (ev) => events.push(ev));
       transport.feed('{"jsonrpc":"2.0","method":"session/upd');
       transport.feed('ate","params":{"sessionId":"s1","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"hi"}}}}\n');
       assert.deepEqual(events, [{ type: 'text_delta', delta: 'hi' }]);
@@ -319,16 +326,17 @@ describe('AcpTransport', () => {
       const events: AgentEvent[] = [];
       const transport = new AcpTransport(
         (_json) => {},
-        (ev) => {
-          // Inject a downstream consumer that throws on a specific delta.
-          // Real-world analog: emitEvent → eventsLogStream.write throwing
-          // after the stream errored out, or any other side effect.
-          if (ev.type === 'text_delta' && (ev as any).delta === 'TRIGGER_THROW') {
-            throw new Error('synthetic downstream throw');
-          }
-          events.push(ev);
-        },
+        { onTransportEvent: (ev) => events.push(ev) },
       );
+      transport.registerSession('s', (ev) => {
+        // Inject a downstream consumer that throws on a specific delta.
+        // Real-world analog: emitEvent → eventsLogStream.write throwing
+        // after the stream errored out, or any other side effect.
+        if (ev.type === 'text_delta' && (ev as any).delta === 'TRIGGER_THROW') {
+          throw new Error('synthetic downstream throw');
+        }
+        events.push(ev);
+      });
 
       // Frame 1: triggers text_delta with TRIGGER_THROW — onEvent throws
       // INSIDE mapUpdate. Without the try/catch, this throw escapes feed()
@@ -369,6 +377,8 @@ describe('AcpTransport', () => {
   describe('cancelledSessionIds', () => {
     it('drops session/update notifications for a cancelled session', () => {
       const { transport, events } = harness();
+      transport.registerSession('s-cancelled', (ev) => events.push(ev));
+      transport.registerSession('s-other', (ev) => events.push(ev));
       transport.markCancelled('s-cancelled');
       feedLine(transport, {
         jsonrpc: '2.0', method: 'session/update',
@@ -432,8 +442,7 @@ describe('AcpTransport', () => {
       let killCalled = 0;
       const transport = new AcpTransport(
         () => {},
-        () => {},
-        () => { killCalled++; },
+        { killChild: () => { killCalled++; } },
       );
       return { transport, killCalled: () => killCalled };
     }
@@ -466,6 +475,182 @@ describe('AcpTransport', () => {
       transport.rejectAll(new Error('process exited'));
       await assert.rejects(p, /process exited/);
       assert.equal(killCalled(), 0, 'killChild must not fire on rejectAll — child.on(close) handles the lifecycle');
+    });
+  });
+
+  describe('multi-session demux (pooled process)', () => {
+    it('routes interleaved session/update notifications to the owning sink only', () => {
+      const sent: string[] = [];
+      const transport = new AcpTransport((json) => sent.push(json));
+      const s1Events: AgentEvent[] = [];
+      const s2Events: AgentEvent[] = [];
+      transport.registerSession('s1', (ev) => s1Events.push(ev));
+      transport.registerSession('s2', (ev) => s2Events.push(ev));
+
+      const chunk = (sessionId: string, text: string) => feedLine(transport, {
+        jsonrpc: '2.0', method: 'session/update',
+        params: { sessionId, update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text } } },
+      });
+      chunk('s1', 'a1');
+      chunk('s2', 'b1');
+      chunk('s1', 'a2');
+      chunk('s2', 'b2');
+
+      assert.deepEqual(s1Events, [
+        { type: 'text_delta', delta: 'a1' },
+        { type: 'text_delta', delta: 'a2' },
+      ]);
+      assert.deepEqual(s2Events, [
+        { type: 'text_delta', delta: 'b1' },
+        { type: 'text_delta', delta: 'b2' },
+      ]);
+    });
+
+    it('drops updates for unregistered sessions (detached run / foreign session)', () => {
+      const transportEvents: AgentEvent[] = [];
+      const transport = new AcpTransport(() => {}, { onTransportEvent: (ev) => transportEvents.push(ev) });
+      const s1Events: AgentEvent[] = [];
+      transport.registerSession('s1', (ev) => s1Events.push(ev));
+
+      feedLine(transport, {
+        jsonrpc: '2.0', method: 'session/update',
+        params: { sessionId: 'unknown-session', update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'nope' } } },
+      });
+      feedLine(transport, {
+        jsonrpc: '2.0', method: 'session/update',
+        params: { sessionId: 's1', update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'yep' } } },
+      });
+
+      assert.deepEqual(s1Events, [{ type: 'text_delta', delta: 'yep' }]);
+      assert.equal(transportEvents.length, 0, 'dropped updates must not leak to transport-level events');
+    });
+
+    it('unregisterSession removes the sink AND clears the cancelled marker', () => {
+      const { transport } = harness();
+      transport.markCancelled('sx');
+      assert.ok(transport.isCancelled('sx'));
+      transport.unregisterSession('sx');
+      assert.equal(transport.isCancelled('sx'), false,
+        'cancelled marker must not accumulate across the long-lived pooled process');
+      assert.deepEqual(transport.sessionIds(), ['s']);
+    });
+
+    it('routes server-initiated request_permission diagnostics to the owning session sink', () => {
+      const sent: string[] = [];
+      const s1Events: AgentEvent[] = [];
+      const transportEvents: AgentEvent[] = [];
+      const transport = new AcpTransport(
+        (json) => sent.push(json),
+        { onTransportEvent: (ev) => transportEvents.push(ev) },
+      );
+      transport.registerSession('s1', (ev) => s1Events.push(ev));
+
+      // dsh-style server request WITH sessionId → auto-approve answer + raw log
+      // to the session sink (not transport-level).
+      feedLine(transport, {
+        jsonrpc: '2.0', id: 99, method: 'session/request_permission',
+        params: {
+          sessionId: 's1',
+          toolCall: { title: 'Bash', kind: 'execute' },
+          options: [{ optionId: 'allow', kind: 'allow_always', name: 'Allow' }],
+        },
+      });
+      const answer = JSON.parse(sent[0]!);
+      assert.equal(answer.id, 99);
+      assert.equal(answer.result.outcome.outcome, 'selected');
+      assert.equal(answer.result.outcome.optionId, 'allow');
+      assert.ok(s1Events.some(e => e.type === 'raw' && (e as any).line.includes('auto-approved')),
+        'permission decision log should route to the owning session');
+      assert.equal(transportEvents.length, 0);
+    });
+
+    it('routes unsupported server requests without sessionId to transport-level', () => {
+      const sent: string[] = [];
+      const transportEvents: AgentEvent[] = [];
+      const transport = new AcpTransport(
+        (json) => sent.push(json),
+        { onTransportEvent: (ev) => transportEvents.push(ev) },
+      );
+      feedLine(transport, { jsonrpc: '2.0', id: 7, method: 'weird/method', params: {} });
+      const answer = JSON.parse(sent[0]!);
+      assert.equal(answer.error.code, -32601);
+      assert.ok(transportEvents.some(e => e.type === 'raw' && (e as any).line.includes('unsupported server request')));
+    });
+  });
+
+  describe('session-scoped vs transport-scoped timeouts', () => {
+    function harnessWithKill() {
+      let killCalled = 0;
+      const transport = new AcpTransport(
+        () => {},
+        { killChild: () => { killCalled++; } },
+      );
+      return { transport, killCalled: () => killCalled };
+    }
+
+    it('session-scoped idle timeout rejects the request WITHOUT killing the shared child', async () => {
+      const { transport, killCalled } = harnessWithKill();
+      const p = transport.request('session/prompt', { sessionId: 's1' }, { idleTimeoutMs: 40, sessionId: 's1' });
+      await assert.rejects(p, /ACP idle timeout/);
+      assert.equal(killCalled(), 0,
+        'one hung session prompt must not take down every other conversation');
+    });
+
+    it('session-scoped absolute timeout also spares the child', async () => {
+      const { transport, killCalled } = harnessWithKill();
+      const p = transport.request('session/prompt', {}, { absoluteTimeoutMs: 40, sessionId: 's1' });
+      await assert.rejects(p, /ACP absolute timeout/);
+      assert.equal(killCalled(), 0);
+    });
+
+    it('transport-level (no sessionId) timeout still kills the child', async () => {
+      const { transport, killCalled } = harnessWithKill();
+      const p = transport.request('initialize', {}, { idleTimeoutMs: 40 });
+      await assert.rejects(p, /ACP idle timeout/);
+      assert.equal(killCalled(), 1, 'a process that cannot complete a handshake is useless to all sessions');
+    });
+  });
+
+  describe('hasPendingFor', () => {
+    it('reports pending requests per session and clears on resolution', async () => {
+      const { transport } = harness();
+      const p1 = transport.request('session/prompt', {}, { absoluteTimeoutMs: 5000, sessionId: 's1' });
+      const p2 = transport.request('session/prompt', {}, { absoluteTimeoutMs: 5000, sessionId: 's2' });
+      p2.catch(() => {}); // settled by the cleanup rejectAll below
+      assert.equal(transport.hasPendingFor('s1'), true);
+      assert.equal(transport.hasPendingFor('s2'), true);
+      assert.equal(transport.hasPendingFor('s3'), false);
+
+      feedLine(transport, { jsonrpc: '2.0', id: 1, result: { stopReason: 'end_turn' } });
+      await p1;
+      assert.equal(transport.hasPendingFor('s1'), false, 'resolved prompt must no longer count as pending');
+      assert.equal(transport.hasPendingFor('s2'), true);
+      // Settle the leftover pending request INSIDE the test — an abandoned
+      // promise would fire its absolute timeout after the test ends and trip
+      // node:test's unhandledRejection guard.
+      transport.rejectAll(new Error('test cleanup'));
+      await p2.catch(() => {});
+    });
+
+    it('transport-level requests are not attributed to any session', async () => {
+      const { transport } = harness();
+      const p = transport.request('initialize', {}, { absoluteTimeoutMs: 5000 });
+      assert.equal(transport.hasPending(), true);
+      assert.equal(transport.hasPendingFor('s'), false);
+      transport.rejectAll(new Error('test cleanup'));
+      await p.catch(() => {});
+    });
+  });
+
+  describe('rejectAll clears session state', () => {
+    it('drops all registered sessions so nothing routes to a dead process', () => {
+      const { transport } = harness();
+      transport.registerSession('extra', () => {});
+      assert.ok(transport.sessionIds().includes('extra'));
+      transport.markCancelled('extra');
+      transport.rejectAll(new Error('exit'));
+      assert.deepEqual(transport.sessionIds(), []);
+      assert.equal(transport.isCancelled('extra'), false);
     });
   });
 });

@@ -7,6 +7,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { parseArgs, resolveVault, loadRules } from './lib/cli.mjs';
+import { frontmatterEnd } from './lib/linktext.mjs';
 
 const opts = parseArgs(process.argv.slice(2));
 const vault = resolveVault(opts);
@@ -23,19 +24,31 @@ for (const dir of dirs) {
     const p = path.join(dir, f);
     const text = fs.readFileSync(p, 'utf8');
     let changed = false;
-    // 拆 frontmatter
-    const m = text.match(/^---\r?\n([\s\S]*?)\r?\n---(\r?\n[\s\S]*)$/);
-    let fm = m ? m[1] : null;
-    let rest = m ? m[2] : text;
-    if (fm) {
+    // 拆 frontmatter —— 判定与 linkpass/deadcheck 共用 lib/linktext.mjs 的
+    // frontmatterEnd()，不再自持一份正则（三个脚本对「什么是 frontmatter」
+    // 各判各的，正是门禁与工具行为漂移的起点）。收敛顺带修掉旧正则的三处偏差：
+    // `--- ` 尾随空白不再漏判；文件正好结束在闭合 `---` 的 frontmatter 不再
+    // 漏判；分隔符行尾原样保留（旧版重建时会把 `---` 的 CRLF 强转 LF）。
+    const fmEnd = frontmatterEnd(text);
+    let fm = fmEnd > 0 ? text.slice(0, fmEnd) : null;
+    let rest = fm !== null ? text.slice(fmEnd) : text;
+    if (fm !== null) {
       const fixed = fm.replace(/[“”]/g, '"').replace(/[‘’]/g, "'");
       if (fixed !== fm) { fm = fixed; changed = true; fmFixed++; }
     }
-    // blockquote 引文行去前缀（保留内容）
-    const restFixed = rest.split(/\r?\n/).map((l) => /^>\s?/.test(l) ? l.replace(/^>\s?/, '') : l).join('\n');
-    if (restFixed !== rest) { rest = restFixed; changed = true; bqFixed++; }
+    // blockquote 引文行去前缀（保留内容）。分隔符留在 split 结果里（捕获组），
+    // 行尾 CRLF/LF 原样保留——旧的 split+join('\n') 会把没动过的行也强转 LF。
+    const restParts = rest.split(/(\r?\n)/);
+    let strippedAny = false;
+    for (let i = 0; i < restParts.length; i += 2) {
+      const l = restParts[i];
+      if (l === undefined || !/^>\s?/.test(l)) continue;
+      restParts[i] = l.replace(/^>\s?/, '');
+      strippedAny = true;
+    }
+    if (strippedAny) { rest = restParts.join(''); changed = true; bqFixed++; }
     if (changed) {
-      fs.writeFileSync(p, (fm !== null ? `---\n${fm}\n---${rest}` : rest));
+      fs.writeFileSync(p, (fm !== null ? fm + rest : rest));
       filesFixed++;
     }
   }

@@ -18,7 +18,7 @@
 
 <link rel="icon" type="image/png" href="../images/favicon-32.png">
 <link rel="apple-touch-icon" href="../images/favicon-32.png">
-<link rel="stylesheet" href="../styles.css?v=20260827c">
+<link rel="stylesheet" href="../styles.css?v=20260919a">
 
 <!-- Open Graph -->
 <meta property="og:title" content="Molio 博客 — 知识管理、AI 创作与 Obsidian 技巧">
@@ -65,63 +65,202 @@
     <div class="nav-links">
       <a href="../index.html" class="nav-link">首页</a>
       <a href="../resources.html" class="nav-link">资源</a>
-      <a href="../help.html" class="nav-link">使用指南</a>
       <a href="./index.html" class="nav-link active">博客</a>
       <a href="../enterprise.html" class="nav-link">定制服务</a>
      <span id="nav-auth"></span><a href="https://github.com/zhuzhaoyun/Molio" target="_blank" rel="noopener noreferrer" class="nav-gh" aria-label="GitHub 仓库"><svg viewBox="0 0 24 24"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg></a></div>
   </div>
 </nav>
 
-<main class="page-content">
+<main class="page-content blog-index-page">
   <div class="breadcrumb">
     <a href="../index.html">首页</a><span class="sep">/</span>博客
   </div>
   <h1 class="page-title">Molio 博客</h1>
   <p class="page-subtitle">知识管理、AI 创作、Obsidian 技巧与工具评测</p>
 
-  <div class="blog-index-grid">
-    <article class="blog-card reveal">
-      <span class="tag">产品对比</span>
-      <h3><a href="molio-vs-obsidian.html">Molio vs Obsidian 深度对比：AI 时代知识库工具该怎么选？</a></h3>
-      <p>从功能、架构、生态、AI 集成等维度全面对比 Molio 和 Obsidian。</p>
-      <div class="meta">2026-06-27 · 产品对比</div>
-    </article>
+  <section class="blog-section reveal" aria-labelledby="series-heading">
+    <h2 id="series-heading" class="blog-section-title">知识图谱系列</h2>
+    <p class="blog-section-note">用 Molio 把《红楼梦》《明史》《史记》《资治通鉴》建成可检索的人物与关系网络，每条结论都能回到原文。</p>
 
-    <article class="blog-card reveal">
-      <span class="tag">产品对比</span>
-      <h3><a href="obsidian-alternative.html">2026 年最佳 Obsidian 替代方案推荐</a></h3>
-      <p>深度对比 Obsidian、Notion、Logseq、Molio，从本地优先、AI 集成、隐私安全等维度分析。</p>
-      <div class="meta">2026-06-20 · 产品对比</div>
-    </article>
+    <ul class="series-grid">
+      <li class="series-item">
+        <span class="series-tag">文学知识图谱</span>
+        <h3><a href="hongloumeng-knowledge-graph.html">红楼梦知识图谱：60 个人物、6 组对照，怎么把人物读明白</a></h3>
+        <p>读《红楼梦》真正难的，不是记不住人名，是判断不了人：袭人温柔还是伪善，宝钗大方还是世故。</p>
+      </li>
+      <li class="series-item">
+        <span class="series-tag">历史知识图谱</span>
+        <h3><a href="mingshi-people-and-institutions.html">明史人物与制度：列传 220 卷、311 个人物条目，每条都能回到原文</a></h3>
+        <p>《明史》是清朝官修的，很多人心里有个疑问，我读到的是不是被改过的？</p>
+      </li>
+      <li class="series-item">
+        <span class="series-tag">历史知识图谱</span>
+        <h3><a href="shiji-knowledge-system.html">史记知识体系：130 篇、近 3000 年，怎么读才不乱</a></h3>
+        <p>读《史记》常有一个困惑，明明是同一件事，在不同的传记里时间却对不上。这不是你的问题，是纪传体的体例使然。</p>
+      </li>
+      <li class="series-item">
+        <span class="series-tag">历史知识图谱</span>
+        <h3><a href="zizhitongjian-people-graph.html">资治通鉴人物关系图：294 卷、626 个人物，一张图为什么不够用</a></h3>
+        <p>搜《资治通鉴》人物关系图，拿到的往往是一张看不清的静态图：想查某个人是谁、两人什么关系，图给不了答案。</p>
+      </li>
+    </ul>
+  </section>
 
-    <article class="blog-card reveal">
-      <span class="tag">使用教程</span>
-      <h3><a href="claude-code-gui-guide.html">Claude Code 图形界面完全指南</a></h3>
-      <p>如何使用 Molio 内置的 Claude Code 图形界面，无需命令行经验即可与 AI 协作编程。</p>
-      <div class="meta">2026-06-18 · 使用教程</div>
-    </article>
+    <section class="blog-section reveal" aria-labelledby="ke-heading" id="ke">
+    <h2 id="ke-heading" class="blog-section-title">知识工程</h2>
+    <p class="blog-section-note">从知识管理到知识工程：本体、RAG 与 Agent，让领域知识成为 AI 能用的底座。</p>
 
-    <article class="blog-card reveal">
-      <span class="tag">知识管理</span>
-      <h3><a href="local-knowledge-base.html">为什么本地知识库才是你的最佳选择</a></h3>
-      <p>深入分析本地知识库 vs 云端知识管理的优劣，推荐最适合个人和团队的知识管理方案。</p>
-      <div class="meta">2026-06-15 · 知识管理</div>
-    </article>
+    <ul class="series-grid">
+      <li class="series-item">
+        <span class="series-tag">知识工程</span>
+        <h3><a href="knowledge-engineering-green-paper.html">知识工程绿皮书：RAG、本体与 Agent 全景指南</a></h3>
+        <p>一本 119 页的知识工程实践指南：从 Prompt 到 Graph 的五级阶梯、知识库五范式、四种本体与选型框架、…</p>
+      </li>
+      <li class="series-item">
+        <span class="series-tag">知识工程</span>
+        <h3><a href="ontology-modeling-guide.html">本体论怎么落地：GB/T 48000 要求的三类构件，和 Palantir 多出的那个“动作”</a></h3>
+        <p>AI 回答你的领域问题总是似是而非，调检索没用，多半是知识本身没结构。</p>
+      </li>
+      <li class="series-item">
+        <span class="series-tag">知识工程</span>
+        <h3><a href="knowledge-graph-building-tools.html">知识图谱构建工具有哪些推荐？按任务与产物选</a></h3>
+        <p>知识图谱构建工具有哪些推荐？比较 Molio（墨流）、Protégé、DeepKE、Neo4j、…</p>
+      </li>
+      <li class="series-item">
+        <span class="series-tag">知识工程</span>
+        <h3><a href="knowledge-graph-resource-sites.html">知识图谱资源网站有哪些？10 个入口与选择方法</a></h3>
+        <p>知识图谱资源网站有哪些？对照 Wikidata、DBpedia、OpenKG、…</p>
+      </li>
+</ul>
+  </section>
 
-    <article class="blog-card reveal">
-      <span class="tag">工具评测</span>
-      <h3><a href="web-clipper-guide.html">2026 年最佳网页剪藏工具推荐</a></h3>
-      <p>全面评测主流网页剪藏工具，对比保存速度、格式支持、与知识库集成度。</p>
-      <div class="meta">2026-06-22 · 工具评测</div>
-    </article>
+<section class="blog-section reveal" aria-labelledby="more-heading">
+    <h2 id="more-heading" class="blog-section-title">更多文章</h2>
 
-    <article class="blog-card reveal">
-      <span class="tag">工具评测</span>
-      <h3><a href="wechat-formatting.html">微信公众号排版工具对比</a></h3>
-      <p>深度对比 Markdown Here、壹伴、秀米、135 编辑器 vs Molio 内置 doocs/md 排版引擎。</p>
-      <div class="meta">2026-06-25 · 工具评测</div>
-    </article>
-  </div>
+    <ul class="blog-index-list">
+      <li class="index-row">
+        <div class="index-rail">
+          <time datetime="2026-10-08">2026-10-08</time>
+          <span class="index-tag">知识管理</span>
+        </div>
+        <div class="index-body">
+          <h3><a href="workbuddy-obsidian-knowledge-base.html">WorkBuddy + Obsidian 装好之后，知识库里到底放什么</a></h3>
+          <p>WorkBuddy 加 Obsidian 这套组合，工具和接入都有现成方案，装完之后真正会撞上的问题是里面放什么。</p>
+        </div>
+        <span class="index-arrow" aria-hidden="true">→</span>
+      </li>
+      <li class="index-row">
+        <div class="index-rail">
+          <time datetime="2026-09-23">2026-09-23</time>
+          <span class="index-tag">工程图纸数字化</span>
+        </div>
+        <div class="index-body">
+          <h3><a href="drawing-data-extraction.html">图纸数据提取：为什么直接读 DWG 拿不到门窗表，从解析到导出 Excel 的完整链路</a></h3>
+          <p>图纸数据提取难在哪：DWG 解析读得到图元、图层与块，读不到工程语义。</p>
+        </div>
+        <span class="index-arrow" aria-hidden="true">→</span>
+      </li>
+      <li class="index-row">
+        <div class="index-rail">
+          <time datetime="2026-09-23">2026-09-23</time>
+          <span class="index-tag">历史知识图谱</span>
+        </div>
+        <div class="index-body">
+          <h3><a href="sanguo-people-graph.html">三国人物关系图：关羽与曹操的关系怎样随事件变化</a></h3>
+          <p>搜三国人物关系图，免费互动图谱和可下载的高清图都有，但关羽和曹操是敌是友、孙刘联盟何时破裂，图上只有一条线。</p>
+        </div>
+        <span class="index-arrow" aria-hidden="true">→</span>
+      </li>
+      <li class="index-row">
+        <div class="index-rail">
+          <time datetime="2026-09-21">2026-09-21</time>
+          <span class="index-tag">本地知识库</span>
+        </div>
+        <div class="index-body">
+          <h3><a href="own-materials-to-knowledge-base.html">知识库导入：为什么资料喂给 AI 还是查不全，先结构化再接入</a></h3>
+          <p>把资料导入 AI 知识库，顺序错了喂多少都查不全。这篇讲清检索式问答的四种漏法、结构化管线的三段工序（版面分析、…</p>
+        </div>
+        <span class="index-arrow" aria-hidden="true">→</span>
+      </li>
+      <li class="index-row">
+        <div class="index-rail">
+          <time datetime="2026-09-20">2026-09-20</time>
+          <span class="index-tag">哲学</span>
+        </div>
+        <div class="index-body">
+          <h3><a href="western-philosophy-history-map.html">西方哲学史梳理：2500 年只有几条主线，人物要按对手关系记</a></h3>
+          <p>梳理西方哲学史，关键不在背人名，而在抓主线和对手关系。这篇把 2500 年折成五段追问，讲清楚休谟怎么惊醒康德、…</p>
+        </div>
+        <span class="index-arrow" aria-hidden="true">→</span>
+      </li>
+      <li class="index-row">
+        <div class="index-rail">
+          <time datetime="2026-06-27">2026-06-27</time>
+          <span class="index-tag">产品对比</span>
+        </div>
+        <div class="index-body">
+          <h3><a href="molio-vs-obsidian.html">Molio vs Obsidian 深度对比：AI 时代知识库工具该怎么选？</a></h3>
+          <p>从功能、架构、生态、AI 集成等维度全面对比 Molio 和 Obsidian。</p>
+        </div>
+        <span class="index-arrow" aria-hidden="true">→</span>
+      </li>
+      <li class="index-row">
+        <div class="index-rail">
+          <time datetime="2026-06-25">2026-06-25</time>
+          <span class="index-tag">工具评测</span>
+        </div>
+        <div class="index-body">
+          <h3><a href="wechat-formatting.html">微信公众号排版工具对比</a></h3>
+          <p>深度对比 Markdown Here、壹伴、秀米、135 编辑器 vs Molio 内置 doocs/md 排版引擎。</p>
+        </div>
+        <span class="index-arrow" aria-hidden="true">→</span>
+      </li>
+      <li class="index-row">
+        <div class="index-rail">
+          <time datetime="2026-06-22">2026-06-22</time>
+          <span class="index-tag">工具评测</span>
+        </div>
+        <div class="index-body">
+          <h3><a href="web-clipper-guide.html">2026 年最佳网页剪藏工具推荐</a></h3>
+          <p>全面评测主流网页剪藏工具，对比保存速度、格式支持、与知识库集成度。</p>
+        </div>
+        <span class="index-arrow" aria-hidden="true">→</span>
+      </li>
+      <li class="index-row">
+        <div class="index-rail">
+          <time datetime="2026-06-20">2026-06-20</time>
+          <span class="index-tag">产品对比</span>
+        </div>
+        <div class="index-body">
+          <h3><a href="obsidian-alternative.html">2026 年最佳 Obsidian 替代方案推荐</a></h3>
+          <p>深度对比 Obsidian、Notion、Logseq、Molio，从本地优先、AI 集成、隐私安全等维度分析。</p>
+        </div>
+        <span class="index-arrow" aria-hidden="true">→</span>
+      </li>
+      <li class="index-row">
+        <div class="index-rail">
+          <time datetime="2026-06-18">2026-06-18</time>
+          <span class="index-tag">使用教程</span>
+        </div>
+        <div class="index-body">
+          <h3><a href="claude-code-gui-guide.html">Claude Code 图形界面完全指南</a></h3>
+          <p>如何使用 Molio 内置的 Claude Code 图形界面，无需命令行经验即可与 AI 协作编程。</p>
+        </div>
+        <span class="index-arrow" aria-hidden="true">→</span>
+      </li>
+      <li class="index-row">
+        <div class="index-rail">
+          <time datetime="2026-06-15">2026-06-15</time>
+          <span class="index-tag">知识管理</span>
+        </div>
+        <div class="index-body">
+          <h3><a href="local-knowledge-base.html">为什么本地知识库才是你的最佳选择</a></h3>
+          <p>深入分析本地知识库 vs 云端知识管理的优劣，推荐最适合个人和团队的知识管理方案。</p>
+        </div>
+        <span class="index-arrow" aria-hidden="true">→</span>
+      </li>
+    </ul>
+  </section>
 </main>
 
 <!-- Footer -->
@@ -135,27 +274,25 @@
       <h4>产品</h4>
       <a href="../index.html">首页</a>
       <a href="../resources.html">资源</a>
-      <a href="../help.html">使用指南</a>
       <a href="../enterprise.html">定制服务</a>
       <a href="https://github.com/zhuzhaoyun/Molio" target="_blank" rel="noopener noreferrer">GitHub 开源</a>
     </div>
     <div class="footer-links">
       <h4>资源</h4>
-      <a href="../help.html">快速入门</a>
-      <a href="../help.html#step-6">排版教程</a>
-      <a href="../help.html#step-7">发布指南</a>
+      <a href="https://www.bilibili.com/video/BV1M68H6nEGs/" target="_blank" rel="noopener noreferrer">2 分钟上手视频</a>
+      <a href="../resources.html">现成知识底座</a>
       <a href="https://github.com/zhuzhaoyun/Molio/issues" target="_blank" rel="noopener noreferrer">问题反馈</a>
     </div>
     <div class="footer-links">
       <h4>关于</h4>
       <a href="./index.html">博客</a>
       <a href="../privacy.html">隐私政策</a>
-      <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer">粤ICP备2023134483号</a>
+      <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer">粤ICP备2023134483号-4</a>
     </div>
   </div>
   <div class="footer-bottom">
     <span>© 2026 Molio 墨流. 基于 MIT 协议开源.</span>
-    <span>Molio 墨流 — 别再和每一个 AI 从零开始：会成长的 AI 知识空间，产出回写入库，越用越懂你的事，数据全在你自己电脑上</span>
+    <span>Molio 墨流：别再和每一个 AI 从零开始。会成长的 AI 知识空间，产出回写入库，数据全在你自己电脑上</span>
   </div>
 </footer>
 

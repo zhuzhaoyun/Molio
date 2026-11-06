@@ -5,6 +5,7 @@ import { randomUUID } from 'node:crypto';
 import type { RunManager } from '../core/RunManager.js';
 import type { ConversationService } from '../core/conversations/service.js';
 import { startConversationRun } from '../core/conversations/run-starter.js';
+import { deriveConversationTitle } from '../core/conversations/title.js';
 import { getVaultByPath } from '../core/db.js';
 
 export function runsRoutes(
@@ -25,11 +26,11 @@ export function runsRoutes(
     }
 
     try {
-      const convTitle = body.message.slice(0, 80);
+      const convTitle = deriveConversationTitle(body.message);
       const vault = body.cwd ? getVaultByPath(db, body.cwd) : null;
       const conversation = body.conversationId
         ? conversations.getConversation(body.conversationId)
-        : conversations.createDesktopConversation(convTitle, vault?.id ?? null, vault?.name ?? null);
+        : conversations.createDesktopConversation(convTitle || undefined, vault?.id ?? null, vault?.name ?? null);
       if (!conversation) {
         return c.json({
           error: { code: 'NOT_FOUND', message: 'Conversation not found' },
@@ -111,7 +112,7 @@ export function runsRoutes(
 
   // DELETE /api/runs/:id — cancel a run
   app.delete('/:id', (c) => {
-    runManager.cancelRun(c.req.param('id'));
+    runManager.cancelRun(c.req.param('id'), 'api:delete-run');
     return c.body(null, 204);
   });
 

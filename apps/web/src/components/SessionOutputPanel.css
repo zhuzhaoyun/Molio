@@ -74,6 +74,45 @@
   color: var(--text-soft);
   user-select: none;
 }
+/* ── 「其他写入」折叠区：库内脚本 / 数据 / 登记元文件（INDEX.md·log.md·hot.md），默认收起 ── */
+.session-output-others {
+  box-sizing: border-box;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  background-color: var(--bg-elevated);
+  padding: 2px 0 3px;
+  overflow: hidden;
+}
+.session-output-others-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 6px 12px;
+  border: none;
+  background-color: transparent;
+  font: inherit;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--text-soft);
+  cursor: pointer;
+  text-align: left;
+  user-select: none;
+  transition: color 0.15s ease;
+}
+.session-output-others-toggle:hover,
+.session-output-others-toggle:focus-visible {
+  color: var(--text-muted);
+}
+.session-output-others-chevron {
+  flex: none;
+  width: 1em;
+}
+.session-output-others-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .session-output-item {
   display: flex;
   align-items: center;
@@ -89,6 +128,11 @@
   cursor: pointer;
   text-align: left;
   transition: color 0.15s ease, background-color 0.15s ease;
+}
+/* 折叠区条目：比主列表更收敛（低一级的视觉权重） */
+.session-output-item.is-other {
+  color: var(--text-soft);
+  font-size: 11.5px;
 }
 /* 条目间发丝分隔线（与卡片边框区分「组 vs 项」两级） */
 .session-output-item + .session-output-item {
@@ -152,6 +196,35 @@
 }
 .session-output-item-locate:hover,
 .session-output-item-locate:focus-visible {
+  color: var(--accent);
+  background-color: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+/* 「在资源管理器中显示」：与 locate 同款 hover 显现（仅桌面壳渲染），打开系统文件管理器并选中 */
+.session-output-item-reveal {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 20px;
+  height: 20px;
+  margin-right: -2px;
+  border: none;
+  border-radius: 4px;
+  padding: 0;
+  background-color: transparent;
+  line-height: 1;
+  color: var(--text-faint);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s ease, color 0.15s ease;
+}
+.session-output-item:hover .session-output-item-reveal,
+.session-output-item:focus-within .session-output-item-reveal,
+.session-output-item-reveal:focus-visible {
+  opacity: 1;
+}
+.session-output-item-reveal:hover,
+.session-output-item-reveal:focus-visible {
   color: var(--accent);
   background-color: color-mix(in srgb, var(--accent) 10%, transparent);
 }
@@ -323,29 +396,98 @@ body.home-dock-resizing {
   font-variant-numeric: tabular-nums;
 }
 
-/* ── 概览统计条：新建 / 更新 / 追加（只显示非零项） ── */
-.session-output-statbar {
+/* ─── 引用 tab ─── */
+
+/* URL 折叠组：沿用「其他写入」折叠区的收敛样式（原生 <details> 去掉默认三角） */
+.session-output-sources-urls,
+.session-output-sources-meta {
+  margin-top: 4px;
+  border-top: 1px solid var(--border-soft);
+}
+.session-output-sources-urls > summary,
+.session-output-sources-meta > summary {
   display: flex;
-  flex-wrap: wrap;
+  align-items: center;
   gap: 6px;
-  padding: 10px 12px 2px;
+  padding: 6px 12px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--text-soft);
+  cursor: pointer;
+  user-select: none;
+  list-style: none;
 }
-.session-output-stat {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 4px;
-  padding: 1px 8px;
-  border-radius: 999px;
-  border: 1px solid var(--border-soft);
-  background-color: var(--bg-elevated);
-  font-size: 10.5px;
-  color: var(--text-faint);
+.session-output-sources-urls > summary::-webkit-details-marker,
+.session-output-sources-meta > summary::-webkit-details-marker {
+  display: none;
 }
-.session-output-stat b {
-  font-weight: 600;
+.session-output-sources-urls > summary:hover,
+.session-output-sources-urls > summary:focus-visible,
+.session-output-sources-meta > summary:hover,
+.session-output-sources-meta > summary:focus-visible {
   color: var(--text-muted);
+}
+/* URL 行是 <a>：去掉 UA 下划线，与文件行视觉一致 */
+a.session-output-item {
+  text-decoration: none;
+}
+/* 引用条目的被读次数徽标：右对齐，与 tab 计数同色系 */
+.session-output-item-count {
+  flex: none;
+  margin-left: auto;
+  min-width: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background-color: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--accent);
+  font-size: 10px;
+  line-height: 15px;
+  text-align: center;
   font-variant-numeric: tabular-nums;
 }
+
+/* ── 引用 tab：未展示的引用（库外文件 / 隐藏目录 / 检索路径）──
+   与「网页链接」折叠组同款：默认收起，展开才列条目。
+   存在的理由：消息内联的引用标签照单全收这些项，面板不列就必须说明，
+   否则同一屏里「标签数 > 面板条目数」会被读成面板漏了。 */
+.session-output-sources-omitted {
+  margin-top: 4px;
+  border-top: 1px solid var(--border-soft);
+}
+.session-output-sources-omitted > summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--text-soft);
+  cursor: pointer;
+  user-select: none;
+  list-style: none;
+}
+.session-output-sources-omitted > summary::-webkit-details-marker {
+  display: none;
+}
+.session-output-sources-omitted > summary:hover,
+.session-output-sources-omitted > summary:focus-visible {
+  color: var(--text-muted);
+}
+/* 未展示的条目：不可点（点开必然失败），只作说明 ——
+   hover 不给「可点」的暗示（否则整行泛 accent 色，看着像能点开）。 */
+.session-output-item--omitted,
+.session-output-item--omitted:hover {
+  cursor: default;
+  color: var(--text-soft);
+  background-color: transparent;
+}
+.session-output-item--omitted:hover .session-output-item-icon {
+  color: inherit;
+}
+
+/* 概览顶部的「写入 N · M 轮」仍在 header 里（.session-output-stats）；
+   原来压在主列表上方的「新建 / 更新 / 追加」统计条已删 —— 它离清单太近，
+   被读成清单的标题（而清单里混着更新）。新建/更新改成分段标题各带计数。 */
 
 /* ── 变更 tab：按文件分组的改动序列 ── */
 .session-output-changes-group {

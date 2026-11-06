@@ -2,7 +2,7 @@ import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { tmpdir } from 'node:os';
 import { join, basename } from 'node:path';
-import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import fs, { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import {
   writeFile,
   readFile,
@@ -14,6 +14,7 @@ import {
   scanTree,
   countFiles,
   resolveCanonicalPath,
+  listPublishableTopDirs,
   isPrunedDirName,
   PRUNE_DIR_NAMES,
   MAX_DIR_ENTRIES,
@@ -347,6 +348,32 @@ describe('knowledge filesystem operations', () => {
         const tree = scanTree(cleanVault);
         assert.deepEqual(tree, []);
       } finally {
+        rmSync(cleanVault, { recursive: true, force: true });
+      }
+    });
+
+    it('跳过 readdir 与 stat 之间消失的文件，不整棵树抛错（并发删除竞态）', () => {
+      // 回归：agent 直写 / 回收站删除 / 导入与扫描并发时，readdir 看到了文件、
+      // stat 时它已经没了 → ENOENT 以前会打穿整条 GET /tree（500），前端静默吞掉，
+      // 用户看到一棵不动的旧树。
+      const cleanVault = mkdtempSync(join(tmpdir(), 'molio-vanish-'));
+      const origStatSync = fs.statSync;
+      try {
+        writeFileSync(join(cleanVault, 'kept.md'), 'k');
+        writeFileSync(join(cleanVault, 'vanished.md'), 'v');
+        (fs as { statSync: typeof fs.statSync }).statSync = ((p: fs.PathLike, ...rest: unknown[]) => {
+          if (String(p).endsWith('vanished.md')) {
+            const err = new Error(`ENOENT: no such file or directory, stat '${String(p)}'`) as NodeJS.ErrnoException;
+            err.code = 'ENOENT';
+            throw err;
+          }
+          return (origStatSync as (...args: unknown[]) => fs.Stats)(p, ...rest);
+        }) as typeof fs.statSync;
+
+        const tree = scanTree(cleanVault);
+        assert.deepEqual(tree.map((n) => n.name), ['kept.md']);
+      } finally {
+        (fs as { statSync: typeof fs.statSync }).statSync = origStatSync;
         rmSync(cleanVault, { recursive: true, force: true });
       }
     });
@@ -724,6 +751,8 @@ describe('vault scan pruning + bounded backstop', () => {
         assert.ok(dump, 'dump dir node should still exist (pruned, not hidden)');
         // Pruned → empty children, NOT MAX_DIR_ENTRIES+1 stat'd file nodes.
         assert.equal(dump!.children?.length, 0);
+        // Flagged so the UI can show "too many files" instead of a silent blank.
+        assert.equal(dump!.pruned, true);
       } finally {
         rmSync(clean, { recursive: true, force: true });
       }
@@ -739,6 +768,49 @@ describe('vault scan pruning + bounded backstop', () => {
         }
         // Only real.md counts — the dump subtree is pruned, not counted.
         assert.equal(countFiles(clean), 1);
+      } finally {
+        rmSync(clean, { recursive: true, force: true });
+      }
+    });
+
+    // Regression (2026-09): 史记-rebuild wiki/entities holds 1350 entity notes
+    // (+ INDEX.md) — a legitimate knowledge directory the old 1000-entry cap
+    // silently pruned, so the folder looked unopenable in the tree and the
+    // graph / search / wikilink resolution all missed every entity file.
+    it('does not prune a legitimate large wiki entity directory (~1350 entries)', () => {
+      const clean = mkdtempSync(join(tmpdir(), 'molio-prune-entities-'));
+      try {
+        mkdirSync(join(clean, 'entities'));
+        // The real-world trigger: 1349 entity notes + INDEX.md.
+        for (let i = 0; i < 1350; i++) {
+          writeFileSync(join(clean, 'entities', `实体${i}.md`), 'x');
+        }
+        writeFileSync(join(clean, 'entities', 'INDEX.md'), 'x');
+        const tree = scanTree(clean);
+        const entities = tree.find((n) => n.name === 'entities');
+        assert.ok(entities, 'entities dir node should exist');
+        assert.equal(entities!.children?.length, 1351);
+        // Scanned in full → NOT flagged pruned (the UI must not show the hint).
+        assert.equal(entities!.pruned, undefined);
+      } finally {
+        rmSync(clean, { recursive: true, force: true });
+      }
+    });
+
+    // Pin the exclusive-cap semantics: entries.length > MAX_DIR_ENTRIES prunes,
+    // exactly-at-cap does not. Guards against a future `>` → `>=` flip.
+    it('keeps a directory with exactly MAX_DIR_ENTRIES entries', () => {
+      const clean = mkdtempSync(join(tmpdir(), 'molio-prune-at-cap-'));
+      try {
+        mkdirSync(join(clean, 'notes'));
+        for (let i = 0; i < MAX_DIR_ENTRIES; i++) {
+          writeFileSync(join(clean, 'notes', `n${i}.md`), 'x');
+        }
+        const tree = scanTree(clean);
+        const notes = tree.find((n) => n.name === 'notes');
+        assert.ok(notes, 'notes dir node should exist');
+        assert.equal(notes!.children?.length, MAX_DIR_ENTRIES);
+        assert.equal(notes!.pruned, undefined);
       } finally {
         rmSync(clean, { recursive: true, force: true });
       }
@@ -858,7 +930,7 @@ describe('vault scan pruning + bounded backstop', () => {
       try {
         mkdirSync(join(clean, 'notes'), { recursive: true });
         for (let i = 0; i < 20; i++) writeFileSync(join(clean, 'notes', `n${i}.md`), 'x');
-        // Defaults (MAX_DIR_ENTRIES=1000, MAX_TOTAL=50000) must not prune 20 files.
+        // Defaults (MAX_DIR_ENTRIES=5000, MAX_TOTAL=50000) must not prune 20 files.
         assert.equal(countFiles(clean), 20);
       } finally {
         rmSync(clean, { recursive: true, force: true });
@@ -867,11 +939,39 @@ describe('vault scan pruning + bounded backstop', () => {
   });
 
   describe('constants sanity', () => {
-    it('MAX_DIR_ENTRIES is below the ~10k FD-exhaustion ceiling', () => {
-      assert.ok(MAX_DIR_ENTRIES < 5000, `MAX_DIR_ENTRIES too high: ${MAX_DIR_ENTRIES}`);
+    it('MAX_DIR_ENTRIES stays an order of magnitude below the ~10k FD-exhaustion scale', () => {
+      // 2026-09: raised 1000 → 5000 — flat entity-wiki directories (史记
+      // entities = 1350 notes) are legitimate knowledge, and flat file counts
+      // don't drive FD pressure (watchers hold per-directory handles). The
+      // guard keeps the cap well under the ~10k-file dumps behind the
+      // original FD-exhaustion incident.
+      assert.ok(MAX_DIR_ENTRIES <= 5000, `MAX_DIR_ENTRIES too high: ${MAX_DIR_ENTRIES}`);
     });
     it('MAX_TOTAL is set and generous', () => {
       assert.ok(MAX_TOTAL >= 10000 && MAX_TOTAL <= 100000);
     });
+  });
+});
+
+// 2026-10：发布/升版两处共用的一级目录规则。发布页目录选择与升版打包 include 兜底
+// 都走这里，规则漂移过一次（升版静默丢 .molio），故单独立测。
+describe('listPublishableTopDirs', () => {
+  let vp: string;
+  before(() => { vp = mkdtempSync(join(tmpdir(), 'molio-topdirs-')); });
+  after(() => { rmSync(vp, { recursive: true, force: true }); });
+
+  it('收非隐藏目录与 .molio，排除其他点目录，忽略散文件，按名排序', () => {
+    mkdirSync(join(vp, 'wiki'), { recursive: true });
+    mkdirSync(join(vp, 'raw'), { recursive: true });
+    mkdirSync(join(vp, '.molio', 'assets'), { recursive: true });
+    mkdirSync(join(vp, '.obsidian'), { recursive: true });
+    mkdirSync(join(vp, '.claude'), { recursive: true });
+    writeFileSync(join(vp, 'README.md'), 'hi');
+
+    assert.deepEqual(listPublishableTopDirs(vp), ['.molio', 'raw', 'wiki']);
+  });
+
+  it('目录不存在 → 抛出（调用方自行决定降级，不静默返回空表）', () => {
+    assert.throws(() => listPublishableTopDirs(join(vp, 'nope')));
   });
 });

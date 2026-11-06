@@ -55,18 +55,20 @@ export default async function (context) {
     const { rcedit } = require('rcedit');
     // signAndEditExecutable:false 会让 electron-builder 跳过 exe 图标嵌入，
     // 必须用 rcedit 显式写入 Molio 的 .ico，否则任务栏/快捷方式显示 Electron 默认图标。
+    // 注意：rcedit v5 的 Node API 只认 kebab-case 键（'version-string' 等），
+    // camelCase（versionString）会被静默忽略、只设置图标——packaging 测试锁定。
     const icoPath = join(import.meta.dirname, '..', 'build', 'icon.ico');
     await rcedit(exePath, {
       icon: icoPath,
-      versionString: {
+      'version-string': {
         FileDescription: 'Molio',
         ProductName: 'Molio',
         CompanyName: 'Molio Team',
         InternalName: 'Molio',
         OriginalFilename: 'Molio.exe',
       },
-      fileVersion: packager.appInfo.version,
-      productVersion: packager.appInfo.version,
+      'file-version': packager.appInfo.version,
+      'product-version': packager.appInfo.version,
     });
     console.log('[fix-exe-metadata] Done — Windows protocol dialog will show "Molio"');
   } catch (err) {

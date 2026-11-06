@@ -20,7 +20,7 @@ import { mockAgent } from './helpers/mock-sse';
  * auto-selects whatever vault sorts first, which is not our test vault).
  */
 
-const DAEMON = 'http://localhost:3100';
+const DAEMON = `http://localhost:${process.env.MOLIO_E2E_DAEMON_PORT ?? '3100'}`;
 
 let vault: TempVault;
 
@@ -43,7 +43,8 @@ async function createVaultWithTree(): Promise<TempVault> {
 }
 
 async function gotoHomeWithVault(page: import('@playwright/test').Page) {
-  await page.goto(`/?vault=${vault.id}`);
+  // 整页对话在 /chat（入口 `/` 只做重定向）；`?vault=` 由 vaultStore 在模块加载时读走
+  await page.goto(`/chat?vault=${vault.id}`);
   await Promise.race([
     page.waitForLoadState('networkidle'),
     page.waitForTimeout(5_000),

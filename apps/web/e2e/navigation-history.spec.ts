@@ -5,7 +5,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 /**
- * @area navigation
+ * @area kb
  * @priority P1
  *
  * Tab-scoped view history. The forward/back buttons walk the order of views the
@@ -32,7 +32,7 @@ test.describe('Navigation history (tabs)', () => {
   test.afterAll(async () => { if (vault) await cleanupTempVault(vault); });
 
   test('back/forward buttons render in the KB title bar', async ({ page }) => {
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+    await page.goto(`/knowledge?vault=${vault.id}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 10_000 });
 
     await expect(page.locator('[data-testid="nav-back"]')).toBeVisible();
@@ -40,7 +40,7 @@ test.describe('Navigation history (tabs)', () => {
   });
 
   test('both buttons are disabled when no file is open yet', async ({ page }) => {
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+    await page.goto(`/knowledge?vault=${vault.id}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 10_000 });
 
     await expect(page.locator('[data-testid="nav-back"]')).toBeDisabled();
@@ -48,7 +48,7 @@ test.describe('Navigation history (tabs)', () => {
   });
 
   test('viewing files then back/forward walks the sequence (recycle, no tab growth)', async ({ page }) => {
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+    await page.goto(`/knowledge?vault=${vault.id}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 10_000 });
 
     const alpha = page.locator('.kb-tree-item').filter({ hasText: 'alpha.md' });
@@ -88,7 +88,7 @@ test.describe('Navigation history (tabs)', () => {
   });
 
   test('graph tab joins the history; its topbar hosts the same back/forward', async ({ page }) => {
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+    await page.goto(`/knowledge?vault=${vault.id}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 10_000 });
 
     // 看过 alpha → 打开图谱标签（图谱作为「被看过的视图」入栈）
@@ -115,7 +115,7 @@ test.describe('Navigation history (tabs)', () => {
   });
 
   test('file → graph → file: back/forward walks across view kinds', async ({ page }) => {
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+    await page.goto(`/knowledge?vault=${vault.id}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 10_000 });
 
     const alpha = page.locator('.kb-tree-item').filter({ hasText: 'alpha.md' });

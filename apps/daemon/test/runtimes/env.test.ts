@@ -242,6 +242,69 @@ describe('buildSpawnEnv', () => {
     });
   });
 
+  // Error-driven (2026-10-05): dsh ACP init failed with -32603. The web
+  // provider form persisted DEEPSEEK_BASE_URL: '' for the official DeepSeek
+  // preset ("clear the custom endpoint"), and dsh's resolveAdapterOptions
+  // does `config.baseURL ?? env.DEEPSEEK_BASE_URL ?? default` — an empty
+  // string is NOT nullish, so `new URL('')` threw TypeError: Invalid URL,
+  // both llm-deepseek entries failed to activate, and initialize never
+  // answered. Empty/whitespace-only DEEPSEEK_BASE_URL must be dropped at
+  // the spawn boundary so dsh falls back to its built-in official root.
+  describe('dsh empty DEEPSEEK_BASE_URL sanitization', () => {
+    it('should drop empty DEEPSEEK_BASE_URL for dsh (regression: Invalid URL crash)', () => {
+      const def = makeDef({ id: 'dsh' });
+      const env = buildSpawnEnv(def, {
+        DEEPSEEK_API_KEY: 'sk-test',
+        DEEPSEEK_BASE_URL: '',
+      });
+
+      assert.equal(env['DEEPSEEK_API_KEY'], 'sk-test');
+      assert.equal('DEEPSEEK_BASE_URL' in env, false);
+    });
+
+    it('should drop whitespace-only DEEPSEEK_BASE_URL for dsh', () => {
+      const def = makeDef({ id: 'dsh' });
+      const env = buildSpawnEnv(def, { DEEPSEEK_BASE_URL: '   ' });
+
+      assert.equal('DEEPSEEK_BASE_URL' in env, false);
+    });
+
+    it('should drop empty DEEPSEEK_BASE_URL coming from def.env', () => {
+      const def = makeDef({ id: 'dsh', env: { DEEPSEEK_BASE_URL: '' } });
+      const env = buildSpawnEnv(def, {});
+
+      assert.equal('DEEPSEEK_BASE_URL' in env, false);
+    });
+
+    it('should keep a valid DEEPSEEK_BASE_URL for dsh', () => {
+      const def = makeDef({ id: 'dsh' });
+      const env = buildSpawnEnv(def, {
+        DEEPSEEK_BASE_URL: 'https://api.example.com/anthropic',
+      });
+
+      assert.equal(env['DEEPSEEK_BASE_URL'], 'https://api.example.com/anthropic');
+    });
+
+    it('should never strip DEEPSEEK_API_KEY (sole credential channel)', () => {
+      const def = makeDef({ id: 'dsh' });
+      const env = buildSpawnEnv(def, {
+        DEEPSEEK_API_KEY: 'sk-sole-channel',
+        DEEPSEEK_BASE_URL: '',
+      });
+
+      assert.equal(env['DEEPSEEK_API_KEY'], 'sk-sole-channel');
+    });
+
+    it('should leave other agents untouched by the dsh sanitization', () => {
+      const def = makeDef({ id: 'gemini' });
+      const env = buildSpawnEnv(def, { DEEPSEEK_BASE_URL: '' });
+
+      // Only dsh parses DEEPSEEK_BASE_URL through new URL(); other agents
+      // are not sanitized for it.
+      assert.equal(env['DEEPSEEK_BASE_URL'], '');
+    });
+  });
+
   describe('Molio runtime identity injection', () => {
     it('should inject MOLIO_AGENT_ID and MOLIO_AGENT_NAME for all agents', () => {
       const def = makeDef({ id: 'qwen', name: 'Qwen Code' });
@@ -463,6 +526,81 @@ describe('buildSpawnEnv', () => {
       const env = buildSpawnEnv(def, {});
 
       assert.equal(env['CLAUDE_CODE_GIT_BASH_PATH'], undefined);
+    });
+  });
+
+  // Error-driven (2026-10-09): hermes chat on Windows died with its own
+  // pm/shell.py "no bash found" error (text mentions the WSL stub). Root
+  // cause: hermes's PortableGit WAS extracted under
+  // %LOCALAPPDATA%\hermes\tools\git-2.53.0+3-win32-x64\ but its tools/
+  // facts.json had no git entry (installer registration gap), system Git
+  // lives on D: (outside hermes's fixed C:-based roots), and PATH's only
+  // bash.exe is the WSL launcher stub hermes rejects. Fix: inject
+  // HERMES_GIT_BASH_PATH (hermes's first-priority override) at the spawn
+  // boundary — staged PortableGit first, system Git fallback.
+  describe('hermes HERMES_GIT_BASH_PATH injection (Windows)', () => {
+    const isWindows = process.platform === 'win32';
+    let tmp: string;
+    let savedLocalAppData: string | undefined;
+
+    beforeEach(() => {
+      tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'molio-hermes-env-'));
+      savedLocalAppData = process.env['LOCALAPPDATA'];
+      process.env['LOCALAPPDATA'] = tmp;
+    });
+
+    afterEach(() => {
+      if (savedLocalAppData !== undefined) process.env['LOCALAPPDATA'] = savedLocalAppData;
+      else delete process.env['LOCALAPPDATA'];
+      try { fs.rmSync(tmp, { recursive: true, force: true }); } catch { /* ignore */ }
+    });
+
+    it('should prefer the hermes staged PortableGit bash over system git', { skip: !isWindows ? 'Windows only' : undefined }, () => {
+      const stagedBash = path.join(tmp, 'hermes', 'tools', 'git-2.53.0+3-win32-x64', 'bin', 'bash.exe');
+      fs.mkdirSync(path.dirname(stagedBash), { recursive: true });
+      fs.writeFileSync(stagedBash, ''); // existsSync-only probe; never executed
+
+      const def = makeDef({ id: 'hermes' });
+      const env = buildSpawnEnv(def, {});
+
+      assert.equal(env['HERMES_GIT_BASH_PATH'], stagedBash);
+    });
+
+    it('should fall back to system git-bash when the staged store has no git', { skip: !isWindows ? 'Windows only' : undefined }, () => {
+      // tmp LOCALAPPDATA is empty — no hermes/tools at all.
+      const def = makeDef({ id: 'hermes' });
+      const env = buildSpawnEnv(def, {});
+      const got = env['HERMES_GIT_BASH_PATH'];
+
+      if (got) {
+        assert.ok(got.endsWith('bash.exe'), `Expected bash.exe path, got: ${got}`);
+        assert.ok(
+          !got.toLowerCase().startsWith(tmp.toLowerCase()),
+          `Fallback must not point into the empty staged store, got: ${got}`,
+        );
+      }
+      // Host without any Git → unset, no crash.
+    });
+
+    it('should not override HERMES_GIT_BASH_PATH if already set', () => {
+      const def = makeDef({ id: 'hermes' });
+      const env = buildSpawnEnv(def, { HERMES_GIT_BASH_PATH: 'C:\\custom\\bash.exe' });
+
+      assert.equal(env['HERMES_GIT_BASH_PATH'], 'C:\\custom\\bash.exe');
+    });
+
+    it('should not set HERMES_GIT_BASH_PATH for non-hermes agents', () => {
+      const def = makeDef({ id: 'claude' });
+      const env = buildSpawnEnv(def, {});
+
+      assert.equal(env['HERMES_GIT_BASH_PATH'], undefined);
+    });
+
+    it('should not set HERMES_GIT_BASH_PATH on non-Windows', { skip: isWindows ? 'non-Windows only' : undefined }, () => {
+      const def = makeDef({ id: 'hermes' });
+      const env = buildSpawnEnv(def, {});
+
+      assert.equal(env['HERMES_GIT_BASH_PATH'], undefined);
     });
   });
 

@@ -38,9 +38,21 @@ test.describe('KB tree sort + locate', () => {
   });
   test.afterAll(async () => { if (vault) await cleanupTempVault(vault); });
 
+  /** 外部落盘后等失效链落定（chokidar → 300ms 去抖 → daemon 树缓存 invalidate），
+   *  再深链进去。?file= 的解析是「树加载后一次性选点」：撞上旧树窗口会把 tab
+   *  开成裸链接名、且树后来刷新也不重试（树缓存 PR 起的窗口，SSE 自愈只救树本身）。 */
+  async function waitForInDaemonTree(page: import('@playwright/test').Page, name: string) {
+    const daemon = `http://localhost:${Number(process.env.MOLIO_E2E_DAEMON_PORT ?? 3100)}`;
+    await expect.poll(async () => {
+      const res = await page.request.get(`${daemon}/api/knowledge/vaults/${vault.id}/tree`);
+      const body = (await res.json()) as { tree: unknown[] };
+      return JSON.stringify(body.tree).includes(name);
+    }, { timeout: 10_000, intervals: [150] }).toBe(true);
+  }
+
   test('sort by modified time lists newest first; back to name restores alpha order', async ({ page }) => {
     // Open mid.md so a file is selected (no bearing on sort, just a stable landing).
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=mid.md`);
+    await page.goto(`/knowledge?vault=${vault.id}&file=mid.md`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
 
     // Default sort = by name → mid / new / old (alphabetical)
@@ -83,7 +95,7 @@ test.describe('KB tree sort + locate', () => {
   test('locate expands ancestors and reveals the active file', async ({ page }) => {
     // Open the deep file via URL. Ancestors (dirA, dirA/subA) start collapsed,
     // so deep.md is NOT rendered in the tree even though it is the active file.
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=dirA/subA/deep.md`);
+    await page.goto(`/knowledge?vault=${vault.id}&file=dirA/subA/deep.md`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
     // Wait for the tree root to load
     await expect(page.locator('.kb-tree-group-label').filter({ hasText: 'dirA' })).toBeVisible({ timeout: 10_000 });
@@ -102,7 +114,7 @@ test.describe('KB tree sort + locate', () => {
 
   test('locate disabled when no file is open', async ({ page }) => {
     // No ?file= param → no file selected → locate disabled
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+    await page.goto(`/knowledge?vault=${vault.id}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
     await expect(page.locator('[data-testid="kb-btn-locate"]')).toBeDisabled();
   });
@@ -114,7 +126,7 @@ test.describe('KB tree sort + locate', () => {
   // button can match the active tree row. Mirrors the canonical-path case above.
   test('extension-less link opens with formatted title and is locatable', async ({ page }) => {
     // Same file as the canonical test above, but the URL omits ".md".
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=dirA/subA/deep`);
+    await page.goto(`/knowledge?vault=${vault.id}&file=dirA/subA/deep`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
     await expect(page.locator('.kb-tree-group-label').filter({ hasText: 'dirA' })).toBeVisible({ timeout: 10_000 });
 
@@ -138,7 +150,7 @@ test.describe('KB tree sort + locate', () => {
   // file anywhere in the tree, not just at the root.
   test('bare page-name link resolves to nested file and is locatable', async ({ page }) => {
     // "deep" has no directory component — resolver must walk the tree.
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=deep`);
+    await page.goto(`/knowledge?vault=${vault.id}&file=deep`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
     await expect(page.locator('.kb-tree-group-label').filter({ hasText: 'dirA' })).toBeVisible({ timeout: 10_000 });
 
@@ -161,8 +173,9 @@ test.describe('KB tree sort + locate', () => {
   test('wiki-link missing the wiki/ prefix resolves to the nested file', async ({ page }) => {
     fs.mkdirSync(path.join(vault.path, 'wiki', 'entities'), { recursive: true });
     fs.writeFileSync(path.join(vault.path, 'wiki', 'entities', '宇树科技.md'), '# 宇树\n');
+    await waitForInDaemonTree(page, '宇树科技.md');
 
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=entities/宇树科技`);
+    await page.goto(`/knowledge?vault=${vault.id}&file=entities/宇树科技`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
     await expect(page.locator('.kb-tree-group-label').filter({ hasText: 'wiki' })).toBeVisible({ timeout: 10_000 });
 
@@ -184,8 +197,9 @@ test.describe('KB tree sort + locate', () => {
   test('non-md file resolves via stem match when link omits extension', async ({ page }) => {
     fs.mkdirSync(path.join(vault.path, 'wiki', 'entities'), { recursive: true });
     fs.writeFileSync(path.join(vault.path, 'wiki', 'entities', '季度报告.pdf'), '%PDF-1.4\n');
+    await waitForInDaemonTree(page, '季度报告.pdf');
 
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=entities/季度报告`);
+    await page.goto(`/knowledge?vault=${vault.id}&file=entities/季度报告`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
     await expect(page.locator('.kb-tree-group-label').filter({ hasText: 'wiki' })).toBeVisible({ timeout: 10_000 });
 

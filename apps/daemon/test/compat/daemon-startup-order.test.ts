@@ -65,11 +65,30 @@ describe('daemon startup order: HTTP listen must precede heavy chores', () => {
     );
   });
 
-  it('schedules the deferred chores from the listening callback', () => {
+  it('schedules the deferred chores from the listening callback after CHORES_DELAY_MS', () => {
+    // Was `setImmediate` — startup-perf (2026-09) replaced it with a
+    // configurable delay: the web UI fires its first-screen request storm the
+    // moment the desktop shell sees the "listening on" line, and chores
+    // starting immediately compete with those requests for CPU/IO.
+    const listeningPos = indexTs.indexOf('listening on');
+    const schedulePos = indexTs.indexOf('setTimeout(() => {');
+    assert.ok(listeningPos !== -1, 'the listening log line must exist');
     assert.ok(
-      /listening on[\s\S]{0,400}setImmediate\(/.test(indexTs),
-      'chores must be scheduled right after the "listening on" line is printed ' +
+      schedulePos !== -1 && schedulePos > listeningPos,
+      'chores must be scheduled after the "listening on" line is printed ' +
         '(the desktop shell resolves readiness on that stdout line)',
+    );
+    assert.ok(
+      /setTimeout\(\(\) => \{[\s\S]{0,300}runDeferredStartupChores\(\)[\s\S]{0,300}\}, CHORES_DELAY_MS\)/.test(indexTs),
+      'chores must run via setTimeout(..., CHORES_DELAY_MS) so the web UI first-screen requests get the machine first',
+    );
+    assert.ok(
+      indexTs.includes('MOLIO_CHORES_DELAY_MS'),
+      'the chores delay must stay configurable (tests/tuning; 0 = old behaviour)',
+    );
+    assert.ok(
+      indexTs.includes('timer.unref'),
+      'the chores timer must be unref-ed so it never keeps the process alive',
     );
   });
 

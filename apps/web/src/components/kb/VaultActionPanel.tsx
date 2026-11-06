@@ -67,8 +67,8 @@ export function VaultActionPanel({
           onClick={onCreate}
         >
           <span className="vm-action-text">
-            <span className="vm-action-title">新建仓库</span>
-            <span className="vm-action-desc">在指定文件夹下创建一个新的仓库。</span>
+            <span className="vm-action-title">新建知识库</span>
+            <span className="vm-action-desc">在指定文件夹下创建一个新的知识库。</span>
           </span>
           <span className="vm-action-go" aria-hidden="true">
             ›
@@ -81,8 +81,8 @@ export function VaultActionPanel({
           onClick={onOpenLocal}
         >
           <span className="vm-action-text">
-            <span className="vm-action-title">打开本地仓库</span>
-            <span className="vm-action-desc">将一个本地文件夹作为仓库在 Molio 中打开。</span>
+            <span className="vm-action-title">打开知识库</span>
+            <span className="vm-action-desc">将一个本地文件夹作为知识库在 Molio 中打开。</span>
           </span>
           <span className="vm-action-go" aria-hidden="true">
             ›

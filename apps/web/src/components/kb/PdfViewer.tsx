@@ -242,7 +242,7 @@ export const PdfViewer = forwardRef<PdfViewerHandle, PdfViewerProps>(
           }
         } catch (err) {
           if (cancelled) return;
-          console.error('[PdfViewer] search failed', err);
+          console.warn('[PdfViewer] search failed', err);
           setMatchGroups([]);
           setActiveIndex(-1);
           setSearching(false);

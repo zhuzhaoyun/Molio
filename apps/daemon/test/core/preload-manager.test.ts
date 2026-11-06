@@ -632,3 +632,198 @@ describe('preload cleanup closure (stop keeps shared cache, removes only own art
     assert.equal(pm.getStatuses().docling.status, 'missing');
   });
 });
+
+// ─── Phase 0 auto-provision hooks (docling 免装 Python) ────────────────────
+//
+// Error-driven (2026-09): docling 预下载原本要求本机已有 Python ≥3.10，找不到
+// 就抛错让非技术用户自己去装。修复：Phase 0 拦截 → provisionManagedPython 自动
+// 下载独立 Python（python-provision.ts，源链 npmmirror→GitHub）。本机/CI 都装有
+// 系统 Python，回退路径无法自然触发——用 __setPreloadPythonHooksForTest 注入
+// 假 findPython/provision 驱动该分支。
+
+describe('Phase 0 auto-provision hooks (docling 免装 Python)', () => {
+  const isWindows = process.platform === 'win32';
+  let savedHome: string | undefined;
+  let tmpHome: string;
+
+  beforeEach(() => {
+    savedHome = isWindows ? process.env['USERPROFILE'] : process.env['HOME'];
+    tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'molio-preload-pyhook-'));
+    if (isWindows) process.env['USERPROFILE'] = tmpHome;
+    else process.env['HOME'] = tmpHome;
+  });
+  afterEach(async () => {
+    // 模块在文件内跨 describe 缓存——钩子必须复位，否则污染其它测试
+    const { __setPreloadPythonHooksForTest } = await import('../../src/core/preload-manager.js');
+    __setPreloadPythonHooksForTest({});
+    if (savedHome !== undefined) {
+      if (isWindows) process.env['USERPROFILE'] = savedHome;
+      else process.env['HOME'] = savedHome;
+    } else {
+      if (isWindows) delete process.env['USERPROFILE'];
+      else delete process.env['HOME'];
+    }
+    try { fs.rmSync(tmpHome, { recursive: true, force: true }); } catch { /* ignore */ }
+  });
+
+  it('no system python → provision hook drives Phase 0 and its exe feeds the venv step', async () => {
+    const { createPreloadManager, __setPreloadPythonHooksForTest } = await import('../../src/core/preload-manager.js');
+    const provisionCalls: Array<{ signal: AbortSignal; onProgress: unknown }> = [];
+    // 指向不存在的 exe：Phase 1 的 venv spawn 会 ENOENT 快速失败——本测试
+    // 关注的是 Phase 0 分支被走到、managed exe 被传给后续步骤，不是真装。
+    const fakeExe = path.join(tmpHome, 'nope', isWindows ? 'python.exe' : 'python3');
+    __setPreloadPythonHooksForTest({
+      findPython: () => ({ bin: null, version: null }),
+      provision: async (o) => { provisionCalls.push(o); return fakeExe; },
+    });
+
+    const pm = createPreloadManager();
+    const msgs: string[] = [];
+    const off = pm.onProgress((e) => msgs.push(e.message));
+    await pm.startPreload('docling'); // 内部 catch → status，不会 reject
+    off();
+
+    assert.equal(provisionCalls.length, 1, 'Phase 0 must invoke provision exactly once');
+    assert.ok(provisionCalls[0]!.signal instanceof AbortSignal, 'provision must receive the abort signal');
+    assert.equal(typeof provisionCalls[0]!.onProgress, 'function', 'provision must receive the progress callback');
+    assert.ok(
+      msgs.some((m) => m.includes('自动下载独立 Python 运行环境')),
+      `progress stream must announce the auto-download, got: ${JSON.stringify(msgs)}`,
+    );
+    assert.ok(
+      msgs.some((m) => m.includes('未找到 Python')),
+      'progress must tell the user no system python was found',
+    );
+    // 假 exe 建不了 venv → failed（错误透传，不卡死 preloading）
+    const st = pm.getStatus('docling');
+    assert.equal(st.status, 'failed', `fake managed exe cannot build a venv → failed, got ${st.status}`);
+  });
+
+  it('provision failure → status failed with the error passed through', async () => {
+    const { createPreloadManager, __setPreloadPythonHooksForTest } = await import('../../src/core/preload-manager.js');
+    __setPreloadPythonHooksForTest({
+      findPython: () => ({ bin: null, version: [3, 9] }),
+      provision: async () => { throw new Error('自动下载独立 Python 失败：全源不可达'); },
+    });
+    const pm = createPreloadManager();
+    const msgs: string[] = [];
+    const off = pm.onProgress((e) => msgs.push(e.message));
+    await pm.startPreload('docling');
+    off();
+
+    // 旧 Python (3.9) 的存在也要在文案里说清楚（「最高：3.9」）
+    assert.ok(msgs.some((m) => m.includes('3.9')), 'progress should report the best python found (3.9)');
+    const st = pm.getStatus('docling');
+    assert.equal(st.status, 'failed');
+    assert.match((st as { error: string }).error, /全源不可达/, 'the provision error must surface verbatim');
+  });
+
+  it('system python found → provision hook is never called (no needless download)', async () => {
+    const { createPreloadManager, __setPreloadPythonHooksForTest } = await import('../../src/core/preload-manager.js');
+    let provisionCalled = 0;
+    const sysPy = path.join(tmpHome, 'definitely-missing', isWindows ? 'python.exe' : 'python3');
+    __setPreloadPythonHooksForTest({
+      findPython: () => ({ bin: sysPy, version: [3, 12] }),
+      provision: async () => { provisionCalled++; return sysPy; },
+    });
+    const pm = createPreloadManager();
+    await pm.startPreload('docling'); // venv spawn ENOENT → failed，无关本断言
+    assert.equal(provisionCalled, 0, 'with a system python ≥3.10 provision must not run');
+  });
+});
+
+// ─── buildPyProbes: managed python first (重启幂等) ─────────────────────────
+//
+// 重启后 ~/.molio/python 若已供给成功，findPythonAtLeast 必须直接命中它——
+// 否则每次重启都重新触发 22MB 下载。探针放第一位 + 目录不存在时零开销跳过。
+
+describe('buildPyProbes managed-python probe (重启幂等)', () => {
+  const isWindows = process.platform === 'win32';
+  let savedHome: string | undefined;
+  let tmpHome: string;
+
+  beforeEach(() => {
+    savedHome = isWindows ? process.env['USERPROFILE'] : process.env['HOME'];
+    tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'molio-preload-probes-'));
+    if (isWindows) process.env['USERPROFILE'] = tmpHome;
+    else process.env['HOME'] = tmpHome;
+  });
+  afterEach(() => {
+    if (savedHome !== undefined) {
+      if (isWindows) process.env['USERPROFILE'] = savedHome;
+      else process.env['HOME'] = savedHome;
+    } else {
+      if (isWindows) delete process.env['USERPROFILE'];
+      else delete process.env['HOME'];
+    }
+    try { fs.rmSync(tmpHome, { recursive: true, force: true }); } catch { /* ignore */ }
+  });
+
+  it('managed exe is the FIRST probe when its dir exists; absent when not provisioned', async () => {
+    const { buildPyProbes } = await import('../../src/core/preload-manager.js');
+    const { managedPythonExe } = await import('../../src/core/python-provision.js');
+    const managed = managedPythonExe(); // 调用时实时解析 homedir → tmpHome
+
+    // 未供给：目录不存在 → 不进探针列表（零开销跳过）
+    const before = buildPyProbes();
+    assert.ok(!before.includes(managed), 'no managed probe before provisioning');
+
+    // 供给成功后（目录存在即可，versionOfAbs 在 findPythonAtLeast 里做真实验证）
+    fs.mkdirSync(path.dirname(managed), { recursive: true });
+    const after = buildPyProbes();
+    assert.equal(after[0], managed, 'managed python must be probed FIRST so restarts never re-download');
+  });
+});
+
+// ─── stop cleanup: managed python staging vs completed root ─────────────────
+//
+// 停止语义：中断供给留下的 staging 目录要清（垃圾）；已完成的 ~/.molio/python
+// 要保留（可复用基建——重试免下载，未来其他 skill 也可用）。
+
+describe('stop cleanup: python.staging-* removed, completed ~/.molio/python kept', () => {
+  const isWindows = process.platform === 'win32';
+  let savedHome: string | undefined;
+  let tmpHome: string;
+
+  beforeEach(() => {
+    savedHome = isWindows ? process.env['USERPROFILE'] : process.env['HOME'];
+    tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'molio-preload-pyclean-'));
+    if (isWindows) process.env['USERPROFILE'] = tmpHome;
+    else process.env['HOME'] = tmpHome;
+  });
+  afterEach(() => {
+    if (savedHome !== undefined) {
+      if (isWindows) process.env['USERPROFILE'] = savedHome;
+      else process.env['HOME'] = savedHome;
+    } else {
+      if (isWindows) delete process.env['USERPROFILE'];
+      else delete process.env['HOME'];
+    }
+    try { fs.rmSync(tmpHome, { recursive: true, force: true }); } catch { /* ignore */ }
+  });
+
+  it('docling stop removes staging dirs but keeps the completed managed python', async () => {
+    const { createPreloadManager } = await import('../../src/core/preload-manager.js');
+    const { managedPythonRoot, managedPythonStagingPrefix } = await import('../../src/core/python-provision.js');
+    const molio = path.join(tmpHome, '.molio');
+    const staging1 = path.join(molio, `${managedPythonStagingPrefix()}111-aaa`);
+    const staging2 = path.join(molio, `${managedPythonStagingPrefix()}222-bbb`);
+    const root = managedPythonRoot();
+    const venv = path.join(molio, 'venv');
+    fs.mkdirSync(path.join(staging1, 'python'), { recursive: true });
+    fs.writeFileSync(path.join(staging1, 'python', 'junk.dll'), 'x');
+    fs.mkdirSync(staging2, { recursive: true });
+    fs.mkdirSync(root, { recursive: true });
+    fs.writeFileSync(path.join(root, 'KEEP-MARKER'), 'reusable infra');
+    fs.mkdirSync(venv, { recursive: true });
+
+    const pm = createPreloadManager();
+    pm.checkSkills();
+    pm.stopPreload('docling'); // 非运行态 → deletePartial 直接清理
+
+    assert.equal(fs.existsSync(staging1), false, 'interrupted staging dir 1 must be removed');
+    assert.equal(fs.existsSync(staging2), false, 'interrupted staging dir 2 must be removed');
+    assert.equal(fs.existsSync(path.join(root, 'KEEP-MARKER')), true, 'completed managed python is reusable infra — stop must keep it');
+    assert.equal(fs.existsSync(venv), false, 'venv cleanup (existing behavior) must still run');
+  });
+});

@@ -2,11 +2,15 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import type { SkillManifestEntry } from '@molio/contracts';
 import { useI18n } from '../i18n';
 import { vaultStore } from '../stores/vaultStore';
+import { quizAnchorStore, useQuizAnswerAnchor } from '../stores/quizAnchorStore';
+import { buildSubjectAnswerMessage, subjectAnchorLabel } from '../utils/quizAnswer';
 import { api } from '../api/client';
 import { FilePicker } from './FilePicker';
 import { SkillPalette } from './SkillPalette';
 import { ConversationHistoryMenu } from './ConversationHistoryMenu';
+import { RuntimeModelPill } from './RuntimeModelPill';
 import { expandComposerMessage, flattenTreePaths, type ExpandSkillEntry } from './composerExpand';
+import { buildFileRefPrefix, fileRefChipLabel } from './composerFileRefs';
 
 export interface FileRef {
   vaultId: string;
@@ -46,6 +50,25 @@ export function buildAttachmentPrefix(pastedImages: PastedImage[]): string {
 const drafts = new Map<string, string>();
 
 /**
+ * Module-level chip cache — 键同草稿（`composerKey` = 会话），值是「这批 chip 由哪篇
+ * 文档播种」+ 当前引用集合。
+ *
+ * 面板 ⇄ 全屏态切换会让 composer 重挂载（同一篇文档），若引用只存在组件 state 里，
+ * 用户刚摘掉的 chip 会随 `initialFileRefs` 重新播种——等于「删了又自己回来」。缓存
+ * 记住当前引用集合（含空集合：移除必须留存），同一篇文档重挂载时复用。
+ *
+ * 但摘除只对**这一次停留**有效：`seededBy` 与当前播种身份不一致（切到了别的文档，
+ * 或从别的文档切回来）就丢弃旧集合、按 `initialFileRefs` 重新播种。否则模块级缓存
+ * 比对话界面活得久，在 A 摘过一次 chip 后，关掉对话界面再回来会永远没有 chip。
+ */
+const fileRefsByKey = new Map<string, { seededBy: string; refs: FileRef[] }>();
+
+/** chip 的播种身份 = 这一批 initialFileRefs 指向的文档集合。 */
+function fileRefsSeed(initial: FileRef[] | undefined): string {
+  return (initial ?? []).map((r) => `${r.vaultId}:${r.filePath}`).join('|');
+}
+
+/**
  * 输入框自动伸缩的上限（px）。与 chat.css 的 `.composer textarea { max-height }`
  * 保持一致——JS 用 inline height，CSS 用 max-height，两者都要一起改。
  */
@@ -66,6 +89,8 @@ interface Props {
   onDeleteConversations?: (ids: string[]) => void;
   /** Stable key for persisting draft text across navigation. */
   composerKey?: string;
+  /** 当前会话 id —— 历史下拉里对应那条要高亮（用户报障：分不清在看哪条会话）。 */
+  conversationId?: string | null;
 }
 
 export function ChatComposer({
@@ -78,15 +103,22 @@ export function ChatComposer({
   onOpenConversation,
   onDeleteConversations,
   composerKey,
+  conversationId,
 }: Props) {
   const { t } = useI18n();
-  const [text, setText] = useState(() => {
-    const draft = composerKey ? drafts.get(composerKey) ?? '' : '';
-    if (draft) return draft;
-    // "Ask about this file" prefills inline @ refs (raw text, expanded at send).
-    return (initialFileRefs ?? [])
-      .map((r) => `@${r.filePath}${r.isDirectory ? '/' : ''}`)
-      .join(' ');
+  // 大题作答锚（quiz 卡「作答」挂上）：chip 展示 + 发送时物化。全局单值，
+  // 主页与悬浮面板的 composer 共享——两处都渲染 chip，任一处发送都物化。
+  const quizAnchor = useQuizAnswerAnchor();
+  const refsSeed = fileRefsSeed(initialFileRefs);
+  const [text, setText] = useState(() => (composerKey ? drafts.get(composerKey) ?? '' : ''));
+  // File references are chips in the toolbar row, NOT text in the textarea.
+  // 旧实现挂载时把 `@路径` 种进输入文本：用户反馈「不希望被自动带上」，而且
+  // 那段文本既不可发现也不方便删。chip 是显式可摘的对象，发送时才还原成 @token。
+  const [fileRefs, setFileRefs] = useState<FileRef[]>(() => {
+    const cached = composerKey ? fileRefsByKey.get(composerKey) : undefined;
+    // 同一篇文档的重挂载（面板 ⇄ 全屏态）沿用自己的取舍；换了文档就重新播种。
+    if (cached && cached.seededBy === refsSeed) return cached.refs;
+    return initialFileRefs ?? [];
   });
   const [pastedImages, setPastedImages] = useState<PastedImage[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -120,6 +152,13 @@ export function ChatComposer({
       drafts.delete(composerKey);
     }
   }, [text, composerKey]);
+
+  // Persist the chip set the same way (empty array included: removal must stick
+  // for the rest of this document visit).
+  useEffect(() => {
+    if (!composerKey) return;
+    fileRefsByKey.set(composerKey, { seededBy: refsSeed, refs: fileRefs });
+  }, [fileRefs, composerKey, refsSeed]);
 
   // Focus on mount and when run completes
   useEffect(() => {
@@ -287,12 +326,29 @@ export function ChatComposer({
     // entries have filePath:'' and error entries have invalid data, so sending
     // them would push broken markdown to the backend.
     const doneImages = pastedImages.filter((p) => p.state === 'done');
-    const hasContent = trimmed || doneImages.length > 0;
+    const hasContent = trimmed || doneImages.length > 0 || fileRefs.length > 0;
     if (hasContent) {
       sendingRef.current = true;
       try {
-        const expanded = await expandForSend(text);
-        onSend(expanded.trim(), doneImages);
+        // 引用 chip 直接生成 agent 侧 markdown 链接前置到文本（与 `@path` 展开
+        // 调用同一个 fileRefMarkdown，产物一致）；不绕回 @token 查文件树——
+        // 那会让每次带引用的发送都多等一次 /tree，且树未就绪时引用会退化成裸 @path。
+        const raw = [buildFileRefPrefix(fileRefs), text].filter((s) => s.trim().length > 0).join(' ');
+        const expanded = await expandForSend(raw);
+        const trimmedExpanded = expanded.trim();
+        // 大题作答：题干 + 隐藏评分点在发送前一步物化进消息（唯一收口）。
+        // 批改协议按【大题作答·第N题】标记行确定性触发，而宿主（首页/会话
+        // 视图）会把图片附件前置到消息最前——锚激活时把图片折进物化的作答
+        // 段内、空手交出图片，保证标记行是消息第一行。
+        let message = trimmedExpanded;
+        let outImages = doneImages;
+        if (quizAnchor) {
+          const userText = [buildAttachmentPrefix(doneImages), trimmedExpanded]
+            .filter((s) => s.trim().length > 0).join('\n');
+          message = buildSubjectAnswerMessage(quizAnchor.anchor, userText);
+          outImages = [];
+        }
+        onSend(message, outImages);
         setText('');
         // Clear the draft cache synchronously *before* the parent re-renders.
         // On the home page, the first send flips HomePage from the landing
@@ -307,6 +363,14 @@ export function ChatComposer({
           if (img.url.startsWith('blob:')) URL.revokeObjectURL(img.url);
         }
         setPastedImages([]);
+        // 引用随消息一次性消费（与旧的 @文本被清空一致）：下一条消息不再自动带文档。
+        // 缓存同步写入空集合（理由同上面的 drafts.delete）——发送后若立即重挂载，
+        // 不能又从 initialFileRefs 播种回来。
+        if (composerKey) fileRefsByKey.set(composerKey, { seededBy: refsSeed, refs: [] });
+        setFileRefs([]);
+        // 作答锚同批消费：挂上即为了这一条消息。若 await 期间用户已换锚，
+        // 只放行被消费的那个，新锚保留。
+        quizAnchorStore.clearIfCurrent(quizAnchor);
         setTriggerStartIdx(null);
         setSkillTrigger(false);
         if (textareaRef.current) textareaRef.current.style.height = 'auto';
@@ -317,6 +381,9 @@ export function ChatComposer({
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    // 中文输入法组词中按 Enter 确认候选词（isComposing / keyCode 229）——
+    // 不能当成「发送」，否则带拼音半成的消息会被直接发出
+    if (e.nativeEvent.isComposing || e.keyCode === 229) return;
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       // Don't send if FilePicker or SkillPalette overlay is open — they handle Enter
@@ -458,7 +525,7 @@ export function ChatComposer({
   // is never pushed to the backend.
   const isUploading = pastedImages.some((p) => p.state === 'uploading');
   const canSend =
-    (text.trim().length > 0 || pastedImages.some((p) => p.state === 'done')) &&
+    (text.trim().length > 0 || pastedImages.some((p) => p.state === 'done') || fileRefs.length > 0) &&
     !isUploading &&
     !disabled;
   const placeholder = disabled
@@ -531,6 +598,31 @@ export function ChatComposer({
         {/* Uploading indicator */}
         {/* Upload error */}
 
+        {/* 大题作答锚 chip：文本 = 「第N题 · 题型」，× 摘除。在 :focus-within
+            容器内，不抢 textarea 焦点；title 露出题干帮助确认锚的是哪道题。 */}
+        {quizAnchor && (
+          <div className="composer-anchor-row">
+            <span
+              className="composer-anchor-chip"
+              data-testid="composer-anchor-chip"
+              title={quizAnchor.anchor.stem}
+            >
+              <span className="composer-anchor-chip-label">
+                {subjectAnchorLabel(quizAnchor.anchor)}
+              </span>
+              <button
+                type="button"
+                className="composer-anchor-chip-remove"
+                data-testid="composer-anchor-chip-remove"
+                aria-label={t('quiz.anchorRemove')}
+                onClick={() => quizAnchorStore.clear()}
+              >
+                ×
+              </button>
+            </span>
+          </div>
+        )}
+
         {/* Textarea with trigger overlays */}
         <div className="composer-trigger-zone">
           <textarea
@@ -566,9 +658,81 @@ export function ChatComposer({
         </div>
 
         <div className="composer-row">
+          {/* 文档引用 chip：占工具条左端，**不新增一行**（旧版放在输入框上方会多出
+              一条专门显示文档的横条，浪费页面高度）。运行中也保留——排队消息仍需
+              能看到并摘掉引用。 */}
+          {fileRefs.length > 0 && (
+            <div className="composer-file-refs" data-testid="composer-file-refs">
+              {fileRefs.map((ref) => (
+                <span
+                  key={`${ref.vaultId}:${ref.filePath}`}
+                  className="composer-file-ref"
+                  data-testid="composer-file-ref"
+                  title={ref.filePath}
+                >
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                    <polyline points="14 2 14 8 20 8" />
+                  </svg>
+                  <span className="composer-file-ref-name">{fileRefChipLabel(ref.filePath)}</span>
+                  <button
+                    type="button"
+                    className="composer-file-ref-remove"
+                    data-testid="composer-file-ref-remove"
+                    aria-label={t('composer.removeFileRef')}
+                    title={t('composer.removeFileRef')}
+                    onClick={() => setFileRefs((prev) => prev.filter((x) => x !== ref))}
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+          {/* 两段式布局（对齐 workbuddy/Codex 惯例）：左簇 = 输入辅助（添加/历史/帮助），
+              右簇 = 这条消息的配置与动作（模型 pill 紧贴发送键——发送前最后确认）。
+              运行中隐藏左簇（附件/历史无意义），pill 常驻（可为排队消息挑模型）。 */}
+          {!isRunning && (
+            <>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/png,image/jpeg,image/gif,image/webp"
+                multiple
+                className="composer-file-input"
+                data-testid="composer-file-input"
+                onChange={handleFileInputChange}
+              />
+              {/* 图片上传：Molio 唯一的真实聊天附件（文件上下文走 @ 引用体系，
+                  不做 workbuddy/codex 式 + 聚合菜单——单项菜单是反模式）。
+                  图标诚实表达唯一功能；未来出现第二种附件类型再升级为 + 菜单。 */}
+              <button
+                type="button"
+                className="composer-upload-btn"
+                data-testid="composer-upload-btn"
+                onClick={openFilePicker}
+                disabled={disabled}
+                title={t('composer.uploadImage')}
+              >
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="3" y="3" width="18" height="18" rx="2" />
+                  <circle cx="8.5" cy="8.5" r="1.5" />
+                  <path d="M21 15l-5-5-7 7" />
+                </svg>
+              </button>
+              {onOpenConversation && (
+                <ConversationHistoryMenu
+                  onSelect={onOpenConversation}
+                  onDeleteConversations={onDeleteConversations}
+                  activeConversationId={conversationId}
+                />
+              )}
+            </>
+          )}
+          <span className="composer-spacer" />
+          <RuntimeModelPill />
           {isRunning ? (
             <>
-              <span className="composer-spacer" />
               {canSend && (
                 <button
                   type="button"
@@ -597,59 +761,21 @@ export function ChatComposer({
               </button>
             </>
           ) : (
-            <>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/png,image/jpeg,image/gif,image/webp"
-                multiple
-                className="composer-file-input"
-                data-testid="composer-file-input"
-                onChange={handleFileInputChange}
-              />
-              <button
-                type="button"
-                className="composer-upload-btn"
-                data-testid="composer-upload-btn"
-                onClick={openFilePicker}
-                disabled={disabled}
-                title={t('composer.uploadImage')}
-              >
-                <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <rect x="3" y="3" width="18" height="18" rx="2" />
-                  <circle cx="8.5" cy="8.5" r="1.5" />
-                  <path d="M21 15l-5-5-7 7" />
-                </svg>
-              </button>
-              {onOpenConversation && (
-                <ConversationHistoryMenu onSelect={onOpenConversation} onDeleteConversations={onDeleteConversations} />
-              )}
-              <span className="composer-spacer" />
-              <button
-                type="button"
-                data-testid="composer-send"
-                className="composer-send"
-                disabled={!canSend}
-                onClick={handleSend}
-              >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                  <line x1="22" y1="2" x2="11" y2="13" />
-                  <polygon points="22 2 15 22 11 13 2 9 22 2" />
-                </svg>
-                {t('composer.send')}
-              </button>
-            </>
+            <button
+              type="button"
+              data-testid="composer-send"
+              className="composer-send"
+              disabled={!canSend}
+              onClick={handleSend}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="22" y1="2" x2="11" y2="13" />
+                <polygon points="22 2 15 22 11 13 2 9 22 2" />
+              </svg>
+              {t('composer.send')}
+            </button>
           )}
         </div>
-      </div>
-      <div className="composer-hint">
-        <span className="hint-item"><kbd>/</kbd> <span className="hint-desc">{t('composer.hintSkill')}</span></span>
-        <span className="hint-sep">·</span>
-        <span className="hint-item"><kbd>@</kbd> <span className="hint-desc">{t('composer.hintFileRef')}</span></span>
-        <span className="hint-sep">·</span>
-        <span className="hint-item"><kbd>Enter</kbd> <span className="hint-desc">{t('composer.hintSend')}</span></span>
-        <span className="hint-sep">·</span>
-        <span className="hint-item"><kbd>Shift</kbd><span className="hint-kbd-plus">+</span><kbd>Enter</kbd> <span className="hint-desc">{t('composer.hintNewline')}</span></span>
       </div>
     </div>
   );

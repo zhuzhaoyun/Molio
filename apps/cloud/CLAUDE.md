@@ -7,7 +7,7 @@ Molio 用户模块的云端服务，两块职责：**身份**（第一期 = 身�
 ## 技术栈
 
 - **运行时**: Hono + `@hono/node-server`（与 daemon 一致，标准可容器化 HTTP 服务）
-- **存储**: PostgreSQL（生产 PolarDB Serverless）；无 `DATABASE_URL` 时自动降级 `MemoryAuthStore`（本地开发，重启丢登录态）
+- **存储**: PostgreSQL（生产 RDS PostgreSQL Serverless）；无 `DATABASE_URL` 时自动降级 `MemoryAuthStore`（本地开发，重启丢登录态）
 - **鉴权**: HS256 JWT（access，15min）+ 256-bit 随机 refresh（30 天滑动轮换）
 - **测试**: node:test（内存 store，不依赖真库）
 
@@ -73,10 +73,12 @@ pnpm typecheck    # tsc --noEmit
 | `MOLIO_OSS_BUCKET` | 资源市场需要 | 市场文件 OSS 桶名；缺失则 `/market` 不挂载 |
 | `MOLIO_OSS_REGION` | 否 | OSS 地域，默认 `cn-guangzhou` |
 | `MOLIO_MARKET_OSS_ENDPOINT` | 否 | OSS endpoint 显式覆盖（缺省按 `{bucket}.oss-{region}.aliyuncs.com` 推导；本地测试可指向 mock） |
-| `MOLIO_MARKET_MAX_ZIP_MB` | 否 | 单个资源包大小上限（MB），默认 50 |
+| `MOLIO_MARKET_MAX_ZIP_MB` | 否 | 资源包大小上限（MB），默认 512。**唯一权威**：daemon 只在打包时留 1GB OOM 安全阀、不做业务校验；调整上限只需改这个配置（改完需重传云端代码包强制实例换新） |
 | `MOLIO_MARKET_ADMIN_EMAILS` | 否 | 市场管理员邮箱（逗号分隔），命中后可调 `/market/admin/*` |
 | `MOLIO_MARKET_MAX_ACTIVE_PER_USER` | 否 | 单用户在架条目上限，默认 10 |
 | `MOLIO_MARKET_MAX_DAILY_CREATES` | 否 | 单用户每日创建条目上限，默认 5 |
+| `MOLIO_PAY_INTERNAL_URL` | 已购功能需要 | wxpay-fc 地址（如 `https://pay.molio.cn`）；与 TOKEN 成对配置才启用「我的已购」与付费已购下载放行 |
+| `MOLIO_PAY_INTERNAL_TOKEN` | 已购功能需要 | wxpay-fc `/purchases` 内部接口共享密钥（与其 `PURCHASES_INTERNAL_TOKEN` 同值），不入代码库 |
 
 ## 七个端点（第一期全集）
 
@@ -96,13 +98,14 @@ pnpm typecheck    # tsc --noEmit
 |---|---|---|
 | GET | `/market/listings` | 公开目录列表（`Cache-Control: no-store`，未登录可读） |
 | GET | `/market/listings/:id` | 单条详情（`no-store`，未登录可读） |
-| GET | `/market/listings/:id/download` | 登录 → 签发限时 OSS 直下 URL（免费/已购；付费未购 402） |
+| GET | `/market/listings/:id/download` | 登录 → 签发限时 OSS 直下 URL（免费/付费已购放行——已购判定经 wxpay-fc 已购索引，重复下载即最新版；付费未购 402；wxpay-fc 不可达 502 pay_unreachable） |
 | GET | `/market/pricing/:id` | 公开（wxpay-fc 专用，§九）：`{id,name,priceCents,file,status}`，file=zip 全量 key（桶私有无下载能力） |
 | POST | `/market/listings` | 登录 → 创建条目（元数据校验 + 限频），返回直传签名目标 |
 | POST | `/market/listings/:id/confirm` | 登录 → 直传完成确认（首发 uploading→active；亦用于更新版本确认） |
 | POST | `/market/listings/:id/update` | 登录 → 发起版本更新（预检 + 新上传目标） |
 | DELETE | `/market/listings/:id` | 登录 → 本人下架删除 |
 | GET | `/market/my` | 登录 → 我的条目列表 |
+| GET | `/market/purchases` | 登录 → 我的已购（wxpay-fc 已购索引 + 目录元数据合并；身份以 Bearer JWT 为准，杜绝 uid 冒用） |
 | GET | `/market/admin/listings` | 管理员 → 全量条目（含归属邮箱） |
 | POST | `/market/admin/listings/:id/remove` | 管理员 → 强制下架（可附原因） |
 | POST | `/market/admin/listings/:id/restore` | 管理员 → 恢复已下架条目 |
@@ -132,7 +135,7 @@ MOLIO_AUTH_URL=http://localhost:3200 pnpm dev:daemon   # daemon 指向本地 clo
 
 ## 部署（第一期手动）
 
-- 形态：阿里云函数计算 FC（Web 函数/Custom Runtime，HTTP server 原样部署，监听 `CAPort`）+ PolarDB Serverless。**单函数 prod**（cn-hangzhou），自定义域名 `auth.molio.cn` 直连 LATEST 版本（无版本/别名）。
+- 形态：阿里云函数计算 FC（Web 函数/Custom Runtime，HTTP server 原样部署，监听 `CAPort`）+ RDS PostgreSQL Serverless。**单函数 prod**（cn-shenzhen，函数名 `user`；同地域另有支付函数 `wxpay` = pay.molio.cn），自定义域名 `auth.molio.cn` 直连 LATEST 版本（无版本/别名）。
 - 发布：`node apps/cloud/scripts/deploy-package.mjs` 产出 `apps/cloud/molio-cloud-deploy.zip`（内含 linux-x64 Node 运行时 + npm 扁平 node_modules），FC 控制台上传 ZIP。启动命令 `/code/runtime/node /code/dist/src/index.js`。⚠️ **仅改控制台环境变量对常驻实例不生效**，必须上传新代码包强制实例换新（2026-08-24 事故教训，细节见脚本头注释）。
 - 独立部署，**不进 Molio 应用镜像**，不走 OSS/ACR 桌面发版链路。
 - **资源市场启用条件**：OSS 凭证齐全（`MOLIO_OSS_AK` / `MOLIO_OSS_SK` / `MOLIO_OSS_BUCKET`）才装配 `/market`；缺失则 `/market` 不挂载（访问 404），prod 缺凭证启动时打 warn。

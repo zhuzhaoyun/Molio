@@ -225,13 +225,19 @@
   margin: 8px 0;
   color: var(--text-muted);
 }
-.assistant-prose h1, .assistant-prose h2, .assistant-prose h3 {
+.assistant-prose h1, .assistant-prose h2, .assistant-prose h3,
+.assistant-prose h4, .assistant-prose h5, .assistant-prose h6 {
   margin: 12px 0 6px;
   color: var(--text-strong);
 }
+/* 正文 14px。h1–h4 字号 18/17/16/15 逐级递减；h5/h6 与正文同 14px，
+   靠加粗 + 颜色递减区分层级。 */
 .assistant-prose h1 { font-size: 18px; }
-.assistant-prose h2 { font-size: 16px; }
-.assistant-prose h3 { font-size: 14px; }
+.assistant-prose h2 { font-size: 17px; }
+.assistant-prose h3 { font-size: 16px; }
+.assistant-prose h4 { font-size: 15px; }
+.assistant-prose h5 { font-size: 14px; color: var(--text); }
+.assistant-prose h6 { font-size: 14px; color: var(--text-muted); }
 .assistant-prose a {
   color: var(--selected);
   text-decoration: none;
@@ -743,9 +749,11 @@
   gap: 6px;
   transition: border-color 120ms ease, box-shadow 120ms ease;
 }
+/* 焦点态与落地页同一套珊瑚语言（home.css 落地 wrap 同款值）——
+   之前聊天态只有灰描边，几乎不可感知，用户从落地进入对话后「激活感」消失 */
 .composer-shell:focus-within {
-  border-color: var(--border-strong);
-  box-shadow: var(--shadow-sm);
+  border-color: var(--accent);
+  box-shadow: 0 4px 24px rgba(26, 25, 23, 0.06), 0 0 0 3px var(--accent-tint);
 }
 .composer textarea {
   /* 默认 2 行（44px），随输入自动增长到 COMPOSER_MAX_HEIGHT（chat.css 与 ChatComposer.tsx 同步） */
@@ -774,6 +782,9 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  /* 主按钮不参与收缩：工具条新增内容（引用 chip）时不得把「发送」挤成两行 */
+  flex: 0 0 auto;
+  white-space: nowrap;
   background: var(--accent);
   border-color: var(--accent);
   color: white;
@@ -792,48 +803,6 @@
   background: var(--text-strong);
   border-color: var(--text-strong);
   color: var(--bg);
-}
-.composer-hint {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 11px;
-  color: var(--text-faint);
-  margin: 0 8px;
-  user-select: none;
-}
-.hint-item {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  white-space: nowrap;
-}
-.hint-sep {
-  color: var(--border);
-  font-size: 8px;
-  line-height: 1;
-}
-.composer-hint kbd {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 18px;
-  height: 17px;
-  padding: 0 4px;
-  font-family: inherit;
-  font-size: 10px;
-  font-weight: 600;
-  color: var(--text-faint);
-  background: var(--bg-panel);
-  border: 1px solid var(--border);
-  border-radius: 3px;
-  line-height: 1;
-  box-shadow: 0 1px 0 var(--border);
-}
-.hint-kbd-plus {
-  margin: 0 1px;
-  font-size: 9px;
-  color: var(--text-faint);
 }
 
 /* -------- Status badge ---------------------------------------------- */
@@ -1101,6 +1070,140 @@
   cursor: not-allowed;
 }
 
+/* ── Runtime/model pill（composer-row 左侧，承接原顶栏 agent chip 的视觉基因） ── */
+/* 默认透明底，hover 才浮出 bg-subtle——安静、不与图标按钮抢视觉 */
+.composer-model-wrap {
+  flex-shrink: 1;
+  min-width: 0;
+}
+.composer-model-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  padding: 5px 10px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 500;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 120ms ease, background 120ms ease;
+}
+.composer-model-pill:hover,
+.composer-model-pill[aria-expanded='true'] {
+  background: var(--bg-subtle);
+  color: var(--text);
+}
+.composer-model-pill-label {
+  min-width: 0;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.composer-model-caret {
+  flex-shrink: 0;
+  color: var(--text-faint);
+}
+
+/* 菜单 — 套用 composer-history-dropdown 的基因：白底 1px border、radius 12、
+   shadow-lg、z-40。定位锚点是 .composer（position:relative）而非 pill 本身：
+   bottom:100% 让菜单弹在**整个输入框之上**，避免盖住 textarea 被其拦截点击
+   （pill 在 pill-wrap 内，若以其为锚点菜单会压住输入框）。 */
+.composer-model-menu {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  margin-bottom: 8px;
+  width: min(280px, 100%);
+  max-height: 340px;
+  overflow-y: auto;
+  padding: 4px 0;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lg);
+  z-index: 40;
+}
+.composer-model-group {
+  padding: 8px 16px 2px;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.composer-model-divider {
+  height: 1px;
+  margin: 6px 0;
+  background: var(--border-soft);
+}
+.composer-model-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 5px 12px 5px 16px;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  position: relative;
+  transition: background 120ms ease;
+}
+/* 两行式条目（借鉴 VS Code Claude Code 插件）：主行 = 实际模型，副行 = 来源/角色 */
+.composer-model-option-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  flex: 1;
+}
+.composer-model-option-detail {
+  font-size: 11px;
+  color: var(--text-soft);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* 未安装 runtime：灰态（仍可点击 → 跳设置安装） */
+.composer-model-option.is-unavailable {
+  color: var(--text-faint);
+  cursor: pointer;
+}
+/* 左侧珊瑚标记 — 与 composer-history-item 同款 signature detail */
+.composer-model-option::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 5px;
+  bottom: 5px;
+  width: 0;
+  border-radius: 0 2px 2px 0;
+  background: var(--accent);
+  transition: width 150ms ease;
+}
+.composer-model-option:hover::before {
+  width: 3px;
+}
+.composer-model-option:hover {
+  background: var(--bg-subtle);
+}
+.composer-model-option-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.composer-model-check {
+  flex-shrink: 0;
+  margin-left: auto;
+  color: var(--accent);
+}
+
 /* ── History dropdown ── */
 .composer-history-dropdown {
   position: absolute;
@@ -1143,6 +1246,16 @@
 }
 .composer-history-search input::placeholder { color: var(--text-faint); }
 .composer-history-search input::-webkit-search-cancel-button { cursor: pointer; }
+
+/* 过滤口径提示（下拉只列当前库的会话） */
+.composer-history-scope {
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border-soft);
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-faint);
+  flex-shrink: 0;
+}
 
 .composer-history-list {
   overflow-y: auto;
@@ -1247,6 +1360,29 @@
   font-size: 10.5px;
   color: var(--text-faint);
   flex-shrink: 0;
+}
+
+/* 当前会话（正在看的那条）—— 左侧强调条常驻 + 浅底 + 「当前」标记。
+   用户报障：打开历史记录后分不清自己在看哪一条。 */
+.composer-history-item.is-current {
+  background: var(--accent-tint);
+}
+.composer-history-item.is-current::before {
+  width: 3px;
+  background: var(--accent);
+}
+.composer-history-item.is-current:hover {
+  background: var(--accent-tint);
+}
+.composer-history-current {
+  flex-shrink: 0;
+  padding: 1px 5px;
+  font-size: 9.5px;
+  font-weight: 500;
+  line-height: 1.4;
+  color: var(--accent-strong);
+  background: var(--accent-soft);
+  border-radius: 3px;
 }
 
 /* hover 动作（重命名/删除） — 默认不占位，hover / focus 时替代时间位置显示 */
@@ -1505,6 +1641,13 @@
   opacity: 1;
   pointer-events: auto;
 }
+/* First-run onboarding's save step: the next action lives in this bar, so
+ * hover-revealing it would hide the instruction. Keep it up with a soft accent. */
+.message-toolbar--highlight {
+  opacity: 1;
+  pointer-events: auto;
+  border-color: var(--accent-soft);
+}
 /* Touch devices have no hover — keep toolbar visible. */
 @media (hover: none) {
   .message-toolbar { opacity: 1; pointer-events: auto; }
@@ -1535,6 +1678,57 @@
 .icon-btn:active:not(:disabled) { transform: translateY(0.5px); }
 .icon-btn:disabled { opacity: 0.35; cursor: default; }
 .icon-btn.copied { color: var(--accent); }
+
+/* Icon + visible name. Only the first-run save step uses it: an icon-only
+ * action hidden behind hover cannot teach a new user where to click. */
+.icon-btn--labeled {
+  width: auto;
+  gap: 5px;
+  padding: 0 8px;
+  white-space: nowrap;
+}
+.icon-btn__label {
+  font-size: 12px;
+  line-height: 1;
+}
+
+/* First-run save step: a breathing ring matched to the real KB buttons.
+ * The text label says what it is; the motion says where it is. Keeps cycling
+ * until the file is written — a 3-shot burst is easy to miss if the user
+ * looks away for a few seconds (2026-10-19 acceptance feedback).
+ *
+ * 2026-10-19 second-round feedback ("still can't see it"): a fading ring
+ * alone leaves half the cycle completely invisible. Breathe the background
+ * as well so there is a visible signal at every moment.
+ *
+ * No transform/scale here: a continuously moving bounding box makes the
+ * button "not stable" for Playwright and blocks every guided click. */
+@keyframes icon-guide-pulse {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 55%, transparent);
+    background-color: color-mix(in srgb, var(--accent) 20%, transparent);
+  }
+  45% {
+    box-shadow: 0 0 0 5px transparent;
+    background-color: color-mix(in srgb, var(--accent) 7%, transparent);
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+    background-color: color-mix(in srgb, var(--accent) 20%, transparent);
+  }
+}
+.icon-btn--guide {
+  color: var(--accent);
+  border-color: var(--accent-soft);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  animation: icon-guide-pulse 1.8s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .icon-btn--guide {
+    animation: none;
+    box-shadow: 0 0 0 2px var(--accent-soft);
+  }
+}
 
 /* Copied micro-interaction: a brief accent pulse so the checkmark lands. */
 @keyframes icon-copied-pulse {
@@ -1716,4 +1910,642 @@
 .tool-output-foot .icon-btn {
   width: 24px;
   height: 24px;
+}
+
+/* ── Quiz 交互块 ─────────────────────────────────────────────────── */
+.quiz-card {
+  margin: 12px 0;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-panel);
+}
+.quiz-card-title {
+  margin-bottom: 12px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-strong);
+}
+.quiz-question {
+  padding: 12px 0;
+  border-top: 1px solid var(--border-soft);
+}
+.quiz-question:first-of-type { border-top: 0; }
+.quiz-question-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.quiz-index { font-size: 12px; font-weight: 600; color: var(--text-muted); }
+.quiz-type {
+  padding: 1px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.quiz-result { margin-left: auto; font-size: 12px; font-weight: 600; }
+.quiz-result.correct { color: var(--green); }
+.quiz-result.wrong { color: var(--red); }
+/* 题干/选项经 renderMarkdown 输出受控 HTML：<p>/<img>/<strong> 等。
+ * 原先的 white-space: pre-wrap 由 markdown 的 <br>/<p> 接管，不再需要。 */
+.quiz-stem {
+  margin-bottom: 10px;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--text);
+}
+.quiz-stem p { margin: 0 0 6px; }
+.quiz-stem p:last-child { margin-bottom: 0; }
+.quiz-stem img { max-width: 100%; height: auto; border-radius: var(--radius-sm); }
+.quiz-stem table { margin: 4px 0; }
+.quiz-option-text p { margin: 0; display: inline; }
+.quiz-options { display: flex; flex-direction: column; gap: 6px; }
+/* 输入行：输入框与「符号」触发钮同一容器，聚焦时容器边框点亮 */
+.quiz-input-row {
+  display: flex;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background-color: var(--bg);
+  transition: border-color 120ms ease;
+}
+.quiz-input-row:focus-within { border-color: var(--accent); }
+.quiz-input-row:has(.quiz-fill-input--full) { border-color: var(--red); }
+.quiz-fill-input {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 10px;
+  border: none;
+  outline: none;
+  background-color: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+}
+.quiz-fill-input:disabled { opacity: 0.7; }
+/* 符号插入超限（>64）：拒绝插入的红边反馈，1.2s 后由组件移除类名。
+   输入框本身 border:none，可见边框在容器行上——必须点亮行。 */
+.quiz-symbol-trigger {
+  flex-shrink: 0;
+  margin-right: 4px;
+  padding: 4px 8px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background-color: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.quiz-symbol-trigger:hover:not(:disabled) { background-color: var(--bg-subtle); color: var(--text); }
+/* 打开态是整块面板唯一用 accent 的地方 */
+.quiz-symbol-trigger.on:not(:disabled) { background-color: var(--accent-tint); color: var(--accent); }
+/* 唤起式托盘：只服务一道题，在文档流内手风琴式展开——不用浮层，
+ * 避免盖住下一题的输入框造成误触（一次只开一道，下移量可控） */
+.quiz-symbol-tray {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 6px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background-color: var(--bg);
+  box-shadow: var(--shadow-xs);
+  animation: quiz-tray-in 120ms ease;
+}
+@keyframes quiz-tray-in {
+  from { opacity: 0; transform: translateY(-2px); }
+  to { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .quiz-symbol-tray { animation: none; }
+}
+.quiz-symbol-btn {
+  min-width: 26px;
+  height: 24px;
+  padding: 0 5px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background-color: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+.quiz-symbol-btn:hover:not(:disabled) { border-color: var(--border-strong); background-color: var(--bg-subtle); }
+.quiz-symbol-btn:disabled { opacity: 0.5; cursor: default; }
+.quiz-symbol-group { display: flex; align-items: flex-start; gap: 6px; }
+.quiz-symbol-group-label { flex-shrink: 0; min-width: 4em; padding-top: 5px; font-size: 11px; color: var(--text-muted); }
+.quiz-symbol-keys { display: flex; flex-wrap: wrap; gap: 4px; }
+.quiz-option {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background-color: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+.quiz-option:hover:not(:disabled) { border-color: var(--border-strong); background-color: var(--bg-subtle); }
+.quiz-option:disabled { cursor: default; }
+.quiz-option.on { border-color: var(--accent); background-color: var(--accent-tint); }
+.quiz-option.correct { border-color: var(--green-border); background-color: var(--green-bg); }
+.quiz-option.wrong { border-color: var(--red-border); background-color: var(--red-bg); }
+.quiz-option-key { min-width: 16px; font-weight: 600; color: var(--text-muted); }
+.quiz-option.on .quiz-option-key { color: var(--accent); }
+.quiz-option.correct .quiz-option-key { color: var(--green); }
+.quiz-option.wrong .quiz-option-key { color: var(--red); }
+.quiz-answer { margin-top: 8px; font-size: 12px; color: var(--text-muted); }
+.quiz-explanation {
+  margin-top: 8px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background-color: var(--bg-subtle);
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text);
+}
+.quiz-section-label {
+  margin-bottom: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.quiz-sources { margin-top: 8px; }
+.quiz-source-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; font-size: 12px; }
+.quiz-source {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.quiz-source-quote { color: var(--text-muted); }
+.quiz-foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-soft);
+}
+.quiz-btn {
+  padding: 6px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background-color: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.quiz-btn:hover:not(:disabled) { background-color: var(--bg-subtle); }
+.quiz-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.quiz-btn-primary { background-color: var(--accent); border-color: var(--accent); color: #fff; }
+
+/* 主观题「作答」：与符号触发钮同一 .on 语法（唯一 accent 语义 = 挂着锚） */
+.quiz-subject-actions { display: flex; }
+.quiz-answer-btn.on:not(:disabled) { background-color: var(--accent-tint); border-color: var(--accent); color: var(--accent); }
+
+/* 大题批改回写：得分徽标（行头）+ 可折叠逐点评定。判定徽章三态走语义
+   token（暗色主题由 tokens.css 的变量切换），依据文本走通用 markdown 渲染。 */
+
+/* 解答题状态徽标（交卷前）：与客观题的「正确/错误」徽标同一位置（行头
+   右侧），但用中性色——它只说「答了 / 批了」，不透露判定结果（判定随客观
+   题一起在交卷后揭晓）。 */
+.quiz-subject-status {
+  margin-left: auto;
+  flex-shrink: 0;
+  padding: 1px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background-color: var(--bg-subtle);
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.quiz-subject-score {
+  margin-left: auto;
+  flex-shrink: 0;
+  padding: 1px 8px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-pill);
+  background-color: var(--accent-tint);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.quiz-subject-points { margin-top: 8px; }
+.quiz-subject-points-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.quiz-subject-points-toggle:hover { background-color: var(--bg-subtle); color: var(--text); }
+.quiz-subject-points-caret { font-size: 10px; }
+.quiz-subject-points-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  background-color: var(--bg-subtle);
+}
+.quiz-subject-point { display: flex; align-items: baseline; gap: 8px; font-size: 13px; }
+.quiz-subject-point-status {
+  flex-shrink: 0;
+  padding: 0 6px;
+  border-radius: var(--radius-pill);
+  font-size: 11px;
+  line-height: 1.6;
+}
+.quiz-subject-point-status.hit { background-color: var(--accent-tint); color: var(--accent); }
+.quiz-subject-point-status.partial { background-color: var(--bg-elevated); color: var(--text-muted); border: 1px solid var(--border); }
+.quiz-subject-point-status.miss { background-color: var(--red-bg); color: var(--red); }
+
+/* 大题作答锚 chip：与文档引用 chip 同语言（pill + × 摘除）。锚是全局单值，
+   主页与悬浮面板两处 composer 都会渲染，任一处发送都物化。 */
+.composer-anchor-row {
+  display: flex;
+  padding: 8px 10px 0;
+}
+
+.composer-anchor-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 260px;
+  padding: 3px 4px 3px 8px;
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  background-color: var(--accent-tint);
+  color: var(--accent);
+  font-size: 12px;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.composer-anchor-chip-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.composer-anchor-chip-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: none;
+  color: var(--accent);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+.quiz-btn-primary:hover:not(:disabled) { background-color: var(--accent-hover); }
+.quiz-progress { margin-left: auto; font-size: 12px; color: var(--text-muted); }
+/* 存为题库：文档流内展开的次级面板，表面语义同 .quiz-symbol-tray（不另起浮层） */
+.quiz-save-panel {
+  flex-basis: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background-color: var(--bg);
+  box-shadow: var(--shadow-xs);
+}
+.quiz-save-target { font-size: 12px; color: var(--text-muted); }
+.quiz-scopes { display: flex; flex-wrap: wrap; gap: 6px; }
+.quiz-scope { padding: 4px 10px; font-size: 12px; }
+/* 选中语义与 .quiz-option.on / .quiz-answer-btn.on 同源 */
+.quiz-scope[aria-checked="true"] {
+  background-color: var(--accent-tint);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.quiz-save-list {
+  display: flex;
+  flex-direction: column;
+  max-height: 240px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.quiz-save-row {
+  display: grid;
+  grid-template-columns: auto 2.5em minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  padding: 6px 2px;
+  border-top: 1px solid var(--border-soft);
+  font-size: 13px;
+  cursor: pointer;
+}
+.quiz-save-row:first-child { border-top: 0; }
+.quiz-save-row--static { grid-template-columns: 2.5em minmax(0, 1fr) auto; cursor: default; }
+.quiz-save-check { margin: 0; accent-color: var(--accent); }
+.quiz-save-index { color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.quiz-save-stem { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.quiz-save-badge { font-size: 12px; font-weight: 600; }
+.quiz-save-badge.correct { color: var(--green); }
+.quiz-save-badge.wrong { color: var(--red); }
+.quiz-save-badge.ungraded { color: var(--text-muted); }
+.quiz-save-actions { display: flex; gap: 8px; }
+/* 结果整行：长路径不再把「存为题库」按钮顶到第二行 */
+.quiz-save-result {
+  flex-basis: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  min-width: 0;
+  font-size: 12px;
+}
+.quiz-save-result-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--green);
+}
+.quiz-save-result-actions {
+  display: inline-flex;
+  gap: 6px;
+  margin-left: auto;
+}
+.quiz-save-action { padding: 2px 10px; font-size: 12px; }
+.quiz-save-result .quiz-error { flex-basis: 100%; }
+.quiz-error { font-size: 12px; color: var(--red); }
+.quiz-generating {
+  margin: 10px 0;
+  padding: 10px 12px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  font-size: 13px;
+}
+.quiz-invalid { margin: 10px 0; }
+.quiz-invalid-hint { margin-bottom: 6px; font-size: 12px; color: var(--amber); }
+.quiz-question-invalid { border-color: var(--amber-border); }
+.quiz-question-invalid .quiz-error { margin-top: 4px; }
+.quiz-option:focus-visible,
+.quiz-btn:focus-visible,
+.quiz-source:focus-visible,
+.quiz-symbol-btn:focus-visible,
+.quiz-symbol-trigger:focus-visible,
+.quiz-scope:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ── rule-sandbox 交互块（threshold-axis）──────────────────────────── */
+.sandbox-card {
+  margin: 12px 0;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-subtle);
+}
+.sandbox-card-title {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 14px;
+}
+.sandbox-axis-wrap { margin-bottom: 12px; }
+.sandbox-axis {
+  position: relative;
+  height: 6px;
+  border-radius: var(--radius-pill);
+  background: var(--border);
+  cursor: pointer;
+  touch-action: none;
+  margin: 22px 8px 0;
+}
+.sandbox-marker {
+  position: absolute;
+  top: -3px;
+  width: 2px;
+  height: 12px;
+  background: var(--text-muted);
+  transform: translateX(-1px);
+  pointer-events: none;
+}
+.sandbox-marker-label {
+  position: absolute;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.sandbox-handle {
+  position: absolute;
+  top: 50%;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid var(--accent);
+  background: var(--bg);
+  transform: translate(-50%, -50%);
+  cursor: grab;
+  touch-action: none;
+}
+.sandbox-handle:active { cursor: grabbing; }
+.sandbox-handle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.sandbox-axis-legend {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.sandbox-axis-label { color: var(--text); font-weight: 500; }
+.sandbox-verdict {
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--bg);
+}
+.sandbox-verdict[data-tone="ok"] { border-color: var(--green-border); background: var(--green-bg); }
+.sandbox-verdict[data-tone="warn"] { border-color: var(--amber-border); background: var(--amber-bg); }
+.sandbox-verdict[data-tone="error"] { border-color: var(--red-border); background: var(--red-bg); }
+.sandbox-verdict[data-tone="neutral"] { border-color: var(--border); background: var(--bg); }
+.sandbox-verdict-title { font-size: 13px; font-weight: 600; }
+.sandbox-verdict[data-tone="ok"] .sandbox-verdict-title { color: var(--green); }
+.sandbox-verdict[data-tone="warn"] .sandbox-verdict-title { color: var(--amber); }
+.sandbox-verdict[data-tone="error"] .sandbox-verdict-title { color: var(--red); }
+.sandbox-verdict-detail { margin-top: 4px; font-size: 13px; line-height: 1.6; }
+.sandbox-current-value {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.sandbox-sources { margin-top: 8px; }
+.sandbox-invalid {
+  margin-top: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--amber-border);
+  border-radius: var(--radius-sm);
+  background: var(--amber-bg);
+  font-size: 12px;
+}
+.sandbox-invalid-hint { font-weight: 600; color: var(--amber); margin-bottom: 4px; }
+.sandbox-invalid-item { color: var(--text-muted); }
+.sandbox-generating {
+  margin: 10px 0;
+  padding: 10px 12px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  font-size: 13px;
+}
+.sandbox-suggest-chip {
+  display: inline-flex;
+  align-items: center;
+  margin-top: 8px;
+  padding: 5px 12px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-pill);
+  background: var(--accent-tint);
+  color: var(--accent);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.sandbox-suggest-chip:hover { background: var(--accent); color: var(--bg); }
+.sandbox-suggest-chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* ── 「回到最新消息」浮标（stick-to-bottom 配套）──────────────────────────
+   用户上翻阅读脱离跟随时，贴在消息滚动区底部；点击回到最新内容。
+   必须用 sticky：absolute 在滚动容器内会随内容一起滚走，fixed 会脱离
+   面板（悬浮/停靠态的锚点各不相同）。隐藏走 display:none（内联），
+   故不占位——出现/消失都不会把正在读的内容顶动。 */
+.home-chat-log > .chat-jump-bottom,
+.file-chat-messages > .chat-jump-bottom {
+  position: sticky;
+  bottom: 4px;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  /* 压过 .home-chat-log > * 的 width:100% / max-width:900px */
+  max-width: 32px;
+  flex: 0 0 auto;
+  margin-inline: auto;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background-color: var(--bg-elevated);
+  color: var(--text-muted);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+  cursor: pointer;
+  transition: background-color 0.15s, color 0.15s;
+}
+
+.home-chat-log > .chat-jump-bottom:hover,
+.file-chat-messages > .chat-jump-bottom:hover {
+  background-color: var(--bg);
+  color: var(--text);
+}
+
+/* ── 文档引用 chip（工具条左端）────────────────────────────────────────
+   从知识库文档进入问答时，文档以可摘除的 chip 呈现，而不是把 `@路径`
+   种进输入框文本。占现有工具条一行内的位置，不新增行高。 */
+.composer-file-refs {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow-x: auto;
+  /* 长文件名时让位给模型 pill / 发送键，不把右簇挤出去。
+     50% 上限 + 内部可收缩：窄面板（停靠分栏）里 chip 自己截断，
+     而不是把「发送」挤成两行。 */
+  flex: 0 1 auto;
+  max-width: 50%;
+}
+
+.composer-file-ref {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  /* 可收缩 + 省略号：容器变窄时由名字让位，× 按钮保持可点 */
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 220px;
+  padding: 3px 4px 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background-color: var(--bg-elevated);
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.composer-file-ref-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+  max-width: 170px;
+  color: var(--text);
+}
+
+.composer-file-ref-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: none;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.composer-file-ref-remove:hover {
+  background-color: var(--border);
+  color: var(--text);
 }

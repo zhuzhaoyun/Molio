@@ -127,7 +127,7 @@ export function conversationRoutes(
       runManager.getRunContext(point.activeRunId) &&
       !runManager.isTerminal(point.activeRunId)
     ) {
-      runManager.cancelRun(point.activeRunId);
+      runManager.cancelRun(point.activeRunId, 'conversation:rewind-resend');
     }
 
     // Resolve agentId: body > last assistant message's agentId.
@@ -156,6 +156,7 @@ export function conversationRoutes(
         conversationId: convId,
         history,
         cwd: body.cwd,
+        model: body.model,
       });
       return c.json({ runId, conversationId: convId }, 200);
     } catch (err) {

@@ -5,13 +5,12 @@
 
 /* ── Shell: 3-column layout ──
    FilePanel (260px) | Content (flex) | ActionBar (220px)
-   停靠问答形态（--kb-dock-w 由悬浮面板拖宽实时驱动）：右缘让出等宽给问答列，
+   停靠问答形态（--chat-dock-w 由悬浮面板拖宽实时驱动）：右缘让出等宽给问答列，
    文档区随之重排（分栏而非覆盖）。浮动形态下该变量为 0，无任何影响。 */
 .kb-shell {
   display: flex;
   height: 100%;
   overflow: hidden;
-  padding-right: var(--kb-dock-w, 0px);
 }
 
 /* ══════════ Column 2: File Panel ══════════ */
@@ -73,8 +72,20 @@
   color: var(--text-muted);
 }
 
-.kb-file-toolbar .kb-toolbar-btn-accent {
+/* ⚠️ 选择器必须跟上面那条基色规则同形（带 :not(.kb-sort-item):not(.kb-create-item)）。
+   基色规则的 (0,3,1) 会盖掉任何只写 `.kb-file-toolbar .kb-toolbar-btn-accent`（(0,2,0)）
+   的规则——踩过一次：高亮代码看着在，按钮渲染出来还是灰的。改这里请连带跑
+   kb-import-entry.spec.ts 的「醒目」用例。 */
+.kb-file-toolbar button:not(.kb-sort-item):not(.kb-create-item).kb-toolbar-btn-accent {
   color: var(--accent);
+}
+
+/* 导入按钮 —— 客户反馈「不知道怎么把文件放进知识库」的直接修复。
+   拖拽是隐式交互，这个按钮是显式常驻入口，所以它比工具栏其他图标按钮更显眼：
+   常驻 accent 字色 + hover 底色（其他安静图标按钮 hover 只换字色）。 */
+.kb-file-toolbar button:not(.kb-sort-item):not(.kb-create-item).kb-btn-import:hover {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
 }
 
 /* Sort dropdown (left tree toolbar) — same ghost-button sizing as the toolbar */
@@ -173,6 +184,11 @@
   color: var(--text-muted);
   transition: color 90ms ease;
 }
+/* 「导入文件」首条 —— 跟工具栏那颗同一个 accent，让它在菜单里也跳出来。
+   菜单里其余项都是「造新东西」，只有这条是「把已有的拿进来」。 */
+.kb-create-item--accent svg {
+  color: var(--accent);
+}
 .kb-create-dropdown .kb-create-item:hover {
   background: var(--accent-tint);
   color: var(--accent);
@@ -245,6 +261,37 @@
   padding: 6px 8px 6px 6px;
 }
 
+/* 拉树失败：常驻错误条（不是一闪而过的 toast）——刷新失败必须先被看见。 */
+.kb-tree-error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 8px 0;
+  padding: 6px 8px;
+  border: 1px solid var(--red-border);
+  border-radius: 6px;
+  background: var(--red-bg);
+  color: var(--red);
+  font-size: 11.5px;
+  line-height: 1.4;
+}
+
+.kb-tree-error__msg {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.kb-tree-error__retry {
+  flex: 0 0 auto;
+  font-size: 11.5px;
+  color: var(--red);
+  border-color: var(--red-border);
+}
+
+.kb-tree-search-empty h3 { margin-bottom: 6px; }
+.kb-tree-search-empty p { margin-bottom: 10px; }
+
 .kb-tree-group { margin-bottom: 2px; }
 
 .kb-tree-group-label {
@@ -263,6 +310,12 @@
 }
 
 .kb-tree-group-label:hover { background: var(--bg-subtle); }
+/* Expanded folder keeps a persistent tint + accent chevron — otherwise an
+   empty/childless folder shows no visible change on click ("did nothing"). */
+.kb-tree-group-label.is-open { background: var(--bg-subtle); }
+.kb-tree-group-label.is-open .kb-tree-chevron { color: var(--accent); }
+/* Press acknowledgment: fires on mousedown, before React state re-renders. */
+.kb-tree-group-label:active { background: var(--accent-tint); }
 
 .kb-tree-chevron {
   width: 14px;
@@ -285,6 +338,19 @@
 
 .kb-tree-children.collapsed {
   display: none;
+}
+
+/* Ghost row: sits where children would be, states why there are none.
+   Same rhythm as tree rows but quieter — it is a status, not a node. */
+.kb-tree-ghost-row {
+  padding: 3px 8px;
+  font-size: 12px;
+  color: var(--text-faint);
+  user-select: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: default;
 }
 
 .kb-tree-item {
@@ -1696,6 +1762,8 @@
   flex-direction: column;
   height: 100%;
   overflow: hidden;
+  /* Positioning context for the transient copy-confirmation hint. */
+  position: relative;
 }
 
 /* Column header over the vault list. The right column has no matching bar —
@@ -1779,7 +1847,7 @@
   white-space: nowrap;
 }
 
-.vm-vault-delete {
+.vm-vault-more {
   position: absolute;
   right: 8px;
   top: 50%;
@@ -1799,13 +1867,40 @@
   transition: opacity 120ms ease;
 }
 
-.vm-vault-item:hover .vm-vault-delete {
+.vm-vault-item:hover .vm-vault-more,
+.vm-vault-more:focus-visible {
   opacity: 1;
 }
 
-.vm-vault-delete:hover {
+/* Touch devices have no hover: without this the row actions are rendered but
+   permanently invisible and therefore unreachable (the web/NAS deploy is
+   reachable from a tablet). */
+@media (hover: none) {
+  .vm-vault-more {
+    opacity: 1;
+  }
+}
+
+.vm-vault-more:hover {
   background: var(--bg-muted);
   color: var(--text);
+}
+
+/* Transient 「已复制仓库 ID」 confirmation — copy is silent otherwise, and
+   "did it work?" is exactly the kind of doubt this panel should not create. */
+.vm-copy-hint {
+  position: absolute;
+  left: 50%;
+  bottom: 16px;
+  transform: translateX(-50%);
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: var(--bg-elevated, var(--bg-muted));
+  color: var(--text);
+  font-size: 12px;
+  box-shadow: 0 2px 10px rgb(0 0 0 / 12%);
+  pointer-events: none;
+  z-index: 10;
 }
 
 /* ── Right: Action Panel ── */
@@ -2559,6 +2654,44 @@
   background: var(--bg-panel);
 }
 
+/* 次级 CTA（描边）：与主 CTA 同行但弱一档 —— accent 字色 + 淡 accent 描边，
+   比 ghost（中性描边）重、比实心主 CTA 轻。用于空态里「并列但非主推」的动作。 */
+.wiki-cta-btn--outline {
+  background: transparent;
+  color: var(--accent);
+  border: 1px solid var(--accent-soft);
+}
+
+.wiki-cta-btn--outline:hover {
+  background: var(--accent-tint);
+}
+
+/* 不成立的动作（如无文件时的「开始构建 Wiki」）：置灰 + 禁止指针。
+   要盖掉上面的 outline:hover 底色，否则置灰后 hover 还会亮起来。 */
+.wiki-cta-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.wiki-cta-btn--outline:disabled:hover {
+  background: transparent;
+}
+
+/* 空态的动作行 —— 两颗粒度按钮并排，而不是各自 margin-top 堆成一竖列。
+   `.wiki-cta-btn` 自带 margin-top:16px（纵向堆叠场景），行内要清零。 */
+.kb-empty-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 16px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.kb-empty-actions .wiki-cta-btn {
+  margin-top: 0;
+}
+
 /* ══════════ Image Viewer ══════════ */
 
 .kb-image-viewer {
@@ -2714,8 +2847,9 @@
   /* 覆盖 .kb-pane 的 inset:0 —— left 由 inline style（ratio）驱动 */
   right: 0;
   border-left: 1px solid var(--border);
-  /* 与图谱页背景一致（graph.css 用 #FAFAFA 硬编码），避免 GraphPage 副格透底 */
-  background: #FAFAFA;
+  /* 底色跟随主题（曾硬编码 #FAFAFA 对齐图谱画布，深色模式下副格整片发白）。
+     图谱画布自绘底色，不需要这层兜底。 */
+  background: var(--bg);
   min-width: 240px;
 }
 
@@ -2974,6 +3108,29 @@
   background: var(--accent);
 }
 
+/* Drag-to-reorder — the dragged tab lifts and follows the pointer; siblings
+   glide one slot aside (transform only, no layout thrash). The vacated gap IS
+   the drop indicator, Chrome-style. Styles are toggled via direct DOM in
+   KbTabBar (zero React re-renders per frame); the store updates once on drop. */
+.kb-wtab.is-shifting {
+  transition: transform 160ms ease;
+}
+.kb-wtab.is-dragging {
+  z-index: 10;
+  transition: none;
+  /* A lifted tab needs an opaque body — transparent inactive tabs would cast a
+     hollow shadow. Same surface language as is-active, so "picked up" reads
+     as "the focused surface", in both themes. */
+  background: var(--bg-panel);
+  color: var(--text);
+  border-color: var(--border);
+  box-shadow: var(--shadow-md);
+  cursor: grabbing;
+}
+.kb-wtab.is-dragging .kb-wtab-close {
+  opacity: 0;
+}
+
 /* "+" explicit new-tab button — rides after the last tab in the scroll row. */
 .kb-wtab-add {
   display: inline-flex;
@@ -3055,6 +3212,24 @@
   cursor: pointer;
   text-align: left;
   transition: background 80ms ease;
+}
+
+/* Icons are opt-in per item (`icon` field) — label-only menus keep the tight
+   original layout, so only icon-bearing items get the gap. */
+.ctx-menu-item.has-icon {
+  gap: 8px;
+}
+
+.ctx-menu-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  opacity: 0.75;
+}
+
+.ctx-menu-label {
+  min-width: 0;
 }
 
 .ctx-menu-item:hover {
@@ -3426,6 +3601,23 @@
   flex-shrink: 0;
   position: relative; /* 历史下拉的定位容器（向下展开横跨标签栏） */
 }
+
+/* header 内嵌变体（全屏态 /chat）：嵌入 home-header 中段。自带的 padding 与底线清零
+   ——几何（高度/分隔线/内边距）由宿主 header 负责；flex:1 吃掉 logo 与动作区之间的
+   空间，标签溢出时仍走本组件自带的 ‹ › 箭头滚动。 */
+.chat-session-tabbar--in-header {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0;
+  border-bottom: none;
+}
+
+/* 栏尾「历史 / +」在面板紧凑条里是 4px 节奏（gap 2px + margin 2px）；进了 header 就
+   加入页头动作按钮的 8px 节奏（strip gap 2px + margin 6px = 8px），四个按钮等距 */
+.chat-session-tabbar--in-header .chat-session-tab-history,
+.chat-session-tabbar--in-header .chat-session-tab-add {
+  margin-left: 6px;
+}
 .chat-session-tabs {
   display: flex;
   align-items: center;
@@ -3575,8 +3767,10 @@
 .chat-session-tab-history:hover { background: var(--bg-subtle); color: var(--text); }
 .chat-session-tab-history:focus-visible { outline: 2px solid var(--accent); outline-offset: -1px; }
 
-/* 停靠/悬浮切换按钮（顶栏变体）：停靠态以 accent 着色示意「已停靠」 */
-.chat-session-tab-dock {
+/* 停靠/悬浮切换 与 进入全屏（顶栏变体）：同为「呈现形态」动作，共用同一套按钮规格。
+   停靠态以 accent 着色示意「已停靠」；全屏是单向动作，无 pressed 态。 */
+.chat-session-tab-dock,
+.chat-session-tab-fullscreen {
   flex-shrink: 0;
   width: 22px;
   height: 22px;
@@ -3590,14 +3784,17 @@
   align-items: center;
   justify-content: center;
 }
-.chat-session-tab-dock:hover { background: var(--bg-subtle); color: var(--text); }
-.chat-session-tab-dock:focus-visible { outline: 2px solid var(--accent); outline-offset: -1px; }
+.chat-session-tab-dock:hover,
+.chat-session-tab-fullscreen:hover { background: var(--bg-subtle); color: var(--text); }
+.chat-session-tab-dock:focus-visible,
+.chat-session-tab-fullscreen:focus-visible { outline: 2px solid var(--accent); outline-offset: -1px; }
 .chat-session-tab-dock[aria-pressed="true"] { color: var(--accent); }
 
 /* 顶栏 SVG 图标显式禁止 flex 收缩（否则宽度被压成 0，图标不可见） */
 .chat-session-tab-history svg,
 .chat-session-tab-add svg,
 .chat-session-tab-dock svg,
+.chat-session-tab-fullscreen svg,
 .chat-session-tab-close-panel svg {
   flex-shrink: 0;
 }
@@ -3656,3 +3853,575 @@
 .file-chat-session { display: flex; flex-direction: column; flex: 1; min-height: 0; }
 .file-chat-session-stack { display: flex; flex-direction: column; flex: 1; min-height: 0; }
 
+
+/* ── 文档出图：导出气泡（版式二选一 + 头卡开关 + 导出动作） ──
+   一个按钮开气泡，结构与图谱出图（.graph-export-*）同款：版式是分段
+   控件而非下拉项——长图/竖卡是「同一件事」的二选一，并排一眼可比。
+   颜色全部走 tokens 变量，深色模式自动跟随。 */
+.kb-export-ctrl { position: relative; display: inline-flex; align-items: center; }
+
+.kb-export-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  /* 与 .kb-sort-dropdown（同为 header 区的下拉）一致 */
+  z-index: 40;
+  min-width: 176px;
+  padding: 5px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-md);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  white-space: nowrap;
+}
+
+.kb-export-aspects {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  margin-bottom: 3px;
+  border-radius: 6px;
+  background: var(--bg-muted);
+}
+
+.kb-export-aspect {
+  flex: 1;
+  padding: 4px 8px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text);
+  font-size: 12px;
+  opacity: 0.68;
+  cursor: pointer;
+}
+
+.kb-export-aspect:hover { opacity: 1; }
+
+.kb-export-aspect.is-active {
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-xs);
+  opacity: 1;
+  font-weight: 600;
+}
+
+/* 深色下 --bg-elevated 与 --bg-muted 明度几乎相同，白色芯片消失——
+   提亮选中芯片（对齐图谱出图的 [data-theme] 覆盖）。 */
+[data-theme='dark'] .kb-export-aspect.is-active {
+  background: rgba(255, 255, 255, 0.16);
+  box-shadow: none;
+}
+
+.kb-export-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px 5px;
+  font-size: 12px;
+  color: var(--text);
+  cursor: pointer;
+  opacity: 0.86;
+}
+
+.kb-export-toggle:hover { opacity: 1; }
+
+.kb-export-toggle input {
+  margin: 0;
+  cursor: pointer;
+  accent-color: var(--accent);
+}
+
+.kb-export-item {
+  display: block;
+  width: 100%;
+  padding: 5px 8px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.kb-export-item:hover { background: var(--bg-subtle); }
+.kb-export-item:disabled { opacity: 0.5; cursor: not-allowed; }
+/* ── Zero-vault welcome: two equal starting actions ── */
+.kb-empty-state--welcome {
+  /* flex 列的子项默认 stretch，max-width 会把盒子钉在交叉轴起点（左边缘）；
+     auto 外边距把剩余空间均分到两侧，欢迎区才落在主内容区的中线上。 */
+  width: 100%;
+  max-width: 720px;
+  margin: 0 auto;
+}
+
+.kb-empty-actions--cards {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  width: 100%;
+  max-width: 640px;
+  margin-top: 8px;
+}
+
+.kb-empty-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 20px 18px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-subtle);
+  text-align: center;
+}
+
+.kb-empty-card__title {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.kb-empty-card__body {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+@media (max-width: 640px) {
+  .kb-empty-actions--cards {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ── First-run checklist banner ── */
+.kb-onboarding {
+  flex: none;
+  border-bottom: 1px solid var(--border);
+  /* 比文档底色暖一档：让它读起来像「正在进行的引导」，而不是又一条工具栏。 */
+  background: color-mix(in srgb, var(--accent-tint) 55%, var(--bg-panel));
+  font-size: 13px;
+  position: relative;
+}
+
+.kb-onboarding__bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 0 8px 0 12px;
+}
+
+.kb-onboarding__summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+}
+
+.kb-onboarding__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: 6px;
+  flex: none;
+}
+
+.kb-onboarding__toggle:hover {
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+}
+
+.kb-onboarding__toggle:focus-visible,
+.kb-onboarding__cta:focus-visible,
+.kb-onboarding__dismiss:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.kb-onboarding__dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  /* 纯进度标记：不响应点击，也不该给出可点的光标暗示。 */
+  cursor: default;
+  user-select: none;
+}
+
+.kb-onboarding__dot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 1px solid var(--border-strong);
+  color: var(--text-muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  flex: none;
+}
+
+.kb-onboarding__dot.is-current {
+  border-color: var(--accent);
+  border-width: 1.5px;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.kb-onboarding__dot.is-done {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.kb-onboarding__title {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.kb-onboarding__progress {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.kb-onboarding__chevron {
+  color: var(--text-muted);
+  transition: transform 150ms ease;
+}
+
+.kb-onboarding__toggle[aria-expanded='true'] .kb-onboarding__chevron {
+  transform: rotate(180deg);
+}
+
+/* 下一步说明紧跟在进度后面，主按钮就在它旁边——不把唯一动作推到远端角落。 */
+.kb-onboarding__hint {
+  color: var(--text-muted);
+  margin-left: 6px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kb-onboarding__cta {
+  flex: none;
+  height: 28px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: var(--accent);
+  color: #fff;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 120ms ease;
+}
+
+/* 引导呼吸环长在「真实按钮」上（导入 / 问答 / 保存）：引导收起后用户日常用的
+   就是这些键，动画不该只教会用户点 checklist 上的中转按钮。
+
+   持续循环而不是只播 3 次：验收时用户恰好没看向那一块，4 秒后动画已经结束，
+   结果就是「我没看到」。步骤一完成 class 移除，动画随之消失。
+
+   2026-10-19 二轮验收（「还是没看到」）：最初只做扩散环，环淡出后剩下的
+   半个周期完全不可见，26px 的小图标很容易整段错过。改为底色呼吸 + 扩散环，
+   任意时刻都有可见提示；周期缩到 1.8s。
+
+   不要把缩放写进这个动画：持续 transform 会让按钮的包围盒一直变化，
+   Playwright 判定「element is not stable」→ 所有引导用例点不下去。
+   底色与阴影不改变布局盒，既有存在感又保持可点击。 */
+@keyframes kb-guide-pulse {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 55%, transparent);
+    background-color: color-mix(in srgb, var(--accent) 20%, transparent);
+  }
+  45% {
+    box-shadow: 0 0 0 6px transparent;
+    background-color: color-mix(in srgb, var(--accent) 7%, transparent);
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+    background-color: color-mix(in srgb, var(--accent) 20%, transparent);
+  }
+}
+
+.kb-guide-pulse {
+  animation: kb-guide-pulse 1.8s ease-in-out infinite;
+}
+
+/* checklist 的中转按钮是实心 accent 底 + 白字，不能套用上面的底色呼吸
+   （会把实心底冲淡成 7–20% 的浅色，白字直接失去对比度）。只保留扩散环。 */
+@keyframes kb-guide-pulse-solid {
+  0%   { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 55%, transparent); }
+  45%  { box-shadow: 0 0 0 6px transparent; }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+
+.kb-guide-pulse--solid {
+  animation: kb-guide-pulse-solid 1.8s ease-in-out infinite;
+}
+
+.kb-onboarding__cta:hover {
+  background: var(--accent-hover);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* 关闭动画不等于去掉提示：留一圈静态高亮，否则「减弱动态效果」的用户
+     会彻底看不到引导目标。 */
+  .kb-guide-pulse,
+  .kb-guide-pulse--solid {
+    animation: none;
+    box-shadow: 0 0 0 2px var(--accent-soft);
+  }
+}
+
+.kb-onboarding__dismiss {
+  margin-left: auto;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 4px 6px;
+  flex: none;
+}
+
+.kb-onboarding__rail {
+  height: 2px;
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+.kb-onboarding__rail > span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width 240ms ease;
+}
+
+@media (max-width: 720px) {
+  .kb-onboarding__hint {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kb-onboarding__rail > span,
+  .kb-onboarding__chevron {
+    transition: none;
+  }
+}
+
+.kb-onboarding__details {
+  padding: 2px 12px 10px 14px;
+}
+
+.kb-onboarding__steps {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.kb-onboarding__steps li {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  color: var(--text);
+}
+
+.kb-onboarding__steps li.is-done {
+  color: var(--text-muted);
+}
+
+.kb-onboarding__steps li.is-current {
+  color: var(--text);
+}
+
+.kb-onboarding__check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  margin-top: 1px;
+  border-radius: 50%;
+  border: 1px solid var(--border-strong);
+  font-size: 11px;
+  flex: none;
+}
+
+.kb-onboarding__steps li.is-current .kb-onboarding__check {
+  border-color: var(--accent);
+  border-width: 1.5px;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.kb-onboarding__steps li.is-done .kb-onboarding__check {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.kb-onboarding__step-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.kb-onboarding__step-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.kb-onboarding__current {
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+/* 「怎么完成」比步骤名低一档：扫读时先看进度，需要时再看做法。 */
+.kb-onboarding__step-how {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.kb-onboarding__auto-hint {
+  margin: 12px 0 0 26px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+/* ── Completion: persistent feature map ──
+   不是 8 秒消失的庆祝条：跑通闭环之后，用户真正的问题是「这个产品还能
+   干什么」。地图留到用户主动收起，并且可以从帮助菜单重新打开。 */
+.kb-onboarding--map {
+  padding: 12px 14px 14px;
+}
+
+.kb-onboarding__map-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+}
+
+.kb-onboarding__map-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  margin-top: 1px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  font-size: 11px;
+  flex: none;
+}
+
+.kb-onboarding__map-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.kb-onboarding__map-title {
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.kb-onboarding__map-body {
+  color: var(--text-muted);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.kb-onboarding__map-head .kb-onboarding__dismiss {
+  margin-left: auto;
+}
+
+.kb-onboarding__map-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px 18px;
+  margin-top: 11px;
+  padding-top: 11px;
+  border-top: 1px solid color-mix(in srgb, var(--accent) 18%, var(--border));
+}
+
+.kb-onboarding__map-grid section {
+  min-width: 0;
+}
+
+.kb-onboarding__map-grid h4 {
+  margin: 0 0 3px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.kb-onboarding__map-grid p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+
+.kb-onboarding__map-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin-top: 4px;
+}
+
+.kb-onboarding__map-actions button {
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  font-size: 12.5px;
+  padding: 0;
+  cursor: pointer;
+}
+
+.kb-onboarding__map-actions button:hover {
+  text-decoration: underline;
+}
+
+.kb-onboarding__map-actions button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+@media (max-width: 1100px) {
+  .kb-onboarding__map-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .kb-onboarding__map-grid {
+    grid-template-columns: 1fr;
+  }
+}

@@ -2,7 +2,17 @@ import { Hono } from 'hono';
 import { loadConfig, saveConfig, getAgentConfig, setAgentConfig, mergeConfig } from '../core/config.js';
 import type { AppConfig, AgentConfig } from '../core/config.js';
 
-export function configRoutes(): Hono {
+export interface ConfigRoutesHooks {
+  /**
+   * Called after any config write (PUT / or PUT /agents/:agentId). Agent env
+   * overrides (e.g. CLAUDE_BIN) change binary resolution, so the agent
+   * detection cache must be dropped — wired to RunManager.invalidateAgentCache
+   * in server.ts.
+   */
+  onConfigChanged?: () => void;
+}
+
+export function configRoutes(hooks: ConfigRoutesHooks = {}): Hono {
   const app = new Hono();
 
   // GET /api/config
@@ -15,6 +25,7 @@ export function configRoutes(): Hono {
   app.put('/', async (c) => {
     const body = await c.req.json<Partial<AppConfig>>();
     saveConfig(mergeConfig(body));
+    hooks.onConfigChanged?.();
     return c.json({ ok: true });
   });
 
@@ -27,6 +38,7 @@ export function configRoutes(): Hono {
   app.put('/agents/:agentId', async (c) => {
     const body = await c.req.json<AgentConfig>();
     setAgentConfig(c.req.param('agentId'), body);
+    hooks.onConfigChanged?.();
     return c.json({ ok: true });
   });
 

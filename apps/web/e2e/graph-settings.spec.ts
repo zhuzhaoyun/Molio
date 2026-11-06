@@ -9,7 +9,7 @@ import { clickNav } from './helpers/navigation';
  * @priority P2
  */
 
-const DAEMON_API = 'http://localhost:3100/api';
+const DAEMON_API = `http://localhost:${process.env.MOLIO_E2E_DAEMON_PORT ?? '3100'}/api`;
 
 /** fetch with a hard timeout so beforeAll never hangs if daemon is unreachable */
 async function fetchWithTimeout(url: string, init: RequestInit = {}, ms = 10_000) {
@@ -146,6 +146,66 @@ test.describe('Graph Settings Panel', () => {
     await expect(panel).toContainText('排斥力');
     await expect(panel).toContainText('连线拉力');
     await expect(panel).toContainText('连线距离');
+  });
+
+  /**
+   * 「恢复默认设置」——图谱设置改乱了（关掉孤立节点、换了主题、拖歪了力参数）一键回出厂。
+   * 对齐 Obsidian 的 Restore default settings：常驻底栏、不弹确认。
+   * 断言走 localStorage（设置的唯一真相），同时验 UI 也真的跟着回位了。
+   */
+  test('restore defaults: resets filter/appearance/forces and persists', async ({ page }) => {
+    await page.goto(`http://localhost:5173/knowledge?vault=${vaultId}`);
+    await clickNav(page, 'graph');
+    await expect(page.locator('.graph-page')).toBeVisible({ timeout: 5_000 });
+
+    const readStored = () =>
+      page.evaluate(() => {
+        const raw = localStorage.getItem('molio.graph.settings');
+        return raw ? JSON.parse(raw) : null;
+      });
+
+    await page.locator('.graph-settings-btn').click();
+    const panel = page.locator('.graph-settings-panel');
+    await expect(panel).toBeVisible({ timeout: 10_000 });
+
+    // ① 改筛选：取消「孤立节点」
+    const orphans = panel.locator('.graph-settings__checkbox').filter({ hasText: '孤立节点' }).locator('input');
+    await expect(orphans).toBeChecked();
+    await orphans.uncheck();
+    await expect.poll(async () => (await readStored())?.showOrphans).toBe(false);
+
+    // ② 改外观：主题换深色
+    await panel.locator('.graph-settings__tab', { hasText: '外观' }).click();
+    await panel.locator('.graph-settings__select').selectOption('dark');
+    await expect.poll(async () => (await readStored())?.theme).toBe('dark');
+
+    // ③ 改力度：拖动排斥力
+    await panel.locator('.graph-settings__tab', { hasText: '力度' }).click();
+    const repel = panel.locator('.graph-settings__group').filter({ hasText: '排斥力' }).locator('input[type="range"]');
+    const repelBefore = (await readStored())?.forces?.repelStrength;
+    await repel.fill('-10');
+    await expect.poll(async () => (await readStored())?.forces?.repelStrength).not.toBe(repelBefore);
+
+    // ④ 恢复默认：底栏按钮常驻（切到任一 tab 都点得到）
+    await panel.locator('[data-testid="graph-settings-reset"]').click();
+
+    // 落盘有 300ms 防抖 —— 先等其中一项回位，再整体断言
+    await expect.poll(async () => (await readStored())?.showOrphans).toBe(true);
+    const stored = await readStored();
+    expect(stored.showOrphans).toBe(true);
+    expect(stored.showDeadLinks).toBe(true);
+    expect(stored.theme).toBe('system');
+    expect(stored.nodeScale).toBe(1);
+    expect(stored.edgeWidth).toBe(0.8);
+    expect(stored.forces.repelStrength).toBe(-120);
+
+    // UI 也回位了（面板不关、停在当前 tab，用户能立刻看到效果）
+    await expect(panel).toBeVisible();
+    await panel.locator('.graph-settings__tab', { hasText: '力度' }).click();
+    // 排斥力 step=1 → 滑块按整数展示（SliderControl 的 format 分支）
+    await expect(panel.locator('.graph-settings__group').filter({ hasText: '排斥力' })).toContainText('-120');
+    await panel.locator('.graph-settings__tab', { hasText: '筛选' }).click();
+    await expect(orphans).toBeChecked();
   });
 
   test('old info button is removed', async ({ page }) => {

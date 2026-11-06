@@ -1,10 +1,13 @@
 /* ── Graph Page Layout ── */
 
-/* When graph page is active, make .entry-main a positioning container */
+/* When graph page is active, make .entry-main a positioning container.
+   不设背景：画布底色由 Pixi 引擎按图谱主题自绘（getThemeColors().bg），
+   loading/empty/error 各自有覆盖层。这里曾硬编码 #FAFAFA，而 :has() 只看 DOM
+   存在性——图谱标签是 keep-alive 的，隐藏时也会把整个主区域刷成浅色，
+   深色模式下文档区因此整片发白。底色跟随主题（rail.css 的 --bg）。 */
 .entry-main:has(.graph-page) {
   position: relative;
   overflow: hidden;
-  background: #FAFAFA;
 }
 
 .graph-page {
@@ -23,7 +26,9 @@
   top: 0;
   left: 0;
   right: 0;
-  z-index: 10;
+  /* 空态 .graph-empty（z-index:10）会盖住 topbar 控件——topbar 作为浮层 chrome 必须恒在其上，
+     故提到 30（>10 空态遮罩 / minimap20，<40 属性面板，<100 modal） */
+  z-index: 30;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -47,6 +52,9 @@
   flex-wrap: wrap;
   justify-content: flex-end;
   min-width: 0;
+  /* 顶栏是 space-between；副视图（对照）不渲染左端导航组，只剩这一个子元素时会贴到左端。
+     margin-left:auto 让它在任何情况下都靠右——主格场景 space-between 已推右，此句幂等。 */
+  margin-left: auto;
 }
 
 /* ── Vault Selector ── */
@@ -164,6 +172,54 @@
   margin: 0;
   font-size: 14px;
   color: #888;
+}
+
+/* ── Scope-switch in-flight chip ──
+   换 scope 时旧图仍在屏上（不清屏），故不能盖全屏 loading，只在底部居中给一枚小芯片。
+   避开顶栏（顶部浮层）与小地图（右下 12px）；pointer-events:none 不挡画布拖拽。 */
+
+.graph-scope-loading {
+  position: absolute;
+  left: 50%;
+  bottom: 16px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.12);
+  font-size: 12px;
+  color: #666;
+  pointer-events: none;
+  z-index: 25;
+}
+
+/* Explicit dark theme (manual 深色 selection, regardless of OS) */
+[data-theme="dark"] .graph-scope-loading {
+  background: rgba(40, 40, 44, 0.92);
+  color: #bbb;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.5);
+}
+
+/* System-follow path: no data-theme attribute set → honour the OS preference,
+   否则「跟随系统 + 深色 OS」下这枚芯片会留在浅色，与周围深色画布割裂。 */
+@media (prefers-color-scheme: dark) {
+  html:not([data-theme]) .graph-scope-loading {
+    background: rgba(40, 40, 44, 0.92);
+    color: #bbb;
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.5);
+  }
+}
+
+.graph-scope-loading__spinner {
+  width: 12px;
+  height: 12px;
+  border: 2px solid currentColor;
+  border-top-color: #8B5CF6;
+  border-radius: 50%;
+  animation: graph-spin 0.8s linear infinite;
 }
 
 /* ── Error State ── */
@@ -514,6 +570,31 @@
   padding: 14px 16px;
 }
 
+/* 底栏：常驻在 body 滚动区之外，切到任一 tab 都点得到 */
+.graph-settings__footer {
+  flex-shrink: 0;
+  padding: 8px 12px 10px;
+  border-top: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.graph-settings__reset {
+  width: 100%;
+  padding: 6px 0;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 5px;
+  background: transparent;
+  color: #666;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.graph-settings__reset:hover {
+  background: #F5F3FF;
+  border-color: rgba(139, 92, 246, 0.35);
+  color: #8B5CF6;
+}
+
 .graph-settings__section {
   display: flex;
   flex-direction: column;
@@ -663,6 +744,21 @@
   border-color: #A78BFA;
 }
 
+[data-theme="dark"] .graph-settings__footer {
+  border-top-color: rgba(255, 255, 255, 0.06);
+}
+
+[data-theme="dark"] .graph-settings__reset {
+  border-color: rgba(255, 255, 255, 0.12);
+  color: #999;
+}
+
+[data-theme="dark"] .graph-settings__reset:hover {
+  background: rgba(139, 92, 246, 0.15);
+  border-color: rgba(167, 139, 250, 0.5);
+  color: #A78BFA;
+}
+
 @media (prefers-color-scheme: dark) {
   html:not([data-theme]) .graph-settings-panel {
     background: rgba(24, 24, 34, 0.94);
@@ -713,6 +809,21 @@
 
   html:not([data-theme]) .graph-settings__select:focus {
     border-color: #A78BFA;
+  }
+
+  html:not([data-theme]) .graph-settings__footer {
+    border-top-color: rgba(255, 255, 255, 0.06);
+  }
+
+  html:not([data-theme]) .graph-settings__reset {
+    border-color: rgba(255, 255, 255, 0.12);
+    color: #999;
+  }
+
+  html:not([data-theme]) .graph-settings__reset:hover {
+    background: rgba(139, 92, 246, 0.15);
+    border-color: rgba(167, 139, 250, 0.5);
+    color: #A78BFA;
   }
 
   html:not([data-theme]) .graph-minimap {
@@ -858,6 +969,106 @@
   color: #dfe4ec;
 }
 [data-theme="dark"] .graph-stats-pop .graph-stat--deadlink { color: #8a92a0; }
+/* 一键出图：与统计同款磨砂浮层，气泡里两个出口（下载 / 复制） */
+.graph-export-ctrl {
+  position: relative;
+  pointer-events: auto;
+}
+.graph-export-pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 5px;
+  background: rgba(255, 255, 255, 0.94);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 8px;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.14);
+  font-size: 11px;
+  color: var(--text);
+  white-space: nowrap;
+  z-index: 40;
+  animation: graphPopIn 0.15s ease both;
+}
+[data-theme="dark"] .graph-export-pop {
+  background: rgba(24, 28, 36, 0.94);
+  border-color: rgba(255, 255, 255, 0.10);
+  color: #dfe4ec;
+}
+.graph-export-item {
+  display: block;
+  width: 100%;
+  padding: 5px 10px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.graph-export-item:hover {
+  background: var(--bg-hover);
+}
+/* 版式行：分段控件而非四个下拉项 —— 四个比例是「同一件事」，并排一眼可比 */
+.graph-export-aspects {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  margin-bottom: 3px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.05);
+}
+.graph-export-aspect {
+  flex: 1;
+  padding: 3px 6px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  opacity: 0.68;
+  cursor: pointer;
+}
+.graph-export-aspect:hover {
+  opacity: 1;
+}
+.graph-export-aspect.is-active {
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+  opacity: 1;
+  font-weight: 600;
+}
+[data-theme="dark"] .graph-export-aspects {
+  background: rgba(255, 255, 255, 0.06);
+}
+[data-theme="dark"] .graph-export-aspect.is-active {
+  background: rgba(255, 255, 255, 0.16);
+  box-shadow: none;
+}
+/* 附带信息开关：一行勾选，和出口按钮同样克制 */
+.graph-export-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px 5px;
+  cursor: pointer;
+  opacity: 0.86;
+}
+.graph-export-toggle:hover {
+  opacity: 1;
+}
+.graph-export-toggle input {
+  margin: 0;
+  cursor: pointer;
+  accent-color: var(--accent);
+}
+.graph-export-note {
+  padding: 5px 10px;
+  color: var(--text-muted);
+}
 @keyframes graphPopIn {
   from { opacity: 0; transform: translateY(-4px); }
   to   { opacity: 1; transform: translateY(0); }
@@ -878,6 +1089,20 @@
     color: var(--text-muted);
   }
   html:not([data-theme]) .graph-stats-pop .graph-stat--deadlink { color: #8a92a0; }
+  /* 出图气泡同理：漏掉这条就是白卡片配浅色字（浅压浅）——
+     显式深色的那份 [data-theme="dark"] 管不到「跟随系统」。 */
+  html:not([data-theme]) .graph-export-aspects {
+    background: rgba(255, 255, 255, 0.06);
+  }
+  html:not([data-theme]) .graph-export-aspect.is-active {
+    background: rgba(255, 255, 255, 0.16);
+    box-shadow: none;
+  }
+  html:not([data-theme]) .graph-export-pop {
+    background: rgba(24, 28, 36, 0.94);
+    border-color: rgba(255, 255, 255, 0.10);
+    color: var(--text-muted);
+  }
 }
 
 /* 图标按钮里的 SVG 必须固定尺寸 + 不可被 flex 压扁（本 .graph-icon-btn/.graph-settings-btn

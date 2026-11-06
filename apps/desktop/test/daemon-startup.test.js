@@ -116,16 +116,17 @@ describe('main.js: must load URL only after daemon is ready (not in createWindow
     const fnEnd = mainJs.indexOf('\nfunction ', fnStart + 1);
     const fnBody = mainJs.slice(fnStart, fnEnd > fnStart ? fnEnd : fnStart + 500);
 
-    // 生产 URL 经 DAEMON_BASE 常量拼接（端口单点定义 DAEMON_PORT = 3100），
-    // 不再有 'localhost:3100' 字面量。
+    // 生产 URL 经 DAEMON_BASE 常量拼接（端口单点定义在 DAEMON_PORT），
+    // 不再有 'localhost:3100' 字面量。端口可被 MOLIO_PORT 覆盖（E2E 与
+    // 已安装应用并行时用），未设置时仍是 3100。
     assert.ok(
       fnBody.includes('loadURL(DAEMON_BASE + url)'),
       'loadAppWindow must loadURL the daemon base URL'
     );
     assert.ok(
-      mainJs.includes('const DAEMON_PORT = 3100') &&
+      mainJs.includes('const DAEMON_PORT = Number(process.env.MOLIO_PORT) || 3100') &&
         mainJs.includes('const DAEMON_BASE = `http://localhost:${DAEMON_PORT}`'),
-      'DAEMON_BASE must be derived from the single DAEMON_PORT constant (:3100)'
+      'DAEMON_BASE must be derived from the single DAEMON_PORT constant (default :3100, MOLIO_PORT override)'
     );
   });
 
@@ -211,18 +212,26 @@ describe('main.js: protocol launch should load app when daemon is not yet ready'
     // with a dead daemon, the window shows the static daemon-error page (not
     // the SPA), so molio:renderer-ready never fires and a queued navigation
     // was silently dropped — the clip saved but the file never opened.
-    // The fix: if rendererReady is false, loadURL the knowledge route
+    // The fix: if the renderer is not ready, loadURL the knowledge route
     // directly instead of queuing.
+    //
+    // "Not ready" now comes from renderer-readiness.js (isReady) instead of a
+    // raw Map lookup — same condition, but it no longer becomes false merely
+    // because the SPA changed route (clip-open-navigation.test.js).
     const navigatePos = mainJs.indexOf('function navigateFromProtocolUrl');
     assert.ok(navigatePos !== -1, 'navigateFromProtocolUrl must exist');
     const navigateBlock = mainJs.slice(navigatePos, navigatePos + 2000);
     assert.ok(
-      navigateBlock.includes('!state?.ready'),
-      'open-file navigation must fall back to loadURL when the renderer is not ready'
+      navigateBlock.includes('rendererStates.isReady('),
+      'open-file navigation must consult the readiness gate'
     );
     assert.ok(
-      /isWaitingForApp\(targetWin\)\s*\|\|\s*!state\?\.ready/.test(navigateBlock),
+      /isWaitingForApp\(targetWin\)\s*\|\|\s*!ready/.test(navigateBlock),
       'the loadURL fallback condition must cover both waiting-for-app and not-ready states'
+    );
+    assert.ok(
+      navigateBlock.includes('targetWin.loadURL(appUrl)'),
+      'the not-ready branch must still loadURL the knowledge route (daemon error page case)'
     );
   });
 });
@@ -471,6 +480,101 @@ describe('main.js: loadAppWindow must handle did-fail-load so a failed load neve
     assert.ok(
       loadAppBody().includes('showDaemonErrorPage'),
       'on load failure loadAppWindow must show the daemon error page so the user gets feedback instead of a dead window'
+    );
+  });
+});
+
+describe('main.js: startup parallelism — daemon kicked off alongside monitoring, ARMS wait bounded', () => {
+  // Regression (startup perf 2026-09): whenReady used to run
+  // `await initMonitoring` → createWindow → setupAutoUpdater → `await
+  // startDaemonProduction` strictly serially. ARMS init (unbounded) delayed
+  // both window creation and the daemon spawn — the heaviest leg — even
+  // though neither depends on the other. Now the daemon spawn starts in
+  // parallel and the ARMS wait is capped so a hung init can never hold
+  // startup hostage (renderer-side injection is the accepted degradation).
+  function whenReadyBlock() {
+    const pos = mainJs.indexOf('app.whenReady()');
+    assert.ok(pos !== -1, 'app.whenReady() must exist');
+    return mainJs.slice(pos);
+  }
+
+  it('should NOT block on initMonitoring directly (no `await initMonitoring`)', () => {
+    assert.ok(
+      !/await\s+initMonitoring/.test(mainJs),
+      'initMonitoring must be started as a promise, not awaited inline — it runs in parallel with daemon startup now'
+    );
+  });
+
+  it('daemon start should be kicked off BEFORE the monitoring race resolves (parallel)', () => {
+    const block = whenReadyBlock();
+    const daemonPos = block.indexOf('startDaemonProduction()');
+    const racePos = block.indexOf('Promise.race');
+    assert.ok(daemonPos !== -1, 'startDaemonProduction() must be in whenReady');
+    assert.ok(racePos !== -1, 'Promise.race (bounded monitoring wait) must be in whenReady');
+    assert.ok(
+      daemonPos < racePos,
+      'daemon spawn must be kicked off before awaiting the monitoring race — that is the whole point of the parallelism'
+    );
+  });
+
+  it('monitoring wait should be bounded by MONITORING_INIT_TIMEOUT_MS', () => {
+    assert.ok(
+      mainJs.includes('const MONITORING_INIT_TIMEOUT_MS = 2000'),
+      'a named 2s timeout constant must gate the ARMS wait'
+    );
+    const block = whenReadyBlock();
+    assert.ok(
+      block.includes('MONITORING_INIT_TIMEOUT_MS'),
+      'the whenReady race must reference the timeout constant'
+    );
+  });
+
+  it('daemon readiness should come from awaiting the parallel start promise', () => {
+    assert.ok(
+      mainJs.includes('daemonReady = (await daemonStartPromise) === true'),
+      'daemonReady must be set from the parallel daemonStartPromise result, preserving the error-page fallback'
+    );
+    assert.ok(
+      mainJs.includes('showDaemonErrorPage(firstWindow)'),
+      'daemon failure must still surface the error page'
+    );
+  });
+
+  it('helper servers (wiki fetcher + crypto) should start in parallel', () => {
+    const fnStart = mainJs.indexOf('async function startDaemonProduction');
+    assert.ok(fnStart !== -1, 'startDaemonProduction must exist');
+    const fnEnd = mainJs.indexOf('\nfunction ', fnStart + 1);
+    const fnBody = mainJs.slice(fnStart, fnEnd > fnStart ? fnEnd : fnStart + 4000);
+    assert.ok(
+      fnBody.includes('Promise.all'),
+      'startFetchServer and startCryptoServer must be launched with Promise.all, not sequential awaits'
+    );
+  });
+});
+
+describe('main.js: packaged daemon must receive the OS documents directory', () => {
+  it('injects MOLIO_DOCUMENTS_DIR from Electron app.getPath', () => {
+    assert.ok(
+      mainJs.includes("MOLIO_DOCUMENTS_DIR: app.getPath('documents')"),
+      'sample vault must land under the real (OneDrive-aware) Documents folder'
+    );
+  });
+});
+
+describe('prepare-resources.mjs: sample vault content must ship in packaged builds', () => {
+  it('copies src/tools/sample-vault to resources/daemon/sample-vault', () => {
+    assert.ok(
+      prepareResourcesJs.includes("path.join(daemonDir, 'src', 'tools', 'sample-vault')") ||
+        prepareResourcesJs.includes("join(daemonDir, 'src', 'tools', 'sample-vault')"),
+      'prepare-resources must point at the sample vault source'
+    );
+    assert.ok(
+      prepareResourcesJs.includes("join(resourcesDir, 'daemon', 'sample-vault')"),
+      'prepare-resources must copy the sample vault into resources/daemon'
+    );
+    assert.ok(
+      prepareResourcesJs.includes('copySampleVaultSources()'),
+      'the copy must actually be invoked in the main sequence'
     );
   });
 });

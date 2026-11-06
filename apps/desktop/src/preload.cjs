@@ -6,7 +6,7 @@
  * NOTE: Electron preload scripts must be CommonJS, not ESM.
  */
 
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 // Synchronous app info (version, OS)
 function fetchAppInfo() {
@@ -27,6 +27,19 @@ const desktopAPI = {
 
   /** Show a file picker filtered to .md files (skill SKILL.md import). Returns the selected path or null. */
   showSkillFilePicker: () => ipcRenderer.invoke('show-skill-file-picker'),
+
+  /**
+   * Resolve a dropped File object to an absolute filesystem path. Electron ≥32
+   * removed File.path; webUtils.getPathForFile (preload-only) is the supported
+   * replacement. Returns '' when the path cannot be resolved.
+   */
+  getPathForFile: (file) => {
+    try {
+      return webUtils.getPathForFile(file) || '';
+    } catch {
+      return '';
+    }
+  },
 
   /** Open a file with the system default application. */
   openPath: (filePath) => ipcRenderer.invoke('open-path', filePath),

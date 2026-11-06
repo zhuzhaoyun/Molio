@@ -38,6 +38,8 @@ CLI tool that uses AI models (layout detection, OCR, table extraction) to conver
 
 ## Prerequisites
 
+> **Molio 用户无需手动装 Python**：Molio 预下载 docling 时，若本机没有 Python ≥3.10，会自动准备一份独立的 Python 运行环境（国内源优先，约 22MB），全程零操作。下面的手动 `pip` 步骤仅作为**回退方案**（例如你在 Molio 之外单独使用 docling，或自动供给因特殊平台/网络失败时）。
+
 ### Install docling
 
 ```bash

@@ -3,7 +3,7 @@
  * deploy-package.mjs — 构建 apps/cloud 的 FC 部署 zip（第一期手动上传流程）。
  *
  * 背景（2026-08-24 线上 422 事故的打包教训，全部实测踩过，别重新考古）：
- *   函数形态：阿里云函数计算 FC，Web 函数（Custom Runtime），**单函数 prod**（cn-hangzhou），
+ *   函数形态：阿里云函数计算 FC，Web 函数（Custom Runtime），**单函数 prod**（cn-shenzhen，函数名 user），
  *   自定义域名 auth.molio.cn 直连 LATEST 版本（无版本/别名）。启动命令：
  *       /code/runtime/node /code/dist/src/index.js
  *   因此代码包必须自带 **linux-x64 Node 二进制**（runtime/node），且 node_modules

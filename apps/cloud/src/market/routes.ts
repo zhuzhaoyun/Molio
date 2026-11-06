@@ -33,6 +33,17 @@ export function marketRoutes(deps: MarketRoutesDeps, config: CloudConfig, now: (
     return null;
   };
 
+  app.get('/taxonomy', async (c) => {
+    c.header('Cache-Control', 'no-store');
+    try { return c.json(await service.taxonomy()); } catch (e) { return handle(c, e); }
+  });
+  app.post('/taxonomy', async (c) => {
+    const denied = guardBody(c); if (denied) return denied;
+    const p = bearer(c); if (!p) return c.json({error:'invalid_token'}, 401);
+    const body = await c.req.json().catch(() => null);
+    if (!body || typeof body !== 'object' || Array.isArray(body)) return c.json({error:'invalid_metadata'}, 400);
+    try { return c.json(await service.createTaxon(p.sub, body), 201); } catch (e) { return handle(c, e); }
+  });
   app.get('/listings', async (c) => {
     c.header('Cache-Control', 'no-store');
     try { return c.json({ listings: await service.list() }, 200); } catch (e) { return handle(c, e); }
@@ -75,7 +86,7 @@ export function marketRoutes(deps: MarketRoutesDeps, config: CloudConfig, now: (
     const denied = guardBody(c); if (denied) return denied;
     const p = bearer(c);
     if (!p) return c.json({ error: 'invalid_token' }, 401);
-    const body = await c.req.json().catch(() => null) as { previews?: { ext: string; size: number }[]; priceCents?: number; name?: string; summary?: string; icon?: string; tags?: string[] } | null;
+    const body = await c.req.json().catch(() => null) as { previews?: { ext: string; size: number }[]; priceCents?: number; name?: string; summary?: string; icon?: string; tags?: string[]; categoryId?: string; resourceTypeId?: string } | null;
     try { return c.json(await service.update(p.sub, c.req.param('id'), body ?? {}), 200); } catch (e) { return handle(c, e); }
   });
 
@@ -91,10 +102,35 @@ export function marketRoutes(deps: MarketRoutesDeps, config: CloudConfig, now: (
     try { return c.json(await service.my(p.sub, p.email), 200); } catch (e) { return handle(c, e); }
   });
 
+  // 我的已购（数据源 = wxpay-fc 已购索引；身份以 Bearer JWT 为准，杜绝 uid 冒用）
+  app.get('/purchases', async (c) => {
+    c.header('Cache-Control', 'no-store');
+    const p = bearer(c);
+    if (!p) return c.json({ error: 'invalid_token' }, 401);
+    try { return c.json(await service.purchases(p.sub), 200); } catch (e) { return handle(c, e); }
+  });
+
+  // 发布者保存自己条目的商品页内容（编辑/重新生成后单独保存，不需要重传 zip）
+  app.post('/listings/:id/content', async (c) => {
+    const denied = guardBody(c); if (denied) return denied;
+    const p = bearer(c);
+    if (!p) return c.json({ error: 'invalid_token' }, 401);
+    const body = await c.req.json().catch(() => null) as { content?: unknown } | null;
+    try { return c.json(await service.updateContent(p.sub, c.req.param('id'), body?.content), 200); } catch (e) { return handle(c, e); }
+  });
+
   app.get('/admin/listings', async (c) => {
     const p = bearer(c);
     if (!p) return c.json({ error: 'invalid_token' }, 401);
     try { return c.json({ listings: await service.adminList(p.email) }, 200); } catch (e) { return handle(c, e); }
+  });
+
+  app.post('/admin/listings/:id/content', async (c) => {
+    const denied = guardBody(c); if (denied) return denied;
+    const p = bearer(c);
+    if (!p) return c.json({ error: 'invalid_token' }, 401);
+    const body = await c.req.json().catch(() => null) as { content?: unknown } | null;
+    try { return c.json(await service.adminUpdateContent(p.email, c.req.param('id'), body?.content), 200); } catch (e) { return handle(c, e); }
   });
 
   app.post('/admin/listings/:id/remove', async (c) => {

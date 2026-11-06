@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { gotoHome } from './helpers/navigation';
-import { mockChatRun, unmockAll } from './helpers/mock-sse';
+import { mockAgent, mockChatRun, unmockAll } from './helpers/mock-sse';
 import { createTempVault, cleanupTempVault, type TempVault } from './helpers/cleanup';
 
 /**
@@ -21,7 +21,7 @@ import { createTempVault, cleanupTempVault, type TempVault } from './helpers/cle
  * so the palette also asserts one.
  */
 
-const DAEMON = 'http://localhost:3100';
+const DAEMON = `http://localhost:${process.env.MOLIO_E2E_DAEMON_PORT ?? '3100'}`;
 
 let vault: TempVault;
 let skillAId = '';
@@ -79,10 +79,18 @@ test.afterAll(async () => {
 });
 
 test.describe('Composer / skill palette', () => {
+  // CI runner 上没有安装任何 agent CLI，真实 /api/agents 返回全部 unavailable
+  // → composer 停在「未选择代理」disabled 态，连 "/" 都打不进去（nightly 上
+  // 9 条超时的根因，2026-11-01 诊断）。技能清单走的是真实 daemon 的
+  // /api/skills，不受这两个路由 mock 影响。
+  test.beforeEach(async ({ page }) => {
+    await mockAgent(page);
+  });
+
   test('typing / at input start opens the palette listing installed skills', async ({ page }) => {
     await gotoHome(page);
     const input = page.locator('[data-testid="composer-input"]');
-    await expect(input).toBeVisible();
+    await expect(input).toBeVisible({ timeout: 20_000 });
 
     await input.click();
     await input.fill('/');
@@ -93,7 +101,8 @@ test.describe('Composer / skill palette', () => {
     await expect(palette.locator('[data-testid="skill-palette-item"]', { hasText: skillAName })).toBeVisible();
     await expect(palette.locator('[data-testid="skill-palette-item"]', { hasText: skillBName })).toBeVisible();
     // Bundled skills are surfaced too (docling ships with every install).
-    await expect(palette.locator('[data-testid="skill-palette-item"]', { hasText: 'docling' })).toBeVisible();
+    // Match the name, not descriptions: wiki-build also mentions docling.
+    await expect(palette.locator('.skill-palette-item-name').filter({ hasText: /^docling\s*(?:内置|Built-in)?$/ })).toBeVisible();
   });
 
   test('typing after / filters the skill list', async ({ page }) => {
@@ -178,6 +187,28 @@ test.describe('Composer / skill palette', () => {
     await expect(page.locator('[data-testid="skill-palette"]')).not.toBeVisible();
     await expect(input).toHaveValue('');
   });
+
+  for (const state of ['loading', 'error'] as const) {
+    test(`Escape closes the palette while skills are ${state}`, async ({ page }) => {
+      let release!: () => void;
+      const pending = new Promise<void>(resolve => { release = resolve; });
+      await page.route('**/api/skills?includeBundled=1', async route => {
+        if (state === 'loading') await pending;
+        await route.fulfill({ status: 500, json: { error: 'unavailable' } });
+      });
+      try {
+        await gotoHome(page);
+        const input = page.locator('[data-testid="composer-input"]');
+        await input.fill('/');
+        const palette = page.locator('[data-testid="skill-palette"]');
+        await expect(palette).toBeVisible();
+        if (state === 'error') await expect(palette).toContainText(/加载失败|Failed/i);
+        await input.press('Escape');
+        await expect(palette).not.toBeVisible();
+        await expect(input).toHaveValue('');
+      } finally { release(); }
+    });
+  }
 
   test('a non-leading slash does not open the palette', async ({ page }) => {
     await gotoHome(page);

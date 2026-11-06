@@ -32,6 +32,12 @@ interface Props {
   extra?: ReactNode;
   /** Low-frequency actions rendered inside the ⋯ overflow dropdown. */
   overflow?: ToolbarAction[];
+  /**
+   * Keep the bar visible without hover. Used by first-run onboarding on the
+   * save step, where the next action lives in this bar and hiding it until
+   * hover makes it undiscoverable.
+   */
+  highlighted?: boolean;
 }
 
 async function copyText(text: string): Promise<boolean> {
@@ -60,7 +66,7 @@ async function copyText(text: string): Promise<boolean> {
  * Hover-revealed action bar for chat messages. The copy action has a transient
  * "copied" state; regenerate/edit delegate to the parent.
  */
-export function MessageToolbar({ actions, extra, overflow }: Props) {
+export function MessageToolbar({ actions, extra, overflow, highlighted }: Props) {
   const [copied, setCopied] = useState(false);
   const [failed, setFailed] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -102,7 +108,10 @@ export function MessageToolbar({ actions, extra, overflow }: Props) {
     : null;
 
   return (
-    <div className="message-toolbar" data-testid="message-toolbar">
+    <div
+      className={`message-toolbar${highlighted ? ' message-toolbar--highlight' : ''}`}
+      data-testid="message-toolbar"
+    >
       {actions.map((a) => {
         const showCopied = a.key === 'copy' && copied;
         const tip = a.key === 'copy' && failed ? '复制失败' : showCopied ? '已复制' : a.label;

@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <!-- Molio KB 连接器图标：书本（知识库）+ 对话点（AI 问答），透明背景，小尺寸可辨识 -->
+  <g fill="none" stroke="#4F6BED" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
+    <!-- 打开的书 -->
+    <path d="M8 14 C8 14 16 10 24 13 C28 14.5 30.5 17 32 20 C33.5 17 36 14.5 40 13 C48 10 56 14 56 14 L56 46 C56 46 48 42.5 41 45 C36.5 46.5 33.5 49.5 32 52 C30.5 49.5 27.5 46.5 23 45 C16 42.5 8 46 8 46 Z"/>
+    <path d="M32 20 L32 52"/>
+  </g>
+  <!-- AI 问答气泡点 -->
+  <circle cx="46" cy="26" r="2.6" fill="#F5A623"/>
+  <circle cx="52.5" cy="21" r="2" fill="#F5A623"/>
+  <circle cx="56" cy="16.5" r="1.5" fill="#F5A623"/>
+</svg>

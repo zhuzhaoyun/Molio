@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import { gotoHome, clickNav } from './helpers/navigation';
+import { gotoHome, gotoChatSpa, clickNav } from './helpers/navigation';
 import {
   createProject,
   createConversation,
@@ -45,7 +45,7 @@ function pinnedRowByTitle(page: Page, title: string) {
  * Prerequisites: `pnpm dev` running (daemon :3100, web :5173)
  */
 
-const DAEMON_API = 'http://localhost:3100/api';
+const DAEMON_API = `http://localhost:${process.env.MOLIO_E2E_DAEMON_PORT ?? '3100'}/api`;
 
 test.describe('History', () => {
   test('shows history shell when navigating to history', async ({ page }) => {
@@ -570,7 +570,9 @@ test.describe('History', () => {
       // 打开该对话 → 跳回主页并显示其消息。
       await rowByTitle(page, 'Stale Conv').locator('.history-row__main').click();
       await expect(page.locator('.home-page.chat-active')).toBeVisible({ timeout: 5_000 });
-      await expect(page.getByText('stale content marker')).toBeVisible();
+      // 全屏页头现在也有会话标签栏，标签标题取自首条用户消息 —— 全页 getByText 会
+      // 同时命中标签标题与气泡。断言收窄到消息气泡（本用例验证的是主页显示其消息）。
+      await expect(page.getByTestId('user-message').filter({ hasText: 'stale content marker' })).toBeVisible();
 
       // 回历史页，经勾选模式删除该对话。
       await clickNav(page, 'history');
@@ -582,10 +584,13 @@ test.describe('History', () => {
       await page.locator('[data-testid=history-batch-delete-confirm]').click();
       await expect(rowByTitle(page, 'Stale Conv')).toHaveCount(0, { timeout: 5_000 });
 
-      // 回主页 → 聊天已清空（hero 空状态），旧内容不可见。
-      await clickNav(page, 'home');
-      await expect(page.locator('[data-testid=hero-brand]')).toBeVisible({ timeout: 5_000 });
-      await expect(page.getByText('stale content marker')).toHaveCount(0);
+      // 回主页 → 聊天已清空，但标签还在 → 落在**空的全屏 shell**（不是 landing）。
+      // landing 只服务「一条会话都没有」，这里标签保留，所以 shell 继续承载。
+      await gotoChatSpa(page);
+      await expect(page.locator('.home-page.chat-active')).toBeVisible({ timeout: 5_000 });
+      // 标签保留（标题也保留——resetConversations 只清消息与绑定），清掉的是消息：
+      // 断言同样收窄到气泡，而不是全页无此文本。
+      await expect(page.getByTestId('user-message').filter({ hasText: 'stale content marker' })).toHaveCount(0);
     } finally {
       await deleteProject(project.id);
     }
@@ -609,7 +614,8 @@ test.describe('History', () => {
       // 主页加载该会话（经历史页打开 → 跳回主页显示其消息）。
       await rowByTitle(page, 'Composer Sync Conv').locator('.history-row__main').click();
       await expect(page.locator('.home-page.chat-active')).toBeVisible({ timeout: 5_000 });
-      await expect(page.getByText('csync content marker')).toBeVisible();
+      // 断言收窄到气泡（页头标签栏的标签标题同文，见上条用例注释）
+      await expect(page.getByTestId('user-message').filter({ hasText: 'csync content marker' })).toBeVisible();
 
       // 主页输入框历史下拉 → 悬停目标会话 → 两步确认删除。
       await page.locator('[data-testid=composer-history-btn]').click();
@@ -619,9 +625,9 @@ test.describe('History', () => {
       await item.locator('[data-testid=composer-history-delete]').click();
       await item.locator('[data-testid=composer-history-delete]').click();
 
-      // 聊天已清空（hero 空状态），旧内容不可见。
-      await expect(page.locator('[data-testid=hero-brand]')).toBeVisible({ timeout: 5_000 });
-      await expect(page.getByText('csync content marker')).toHaveCount(0);
+      // 聊天已清空但标签还在 → 空的全屏 shell，旧内容不可见。
+      await expect(page.locator('.home-page.chat-active')).toBeVisible({ timeout: 5_000 });
+      await expect(page.getByTestId('user-message').filter({ hasText: 'csync content marker' })).toHaveCount(0);
     } finally {
       await deleteProject(project.id);
     }
@@ -643,13 +649,14 @@ test.describe('History', () => {
       await expect(page.locator('[data-testid="kb-btn-ask"]')).toBeVisible({ timeout: 10_000 });
 
       // 主页加载该会话（经历史页打开 → 跳回主页显示其消息）。
-      await clickNav(page, 'home');
+      await gotoChatSpa(page);
       await clickNav(page, 'history');
       await page.locator('[data-testid=history-refresh]').click();
       await page.waitForTimeout(500);
       await rowByTitle(page, 'KB Sync Conv').locator('.history-row__main').click();
       await expect(page.locator('.home-page.chat-active')).toBeVisible({ timeout: 5_000 });
-      await expect(page.getByText('kbsync content marker')).toBeVisible();
+      // 断言收窄到气泡（页头标签栏的标签标题同文，见上条用例注释）
+      await expect(page.getByTestId('user-message').filter({ hasText: 'kbsync content marker' })).toBeVisible();
 
       // 回 KB 页 → 文件标签恢复 → 💬问答 打开会话面板。
       await clickNav(page, 'knowledge');
@@ -665,13 +672,87 @@ test.describe('History', () => {
       await item.locator('[data-testid="composer-history-delete"]').click();
       await item.locator('[data-testid="composer-history-delete"]').click();
 
-      // 回主页 → 聊天已清空（hero 空状态），旧内容不可见。
-      await clickNav(page, 'home');
-      await expect(page.locator('[data-testid=hero-brand]')).toBeVisible({ timeout: 5_000 });
-      await expect(page.getByText('kbsync content marker')).toHaveCount(0);
+      // 回主页 → 聊天已清空，标签还在 → 空的全屏 shell，旧内容不可见。
+      await gotoChatSpa(page);
+      await expect(page.locator('.home-page.chat-active')).toBeVisible({ timeout: 5_000 });
+      await expect(page.getByTestId('user-message').filter({ hasText: 'kbsync content marker' })).toHaveCount(0);
     } finally {
       await deleteProject(project.id);
       await cleanupTempVault(vault);
+    }
+  });
+});
+
+/**
+ * 「做过题」徽标：历史列表里标出该会话做过几道题、答对几道。
+ *
+ * 卡数判定与聊天渲染器同源（`countQuizCards` = splitContent + parseQuizBlock），
+ * 所以这里的夹具必须是**合法题卡**——字段不全的 JSON 会被判为「没渲染出题卡」，
+ * 那是正确行为。徽标文案随语言变，断言只认 `data-cards` / `data-correct`。
+ */
+test.describe('History quiz badge', () => {
+  /** 一张合法题卡（judge 题，省略 options 走 judge 默认项）。 */
+  const CARD = JSON.stringify({
+    version: 1,
+    title: '徽标测试',
+    questions: [{
+      id: 'q1', type: 'judge', stem: '1+1=2？',
+      answer: ['A'], explanation: 'e', sources: [{ path: 'p.md' }],
+    }],
+  });
+  const quizMessage = (extra = '') => `前面这段话：\n\`\`\`quiz\n${CARD}\n\`\`\`${extra}`;
+
+  test('marks conversations that rendered a quiz card, and strips the card from the summary', async ({ page }) => {
+    const project = await createProject(`e2e-quizbadge-${Date.now()}`);
+    const conv = await createConversation(project.id, 'Quiz Badge Row');
+    await addMessage(project.id, conv.id, {
+      id: `msg-qb-${Date.now()}`,
+      role: 'assistant',
+      content: quizMessage(),
+      timestamp: Date.now(),
+      agentId: 'claude',
+    });
+    try {
+      await gotoHome(page);
+      await clickNav(page, 'history');
+      await expect(page.locator('.history-shell')).toBeVisible({ timeout: 5_000 });
+
+      const row = rowByTitle(page, 'Quiz Badge Row');
+      await expect(row).toBeVisible({ timeout: 5_000 });
+
+      // 徽标：卡数 1、答对 0（没提交作答记录）。
+      const badge = row.locator('[data-testid=history-quiz-badge]');
+      await expect(badge).toBeVisible({ timeout: 5_000 });
+      await expect(badge).toHaveAttribute('data-cards', '1');
+      await expect(badge).toHaveAttribute('data-correct', '0');
+
+      // 摘要剥掉题卡，只留首行文字——不再吐裸 JSON。
+      await expect(row.locator('.history-row__summary')).toHaveText('前面这段话：');
+    } finally {
+      await deleteProject(project.id);
+    }
+  });
+
+  test('does not mark conversations without a quiz card', async ({ page }) => {
+    const project = await createProject(`e2e-quizbadge-none-${Date.now()}`);
+    const conv = await createConversation(project.id, 'No Quiz Badge Row');
+    await addMessage(project.id, conv.id, {
+      id: `msg-qbn-${Date.now()}`,
+      role: 'assistant',
+      content: '就是普通的一段话。',
+      timestamp: Date.now(),
+      agentId: 'claude',
+    });
+    try {
+      await gotoHome(page);
+      await clickNav(page, 'history');
+      await expect(page.locator('.history-shell')).toBeVisible({ timeout: 5_000 });
+
+      const row = rowByTitle(page, 'No Quiz Badge Row');
+      await expect(row).toBeVisible({ timeout: 5_000 });
+      await expect(row.locator('[data-testid=history-quiz-badge]')).toHaveCount(0);
+    } finally {
+      await deleteProject(project.id);
     }
   });
 });

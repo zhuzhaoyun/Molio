@@ -55,7 +55,17 @@ export function eventsRoutes(runManager: RunManager): Hono {
       });
 
       // Pipe the SSE stream to the response
-      await s.pipe(sseStream);
+      try {
+        await s.pipe(sseStream);
+      } catch (err) {
+        // Client disconnected mid-stream — cleanup() already tore down the
+        // run subscription and ping interval. Swallow ERR_INVALID_STATE
+        // ("ReadableStream is already closed") so the uncaughtException
+        // handler doesn't kill the daemon process.
+        if ((err as NodeJS.ErrnoException)?.code !== 'ERR_INVALID_STATE') {
+          throw err;
+        }
+      }
     });
   });
 

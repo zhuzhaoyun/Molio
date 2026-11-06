@@ -1,7 +1,5 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
-import { readFileSync, existsSync, statSync } from 'node:fs';
-import { join, extname } from 'node:path';
 import type Database from 'better-sqlite3';
 import { RunManager } from './core/RunManager.js';
 import { openDatabase, closeDatabase } from './core/db.js';
@@ -20,16 +18,20 @@ import { graphRoutes } from './routes/graph.js';
 import { weixinRoutes } from './routes/weixin.js';
 import { feishuRoutes } from './routes/feishu.js';
 import { maintenanceRoutes } from './routes/maintenance.js';
+import { quizRoutes } from './routes/quiz.js';
 import { authRoutes } from './routes/auth.js';
 import { marketRoutes } from './routes/market.js';
+import { createStaticFileMiddleware } from './static-files.js';
 import { AuthClient } from './core/auth/auth-client.js';
 import { WeixinService } from './core/weixin/service.js';
 import { FeishuService } from './core/feishu/service.js';
 import { ConversationService } from './core/conversations/service.js';
-import { VaultWatcher } from './core/vault-watcher.js';
+import { VaultWatcher, VAULT_TREE_CHANGED_EVENT, VAULT_WATCH_STATE_CHANGED_EVENT } from './core/vault-watcher.js';
+import { VaultIndexSweeper } from './core/vault-search.js';
+import { GraphCache } from './core/graph-cache.js';
+import { TreeCache } from './core/tree-cache.js';
 import { createPreloadManager } from './core/preload-manager.js';
 import { preloadRoutes } from './routes/preload.js';
-import { maybeCreateDefaultVault } from './core/default-vault.js';
 
 export const runManager = new RunManager();
 export const db: Database.Database = openDatabase();
@@ -37,6 +39,25 @@ export const conversationService = new ConversationService(db);
 export const weixinService = new WeixinService(runManager, conversationService, db);
 export const feishuService = new FeishuService(runManager, conversationService, db);
 export const vaultWatcher = new VaultWatcher(db);
+// 检索 P0 层1：vault 文件索引新鲜度巡检。tree-changed（agent/外部落盘）防抖增量
+// 重建；启动时对已挂载 vault 各排一次，补齐停机期间的外部改动。
+export const vaultIndexSweeper = new VaultIndexSweeper(db);
+vaultWatcher.on(VAULT_TREE_CHANGED_EVENT, (vaultId: string) => vaultIndexSweeper.scheduleVault(vaultId));
+vaultIndexSweeper.scheduleAll();
+// 图谱全量结果按 vault 缓存：buildGraph 是同步整库扫描（实测移动盘大库 5.2s，
+// 期间阻塞整个 daemon），而打开图谱 / 每次切 scope 都在调它。
+// 失效同样挂在 tree-changed 上——与上面的 FTS 巡检共用「库内容变了」这一个信号。
+export const graphCache = new GraphCache();
+vaultWatcher.on(VAULT_TREE_CHANGED_EVENT, (vaultId: string) => graphCache.invalidate(vaultId));
+// 监听就绪/失活也要清：watch() 是 fire-and-forget，扫描完成前（以及监听失败后）
+// 落盘的变化根本没有事件——那个空窗里算出来的图不能留在缓存里当真相。
+vaultWatcher.on(VAULT_WATCH_STATE_CHANGED_EVENT, (vaultId: string) => graphCache.invalidate(vaultId));
+// 文件树同病同药：GET /vaults/:id/tree 每次同步重扫整棵目录树（移动盘大库几秒），
+// 打开知识库 / 切库 / 聚焦都在调它。失效与图谱缓存完全同构——tree-changed +
+// 就绪态翻转；API 写路径的就地失效在 routes/knowledge.ts 的各写 handler 里。
+export const treeCache = new TreeCache();
+vaultWatcher.on(VAULT_TREE_CHANGED_EVENT, (vaultId: string) => treeCache.invalidate(vaultId));
+vaultWatcher.on(VAULT_WATCH_STATE_CHANGED_EVENT, (vaultId: string) => treeCache.invalidate(vaultId));
 export const preloadManager = createPreloadManager();
 // 云端认证 client（懒读 MOLIO_AUTH_URL，未设置时回落内置官方地址
 // DEFAULT_AUTH_URL；显式空白才算未配置 → 登录端点回 503）。
@@ -86,7 +107,8 @@ app.post('/api/shutdown', async (c) => {
   weixinService.stop();
   await feishuService.stop();
   void vaultWatcher.stop();
-  runManager.cancelAll();
+  vaultIndexSweeper.stop();
+  runManager.cancelAll('shutdown:desktop-request');
   closeDatabase();
   // Give the HTTP response a chance to be sent before exiting
   setTimeout(() => process.exit(0), 100);
@@ -99,102 +121,40 @@ app.route('/api/agents', agentsRoutes(runManager));
 app.route('/api/runs', runsRoutes(db, runManager, conversationService));
 app.route('/api/runs', eventsRoutes(runManager));
 app.route('/api/runs', toolResultRoutes(runManager));
-app.route('/api/config', configRoutes());
+app.route('/api/config', configRoutes({
+  // Agent env overrides (CLAUDE_BIN etc.) change binary resolution — drop the
+  // detection cache so GET /api/agents re-probes instead of serving stale data.
+  onConfigChanged: () => runManager.invalidateAgentCache(),
+}));
 app.route('/api/skills', skillsRoutes(db, runManager));
 app.route('/api/conversations', conversationRoutes(db, runManager, conversationService));
 app.route('/api/projects', projectRoutes(db));
-app.route('/api/knowledge', knowledgeRoutes(db, runManager, vaultWatcher));
+app.route('/api/knowledge', knowledgeRoutes(db, runManager, vaultWatcher, treeCache, (vaultId) => vaultWatcher.isReady(vaultId)));
 app.route('/api/publish', publishRoutes());
 app.route('/api/proxy', proxyRoutes());
-app.route('/api/graph', graphRoutes(db));
+app.route('/api/graph', graphRoutes(db, graphCache, (vaultId) => vaultWatcher.isReady(vaultId)));
 app.route('/api/weixin', weixinRoutes(weixinService));
 app.route('/api/feishu', feishuRoutes(feishuService));
 app.route('/api/preload', preloadRoutes(preloadManager));
 app.route('/api/maintenance', maintenanceRoutes(db));
+app.route('/api/quiz', quizRoutes(db));
 app.route('/api/auth', authRoutes(authClient));
 app.route('/api/market', marketRoutes(db, authClient));
 
-void weixinService.start();
-void feishuService.start();
-void vaultWatcher.start();
-
-// First-boot provisioning for Docker/NAS one-click deploy: on an empty install,
-// auto-create the default vault pointing at the mounted docs dir (/vaults or
-// MOLIO_DEFAULT_VAULT_PATH) so users land inside a vault, not the welcome
-// screen. No-op once any vault exists. Failures must never crash the daemon.
-try {
-  const created = maybeCreateDefaultVault(db, vaultWatcher);
-  if (created) {
-    console.log(`[default-vault] auto-created default vault "${created.name}" at ${created.path}`);
-  }
-} catch (err) {
-  console.error('[default-vault] failed to auto-create default vault:', err);
-}
+// NOTE: service startup (weixin/feishu start, vaultWatcher.start, default-vault
+// provisioning) deliberately does NOT live here anymore. Module-level side
+// effects ran before `listen`, lengthening the cold-start path the desktop
+// shell gates on ("listening on" line). index.ts now starts them in the listen
+// callback / deferred chores — keep this module import-light and side-effect
+// free (construction only).
 
 // Static file serving (production / desktop mode)
 const staticDir = process.env['MOLIO_STATIC_DIR'];
 
-// MIME type mapping
-const mimeTypes: Record<string, string> = {
-  '.html': 'text/html',
-  '.js': 'text/javascript',
-  '.css': 'text/css',
-  '.json': 'application/json',
-  '.png': 'image/png',
-  '.jpg': 'image/jpeg',
-  '.jpeg': 'image/jpeg',
-  '.gif': 'image/gif',
-  '.svg': 'image/svg+xml',
-  '.ico': 'image/x-icon',
-  '.woff': 'font/woff',
-  '.woff2': 'font/woff2',
-  '.ttf': 'font/ttf',
-  '.otf': 'font/otf',
-  '.webp': 'image/webp',
-  '.webm': 'video/webm',
-  '.mp4': 'video/mp4',
-  '.txt': 'text/plain',
-  '.xml': 'text/xml',
-  '.pdf': 'application/pdf',
-};
-
 if (staticDir) {
-  // Serve static files with custom middleware
-  app.use('/*', async (c, next) => {
-    const url = new URL(c.req.url);
-    let pathname = decodeURIComponent(url.pathname);
-
-    // Security: prevent directory traversal
-    if (pathname.includes('..')) {
-      return c.notFound();
-    }
-
-    // Default to index.html for root
-    if (pathname === '/') {
-      pathname = '/index.html';
-    }
-
-    const filePath = join(staticDir, pathname);
-
-    // Check if file exists
-    if (existsSync(filePath) && statSync(filePath).isFile()) {
-      const ext = extname(filePath).toLowerCase();
-      const mimeType = mimeTypes[ext] || 'application/octet-stream';
-      const content = readFileSync(filePath);
-      return c.body(content, 200, { 'Content-Type': mimeType });
-    }
-
-    // SPA fallback: serve index.html for non-API, non-asset routes
-    if (!pathname.startsWith('/api/') && !extname(pathname)) {
-      const indexPath = join(staticDir, 'index.html');
-      if (existsSync(indexPath)) {
-        const content = readFileSync(indexPath);
-        return c.body(content, 200, { 'Content-Type': 'text/html' });
-      }
-    }
-
-    await next();
-  });
+  // Serve static files with custom middleware (see static-files.ts for the
+  // cache policy: index.html is always revalidated via Cache-Control: no-cache)
+  app.use('/*', createStaticFileMiddleware(staticDir));
 }
 
 // Graceful shutdown
@@ -202,7 +162,8 @@ function gracefulShutdown(): void {
   cleanupAllBridges();
   weixinService.stop();
   void vaultWatcher.stop();
-  runManager.cancelAll();
+  vaultIndexSweeper.stop();
+  runManager.cancelAll('shutdown:graceful');
   // Kill any in-progress preload subprocess trees so we don't orphan detached
   // pip/npm children (they'd keep downloading after the daemon is gone).
   preloadManager.stopAll();

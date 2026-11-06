@@ -48,6 +48,12 @@ export const BUILTIN_SKILLS = [
   // injection (silently dropped by the CLI): retrieval now lives in an on-demand
   // skill, triggered by the always-on CLAUDE.md rule below + the KB qa panel.
   'wiki-query',
+  // quiz-generate — 从库出客观题。输出纯文本 quiz 围栏，不依赖工具调用，
+  // 因此对所有 runtime 可用（Codex/Gemini 等没有 AskUserQuestion）。
+  'quiz-generate',
+  // rule-sandbox — 生成可拖动的阈值演示（声明式 JSON，不执行任何代码）。
+  // 与 quiz-generate 分工：出题 → quiz；看懂边界怎么变 → rule-sandbox。
+  'rule-sandbox',
   // NOTE: remotion used to be bundled here. It was retired (see
   // RETIRED_BUNDLED_SKILLS): users who want video creation install the
   // third-party `am-will/remotion` skill from the skill hub instead — a
@@ -247,6 +253,34 @@ const REMOTION_RULE_BLOCK = [
  */
 const WIKI_QUERY_RULE_SENTINEL = '<!-- molio:wiki-query-preference -->';
 
+const SANDBOX_SUGGEST_SENTINEL = '<!-- molio:sandbox-suggest -->';
+
+/**
+ * Resident rule for one-click demo suggestions: when an answer's core
+ * conclusion hinges on a clear threshold/boundary and the user did NOT ask
+ * for a demo, append a hidden marker at the very end; the web turns it into
+ * a suggestion chip. Deliberately conservative wording — every clause exists
+ * to suppress a noise failure mode: max one per reply (spam), only
+ * vault-grounded boundaries (retrieval red line), never when a demo/quiz was
+ * requested (the card itself follows), marker only (never inline demos).
+ */
+const SANDBOX_SUGGEST_BLOCK = [
+  SANDBOX_SUGGEST_SENTINEL,
+  '## 演示建议（可选招呼，不是任务）',
+  '',
+  '当一条回答的**核心结论取决于某个明确的数值/条件边界**（警戒线、期限、资格线、安全区间），',
+  '且这些依据来自本库材料，而用户**没有**要求演示时：在回答的最后一行追加',
+  '`<!-- sandbox-suggest: <这个边界的一句话标题> -->`。前端会把它转成「做成可拖动演示」按钮，',
+  '用户点了才真正生成。',
+  '',
+  '约束（都要满足才加）：',
+  '',
+  '- 每条回答最多 1 个标记；不确定该不该加就不加',
+  '- 边界必须能在库内材料里找到依据，禁止凭训练记忆',
+  '- 用户已要求演示/出题，或本条回答并没有真正用到这条边界时，不加',
+  '- 只追加标记行，正文不要因此改变；标记必须独占一行',
+].join('\n');
+
 /**
  * Always-on rule that makes the agent retrieve from the vault's wiki BEFORE
  * any vault-topic work, instead of working from training memory.
@@ -267,20 +301,31 @@ const WIKI_QUERY_RULE_SENTINEL = '<!-- molio:wiki-query-preference -->';
  * making the trigger form-agnostic (subject decides, not task type); (2) an
  * a-priori "does the vault cover this?" gate forced a memory-based guess before
  * any lookup — fixed by making the cheap index read the check itself.
+ *
+ * 2026-10-26 revision (docs/2026-10-26-kb-qa-autojudge-design.md): the block is
+ * generated per vault and opens with a topic card (库名片, §4A) — the vault's
+ * directory name — so relevance can be judged against a NAMED subject instead
+ * of only by searching the vault; ambiguous cases still resolve with one
+ * root-INDEX read (never a vault-wide grep); and the closing paragraph fixes
+ * the answer shape (§4B, gap P2): answer first — no retrieval narration and no
+ * judgment-announcement preambles (「我检索了…」/「与库无关」/「本库没有收录」).
  */
-const WIKI_QUERY_RULE_BLOCK = [
+const buildWikiQueryRuleBlock = (vaultName: string): string => [
   WIKI_QUERY_RULE_SENTINEL,
   '## 知识库优先',
   '',
-  '本库有一套整理好的 wiki —— Molio 的价值在于基于它工作，而不是凭训练记忆。',
+  `本库主题：${vaultName}。本库有一套整理好的 wiki —— Molio 的价值在于基于它工作，而不是凭训练记忆。`,
   '',
-  '**任何与本库内容不是明显无关的任务——无论形式（问答、写作、分析、咨询或其他任何形式）——先调用',
+  '**任何与本库主题相关、或拿不准是否相关的任务——无论形式（问答、写作、分析、咨询或其他任何形式）——先调用',
   '`wiki-query` skill。** 凭记忆无法知道本库是否覆盖某主题；读 `wiki/hot.md` + 根 `wiki/INDEX.md`',
-  '本身就是判断方式，成本不过几十行。具体如何往下做（深入目录索引、基于库内材料产出、引用标注），',
-  'skill 里有完整流程。',
+  '本身就是判断方式，成本不过几十行。拿不准时只读这一次根 `INDEX.md` 就足以判断，不要为此全库 grep。',
+  '具体如何往下做（深入目录索引、基于库内材料产出、引用标注），skill 里有完整流程。',
   '',
-  '仅当任务与本库内容明显无关时跳过：天气、一般闲聊、纯机械活（代码语法、排版），以及工作区近期',
+  `仅当任务与「${vaultName}」主题明显无关时跳过：天气、一般闲聊、纯机械活（代码语法、排版），以及工作区近期`,
   '活动/状态（"总结今天的工作"、"最近改了什么"——用 git log / 文件 mtime）。',
+  '',
+  '无论检索与否，回答直接给内容本身：不要以「我检索了…」开场，也不要宣告「与库无关」「本库没有收录」——',
+  '检索过程不必叙述，出处交给 [[wikilink]] 与来源标注。',
 ].join('\n');
 
 /**
@@ -288,19 +333,31 @@ const WIKI_QUERY_RULE_BLOCK = [
  * Each has a unique sentinel so injection is idempotent and individual rules
  * can be revised later without re-injecting stale copies.
  *
+ * `block` is a function of the vault's name: most rules are static (`() => const`);
+ * the wiki-query rule embeds the vault topic card (库名片), so it is generated
+ * per vault (see buildWikiQueryRuleBlock).
+ *
  * `gateSlug` ties a rule to a bundled skill: the rule is present only while that
  * skill is effective in the vault, and removed (by sentinel) when it's toggled
  * off. Rules without a gate (env-self-heal, web-fetch) are always on.
  */
-const MOILIO_RULES: Array<{ sentinel: string; block: string; label: string; gateSlug?: string }> = [
-  { sentinel: DOCLING_RULE_SENTINEL, block: DOCLING_RULE_BLOCK, label: 'docling preference', gateSlug: 'docling' },
-  { sentinel: ENV_SELF_HEAL_SENTINEL, block: ENV_SELF_HEAL_BLOCK, label: 'environment self-heal' },
+interface MolioRule {
+  sentinel: string;
+  block: (vaultName: string) => string;
+  label: string;
+  gateSlug?: string;
+}
+
+const MOILIO_RULES: MolioRule[] = [
+  { sentinel: DOCLING_RULE_SENTINEL, block: () => DOCLING_RULE_BLOCK, label: 'docling preference', gateSlug: 'docling' },
+  { sentinel: ENV_SELF_HEAL_SENTINEL, block: () => ENV_SELF_HEAL_BLOCK, label: 'environment self-heal' },
   // Retired — gateSlug never effective anymore; the entry survives only so the
   // block is removed (by sentinel) from vaults that still carry it. See the
   // REMOTION_RULE_BLOCK comment.
-  { sentinel: REMOTION_RULE_SENTINEL, block: REMOTION_RULE_BLOCK, label: 'remotion preference (retired)', gateSlug: 'remotion' },
-  { sentinel: WEB_FETCH_SENTINEL, block: WEB_FETCH_BLOCK, label: 'web fetch preference' },
-  { sentinel: WIKI_QUERY_RULE_SENTINEL, block: WIKI_QUERY_RULE_BLOCK, label: 'wiki-query preference', gateSlug: 'wiki-query' },
+  { sentinel: REMOTION_RULE_SENTINEL, block: () => REMOTION_RULE_BLOCK, label: 'remotion preference (retired)', gateSlug: 'remotion' },
+  { sentinel: WEB_FETCH_SENTINEL, block: () => WEB_FETCH_BLOCK, label: 'web fetch preference' },
+  { sentinel: WIKI_QUERY_RULE_SENTINEL, block: buildWikiQueryRuleBlock, label: 'wiki-query preference', gateSlug: 'wiki-query' },
+  { sentinel: SANDBOX_SUGGEST_SENTINEL, block: () => SANDBOX_SUGGEST_BLOCK, label: 'sandbox suggestion', gateSlug: 'rule-sandbox' },
 ];
 
 /** Closing sentinel of a rule block: `<!-- molio:x -->` → `<!-- /molio:x -->`. */
@@ -309,8 +366,8 @@ function endSentinelOf(sentinel: string): string {
 }
 
 /** The full wrapped block text as written into CLAUDE.md (BEGIN…body…END). */
-function wrapRule(rule: { sentinel: string; block: string }): string {
-  return `${rule.block}\n${endSentinelOf(rule.sentinel)}`;
+function wrapRule(sentinel: string, block: string): string {
+  return `${block}\n${endSentinelOf(sentinel)}`;
 }
 
 /** Index of the nearest OTHER rule's sentinel at/after `from`, or -1. */
@@ -394,6 +451,9 @@ function findRuleExtent(content: string, sentinel: string): RuleExtent | null {
  */
 export function ensureMolioRules(claudeDir: string, effectiveBundledSlugs?: Set<string>): void {
   const claudeMd = path.join(claudeDir, 'CLAUDE.md');
+  // Topic-card source: in production claudeDir is always `<vaultPath>/.claude`
+  // (reconcileBundledSync), so the parent directory's basename IS the vault's name.
+  const vaultName = path.basename(path.dirname(claudeDir));
 
   try {
     let content = '';
@@ -411,18 +471,19 @@ export function ensureMolioRules(claudeDir: string, effectiveBundledSlugs?: Set<
     // is safe regardless of appends/removals shifting positions.
     for (const rule of MOILIO_RULES) {
       const extent = findRuleExtent(content, rule.sentinel);
-      const wrapped = wrapRule(rule);
+      const block = rule.block(vaultName);
+      const wrapped = wrapRule(rule.sentinel, block);
       const replacement = `${wrapped}\n`;
 
       if (!isActive(rule)) {
         if (!extent) continue;
         const rangeText = content.slice(extent.start, extent.end);
-        if (extent.wrapped || rangeText.trimEnd() === rule.block) {
+        if (extent.wrapped || rangeText.trimEnd() === block) {
           // Precise removal: wrapped extent is exact; an unambiguous legacy
           // block (identical to the current one) covers exactly its extent.
           content = content.slice(0, extent.start) + content.slice(extent.end);
           changed = true;
-        } else if (rangeText.startsWith(rule.block)) {
+        } else if (rangeText.startsWith(block)) {
           // Unrevised legacy block with trailing content (typically user text
           // appended after the LAST block): strip only the block's own lines —
           // the old extent removal would have deleted the trailing content too.
@@ -456,14 +517,14 @@ export function ensureMolioRules(claudeDir: string, effectiveBundledSlugs?: Set<
       }
 
       // Legacy block, rule active: migrate into the wrapped format.
-      if (oldText.trimEnd() === rule.block) {
+      if (oldText.trimEnd() === block) {
         // Clean: stored block equals the current revision, nothing extra.
         content = content.slice(0, extent.start) + replacement + content.slice(extent.end);
         changed = true;
-      } else if (oldText.startsWith(rule.block)) {
+      } else if (oldText.startsWith(block)) {
         // Unrevised block + trailing content: wrap the block, KEEP the rest
         // (the old replace-the-extent path would have silently deleted it).
-        const rest = oldText.slice(rule.block.length).replace(/^[\r\n]+/, '');
+        const rest = oldText.slice(block.length).replace(/^[\r\n]+/, '');
         content = content.slice(0, extent.start) + (rest ? `${wrapped}\n\n${rest}` : replacement) + content.slice(extent.end);
         changed = true;
       } else {
