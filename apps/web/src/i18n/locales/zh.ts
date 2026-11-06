@@ -474,9 +474,12 @@ const zh: Record<string, string> = {
   'history.renameDialogTitle': '重命名会话',
   'history.titleLabel': '标题',
   'history.confirm': '确认',
-  // 「做过题」徽标
+  // 「做过题」徽标（One* 与基础 key 同文案——中文无单复数，但 key 必须成对，
+  // 否则 zh 缺 key 时 translate 会回落显示 key 本身）
   'history.quizBadge': '{cards} 卡',
+  'history.quizBadgeOne': '{cards} 卡',
   'history.quizBadgeCorrect': '{cards} 卡 · {correct} 对',
+  'history.quizBadgeCorrectOne': '{cards} 卡 · {correct} 对',
   'history.quizSummaryOnly': '题卡',
   'history.cancel': '取消',
   'history.pinFailed': '操作失败，请重试',
