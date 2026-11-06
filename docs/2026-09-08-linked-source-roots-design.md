@@ -1,7 +1,7 @@
 # 「链接素材根」设计 — 让 Molio 知识库接入分散在各处的本地文件（不需移动，也不需复制）
 
 - **日期**：2026-09-08
-- **状态**：**已实现**（代码在分支 `feat/external-source-roots`）
+- **状态**：**已实现**（代码在分支 `feat/external-source-roots`；2026-11-07 复活：main `bd16d012` 并入，搜索集成改走 FTS 索引器——原 `searchFiles` 路线随 main 的检索 P0 落地而废弃，见分支 merge commit 338bad1a）
 - **配套纪要**：[2026-09-08-cross-folder-kb-strategy.md](./2026-09-08-cross-folder-kb-strategy.md)（产品立场、Obsidian 差异化、风险分析）
 - **一句话**：给 vault 增加「外部素材根」——用**真实文件系统链接（Windows junction / macOS·Linux symlink）**把本机任意位置的素材文件夹挂进 vault 的 `external/<label>/` 命名空间，作为**只读源材料**纳入文件树 / 图谱 / 搜索 / wiki-build；物理文件留在原位。
 - **落地偏差**（实现相对本设计的调整，实施期由 review 实测驱动）：
