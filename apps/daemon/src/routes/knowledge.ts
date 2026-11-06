@@ -48,6 +48,7 @@ import {
   importFiles,
   isInsideProtected,
   listPublishableTopDirs,
+  assertWriteWithinVault,
   type ImportResult,
 } from '../core/knowledge.js';
 import { searchVaultFiles, indexVaultFile, removeVaultFile, removeVaultDir, ensureVaultIndexed, hasInflightBuild } from '../core/vault-search.js';
@@ -583,6 +584,9 @@ export function knowledgeRoutes(
       const row = addExternalRoot(db, vault.id, label, realpathSync(target));
       // A newly mounted root adds watch coverage for its target.
       vaultWatcher.watch(vault.id, vault.path).catch(() => {});
+      // The link-add event never reaches the (re-armed) watcher — announce the
+      // mutation so FTS indexes the mount and other windows refresh their tree.
+      vaultWatcher.notifyExternalMutation(vault.id);
       // `valid` is true by construction here (the link was just created), and
       // the rest of the shape matches the GET list item for item.
       const root: ExternalRoot = { ...rowToExternalRoot(row), valid: true };
@@ -644,6 +648,9 @@ export function knowledgeRoutes(
     // (ensureVaultIndexed keys on any vault_files_state row existing).
     removeVaultDir(db, vault.id, `external/${row.label}`);
     vaultWatcher.watch(vault.id, vault.path).catch(() => {});
+    // Same announcement as mount: the link's removal event dies with the old
+    // watcher, so tree/SSE/sweeper must be told out of band.
+    vaultWatcher.notifyExternalMutation(vault.id);
     return c.body(null, 204);
   });
 
@@ -729,6 +736,17 @@ export function knowledgeRoutes(
       for (let seq = 1; seq <= MAX_NAME_RETRIES; seq++) {
         relPath = `${ASSETS_DIR}/${ts}-${seq}${ext}`;
         absPath = resolveFilePath(vault.path, relPath);
+        // Same resolved write boundary as every other write entry: a symlink
+        // planted at .molio/assets must not let an upload land outside the
+        // vault (resolveFilePath only checks the lexical prefix).
+        try {
+          assertWriteWithinVault(absPath, vault.path);
+        } catch (err) {
+          if ((err as NodeJS.ErrnoException).code === 'E_EXTERNAL_READONLY') {
+            return c.json({ error: { code: 'FORBIDDEN', message: (err as Error).message } }, 403);
+          }
+          throw err;
+        }
         try {
           writeFileSync(absPath, buf, { flag: 'wx' });
           break;

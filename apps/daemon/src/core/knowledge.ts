@@ -714,7 +714,7 @@ function isWriteWithinVault(resolved: string, vaultPath: string): boolean {
  * source roots are folders Molio does not own (a link, not a copy), so a write
  * there would silently edit files outside the vault.
  */
-function assertWriteWithinVault(resolved: string, vaultPath: string): void {
+export function assertWriteWithinVault(resolved: string, vaultPath: string): void {
   if (isWriteWithinVault(resolved, vaultPath)) return;
   const err = new Error('External source roots are read-only (cannot write outside the vault)') as NodeJS.ErrnoException;
   err.code = 'E_EXTERNAL_READONLY';

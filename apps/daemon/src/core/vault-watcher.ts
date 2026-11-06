@@ -275,4 +275,21 @@ export class VaultWatcher extends EventEmitter {
     timer.unref?.();
     this.timers.set(vaultId, timer);
   }
+
+  /**
+   * Announce a content mutation that chokidar will NOT see, so the whole
+   * tree-changed fan-out (SSE clients, tree/graph cache invalidation, FTS
+   * sweeper) reacts through the single existing channel.
+   *
+   * The consumer is the external-root mount/unmount route: it creates/removes
+   * the mount link inside the vault and immediately re-arms the watcher — the
+   * OLD watcher is closed before the OS delivers the link's add/remove event,
+   * and the new one runs with ignoreInitial:true, so without this call no
+   * tree-changed ever fires: the FTS sweeper never rebuilds (an already-seeded
+   * vault silently misses the entire mounted corpus in search) and other open
+   * KB windows keep a stale tree.
+   */
+  notifyExternalMutation(vaultId: string): void {
+    this.scheduleEmit(vaultId);
+  }
 }

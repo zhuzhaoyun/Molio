@@ -27,6 +27,7 @@ function app() {
       watchCalls.push([vaultId, vaultPath]);
     },
     unwatch: async () => {},
+    notifyExternalMutation: () => {},
   };
   const a = knowledgeRoutes(db, {} as any, watcher as any);
   return { db, a, watchCalls };

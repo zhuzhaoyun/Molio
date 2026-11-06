@@ -61,6 +61,7 @@ describe('Knowledge routes — external source roots', () => {
       knowledgeRoutes(db, {} as never, {
         watch: async () => {},
         unwatch: async () => {},
+    notifyExternalMutation: () => {},
       } as never),
     );
     app = root;
@@ -170,5 +171,68 @@ describe('Knowledge routes — external source roots', () => {
     >;
     assert.deepEqual(results.map((r) => r['filePath']), ['plain.md']);
     rmSync(otherDir, { recursive: true, force: true });
+  });
+});
+
+// Mounting must make the mounted corpus searchable WITHOUT a manual reindex.
+// The mount route re-arms the watcher, but the OLD watcher is closed before the
+// OS delivers the link-add event and the new one has ignoreInitial:true — so no
+// tree-changed ever fires on its own. The route must announce the mutation on
+// the same debounced channel the watcher uses, so the FTS sweeper (wired to
+// tree-changed in server.ts) rebuilds with the mount included.
+describe('mount freshness — seeded vault picks up mounted content in search', () => {
+  it('mounting via the route makes external content findable by FTS', async () => {
+    const { VaultWatcher, VAULT_TREE_CHANGED_EVENT } = await import(
+      '../../src/core/vault-watcher.js'
+    );
+    const { VaultIndexSweeper, ensureVaultIndexed, searchVaultFiles } = await import(
+      '../../src/core/vault-search.js'
+    );
+
+    const dir = mkdtempSync(join(tmpdir(), 'molio-ext-fresh-'));
+    const vDir = join(dir, 'vault');
+    const eDir = mkdtempSync(join(tmpdir(), 'molio-ext-fresh-src-'));
+    mkdirSync(vDir, { recursive: true });
+    writeFileSync(join(vDir, 'local.md'), '种子内容甲乙丙');
+    writeFileSync(join(eDir, 'fresh.md'), '挂载新素材丁戊己');
+
+    const db = openDatabase(dir);
+    const vault = createVault(db, 'fresh-vault', vDir);
+    const watcher = new VaultWatcher(db);
+    const sweeper = new VaultIndexSweeper(db, { debounceMs: 100 });
+    // server.ts 的同款接线：tree-changed → 防抖重建。
+    watcher.on(VAULT_TREE_CHANGED_EVENT, (id: string) => sweeper.scheduleVault(id));
+
+    const root = new Hono();
+    root.route('/api/knowledge', knowledgeRoutes(db, {} as any, watcher));
+
+    try {
+      await watcher.watch(vault.id, vDir);
+      await ensureVaultIndexed(db, vault.id, vDir);
+      const before = await searchVaultFiles(db, vault.id, vDir, '挂载新素材', 20);
+      assert.equal(before.results.length, 0, 'precondition: mount not indexed yet');
+
+      const res = await root.request(`/api/knowledge/vaults/${vault.id}/external-roots`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ target: eDir }),
+      });
+      assert.equal(res.status, 201);
+
+      // watcher 防抖 300ms + sweeper 防抖 100ms + 重建耗时。
+      await new Promise((r) => setTimeout(r, 1500));
+      const after = await searchVaultFiles(db, vault.id, vDir, '挂载新素材', 20);
+      assert.equal(
+        after.results.length,
+        1,
+        'mounted content must be searchable right after mount — the route must announce the mutation',
+      );
+    } finally {
+      await sweeper.stop();
+      await watcher.stop();
+      closeDatabase();
+      rmSync(dir, { recursive: true, force: true });
+      rmSync(eDir, { recursive: true, force: true });
+    }
   });
 });

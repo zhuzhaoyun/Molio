@@ -43,6 +43,9 @@ export const vaultWatcher = new VaultWatcher(db);
 // 重建；启动时对已挂载 vault 各排一次，补齐停机期间的外部改动。
 export const vaultIndexSweeper = new VaultIndexSweeper(db);
 vaultWatcher.on(VAULT_TREE_CHANGED_EVENT, (vaultId: string) => vaultIndexSweeper.scheduleVault(vaultId));
+// 监听重臂（watch() 先关旧实例再开新的，落盘事件可能在盲窗里丢）也要巡检一次：
+// 就绪态翻转说明「信号曾经断过」，断窗里的改动没有 tree-changed 可依赖。
+vaultWatcher.on(VAULT_WATCH_STATE_CHANGED_EVENT, (vaultId: string) => vaultIndexSweeper.scheduleVault(vaultId));
 vaultIndexSweeper.scheduleAll();
 // 图谱全量结果按 vault 缓存：buildGraph 是同步整库扫描（实测移动盘大库 5.2s，
 // 期间阻塞整个 daemon），而打开图谱 / 每次切 scope 都在调它。
