@@ -152,7 +152,8 @@
         "kb-tab-drag",
         "kb-tabs",
         "kb-tree-folder-state",
-        "navigation-history"
+        "navigation-history",
+        "kb-external-roots"
       ]
     },
     "publish": {
@@ -733,6 +734,10 @@
     "navigation-history": {
       "priority": "P1",
       "file": "navigation-history.spec.ts"
+    },
+    "kb-external-roots": {
+      "priority": "P1",
+      "file": "kb-external-roots.spec.ts"
     }
   }
 }

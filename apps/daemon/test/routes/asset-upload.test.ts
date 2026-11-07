@@ -2,7 +2,7 @@ import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, existsSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
 import { Hono } from 'hono';
 import { knowledgeRoutes } from '../../src/routes/knowledge.js';
 import { openDatabase, closeDatabase, createVault } from '../../src/core/db.js';
@@ -322,6 +322,49 @@ describe('Asset upload routes', () => {
       );
     } finally {
       rmSync(blockedVaultDir, { recursive: true, force: true });
+    }
+  });
+
+  // ─── Write boundary: .molio/assets must not be able to alias out of the vault ───
+
+  // A symlink planted at .molio/assets (→ external/<label> or anywhere
+  // off-vault) used to let an upload write straight through it: the route only
+  // lexical-asserts the ASSETS_DIR prefix. Same convention as every other
+  // write entry (assertWriteWithinVault): the destination's nearest existing
+  // ancestor must really live inside the vault.
+  it('refuses an upload when .molio/assets is a symlink escaping the vault', async () => {
+    // 专用 vault：共享 fixture 的 assets 目录已被前面的成功上传建为实体目录。
+    // openDatabase 换目录会关掉旧连接（模块级单例），必须用同一 dataDir 拿回
+    // 同一个实例再建库——开第二个连接会让路由拿到已关闭的连接。
+    const { openDatabase: reopenDb } = await import('../../src/core/db.js');
+    const myVaultDir = mkdtempSync(join(tmpdir(), 'molio-asset-vault2-'));
+    const db = reopenDb(tempDir);
+    const myVault = createVault(db, 'symlink-vault', myVaultDir);
+    const outside = mkdtempSync(join(tmpdir(), 'molio-asset-out-'));
+    mkdirSync(join(myVaultDir, '.molio'), { recursive: true });
+    symlinkSync(outside, join(myVaultDir, '.molio', 'assets'), 'dir');
+
+    try {
+      const { body, boundary } = buildMultipartBody('file', 'leak.png', 'image/png', PNG_BYTES);
+      const res = await app.request(`/api/knowledge/vaults/${myVault.id}/assets/upload`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': `multipart/form-data; boundary=${boundary}`,
+          'Content-Length': String(body.length),
+        },
+        body,
+      });
+
+      assert.equal(res.status, 403);
+      const data = await json(res);
+      const message = (data['error'] as Record<string, unknown>)?.['message'] as string;
+      assert.ok(message.toLowerCase().includes('read-only') || message.includes('outside the vault'),
+        `expected the write-boundary refusal, got: ${message}`);
+      assert.equal(existsSync(join(outside, 'leak.png')), false, 'nothing may land outside the vault');
+      assert.equal(existsSync(join(vaultDir, '.molio', 'assets')), true, 'the symlink itself is untouched');
+    } finally {
+      rmSync(outside, { recursive: true, force: true });
+      rmSync(myVaultDir, { recursive: true, force: true });
     }
   });
 });

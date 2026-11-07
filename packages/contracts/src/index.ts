@@ -112,6 +112,10 @@ export type {
   // Search
   SearchResult,
   SearchResponse,
+  // External source roots
+  ExternalRoot,
+  ExternalRootsResponse,
+  AddExternalRootRequest,
   // Quiz attempts
   QuizAttemptInput,
   SaveQuizAttemptsRequest,

@@ -8,8 +8,9 @@ import { Hono } from 'hono';
 import { readFileSync, existsSync } from 'node:fs';
 import path from 'node:path';
 import type Database from 'better-sqlite3';
-import { getVault } from '../core/db.js';
+import { getVault, listExternalRoots } from '../core/db.js';
 import { scanTree, resolveFilePath } from '../core/knowledge.js';
+import type { ExternalRootRef } from '../core/external-roots.js';
 import { GraphCache } from '../core/graph-cache.js';
 import { codeIntervals, intervalOverlaps } from '../core/wikilink-text.js';
 import type { GraphNode, GraphEdge, GraphData, DeadLinkInfo, GraphScope } from '@molio/contracts';
@@ -62,9 +63,10 @@ function buildGraphCached(
   cache: GraphCache,
   vault: { id: string; path: string },
   isCacheable: (vaultId: string) => boolean,
+  externalRoots: ExternalRootRef[],
 ): GraphData {
-  if (!isCacheable(vault.id)) return buildGraph(vault.path);
-  return cache.getOrBuild(vault.id, () => buildGraph(vault.path));
+  if (!isCacheable(vault.id)) return buildGraph(vault.path, externalRoots);
+  return cache.getOrBuild(vault.id, () => buildGraph(vault.path, externalRoots));
 }
 
 /**
@@ -88,7 +90,8 @@ export function graphRoutes(
     }
 
     try {
-      const graphData = buildGraphCached(cache, vault, isCacheable);
+      // Mounted folders contribute nodes too — the graph must match the tree.
+      const graphData = buildGraphCached(cache, vault, isCacheable, externalRefs(db, vault.id));
       return c.json(graphData);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to build graph';
@@ -136,7 +139,7 @@ export function graphRoutes(
       const scope: GraphScope =
         scopeType === 'file' ? { type: 'file', path: scopePath, depth } : { type: 'dir', path: scopePath };
       // 局部图 = 同一张全量图做一次过滤：缓存全量图，切 scope 就不用重扫整库
-      const full = buildGraphCached(cache, vault, isCacheable);
+      const full = buildGraphCached(cache, vault, isCacheable, externalRefs(db, vault.id));
       return c.json(filterLocalGraph(full, scope));
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to build local graph';
@@ -147,11 +150,18 @@ export function graphRoutes(
   return app;
 }
 
+/** Registered external roots as scanner refs (label + canonical target). */
+function externalRefs(db: Database.Database, vaultId: string): ExternalRootRef[] {
+  return listExternalRoots(db, vaultId).map((r) => ({ label: r.label, target: r.target }));
+}
+
 /**
  * Scan all .md files in a vault, parse [[wikilinks]], and build a graph.
+ * `externalRoots` is the same whitelist scanTree takes — mounted markdown is
+ * indexed under its virtual `external/<label>/...` path.
  */
-export function buildGraph(vaultPath: string): GraphData {
-  const tree = scanTree(vaultPath);
+export function buildGraph(vaultPath: string, externalRoots: ExternalRootRef[] = []): GraphData {
+  const tree = scanTree(vaultPath, '', { externalRoots });
 
   // Collect all .md files (nodes)
   const mdFiles: { name: string; path: string }[] = [];

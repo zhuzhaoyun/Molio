@@ -13,8 +13,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { SearchResult } from '@molio/contracts';
-import { getVault, type SqliteDb } from './db.js';
-import { TEXT_EXTS } from './knowledge.js';
+import { getVault, listExternalRoots, type SqliteDb } from './db.js';
+import { resolveEntry, TEXT_EXTS } from './knowledge.js';
+import { isWithinRoot, safeRealpath } from './external-roots.js';
 import { isPrunedDirName, MAX_DIR_ENTRIES, MAX_TOTAL } from './vault-prune.js';
 
 export const MAX_INDEX_FILE_BYTES = 2 * 1024 * 1024;
@@ -163,6 +164,16 @@ export async function reindexVault(
   let indexed = 0;
   let processed = 0;
 
+  // 外部素材根与 scanTree 同一个白名单：登记的挂载以 `external/<label>/…` 虚路径
+  // 进索引（KB 搜索 = FTS，树/图谱可见的东西搜索必须也可见）。未登记/悬空链接
+  // 由 resolveEntry 判为不可见；环由 visitedLinks 按 realpath 去重拦截。
+  const externalRoots = listExternalRoots(db, vaultId).map((r) => ({
+    label: r.label,
+    target: r.target,
+  }));
+  const vaultRoot = safeRealpath(vaultPath);
+  const visitedLinks = new Set<string>([vaultRoot]);
+
   const walk = async (absDir: string, relBase: string): Promise<void> => {
     let entries: fs.Dirent[];
     try {
@@ -174,12 +185,25 @@ export async function reindexVault(
     for (const entry of entries) {
       if (shouldStop()) return;
       if (seen.size >= maxTotal) return;
-      if (isPrunedDirName(entry.name)) continue;
       const rel = relBase ? `${relBase}/${entry.name}` : entry.name;
       const abs = path.join(absDir, entry.name);
-      if (entry.isDirectory()) {
+      const info = resolveEntry(entry, absDir, vaultPath, externalRoots);
+      if (!info) continue;
+      // 剪枝与 scanTree 同款——但已登记挂载的 label 不隐藏（registered ⇒ visible，
+      // 与 scanTree 的豁免口径一致；label 默认取目标 basename，合法名字不应连坐）。
+      const isRegisteredMount =
+        !!info.linkReal && !isWithinRoot(vaultRoot, info.linkReal);
+      if (isPrunedDirName(entry.name) && !isRegisteredMount) continue;
+      if (info.isDir) {
+        // 环防护：只有链接衍生的目录可能成环（普通目录天然无环）。
+        if (info.linkReal) {
+          if (visitedLinks.has(info.linkReal)) continue;
+          visitedLinks.add(info.linkReal);
+        }
         await walk(abs, rel);
-      } else if (entry.isFile()) {
+        // unwind 释放：同宿兄弟链接不静默丢，胜负不取决于 readdir 顺序。
+        if (info.linkReal) visitedLinks.delete(info.linkReal);
+      } else if (info.isFile) {
         seen.add(rel);
         const before = db.prepare(
           'SELECT mtime, size FROM vault_files_state WHERE vault_id = ? AND file_path = ?',
