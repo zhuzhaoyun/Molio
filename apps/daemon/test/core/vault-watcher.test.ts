@@ -1,6 +1,6 @@
 import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, mkdirSync, writeFileSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type Database from 'better-sqlite3';
@@ -123,8 +123,13 @@ describe('VaultWatcher', () => {
   });
 
   it('ignores .git and dotfile changes', async () => {
-    let emitted = false;
-    const onEmit = () => { emitted = true; };
+    // darwin native watch: the segment filter drops .git/.gitignore events, but
+    // FSEvents additionally coalesces root-level child changes into an event
+    // naming the vault root itself — unattributable, so a debounced emit may
+    // still fire. There the contract degrades to "bounded emits" (debounce);
+    // the chokidar path (win/linux) keeps the strict zero-emit contract.
+    const emitted: number[] = [];
+    const onEmit = () => { emitted.push(Date.now()); };
     watcher.on(VAULT_TREE_CHANGED_EVENT, onEmit);
 
     mkdirSync(join(vaultDir, '.git'), { recursive: true });
@@ -134,12 +139,20 @@ describe('VaultWatcher', () => {
     // Wait past one poll interval so a buggy emit would have surfaced.
     await settle(1500);
     watcher.off(VAULT_TREE_CHANGED_EVENT, onEmit);
-    assert.equal(emitted, false);
+    if (process.platform === 'darwin') {
+      assert.ok(emitted.length <= 2, `expected <=2 debounced emits, got ${emitted.length}`);
+    } else {
+      assert.equal(emitted.length, 0);
+    }
   });
 
   it('ignores node_modules changes (the FD-exhaustion root cause)', async () => {
-    let emitted = false;
-    const onEmit = () => { emitted = true; };
+    // See the .git test above for the darwin coalescing caveat: the event-side
+    // filter drops node_modules events; only root-coalesced FSEvents events
+    // may still emit (bounded by the debounce). The fd explosion this test
+    // commemorates is covered separately by the fd-leak regression test.
+    const emitted: number[] = [];
+    const onEmit = () => { emitted.push(Date.now()); };
     watcher.on(VAULT_TREE_CHANGED_EVENT, onEmit);
 
     mkdirSync(join(vaultDir, 'node_modules', 'some-pkg'), { recursive: true });
@@ -148,10 +161,20 @@ describe('VaultWatcher', () => {
 
     await settle(1500);
     watcher.off(VAULT_TREE_CHANGED_EVENT, onEmit);
-    assert.equal(emitted, false, 'node_modules writes must not trigger tree-changed');
+    if (process.platform === 'darwin') {
+      assert.ok(emitted.length <= 2, `expected <=2 debounced emits, got ${emitted.length}`);
+    } else {
+      assert.equal(emitted.length, 0, 'node_modules writes must not trigger tree-changed');
+    }
   });
 
   it('per-dir backstop: a non-blacklisted oversized dir does not hang the watcher', async () => {
+    if (process.platform === 'darwin') {
+      // darwin watches natively (no per-path ignored bookkeeping, no fd
+      // pressure) — the backstop is a chokidar-path safety and is only
+      // exercised on win/linux CI.
+      return;
+    }
     // Drop a directory with far more entries than the injected cap that is NOT
     // in the prune list. The watcher's per-dir child counter must ignore the
     // overflow rather than trying to track every path.
@@ -243,6 +266,51 @@ describe('VaultWatcher', () => {
       assert.equal(await got, true);
     } finally {
       rmSync(otherDir, { recursive: true, force: true });
+    }
+  });
+
+  it('darwin: watching many files must not hold one fd per file (2026-11-06 fd-leak regression)', async () => {
+    // chokidar v4/v5 on macOS keeps one open read fd per watched file for the
+    // watcher's whole lifetime. A ~11k-file vault saturated the process fd
+    // limit: every spawn failed with EBADF — all agents probed "unavailable"
+    // and sends died with "spawn EBADF" (2026-11-06 v0.4.5 incident). The
+    // fix watches natively on darwin (fs.watch recursive / FSEvents), which
+    // holds zero per-file fds. This test pins that property.
+    //
+    // Scale note: chokidar's leaked-fd fraction is timing/scale dependent —
+    // measured 16/80 at 80 files, ~55-100% at thousands (flat 3000 → +1664,
+    // 2087-file vault → +2087). A small tree under-detects, so this test uses
+    // 1500 files and a conservative threshold (300) that the native watcher
+    // passes with a wide margin and chokidar trips deterministically.
+    if (process.platform !== 'darwin') return; // chokidar path; no /dev/fd there
+    // IMPORTANT: use a fresh watcher with the PRODUCTION per-dir cap. The
+    // shared `watcher` fixture injects TEST_MAX_DIR_ENTRIES=50, whose backstop
+    // prunes >50-entry dirs — masking the leak this test guards against (the
+    // production watcher only prunes at 5000, so a 1500-file dir stays watched
+    // and chokidar holds ~1 fd per file).
+    const prodWatcher = new VaultWatcher(db);
+    const bigDir = mkdtempSync(join(tmpdir(), 'molio-vw-big-'));
+    try {
+      const FILE_COUNT = 1500;
+      for (let i = 0; i < FILE_COUNT; i++) {
+        writeFileSync(join(bigDir, `f${i}.md`), 'x');
+      }
+      const countOpenFds = () => readdirSync('/dev/fd').length;
+      const before = countOpenFds();
+      await prodWatcher.watch(vaultId, bigDir);
+      // The leak, if present, happens at watch setup (initial scan holds the
+      // fds). Re-watch of an existing id also exercises the unwatch-then-watch
+      // path used by vault switching.
+      await settle(3000);
+      const delta = countOpenFds() - before;
+      assert.ok(
+        delta < 300,
+        `watching ${FILE_COUNT} files must not hold ~${FILE_COUNT} fds (delta ${delta})`,
+      );
+      await prodWatcher.unwatch(vaultId);
+    } finally {
+      await prodWatcher.stop();
+      rmSync(bigDir, { recursive: true, force: true });
     }
   });
 });

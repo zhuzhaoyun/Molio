@@ -13,12 +13,25 @@
  * ~10k FDs from a vault's node_modules → posix_spawn EBADF → probeVersion
  * failed → "agent unavailable"). A per-directory child counter backstops any
  * non-pruned oversized directory so an unknown giant folder can't exhaust FDs.
+ *
+ * 2026-11-06 second FD-exhaustion incident (v0.4.5): chokidar v4/v5 (fsevents
+ * removed) holds **one open read fd per watched file** on macOS for the
+ * watcher's whole lifetime — a ~11k-file vault alone saturated the NOFILE
+ * ceiling (~10k): every spawn failed with EBADF → all agents probed
+ * "unavailable", sends failed with "spawn EBADF", fs-opening routes 500'd.
+ * Verified isolation: native `fs.watch(root, { recursive: true })` holds zero
+ * per-file fds (FSEvents-backed) and delivers the same events, so on darwin we
+ * watch natively and move `isPrunedDirName` pruning to the event side
+ * (filename path segments). Windows keeps chokidar (usePolling — the libuv
+ * assertion workaround documented below); Linux keeps chokidar (inotify,
+ * per-directory watch descriptors — the macOS per-file fd behavior does not
+ * apply there).
  */
 import { EventEmitter } from 'node:events';
-import { realpathSync } from 'node:fs';
+import { realpathSync, watch as fsWatch, type FSWatcher as NodeFsWatcher } from 'node:fs';
 import path from 'node:path';
 import type Database from 'better-sqlite3';
-import chokidar, { type FSWatcher } from 'chokidar';
+import chokidar, { type FSWatcher as ChokidarFsWatcher } from 'chokidar';
 import { listVaults } from './db.js';
 // Import from vault-prune (not knowledge) so this module does NOT transitively
 // pull in encoding.ts — tests tune encoding's size caps via env vars at load.
@@ -39,7 +52,7 @@ export const VAULT_WATCH_STATE_CHANGED_EVENT = 'watch-state-changed';
 const DEBOUNCE_MS = 300;
 
 export class VaultWatcher extends EventEmitter {
-  private watchers = new Map<string, FSWatcher>();
+  private watchers = new Map<string, ChokidarFsWatcher | NodeFsWatcher>();
   private timers = new Map<string, ReturnType<typeof setTimeout>>();
   // 已就绪（初次扫描完成、事件可靠）的 vault。
   private readyVaults = new Set<string>();
@@ -123,6 +136,38 @@ export class VaultWatcher extends EventEmitter {
         /* path may not exist yet — watch the original path */
       }
       const root = path.resolve(resolvedPath);
+      const handleChange = () => this.scheduleEmit(vaultId);
+
+      // ── macOS: native recursive fs.watch (FSEvents) ──
+      // chokidar v4/v5 holds one open read fd per watched file for the
+      // watcher's whole lifetime on macOS — watching the ~11k-file vault blew
+      // past the NOFILE ceiling and every spawn in the daemon failed with
+      // EBADF (2026-11-06 incident: all agents "unavailable", sends died with
+      // "spawn EBADF"). Native watch holds zero per-file fds; pruning moves to
+      // the event side via filename segments (see nativeEventPruned).
+      if (process.platform === 'darwin') {
+        const watcher = fsWatch(root, { recursive: true }, (_eventType, filename) => {
+          // darwin types give string | null (Buffer is possible on other
+          // platforms, which keep the chokidar path); null is treated
+          // conservatively — an unknown change is better than a missed one.
+          const rel = typeof filename === 'string' ? filename : null;
+          if (VaultWatcher.nativeEventPruned(rel)) return;
+          handleChange();
+        });
+        watcher.on('error', (err) => {
+          this.setReady(vaultId, false);
+          this.warn.warn(
+            `error:${vaultId}`,
+            `[vault-watcher] error for ${vaultId} (${vaultPath}): ${(err as Error).message}`,
+          );
+        });
+        this.watchers.set(vaultId, watcher);
+        // FSEvents delivers from subscription time — no initial scan/`ready`
+        // step to wait for. The chokidar path waits ≤2s before declaring
+        // readiness; same contract here, just immediate.
+        this.setReady(vaultId, true);
+        return;
+      }
 
       // Per-directory child counter — best-effort backstop so a non-pruned
       // oversized directory (a folder the user dumped into the vault) can't
@@ -168,8 +213,6 @@ export class VaultWatcher extends EventEmitter {
           ? { usePolling: true, interval: 1000, binaryInterval: 3000 }
           : {}),
       });
-
-      const handleChange = () => this.scheduleEmit(vaultId);
 
       watcher.on('add', handleChange);
       watcher.on('change', handleChange);
@@ -229,6 +272,22 @@ export class VaultWatcher extends EventEmitter {
     const ids = Array.from(this.watchers.keys());
     await Promise.all(ids.map((id) => this.unwatch(id)));
     this.started = false;
+  }
+
+  /**
+   * Event-side pruning for the native (darwin) watcher: drop events whose
+   * root-relative filename contains ANY pruned path segment (.git, dotfiles,
+   * node_modules, dist, …) — the native recursive watch cannot pre-filter
+   * subtrees the way chokidar's `ignored` can, so noise events from build
+   * directories are filtered here instead of becoming tree-changed storms.
+   *
+   * `null` filename is treated conservatively (NOT pruned) — an unknown
+   * change is better than a missed one. Events naming the vault root itself
+   * carry the root's basename, which never matches a pruned segment.
+   */
+  private static nativeEventPruned(filename: string | null): boolean {
+    if (filename === null) return false;
+    return filename.split(/[\\/]/).some((seg) => seg !== '' && isPrunedDirName(seg));
   }
 
   private scheduleEmit(vaultId: string): void {
