@@ -4,7 +4,7 @@ import * as path from 'node:path';
 import * as readline from 'node:readline';
 import type { RuntimeAgentDef } from '@molio/contracts';
 import { buildRepairErrorMessage, extractMissingModuleName } from '../acp-errors.js';
-import { needsShellOnWindows } from './launch.js';
+import { needsShellOnWindows, shellCommandFor } from './launch.js';
 
 /**
  * Hermes Agent — Nous Research's self-improving AI agent.
@@ -259,8 +259,8 @@ function runExecFile(
   const needsShell = needsShellOnWindows(binary);
   return new Promise((resolve) => {
     const child = execFile(
-      binary,
-      args,
+      needsShell ? shellCommandFor(binary, args) : binary,
+      needsShell ? [] : args,
       {
         timeout: timeoutMs,
         maxBuffer: 1 * 1024 * 1024,

@@ -1,6 +1,6 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { randomUUID, createHash } from 'node:crypto';
-import { mkdirSync, createWriteStream, readFileSync, type WriteStream } from 'node:fs';
+import { mkdirSync, createWriteStream, readFileSync, existsSync, type WriteStream } from 'node:fs';
 import path from 'node:path';
 import { molioDataDir } from './data-dir.js';
 import type {
@@ -9,9 +9,13 @@ import type {
 import { getAgentDef, listAgentDefs } from './runtimes/registry.js';
 import { TranscriptWatcher, claudeProjectDir } from './activity/transcript-watcher.js';
 import {
-  resolveAgentBinary, probeVersion, needsShellOnWindows,
+  probeVersion, needsShellOnWindows,
   resolveAgentBinaryAsync, probeVersionAsync,
+  resolveAgentBinaryCandidates, resolveAgentBinaryCandidatesAsync,
+  pickFirstWorkingCandidate, pickFirstWorkingCandidateAsync,
+  quoteForCmd, quoteArgForCmd, samePath,
   type ResolveResult, type ProbeResult, type ResolveOptions,
+  type BinaryCandidate,
 } from './runtimes/launch.js';
 import { buildSpawnEnv, createStderrDecoder } from './runtimes/env.js';
 import { classifyStderrChunk } from './runtimes/stderr.js';
@@ -180,6 +184,14 @@ export interface CreateRunOptions {
  * spawning real CLI processes; production defaults to the launch.ts impls. */
 export interface AgentDetectDeps {
   resolve?: (def: RuntimeAgentDef, options?: ResolveOptions) => Promise<ResolveResult>;
+  /**
+   * 候选列表解析（可选）。提供时走「逐个探测直到成功」的回退逻辑；
+   * 不提供则用 `resolve` 的单候选语义。
+   */
+  resolveCandidates?: (
+    def: RuntimeAgentDef,
+    options?: ResolveOptions,
+  ) => Promise<BinaryCandidate[]>;
   probe?: (bin: string, args: string[], timeoutMs?: number) => Promise<ProbeResult>;
   now?: () => number;
 }
@@ -223,26 +235,18 @@ export class RunManager {
     return listAgentDefs().map((def) => {
       const agentConfig = config.agents[def.id] || {};
       const configuredEnv = agentConfig.env || {};
-      const result = resolveAgentBinary(def, { configuredEnv });
-      let available = result.binary !== null;
-      let binary = result.binary;
-      let version: string | null = null;
+      const candidates = resolveAgentBinaryCandidates(def, { configuredEnv });
+      const picked = pickFirstWorkingCandidate(candidates, def.versionArgs, probeVersion);
+      const result: ResolveResult = picked
+        ? { binary: picked.candidate.binary, source: picked.candidate.source }
+        : { binary: null, source: 'not-found' };
 
-      let probeError: string | null = null;
-      if (result.binary) {
-        const probeResult = probeVersion(result.binary, def.versionArgs);
-        version = probeResult.version;
-        probeError = probeResult.error ?? null;
-
-        // A binary that exists on disk but can't execute is NOT usable.
-        // This handles stale/broken binaries left by failed installs —
-        // the file is found in a well-known dir but can't actually run.
-        if (!probeResult.version && probeResult.error) {
-          available = false;
-        }
-      }
-
-      return this.toAgentInfo(def, result, { version, error: probeError ?? undefined }, configuredEnv);
+      return this.toAgentInfo(
+        def,
+        result,
+        { version: picked?.version ?? null, error: picked?.error },
+        configuredEnv,
+      );
     });
   }
 
@@ -275,6 +279,52 @@ export class RunManager {
   /** Drop the detection cache — next detectAgentsAsync re-probes. */
   invalidateAgentCache(): void {
     this.agentCache = null;
+    this.verifiedBinaries.clear();
+  }
+
+  /**
+   * 已探测通过、可以真正启动的二进制（agentId → 路径）。
+   *
+   * 探测一次要 1-3s（Claude Code 冷启动），而每条消息都要建 run——不缓存的话
+   * 每发一条消息都白等一次探测。探测成功的路径记在这里，下次直接复用；
+   * 文件没了（卸载/重装）就作废重探。
+   */
+  private verifiedBinaries = new Map<string, string>();
+
+  /**
+   * 选一个**能真的跑起来**的二进制。
+   *
+   * 与探测走同一套候选逻辑：探测认定的可用二进制必须也是运行时启动的那个，
+   * 否则会出现「UI 显示可用、一发消息就起不来」的不一致。
+   */
+  private async resolveBinaryForRun(
+    def: RuntimeAgentDef,
+    configuredEnv: Record<string, string>,
+  ): Promise<ResolveResult> {
+    // 用异步版解析：`where.exe` / `which` 是子进程，同步版会卡住事件循环
+    // （探测本身已经是异步的，这里没必要再同步阻塞）。
+    const candidates = await resolveAgentBinaryCandidatesAsync(def, { configuredEnv });
+    if (candidates.length === 0) return { binary: null, source: 'not-found' };
+
+    // 先看已验证缓存（探测过一次就够，别每条消息都等一次冷启动）
+    const verified = this.verifiedBinaries.get(def.id);
+    if (verified) {
+      const hit = candidates.find((c) => samePath(c.binary, verified));
+      if (hit && existsSync(hit.binary)) return { binary: hit.binary, source: hit.source };
+      this.verifiedBinaries.delete(def.id);
+    }
+
+    const picked = await pickFirstWorkingCandidateAsync(
+      candidates, def.versionArgs, probeVersionAsync,
+    );
+    if (picked?.version) {
+      this.verifiedBinaries.set(def.id, picked.candidate.binary);
+      return { binary: picked.candidate.binary, source: picked.candidate.source };
+    }
+    // 全都探不通：仍返回首个候选，让 spawn 去报真实的启动错误
+    // （错误信息比「未安装」有用得多）。
+    const first = candidates[0]!;
+    return { binary: first.binary, source: first.source };
   }
 
   private agentCacheTtlMs(): number {
@@ -287,11 +337,28 @@ export class RunManager {
   private async runAgentDetection(): Promise<AgentInfo[]> {
     const resolve = this.detectDeps.resolve ?? resolveAgentBinaryAsync;
     const probe = this.detectDeps.probe ?? probeVersionAsync;
+    // 默认走候选列表（逐个探测直到成功）；测试注入了 resolve 时才退回单候选
+    const resolveCandidates = this.detectDeps.resolveCandidates
+      ?? (this.detectDeps.resolve ? undefined : resolveAgentBinaryCandidatesAsync);
     const config = loadConfig();
     const agents = await Promise.all(
       listAgentDefs().map(async (def) => {
         const agentConfig = config.agents[def.id] || {};
         const configuredEnv = agentConfig.env || {};
+        // 有候选列表接口就走「逐个探测直到成功」；否则退回旧的单候选路径
+        // （测试注入的 resolve 仍是单候选语义）。
+        if (resolveCandidates) {
+          const candidates = await resolveCandidates(def, { configuredEnv });
+          const picked = await pickFirstWorkingCandidateAsync(candidates, def.versionArgs, probe);
+          const result: ResolveResult = picked
+            ? { binary: picked.candidate.binary, source: picked.candidate.source }
+            : { binary: null, source: 'not-found' };
+          const probeResult: ProbeResult = {
+            version: picked?.version ?? null,
+            error: picked?.error,
+          };
+          return this.toAgentInfo(def, result, probeResult, configuredEnv);
+        }
         const result = await resolve(def, { configuredEnv });
         let probeResult: ProbeResult = { version: null };
         if (result.binary) {
@@ -446,7 +513,9 @@ export class RunManager {
 
     const agentConfig = getAgentConfig(opts.agentId);
     const configuredEnv = agentConfig.env || {};
-    const result = resolveAgentBinary(def, { configuredEnv });
+    // 与探测一致的候选选择：探测认定的可用二进制必须也是运行时启动的那个。
+    // 否则会出现「UI 显示可用，一发消息就起不来」的不一致。
+    const result = await this.resolveBinaryForRun(def, configuredEnv);
 
     if (!result.binary) {
       throw new Error(
@@ -504,11 +573,17 @@ export class RunManager {
     const spawnArgs = isCmd
       ? args.map((arg) => {
           if (arg.includes(' ') || arg.includes('"')) {
-            return `"${arg.replace(/"/g, '\\"')}"`;
+            return quoteArgForCmd(arg);
           }
           return arg;
         })
       : args;
+
+    // shell: true 时 Node 拼成 `cmd.exe /d /s /c "<binary> <args>"`，
+    // cmd 的 /s 剥掉最外层引号后按第一个空格断词——binary 路径必须自己加引号，
+    // 否则 `C:\Program Files\nodejs\claude.cmd` 会被执行成 `C:\Program`。
+    // 见 docs/windows-runtime-detection-fix.md 的 Bug 1。
+    const spawnBinary = isCmd ? quoteForCmd(result.binary) : result.binary;
 
     if (def.transport === 'acp-jsonrpc') {
       // ── ACP path (Hermes, DeepSeek Harness) — pooled warm process ─────────
@@ -603,7 +678,7 @@ export class RunManager {
     // 1 run = 1 process, so the run id travels with the spawn env.
     env['MOLIO_RUN_ID'] = runId;
 
-    const child: ChildProcess = spawn(result.binary, spawnArgs, {
+    const child: ChildProcess = spawn(spawnBinary, spawnArgs, {
       env,
       stdio: [stdinMode, 'pipe', 'pipe'],
       cwd: opts.cwd || agentConfig.env?.['MOLIO_CWD'] || process.cwd(),

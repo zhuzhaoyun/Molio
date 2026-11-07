@@ -15,7 +15,10 @@ import { MARKET_ICONS, type MarketPublishSuggestion } from '@molio/contracts';
 import { buildContentDigest, contentPromptLines, normalizeContent, type ContentDigest } from './content.js';
 import { buildAgentEnv, getAgentConfig } from '../config.js';
 import { buildSpawnEnv } from '../runtimes/env.js';
-import { needsShellOnWindows, resolveAgentBinary } from '../runtimes/launch.js';
+import {
+  needsShellOnWindows, resolveAgentBinaryCandidates, quoteForCmd, quoteArgForCmd,
+  pickFirstWorkingCandidateAsync,
+} from '../runtimes/launch.js';
 import { getAgentDef } from '../runtimes/registry.js';
 
 /** 支持一次性起草的 agent（按偏好序） */
@@ -203,8 +206,10 @@ export function pickSuggestAgent(): PickedAgent | null {
     const def = getAgentDef(id);
     if (!def) continue;
     const configuredEnv = getAgentConfig(id).env || {};
-    const result = resolveAgentBinary(def, { configuredEnv });
-    if (result.binary) return { agentId: id, binary: result.binary };
+    const candidates = resolveAgentBinaryCandidates(def, { configuredEnv });
+    if (candidates.length > 0) {
+      return { agentId: id, binary: candidates[0]!.binary };
+    }
   }
   return null;
 }
@@ -215,9 +220,13 @@ function spawnOneShot(binary: string, args: string[], env: NodeJS.ProcessEnv, pr
   return new Promise((resolve, reject) => {
     const isCmd = needsShellOnWindows(binary);
     const spawnArgs = isCmd
-      ? args.map((a) => (/[ "]/.test(a) ? `"${a.replace(/"/g, '\\"')}"` : a))
+      ? args.map((a) => (/[ "]/.test(a) ? quoteArgForCmd(a) : a))
       : args;
-    const child = spawn(binary, spawnArgs, {
+    // shell: true 时 binary 路径必须加引号：cmd 的 /s 剥掉最外层引号后按第一个
+    // 空格断词，`C:\Program Files\...\claude.cmd` 会被执行成 `C:\Program`。
+    // 见 docs/windows-runtime-detection-fix.md 的 Bug 1。
+    const spawnBinary = isCmd ? quoteForCmd(binary) : binary;
+    const child = spawn(spawnBinary, spawnArgs, {
       env,
       stdio: ['pipe', 'pipe', 'pipe'],
       cwd: workDir,
@@ -299,8 +308,11 @@ export const defaultOneShotRunner: OneShotRunner = async (agentId, prompt, timeo
   if (!def) throw new Error('suggest_unavailable');
   const agentConfig = getAgentConfig(agentId);
   const env = buildSpawnEnv(def, buildAgentEnv(agentId, agentConfig));
-  const result = resolveAgentBinary(def, { configuredEnv: agentConfig.env || {} });
-  if (!result.binary) throw new Error('suggest_unavailable');
+  // 与 RunManager 一致：逐个候选探测，取**能真的跑起来**的那个。
+  // 否则会出现「聊天能用、一键起草报 spawn 失败」的不一致。
+  const candidates = resolveAgentBinaryCandidates(def, { configuredEnv: agentConfig.env || {} });
+  const picked = await pickFirstWorkingCandidateAsync(candidates, def.versionArgs);
+  if (!picked?.version) throw new Error('suggest_unavailable');
   const args = agentId === 'claude'
     ? ['-p', '--output-format', 'json']
     : ['exec', '--json', '--skip-git-repo-check',
@@ -308,7 +320,7 @@ export const defaultOneShotRunner: OneShotRunner = async (agentId, prompt, timeo
       ...(process.platform === 'win32' || !!process.env['WSL_DISTRO_NAME']
         ? ['--sandbox', 'danger-full-access']
         : ['--sandbox', 'read-only'])];
-  const stdout = await spawnOneShot(result.binary, args, env, prompt, timeoutMs);
+  const stdout = await spawnOneShot(picked.candidate.binary, args, env, prompt, timeoutMs);
   return agentId === 'claude' ? extractClaudeResult(stdout) : extractCodexMessage(stdout);
 };
 
