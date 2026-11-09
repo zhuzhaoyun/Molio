@@ -6,7 +6,7 @@ import { AssistantMessage } from './AssistantMessage';
 import { SessionWriteKindsProvider } from './SessionWriteKinds';
 import { findLastAssistant } from '../utils/workSteps';
 import { isNearBottom } from './chatScrollPin';
-import { rememberChatScroll, recallChatScroll } from '../stores/chatScrollMemory';
+import { rememberChatScroll, recallChatScroll, findVisibleAnchor, applyAnchorOffset } from '../stores/chatScrollMemory';
 import { useSelectMode, messageSelectionStore } from '../stores/messageSelectionStore';
 import { quizSubjectStore } from '../stores/quizSubjectStore';
 import { pairQuizGradings, pairSubjectAnswers } from '../utils/quizAnswer';
@@ -87,6 +87,24 @@ export interface ChatSessionViewProps {
 }
 
 /**
+ * 量出消息区里每条消息的几何信息（top 相对滚动内容原点、height）。
+ * 浮标按钮（chat-jump-bottom）不是消息，剔除——保存与恢复两侧用同一过滤，
+ * 锚点序号才有意义。
+ */
+function measureMessages(el: HTMLElement): { tops: number[]; heights: number[] } {
+  const logTop = el.getBoundingClientRect().top;
+  const tops: number[] = [];
+  const heights: number[] = [];
+  for (const child of Array.from(el.children)) {
+    if (child.classList.contains('chat-jump-bottom')) continue;
+    const r = child.getBoundingClientRect();
+    tops.push(r.top - logTop + el.scrollTop);
+    heights.push(r.height);
+  }
+  return { tops, heights };
+}
+
+/**
  * 纯视图：渲染一段会话的「消息列表 + 活动树 + 状态条 + 输入框区」。
  * 不含数据获取——状态与回调全部由调用方注入（HomePage / KB 面板 / `/chat` 共用）。
  */
@@ -155,7 +173,15 @@ export function ChatSessionView({
     // 那一刻 DOM 可能已经换人）。隐藏容器（display:none）读到的 scrollTop 恒 0，
     // 写入会把记忆污染成顶部 —— 必须跳过。
     if (el.clientHeight > 0) {
-      rememberChatScroll(conversationIdRef.current, { top: el.scrollTop, pinned: near });
+      // 贴底态不需要锚点（恢复时贴新底）；上翻阅读态记「视口顶是哪条消息 +
+      // 相对偏移」——绝对坐标在宽度不同的表面（全屏 ⇄ 面板）之间会因重新折行
+      // 漂移，锚点恢复把同一条消息钉回同一视口位置，宽度无关。
+      let anchor: ReturnType<typeof findVisibleAnchor> = null;
+      if (!near) {
+        const { tops, heights } = measureMessages(el);
+        anchor = findVisibleAnchor(tops, heights, el.scrollTop);
+      }
+      rememberChatScroll(conversationIdRef.current, { top: el.scrollTop, pinned: near, anchor });
     }
   }, []);
 
@@ -185,24 +211,62 @@ export function ChatSessionView({
   // - 有记忆且贴底（pinned）→ 贴底跟随（后台可能已长高，贴**新**底）；
   // - 无记忆（新会话 / 关闭后重开）→ 原语义贴底。这条同时保住了「换会话 = 换
   //   上下文」的旧行为：在 A 上翻后打开从未开过的 B，B 停在最新处。
+  // 落位重落循环的 rAF 句柄：换会话/卸载时取消上一轮，防止旧会话的循环写新会话的滚动。
+  const settleRafRef = useRef<number[]>([]);
+  useEffect(() => {
+    const ids = settleRafRef;
+    return () => { ids.current.forEach((id) => cancelAnimationFrame(id)); ids.current = []; };
+  }, []);
+
   const settlePosition = useCallback(() => {
     const saved = conversationId ? recallChatScroll(conversationId) : null;
     if (saved && !saved.pinned) {
       pinnedRef.current = false;
       setShowJumpBottom(true);
-      const el = logRef.current;
-      if (el) {
-        el.scrollTop = saved.top;
-        // 代码块等次帧才量出高度，rAF 补一次；重复落同一坐标是幂等的。
-        requestAnimationFrame(() => { el.scrollTop = saved.top; });
-      }
     } else {
       pinnedRef.current = true;
       setShowJumpBottom(false);
-      stickToBottom();
-      if (saved) requestAnimationFrame(stickToBottom);
     }
-  }, [conversationId, stickToBottom]);
+    const el = logRef.current;
+    if (!el) return;
+
+    // 落位要**扛过表面的几何过渡**：dock 形态宽高有 ~300ms 可插值过渡，刚变为
+    // 可见时量到的消息位置不是终态，落一次会在最终布局下漂移（实测差出一条
+    // 消息）。因此按帧重落：锚点非贴底重钉同一条消息、贴底重贴新底，直到
+    // scrollHeight 连续两帧稳定（几何终态）或超时。用户中途真滚动了（位置偏离
+    // 我们写的值）就停手让位——程序化写入触发的 scroll 事件值与 stamp 一致，
+    // 不会误判。
+    settleRafRef.current.forEach((id) => cancelAnimationFrame(id));
+    settleRafRef.current = [];
+    let stamp = el.scrollTop;
+    let lastHeight = el.scrollHeight;
+    let stableFrames = 0;
+    const deadline = performance.now() + 450;
+    const tick = () => {
+      if (!logRef.current) return;
+      if (Math.abs(el.scrollTop - stamp) > 1) return; // 用户滚动了 → 让位
+      if (el.scrollHeight === lastHeight) stableFrames += 1;
+      else stableFrames = 0;
+      lastHeight = el.scrollHeight;
+      if (saved && !saved.pinned && saved.anchor) {
+        const { tops } = measureMessages(el);
+        const target = tops[saved.anchor.index];
+        // 锚点序号失效（消息被编辑重发截断）→ 退回绝对坐标，浏览器自动 clamp。
+        const next = target !== undefined ? applyAnchorOffset(target, saved.anchor) : saved.top;
+        if (Math.abs(el.scrollTop - next) > 0.5) {
+          el.scrollTop = next;
+        }
+        stamp = el.scrollTop;
+      } else {
+        el.scrollTop = el.scrollHeight;
+        stamp = el.scrollTop;
+      }
+      if (stableFrames >= 2 || performance.now() > deadline) return;
+      const id = requestAnimationFrame(tick);
+      settleRafRef.current.push(id);
+    };
+    tick();
+  }, [conversationId]);
 
   // useLayoutEffect：换会话（全屏切标签）落在 paint 前，不闪一帧底部。
   useLayoutEffect(() => {

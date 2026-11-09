@@ -87,6 +87,25 @@ function fullscreenChatLog(page: Page) {
   return page.locator('.home-page.chat-active [data-testid="chat-log"]');
 }
 
+/**
+ * 读「视口顶第一条有效可见消息」的文本前缀（锚点断言的观测点）。宽度不同的
+ * 表面之间绝对 scrollTop 不可比（重新折行），可比的是「看见的是哪条内容」。
+ * 用与生产 `findVisibleAnchor` 相同的 24px 有效可见规则——1~2px 的残条不算
+ * 「看见」，否则断言会在阈值边界翻转（实测踩过：16px 残条在两种宽度下高度不同）。
+ */
+async function topVisibleMessageText(page: Page, log: ReturnType<typeof fullscreenChatLog>) {
+  return log.evaluate((el) => {
+    const skip = new Set(['chat-jump-bottom']);
+    const logTop = el.getBoundingClientRect().top;
+    for (const child of Array.from(el.children)) {
+      if (skip.has(child.className)) continue;
+      const r = child.getBoundingClientRect();
+      if (r.bottom > logTop + 24) return (child.textContent ?? '').slice(0, 60);
+    }
+    return null;
+  });
+}
+
 /** 面板里把两条长会话分别装进两个标签：标签1=会话甲，标签2=会话乙（乙为活动）。 */
 async function openTwoLongTabs(page: Page, vault: TempVault) {
   await mockTwoLongConvs(page);
@@ -168,11 +187,35 @@ test.describe('Chat scroll memory', () => {
     await expect.poll(async () =>
       panelChatLog(page).evaluate((el) => el.scrollTop), { timeout: 5_000 }).toBeLessThan(200);
 
-    // 面板里滚到中段，再进全屏 → 同一位置（修复前：全新挂载回底部）
+    // 面板里滚到中段，再进全屏 → **看见的同一条内容**在视口顶。
+    // 面板(500px)与全屏宽度不同会重新折行，绝对 scrollTop 不可比（旧实现恢复
+    // 3000px 坐标，宽屏下同坐标对应的可见内容已经漂移）—— 断言内容锚定。
     await panelChatLog(page).evaluate((el) => { el.scrollTop = 3000; });
+    const anchored = await topVisibleMessageText(page, panelChatLog(page));
+    expect(anchored).toBeTruthy();
     await enterFullscreen(page);
-    await expect.poll(async () =>
-      fullscreenChatLog(page).evaluate((el) => el.scrollTop), { timeout: 5_000 }).toBe(3000);
+    await expect.poll(async () => topVisibleMessageText(page, fullscreenChatLog(page)), { timeout: 5_000 })
+      .toBe(anchored);
+  });
+
+  test('全屏滚到中段最小化回面板：视口顶是同一条内容（宽度变了不漂移）', async ({ page }) => {
+    await openTwoLongTabs(page, vault);
+    await enterFullscreen(page);
+
+    // 全屏（宽）滚到中段，记录视口顶内容
+    await fullscreenChatLog(page).evaluate((el) => { el.scrollTop = 3000; });
+    const anchored = await topVisibleMessageText(page, fullscreenChatLog(page));
+    expect(anchored).toBeTruthy();
+
+    // 最小化回面板（窄，500px）→ 重新折行，但视口顶必须是同一条内容。
+    // 旧实现（绝对坐标 3000px）在窄面板里对应的内容明显偏后 → 红。
+    await page.locator('[data-testid="home-minimize-btn"]').click();
+    await expect(panelChatLog(page)).toBeVisible({ timeout: 10_000 });
+    await expect.poll(async () => topVisibleMessageText(page, panelChatLog(page)), { timeout: 5_000 })
+      .toBe(anchored);
+    // 脱离跟随态保持：浮标可见
+    await expect(page.locator('[data-testid="kb-chat-panel"] [data-testid="chat-jump-bottom"]')
+      .filter({ visible: true })).toBeVisible();
   });
 
   test('面板切标签：切回恢复位置（贴底语义不回归）', async ({ page }) => {
