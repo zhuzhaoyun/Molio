@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect, useCallback, useMemo, type ReactNode } from 'react';
+import { useRef, useState, useEffect, useLayoutEffect, useCallback, useMemo, type ReactNode } from 'react';
 import { ChatComposer, buildAttachmentPrefix } from './ChatComposer';
 import type { PastedImage, FileRef } from './ChatComposer';
 import { UserMessage } from './UserMessage';
@@ -6,6 +6,7 @@ import { AssistantMessage } from './AssistantMessage';
 import { SessionWriteKindsProvider } from './SessionWriteKinds';
 import { findLastAssistant } from '../utils/workSteps';
 import { isNearBottom } from './chatScrollPin';
+import { rememberChatScroll, recallChatScroll } from '../stores/chatScrollMemory';
 import { useSelectMode, messageSelectionStore } from '../stores/messageSelectionStore';
 import { quizSubjectStore } from '../stores/quizSubjectStore';
 import { pairQuizGradings, pairSubjectAnswers } from '../utils/quizAnswer';
@@ -76,6 +77,13 @@ export interface ChatSessionViewProps {
    * message keeps its toolbar visible and labels the save action.
    */
   saveHint?: boolean;
+  /**
+   * 本视图当前是否可见（面板：`panelOpen && 活动标签`；`/chat` 恒 true，默认值）。
+   * false→true 时从滚动记忆（chatScrollMemory）恢复阅读位置 —— 覆盖面板切标签、
+   * 退出全屏把全屏里读到的位置带回面板。语义拍板（2026-11-09）：记忆存在 ⇄ 标签
+   * 还开着 ⇄ 切回恢复；关标签删记忆 ⇄ 重开贴底。
+   */
+  active?: boolean;
 }
 
 /**
@@ -110,10 +118,14 @@ export function ChatSessionView({
   onDeleteConversations,
   pruneSelection = true,
   saveHint,
+  active = true,
 }: ChatSessionViewProps) {
   const { t } = useI18n();
   const logRef = useRef<HTMLDivElement>(null);
   const selectMode = useSelectMode();
+  // 滚动回调要拿「此刻的会话」写记忆：渲染期同步进 ref，回调闭包保持稳定。
+  const conversationIdRef = useRef(conversationId);
+  conversationIdRef.current = conversationId;
 
   // ── 贴底跟随（stick-to-bottom）─────────────────────────────────────────
   // 规则：用户贴底时，内容长高（流式文本 / 工具卡 / 思考块）就瞬时跟到底；
@@ -139,6 +151,12 @@ export function ChatSessionView({
     const near = isNearBottom(el.scrollTop, el.scrollHeight, el.clientHeight);
     pinnedRef.current = near;
     setShowJumpBottom(!near);
+    // 位置持续写入会话记忆（同 useScrollMemory 约束 1：不依赖「切走时保存」，
+    // 那一刻 DOM 可能已经换人）。隐藏容器（display:none）读到的 scrollTop 恒 0，
+    // 写入会把记忆污染成顶部 —— 必须跳过。
+    if (el.clientHeight > 0) {
+      rememberChatScroll(conversationIdRef.current, { top: el.scrollTop, pinned: near });
+    }
   }, []);
 
   // 内容长高 → 贴底时跟滚。characterData 覆盖流式文本追加，
@@ -161,13 +179,41 @@ export function ChatSessionView({
     if (pinnedRef.current) stickToBottom();
   }, [messages.length, stickToBottom]);
 
-  // 换会话 = 换上下文：跟随状态复位。否则在 A 会话上翻（脱离跟随）后打开
-  // B 会话，B 的历史会停在中段而不是最新处。
-  useEffect(() => {
-    pinnedRef.current = true;
-    setShowJumpBottom(false);
-    stickToBottom();
+  // ── 位置落位：挂载 / 换会话 / 变为可见 ─────────────────────────────────
+  // 语义（chatScrollMemory，2026-11-09 拍板）：
+  // - 有记忆且上翻过（!pinned）→ 恢复切换前的坐标，保持脱离跟随，浮标供回底；
+  // - 有记忆且贴底（pinned）→ 贴底跟随（后台可能已长高，贴**新**底）；
+  // - 无记忆（新会话 / 关闭后重开）→ 原语义贴底。这条同时保住了「换会话 = 换
+  //   上下文」的旧行为：在 A 上翻后打开从未开过的 B，B 停在最新处。
+  const settlePosition = useCallback(() => {
+    const saved = conversationId ? recallChatScroll(conversationId) : null;
+    if (saved && !saved.pinned) {
+      pinnedRef.current = false;
+      setShowJumpBottom(true);
+      const el = logRef.current;
+      if (el) {
+        el.scrollTop = saved.top;
+        // 代码块等次帧才量出高度，rAF 补一次；重复落同一坐标是幂等的。
+        requestAnimationFrame(() => { el.scrollTop = saved.top; });
+      }
+    } else {
+      pinnedRef.current = true;
+      setShowJumpBottom(false);
+      stickToBottom();
+      if (saved) requestAnimationFrame(stickToBottom);
+    }
   }, [conversationId, stickToBottom]);
+
+  // useLayoutEffect：换会话（全屏切标签）落在 paint 前，不闪一帧底部。
+  useLayoutEffect(() => {
+    settlePosition();
+  }, [conversationId, settlePosition]);
+
+  // 变为可见：面板标签 display:none ↔ 显示、面板开合（panelOpen 计入 active）、
+  // 退出全屏面板 view 复活 —— 全屏里读到的位置由此带回面板。
+  useEffect(() => {
+    if (active) settlePosition();
+  }, [active, settlePosition]);
 
   // Prune stale selected ids whenever the message set changes (streaming,
   // regenerate, etc. may have removed a selected bubble).

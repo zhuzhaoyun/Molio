@@ -4,6 +4,8 @@ import { useMemo, useSyncExternalStore } from 'react';
 import { legacyWikiTitleFix } from '../components/kb/kbChatPrompts.ts';
 // 当前活跃知识库 —— 会话标签按库隔离的唯一判据（见 sessionsOfVault）
 import { vaultStore, useActiveVaultId } from './vaultStore.ts';
+// 会话滚动记忆：记忆存在 ⇄ 标签还开着 ⇄ 切回恢复；标签关闭/换绑即删 ⇄ 重开贴底
+import { forgetChatScroll } from './chatScrollMemory.ts';
 
 export const MAX_CHAT_SESSIONS = 10;
 const STORAGE_KEY_SESSIONS = 'molio.kb.chatSessions';
@@ -209,6 +211,9 @@ export const kbChatSessionsStore = {
     const idx = state.sessions.findIndex((s) => s.id === id);
     if (idx === -1) return;
     const closed = state.sessions[idx]!;
+    // 关标签即删滚动记忆（2026-11-09 拍板）：从历史重开同会话要贴底，
+    // 不能恢复一个陈旧的阅读位置。
+    forgetChatScroll(closed.conversationId);
     const sessions = state.sessions.filter((s) => s.id !== id);
     let activeSessionId = state.activeSessionId;
     if (activeSessionId === id) {
@@ -228,7 +233,15 @@ export const kbChatSessionsStore = {
   updateSession(id: string, patch: Partial<ChatSessionTab>) {
     let changed = false;
     const sessions = state.sessions.map((s) => {
-      if (s.id === id) { changed = true; return { ...s, ...patch }; }
+      if (s.id === id) {
+        // 会话换绑（历史就地切换到另一条 / 清空归零）：旧会话不再开着任何标签，
+        // 其滚动记忆一并作废 —— 否则从历史重开它会恢复一个无主的位置。
+        if (patch.conversationId !== undefined && s.conversationId && s.conversationId !== patch.conversationId) {
+          forgetChatScroll(s.conversationId);
+        }
+        changed = true;
+        return { ...s, ...patch };
+      }
       return s;
     });
     if (changed) emit({ ...state, sessions });
