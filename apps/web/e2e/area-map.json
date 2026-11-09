@@ -54,7 +54,8 @@
         "packages/contracts/src/messageSegments.*",
         "apps/web/src/hooks/useWikiLinkClick.*",
         "apps/web/src/components/SandboxCard.*",
-        "apps/web/src/utils/ruleSandbox.*"
+        "apps/web/src/utils/ruleSandbox.*",
+        "apps/web/src/stores/chatScrollMemory.*"
       ],
       "specs": [
         "chat-single",
@@ -83,6 +84,7 @@
         "quiz",
         "sandbox",
         "chat-autoscroll",
+        "chat-scroll-memory",
         "chat-doc-ref-chip",
         "activity-tree",
         "chat-composer-queue",
@@ -470,6 +472,10 @@
     "kb-chat-entry": {
       "priority": "P1",
       "file": "kb-chat-entry.spec.ts"
+    },
+    "chat-scroll-memory": {
+      "priority": "P1",
+      "file": "chat-scroll-memory.spec.ts"
     },
     "kb-chat-sessions": {
       "priority": "P1",

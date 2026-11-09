@@ -933,7 +933,9 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
             <KbChatSession
               key={s.id}
               session={s}
-              active={s.id === activeSessionId}
+              // panelOpen 计入可见性：面板收起（含进全屏）时全部标签变 inactive，
+              // 重开/退出全屏时从滚动记忆落位（chatScrollMemory 的恢复时机）。
+              active={panelOpen && s.id === activeSessionId}
               selectedText={pendingSelectionSessionId === s.id ? pendingSelection : null}
               onSelectedTextConsumed={() => { setPendingSelection(null); setPendingSelectionSessionId(null); }}
             />
