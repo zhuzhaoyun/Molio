@@ -13,7 +13,7 @@ import { startAuthStatusPolling } from './auth-status-watch.js';
 import { CappedBuffer } from './capped-buffer.js';
 import { createVaultRecency } from './vault-recency.js';
 import { createRendererReadiness } from './renderer-readiness.js';
-import { createRevealGate, APP_LOAD_REVEAL_TIMEOUT_MS } from './window-reveal.js';
+import { createRevealGate, createLoadWatchdog, APP_LOAD_REVEAL_TIMEOUT_MS, APP_LOAD_TIMEOUT_MS } from './window-reveal.js';
 
 const errMsg = (err) => (err instanceof Error ? err.message : String(err));
 
@@ -650,8 +650,19 @@ function loadAppWindow(win, url = '') {
   // just sees nothing happen (2026-10-16 Windows report: "切库不弹新窗口").
   // The gate reveals it on a timeout as well, so slow always beats invisible.
   const gate = createRevealGate({ onReveal: (reason) => revealAppWindow(win, reason) });
+  // 加载看门狗：导航卡住（Chromium 的 HTTP/1.1 连接池被常驻 SSE 占满等）时，
+  // 窗口会被显示兜底露出来，但屏幕上还是那张深色启动页——用户只看到「黑屏 +
+  // 转圈」。超时就换成错误页，给出可读提示与「重启 Molio」。
+  const watchdog = createLoadWatchdog({
+    onTimeout: () => {
+      if (win.isDestroyed()) return;
+      log('error', 'main', `app load timed out after ${APP_LOAD_TIMEOUT_MS}ms — showing error page`);
+      showDaemonErrorPage(win, 'load-timeout');
+    },
+  });
   const onFinish = () => {
     wc.removeListener('did-fail-load', onFail);
+    watchdog.loaded();
     gate.loaded();
   };
   // If the load fails — e.g. the daemon crashes between the readiness check
@@ -660,6 +671,7 @@ function loadAppWindow(win, url = '') {
   // window would stay hidden forever with no feedback (the app looks dead).
   const onFail = (_event, code, desc) => {
     wc.removeListener('did-finish-load', onFinish);
+    watchdog.loaded();
     log('error', 'main', `app load failed: code=${code} desc=${desc}`);
     // The error page shows the window itself; we deliberately leave the gate
     // armed as a second line of defence — if even daemon-error.html fails to
@@ -668,7 +680,10 @@ function loadAppWindow(win, url = '') {
   };
   wc.once('did-finish-load', onFinish);
   wc.once('did-fail-load', onFail);
-  win.once('closed', () => gate.cancel());
+  win.once('closed', () => {
+    watchdog.cancel();
+    gate.cancel();
+  });
 }
 
 /**
@@ -678,8 +693,12 @@ function loadAppWindow(win, url = '') {
  * message, the log file path, and actions to open the log folder or relaunch.
  * The log path is passed via query string so the page can display it without
  * needing Node integration.
+ *
+ * `reason` 决定文案：
+ * - 'daemon-failed'（默认）：daemon 没起来
+ * - 'load-timeout'：daemon 在跑，但这次导航卡住了（连接池占满等）
  */
-function showDaemonErrorPage(win) {
+function showDaemonErrorPage(win, reason = 'daemon-failed') {
   if (!win || win.isDestroyed()) return;
   let logPath = null;
   try {
@@ -687,10 +706,10 @@ function showDaemonErrorPage(win) {
   } catch (err) {
     log('warn', 'main', `unable to resolve log path: ${err?.message ?? err}`);
   }
-  log('error', 'main', `showing daemon error page (log=${logPath})`);
+  log('error', 'main', `showing daemon error page (reason=${reason}, log=${logPath})`);
   const errorPage = path.join(__dirname, 'daemon-error.html');
-  const query = logPath ? { log: logPath } : undefined;
-  win.loadFile(errorPage, query ? { query } : undefined);
+  const query = { reason, ...(logPath ? { log: logPath } : {}) };
+  win.loadFile(errorPage, { query });
   // Same visibility gate as loadAppWindow: a failed error-page load must not
   // leave the window hidden (that is precisely the "app looks dead" state this
   // page exists to prevent).
