@@ -55,6 +55,7 @@ src/
     OverflowMenu.tsx   ⋯ 溢出菜单（收纳低频动作）
     CodeBlock.tsx      代码块（语言标签 + 复制 + 长代码折叠）
     SaveToKbButton.tsx 一键保存助手回复到当前知识库
+    QuizCard.tsx       题卡（作答/判分 +「存为题库」手动存档出口）
     SelectionConfirmBar.tsx 删除勾选态顶部确认条
     MessageCheckbox.tsx  勾选态下每气泡的方框
     icons.tsx          聊天交互 SVG 线条图标
@@ -167,6 +168,7 @@ pnpm test:e2e     # Playwright 自动启动隔离的 daemon/cloud/web（先关�
 | `src/components/runtimes/` | `e2e/runtimes-page.spec.ts`, `e2e/runtime-provider-config.spec.ts` |
 | `src/components/settings/` | `e2e/settings.spec.ts`, `e2e/skills.spec.ts`, `e2e/skill-hub.spec.ts`, `e2e/runtimes-page.spec.ts`（RuntimesPanel 在此）, `e2e/runtime-provider-config.spec.ts` |
 | `src/components/history/` | `e2e/history.spec.ts` |
+| `src/components/QuizCard.tsx`, `src/utils/quiz*.ts` | `e2e/quiz.spec.ts` |
 | `src/components/resources/`, `src/data/resources.ts`, `apps/landing-page/resources-data.js` | `e2e/resources.spec.ts` |
 | `src/App.tsx`（路由变更） | `e2e/navigation.spec.ts`, `e2e/bootstrap.spec.ts` |
 
@@ -201,14 +203,18 @@ pnpm test:e2e     # Playwright 自动启动隔离的 daemon/cloud/web（先关�
 - **标签**: 
   - vault pill：灰色=存活，红色=已删除。vault_name 反范式化存储，vault 删除后仍可显示原名。
   - channel pill：仅非 desktop 渠道显示（绿色 `[微信]`、蓝色 `[飞书]` / `[企业微信]`）。
+  - 「做过题」pill（紫色）：该会话渲染出题卡的张数 + 答对题数（`N 卡` / `N 卡 · M 对`）。数据来自 daemon 的 `quizCardCount` / `quizCorrectCount`（`apps/daemon/src/core/quiz-trace.ts`）。**判定口径与渲染器同源**——`countQuizCards` 走 contracts 里同一个 `splitContent` + `parseQuizBlock`，daemon 侧不许另写 SQL 复刻。对数为 0 时不单列（答错几道与没答过在列表里分不清）。
 - **日期组**: 按日期分组，serif 字体标题，可折叠/展开，标题右侧显示该组会话数量。
 - **删除**: 勾选式批量删除——行内 ⋯ 溢出菜单 →「删除」→ 进入勾选模式，被点行预勾选；勾选模式下点行主体/复选框切换勾选（跨置顶区 + 日期分组均可选），⋯ 溢出菜单隐藏；顶部浮动确认条「已选 N 条」+「取消/删除」→「删除」弹确认框 → 确认后批量删除。乐观移除 + 调 `POST /conversations/batch-delete`，失败 `refresh()` 回滚 + 3 秒 transient error。删除成功经 `onDeleteConversations` 通知 App——若删除的正是主页当前加载的会话，主页聊天会被清空。
 - **缓存**: 30s stale cache，跨页切换不重复请求。
+- **摘要**: 取最后一条消息，但**先剥掉题卡围栏**（`utils/historySummary.ts` → contracts 的 `stripQuizFences`）只留文字——「最后一条就是一张题卡」的会话原本直接显示裸 JSON（真实库 13 例）。剥完没文字的显示「题卡」。
 - **骨架屏**: 初始加载显示 5 行 shimmer 占位。
+- **对话内历史下拉**（`components/ConversationHistoryMenu.tsx`，主页输入框与 KB 会话标签栏共用）: 口径与历史页默认值**完全一致**——当前活动库 + 未归属任何库的渠道会话（复用 `historyFilterQuery.ts` 的 `initialVaultFilter` / `buildListQuery`，别再手写一套查询参数）；下拉顶部显示口径提示，无活动库时退回全量。改过滤口径要同时看 `e2e/history.spec.ts` 与 `e2e/kb-chat-sessions.spec.ts`。
 - **相关文件**: `hooks/useHistoryFilters.ts`（筛选/分页/缓存/乐观删除状态管理）
 
 ### 知识库 (Knowledge Base)
 
+- **仓库管理器（VaultManager，`.vm-*`）**: 底部 vault bar 唤起的双栏模态。左栏仓库列表，右栏品牌块 + 应用级动作卡（新建/打开）+ **当前仓库的外部素材根设置**（作用域头「当前仓库 · <名>」点名归属）。选中仓库的分支：未跨仓库 → 就地切换且**面板不收起**（`selectVault` 不隐式关面板）；已 pinned 跨仓库 → 新窗口 `?vault=<id>&manage=1`（新窗口 vault 解析后自动开管理器、随即剥参）。出口只有 ✕ / Esc / 点遮罩。改这块前先读 `docs/2026-09-08-linked-source-roots-design.md` §6.1 与 `multi-window.spec.ts`——两条路径 + URL 镜像 effect 是这段交互最容易改错的地方
 - **文件面板**: 左侧文件树，支持搜索、vault 切换
 - **主内容区**: 
   - **默认模式**: 直接显示 doocs/md 渲染内容
@@ -217,7 +223,11 @@ pnpm test:e2e     # Playwright 自动启动隔离的 daemon/cloud/web（先关�
 - **样式面板**: 右侧悬浮面板，支持主题、字体、字号、主题色、排版选项切换
 - **渲染引擎**: 基于 doocs/md (`marked` v18 + 扩展 + 主题系统)
 - **Tab 系统**: 多文件 Tab 切换，上限 20（`MAX_TABS`，达上限拦截 + toast，不静默淘汰）；溢出时左右箭头 + `▾` 下拉收纳；active tab 自动滚入可见区；状态持久化到 localStorage
-- **全局悬浮对话面板** (`KbChatSessionsPanel` + `kbChatSessionsStore`)：App 层常驻挂载、任意页面可用（右下角 `FloatingChatButton` 开合）。KB 页 `💬问答` 文档级入口（`kb-btn-ask`，主内容区头部，选中文件才渲染）与 vault 级常驻入口（`kb-btn-ask-tab`，Tab 栏 actions 首位，无文件=库级问答；空状态两分支亦有「💬 与知识库问答」CTA `kb-empty-ask-cta`）/ `📚构建Wiki`（`kb-btn-build-wiki`）/ `🩺健康检查`（`kb-btn-lint-wiki`）及树右键「加入 Wiki」经 `chatPanelRef.openQa/runWikiOp` 下发，打开/激活**会话标签**（上限 `MAX_CHAT_SESSIONS`=10，达上限 toast 拦截）。双形态：**悬浮**（右下角，可拖移/拖宽/拖高，宽度高度位置持久化）/ **停靠侧边栏**（KB 页 = 页内分栏：文档区经 `--kb-dock-w` 让出等宽、拖宽联动重排，其余页面 = 页头下悬浮式侧边栏）。任务运行中再点入口：问答不中断（另开/激活 qa 标签）、wiki 类弹「中断/排队/取消」；关闭运行中 wiki 会话仅允许「中断并关闭」（`anyWikiRunning` 单例守卫，防 D3 并发写同一 vault）。排队复用 agent stdin 原生队列，详见 [docs/kb-chat-interrupt-queue.md](../../docs/kb-chat-interrupt-queue.md)。
+- **全局悬浮对话面板** (`KbChatSessionsPanel` + `kbChatSessionsStore`)：App 层常驻挂载、任意页面可用（右下角 `FloatingChatButton` 开合）。KB 页 `💬问答` 文档级入口（`kb-btn-ask`，主内容区头部，选中文件才渲染）与 vault 级常驻入口（`kb-btn-ask-tab`，Tab 栏 actions 首位，无文件=库级问答；空状态两分支亦有「💬 与知识库问答」CTA `kb-empty-ask-cta`）/ `📚构建Wiki`（`kb-btn-build-wiki`）/ `🩺健康检查`（`kb-btn-lint-wiki`）及树右键「加入 Wiki」经 `chatPanelRef.openQa/runWikiOp` 下发，打开/激活**会话标签**（上限 `MAX_CHAT_SESSIONS`=10，**按库计**，达上限 toast 拦截）。双形态：**悬浮**（右下角，可拖移/拖宽/拖高，宽度高度位置持久化）/ **停靠侧边栏**（KB 页 = 页内分栏：文档区经 `--kb-dock-w` 让出等宽、拖宽联动重排，其余页面 = 页头下悬浮式侧边栏）。任务运行中再点入口：问答不中断（另开/激活 qa 标签）、wiki 类弹「中断/排队/取消」；关闭运行中 wiki 会话仅允许「中断并关闭」（`anyWikiRunning` 单例守卫，防 D3 并发写同一 vault）。排队复用 agent stdin 原生队列，详见 [docs/kb-chat-interrupt-queue.md](../../docs/kb-chat-interrupt-queue.md)。
+- **会话标签按知识库隔离**（`kbChatSessionsStore`）：每个会话归属一个库（创建时打戳 `vaultId`，缺省=当前活跃库）。标签栏只渲染**当前库**的会话 —— 切库 → 别的库的标签不出现（切回来原样恢复，controller 重挂载后按 conversationId 从 DB 拉历史）；`vaultId: null` = 通用会话（不属于任何库，任何库都可见）；旧会话（无 `vaultId` 字段）载入时迁移到当前活跃库。活动会话按库取作用域（`getActiveSession` 不跨库），去重与上限也都按库计。**切库不再清空会话的 @文件上下文**（每个会话的 filePath 是它自己那个库的相对路径）。
+- **历史下拉高亮当前会话**（`ConversationHistoryMenu`）：`activeConversationId` 命中行加 `is-current`（左侧强调条 + 浅底 + 「当前」标记，`data-current="true"`）。会话标签栏与 composer 两处都传当前会话 id —— 否则用户在历史列表里分不清自己在看哪一条。
+- **会话滚动记忆**（`stores/chatScrollMemory.ts` + `ChatSessionView`）：按 conversationId 记住消息区滚动位置与贴底状态。语义拍板（2026-11-09）：**记忆存在 ⇄ 标签还开着 ⇄ 切回恢复**——切会话标签（全屏/面板）、切表面形态（全屏 ⇄ 面板：面板 view 的 `active` 计入 `panelOpen`，退出全屏/重开面板时落位）、都恢复到切换前位置；**关标签/换绑会话即删记忆 ⇄ 从历史重开贴底**（新会话无记录也贴底；「换会话回到底部」的旧行为只对无记忆的会话生效）。**位置用「锚点」表达**（视口顶第一条消息的序号 + 相对偏移，恢复时把同一条消息钉回同一视口位置）而非绝对 scrollTop——全屏 ⇄ 面板宽度不同会重新折行，绝对坐标对应的可见内容会漂移（实测 ±3 条）；锚点在同宽下同样像素精确，绝对 top 仅作锚点失效（消息被截断）的兜底。贴底态不记锚点（恢复时贴新底）。写入是持续的（scroll 事件里写，仅脱离贴底时量锚点；隐藏容器必须跳过——boxless 的 scrollTop 恒 0 会把记忆污染成顶部）；恢复走 useLayoutEffect（paint 前落位，全屏切标签不闪底部一帧）+ rAF 补一次（代码块次帧才量出高度）。与 KB 文档标签的 `useScrollMemory`（「切回必须恢复阅读位置」）同哲学。回归：`e2e/chat-scroll-memory.spec.ts`（含宽度切换的内容锚定断言）。
+
 - **单库分屏副视图图谱（对照）**：副格图谱为**纯 file-scope**，始终跟随主格当前文档
   （`companionScope = kb.selectedFile ? {type:'file', path} : null`，useMemo 稳定身份防无限重取），主格换文档自动重锚定。
   无 dir-scope、无「回到当前文档」按钮、不接 `onNodeOpen`/`onScopeReset`——单击图中节点即打开对应文件到主格
@@ -304,6 +314,17 @@ pnpm test:e2e     # Playwright 自动启动隔离的 daemon/cloud/web（先关�
 - **产出区** (`WorkCompleteBanner.tsx`): 与引用区同构 —— > 8 项也走台账形态（标题带计数、可折叠、分批铺开）。产出全是文档，不需要分层。E2E 见 `source-chips-ledger.spec.ts`。
 - **会话产出面板的引用 tab** (`SessionOutputPanel.tsx` + `utils/sessionSources.ts`): 与消息内联引用区同口径 —— 媒体与数据文件折进「媒体与数据」折叠组（一次 wiki 构建能读几百个，全灌进主列表会决堤）。库外/检索路径仍进 omitted（点不开，面板必须明说）。
 - **SSE**: 通过 `EventSource` 订阅 daemon 事件流，实时更新消息状态
+
+### 题库 (Quiz)
+
+- **题卡** (`QuizCard.tsx` + `utils/quiz.ts` / `quizAnswer.ts`): 模型输出 `quiz` 围栏 JSON → 聊天内渲染可作答题卡，**判分全在前端**，不依赖 runtime 工具。题型 single / multiple / judge / fill / subject；大题（subject）的「你的答案」正文由 `pairSubjectAnswers` 按锚点配对（`quizSubjectStore` 同源）。
+- **协议与围栏扫描在 `@molio/contracts`**（`packages/contracts/src/quiz.ts` + `messageSegments.ts`）: `utils/quiz.ts` 与 `utils/markdown.ts` 只是转发层。**原因**：daemon 侧统计「渲染出几张题卡」必须与渲染器同口径，SQL 复刻会漂移（实测过）。改 `splitContent` / `parseQuizBlock` 时同步想一下 daemon 的用法（`countQuizCards`）。
+- **「存为题库」是手动出口，不做自动落库**：拍板结论——题目质量不稳定，存不存由用户判断（自动落库会稀释题库信噪比）。所以这里只把手动流程做厚，不新增页面/导航（「错题本」形态明确不做）。
+- **保存范围** (`utils/quizSaveScope.ts` 纯函数): 错题优先 `wrong`（默认）/ 全部 `all` / 自己挑 `pick`。`wrongCount === 0`（未作答或全对）时「只存做错的」按钮**按设计不渲染**，不是 bug。大题按批改分数判三态——`gradeQuiz` 对 subject 恒 `correct: false`，不能拿来当错题判据。
+- **vault 归属跟随会话，不跟随当前活动库**：`KbChatSessionController` 按 `conversationId` 向 daemon 取 `conversations.vault_id` → `Conversation.vaultId` → `ChatSessionView` → `AssistantMessage` → `QuizCard`，取不到才回落 `useActiveVaultId()`。会话标签上的 `vaultId` 是「打开标签那一刻的活动库」，跨库打开历史会话会存进别人的库。
+- **文件格式** (`utils/quizFile.ts`): 落 `题库/<日期>-<标题>.md`（同名 `-2` / `-3` 去重）。frontmatter 带 `quiz_fingerprint` / 题号清单 / 出处，正文逐题写题干、选项、答案、你的答案、解析——人读，也能被后续组卷反向解析。模型产出的标量一律 JSON 引号包裹（标题含 `: ` 会写出非法 YAML，front-matter 解析失败会让整篇回落成正文）；图片路径补一层 `../`（`题库/` 是子目录）。
+- **存档结果行**: 成功回「已存 N 题 · 路径」；动作（打开 / 在资源管理器中显示 / 撤销）只开 **6s 反馈窗**（与 `SaveToKbButton` 一致），过后只剩静态路径；键盘焦点进入按钮区时取消窗口（否则读到一半按钮被抽走、焦点跌回 body）。「在资源管理器中显示」仅桌面壳（`isRevealAvailable()`）。撤销 = 直接删文件，无二次确认。
+- 回归：`test/quiz*.test.ts`（纯函数）+ `e2e/quiz.spec.ts`（P0）
 
 ## 与 daemon 的交互
 

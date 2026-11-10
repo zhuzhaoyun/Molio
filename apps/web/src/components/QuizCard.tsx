@@ -1,15 +1,25 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../api/client';
 import { useI18n } from '../i18n';
-import { useActiveVaultId } from '../stores/vaultStore';
+import { useActiveVaultId, useVaults } from '../stores/vaultStore';
 import { quizAnchorStore, useQuizAnswerAnchor } from '../stores/quizAnchorStore';
 import { useQuizSubjects } from '../stores/quizSubjectStore';
 import { anchorBelongsToQuestion, backfillAnchorFingerprint, gradingMapKey } from '../utils/quizAnswer';
 import { useWikiLinkClick } from '../hooks/useWikiLinkClick';
+import { useFileNavigation } from '../hooks/useFileNavigation';
+import { isRevealAvailable, revealInFolder } from '../utils/reveal';
 import { CodeBlock } from './CodeBlock';
 import { renderMarkdown } from '../utils/markdown';
 import { preprocessLocalImages } from '../utils/kbImage';
-import { saveQuizToVault } from '../utils/quizFile';
+import { saveQuizToVault, type QuizFileInput } from '../utils/quizFile';
+import {
+  buildQuizFileQuestions,
+  classifyQuestions,
+  pickDefaultScope,
+  selectForSave,
+  type QuizSaveContext,
+  type QuizSaveScope,
+} from '../utils/quizSaveScope';
 import {
   parseQuizBlock,
   gradeQuiz,
@@ -27,6 +37,9 @@ import {
   type QuizSelections,
 } from '../utils/quiz';
 
+/** 存档结果行的动作按钮存活时长（与 SaveToKbButton 的反馈窗一致）。 */
+const SAVE_ACTIONS_WINDOW_MS = 6000;
+
 interface Props {
   /** JSON text inside the ```quiz fence. */
   raw: string;
@@ -36,10 +49,21 @@ interface Props {
   streaming?: boolean;
   /** Used for localStorage scoping. */
   conversationId?: string | null;
+  /** 会话所属库（daemon 的 conversations.vault_id）；取不到时回落活动库。 */
+  conversationVaultId?: string | null;
 }
 
 /** 填空符号托盘：通用难输入字符（理工科一期组）。分组与后置项依据
  *  docs/2026-10-24-quiz-fill-input-domains.md（文科/小语种组后续按需追加）。 */
+/** 列表里的一行题面：去掉图片语法与强调标记，压成单行（CSS 再负责省略号）。 */
+function previewStem(stem: string): string {
+  return stem
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, '')
+    .replace(/[*_`#>]+/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 const FILL_SYMBOL_GROUPS: ReadonlyArray<{ labelKey: string; chars: readonly string[] }> = [
   { labelKey: 'quiz.symbolGroup.common', chars: ['√', 'π', '°', '≤', '≥', '≠', '±', '→', '×', '÷', '∞'] },
   { labelKey: 'quiz.symbolGroup.greek', chars: ['α', 'β', 'γ', 'δ', 'θ', 'λ', 'μ', 'σ', 'ω', 'Δ', 'Ω'] },
@@ -54,7 +78,7 @@ const FILL_SYMBOL_GROUPS: ReadonlyArray<{ labelKey: string; chars: readonly stri
  * （先转义 HTML 再生成受控标签，与聊天正文同一信任级）。
  * 判分在本地完成（不依赖 runtime 工具调用），提交后可重做、可存题库。
  */
-export function QuizCard({ raw, complete, streaming, conversationId }: Props) {
+export function QuizCard({ raw, complete, streaming, conversationId, conversationVaultId }: Props) {
   const { t } = useI18n();
   const parsed = useMemo(() => parseQuizBlock(raw), [raw]);
 
@@ -80,6 +104,7 @@ export function QuizCard({ raw, complete, streaming, conversationId }: Props) {
       quiz={parsed.quiz}
       invalidQuestions={parsed.invalidQuestions}
       conversationId={conversationId}
+      conversationVaultId={conversationVaultId}
     />
   );
 }
@@ -88,13 +113,18 @@ function QuizBody({
   quiz,
   invalidQuestions,
   conversationId,
+  conversationVaultId,
 }: {
   quiz: Quiz;
   invalidQuestions: InvalidQuestion[];
   conversationId?: string | null;
+  conversationVaultId?: string | null;
 }) {
   const { t } = useI18n();
-  const vaultId = useActiveVaultId();
+  // 会话所属库优先：历史会话跨库打开时，活动库不是它自己的库。取不到
+  // （老 daemon / 会话已删 / 首轮消息还没落库）再回落活动库。
+  const activeVaultId = useActiveVaultId();
+  const vaultId = conversationVaultId ?? activeVaultId;
   const handleWikiLinkClick = useWikiLinkClick();
   const quizAnchor = useQuizAnswerAnchor();
   // 本会话的解答题状态（键 = 指纹:题号）：已作答 + 批改结果。两者都从会话
@@ -114,9 +144,22 @@ function QuizBody({
   const fingerprintKey = fingerprint?.slice(0, 8) ?? '';
   const [selections, setSelections] = useState<QuizSelections>({});
   const [submitted, setSubmitted] = useState(false);
+  // 存档：面板 + 范围 + 勾选。错题优先是默认，但永远由用户按下确认才写盘。
+  const [saveOpen, setSaveOpen] = useState(false);
+  const [scope, setScope] = useState<QuizSaveScope>('wrong');
+  const [picked, setPicked] = useState<ReadonlySet<number>>(new Set());
   const [saving, setSaving] = useState(false);
-  const [savedPath, setSavedPath] = useState<string | null>(null);
+  // setState 是异步的：连点两次时第二次进来 saving 仍是 false，会写两份文件。
+  const savingRef = useRef(false);
+  const [saved, setSaved] = useState<{ path: string; count: number } | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [undoing, setUndoing] = useState(false);
+  const [undoError, setUndoError] = useState<string | null>(null);
+  const undoRef = useRef(false);
+  // 结果行的动作按钮只开 6s 反馈窗（与 SaveToKbButton 一致：2.5s 对非技术用户太短，
+  // 但不能常驻——写盘是低频动作，留下来会一直占着卡片底部）。窗口过后只剩一行静态路径。
+  const [saveActionsVisible, setSaveActionsVisible] = useState(false);
+  const saveActionsTimerRef = useRef<number | null>(null);
   const restoredKeyRef = useRef<string | null>(null);
 
   const grades = useMemo(
@@ -360,19 +403,115 @@ function QuizBody({
     [quizAnchor, fingerprintKey, t],
   );
 
+  // 保存口径从同一份上下文派生（判定三态 / 作答正文 / 批改分数）。
+  const saveContext = useMemo<QuizSaveContext>(() => ({
+    submitted,
+    grades,
+    subjectGradings: subjectStates?.gradings ?? new Map(),
+    fingerprintKey,
+  }), [submitted, grades, subjectStates, fingerprintKey]);
+
+  const candidates = useMemo(() => classifyQuestions(quiz, saveContext), [quiz, saveContext]);
+  const wrongCount = candidates.filter((candidate) => candidate.outcome === 'wrong').length;
+  // 没有错题时「只存做错的」会是空集：静默退回全部，而不是让用户按下一个 0 题按钮。
+  const effectiveScope: QuizSaveScope = scope === 'wrong' && wrongCount === 0 ? 'all' : scope;
+  const selected = useMemo(
+    () => selectForSave(candidates, effectiveScope, picked),
+    [candidates, effectiveScope, picked],
+  );
+  const targetVault = useVaults().find((vault) => vault.id === vaultId);
+  const vaultName = targetVault?.name ?? '';
+  // 「在资源管理器中显示」只在桌面壳里成立（浏览器 / NAS 远程访问没有这个能力）
+  const revealReady = isRevealAvailable() && !!targetVault?.path;
+  const { openFile } = useFileNavigation();
+
+  const openSavePanel = useCallback(() => {
+    setScope(pickDefaultScope(candidates));
+    setPicked(new Set(candidates.filter((c) => c.outcome === 'wrong').map((c) => c.index)));
+    setSaveError(null);
+    setSaveOpen(true);
+  }, [candidates]);
+
+  const chooseScope = useCallback((next: QuizSaveScope) => {
+    // 切到「自己挑」时用错题预勾：用户多半是在默认集合上做增减。
+    setPicked((prev) => (next === 'pick' && prev.size === 0
+      ? new Set(candidates.filter((c) => c.outcome === 'wrong').map((c) => c.index))
+      : prev));
+    setScope(next);
+  }, [candidates]);
+
+  const togglePicked = useCallback((index: number) => {
+    setPicked((prev) => {
+      const next = new Set(prev);
+      if (next.has(index)) next.delete(index);
+      else next.add(index);
+      return next;
+    });
+  }, []);
+
+  const clearSaveActionsTimer = useCallback(() => {
+    if (saveActionsTimerRef.current !== null) {
+      window.clearTimeout(saveActionsTimerRef.current);
+      saveActionsTimerRef.current = null;
+    }
+  }, []);
+
+  // 卸载时清定时器：卡片随消息流销毁后别再 setState。
+  useEffect(() => clearSaveActionsTimer, [clearSaveActionsTimer]);
+
   const handleSave = useCallback(async () => {
-    if (!vaultId || saving) return;
+    if (!vaultId || savingRef.current || selected.length === 0) return;
+    savingRef.current = true;
     setSaving(true);
     setSaveError(null);
     try {
-      const path = await saveQuizToVault(vaultId, quiz, api);
-      setSavedPath(path);
+      const input: QuizFileInput = {
+        title: quiz.title,
+        version: quiz.version,
+        fingerprint,
+        totalQuestions: quiz.questions.length,
+        questions: buildQuizFileQuestions(
+          quiz,
+          selected,
+          saveContext,
+          selections,
+          subjectStates?.answers ?? new Map(),
+        ),
+      };
+      const path = await saveQuizToVault(vaultId, input, api);
+      setSaved({ path, count: selected.length });
+      setSaveOpen(false);
+      setSaveActionsVisible(true);
+      clearSaveActionsTimer();
+      saveActionsTimerRef.current = window.setTimeout(
+        () => setSaveActionsVisible(false),
+        SAVE_ACTIONS_WINDOW_MS,
+      );
     } catch {
       setSaveError(t('quiz.saveFailed'));
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
-  }, [vaultId, saving, quiz, t]);
+  }, [vaultId, selected, quiz, fingerprint, saveContext, selections, subjectStates, t, clearSaveActionsTimer]);
+
+  // 撤销 = 删掉刚写的那份文件。只在写盘成功后出现，删除成功即收起结果行；
+  // 失败保留结果行并说明原因（用户仍可以自己去库里删）。
+  const handleUndo = useCallback(async () => {
+    if (!vaultId || !saved || undoRef.current) return;
+    undoRef.current = true;
+    setUndoing(true);
+    setUndoError(null);
+    try {
+      await api.deleteFile(vaultId, saved.path);
+      setSaved(null);
+    } catch {
+      setUndoError(t('quiz.undoFailed'));
+    } finally {
+      undoRef.current = false;
+      setUndoing(false);
+    }
+  }, [vaultId, saved, t]);
 
   return (
     <div className="quiz-card" data-testid="quiz-card">
@@ -672,17 +811,151 @@ function QuizBody({
           className="quiz-btn"
           data-testid="quiz-save-kb"
           disabled={!vaultId || saving}
+          aria-expanded={saveOpen}
           title={!vaultId ? t('quiz.saveNoVault') : undefined}
-          onClick={handleSave}
+          onClick={() => (saveOpen ? setSaveOpen(false) : openSavePanel())}
         >
           {saving ? t('quiz.saving') : t('quiz.save')}
         </button>
-        {savedPath && (
-          <span className="quiz-saved" data-testid="quiz-saved-path">
-            {t('quiz.saved', { path: savedPath })}
-          </span>
+
+        {saveOpen && (
+          <div className="quiz-save-panel" data-testid="quiz-save-panel">
+            <div className="quiz-save-target" data-testid="quiz-save-target">
+              {t('quiz.saveTarget', { vault: vaultName })}
+            </div>
+
+            <div className="quiz-scopes" role="radiogroup" aria-label={t('quiz.save')}>
+              {wrongCount > 0 && (
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={effectiveScope === 'wrong'}
+                  className="quiz-btn quiz-scope"
+                  data-testid="quiz-scope-wrong"
+                  onClick={() => chooseScope('wrong')}
+                >
+                  {t('quiz.saveScopeWrong', { count: wrongCount })}
+                </button>
+              )}
+              <button
+                type="button"
+                role="radio"
+                aria-checked={effectiveScope === 'all'}
+                className="quiz-btn quiz-scope"
+                data-testid="quiz-scope-all"
+                onClick={() => chooseScope('all')}
+              >
+                {t('quiz.saveScopeAll', { count: candidates.length })}
+              </button>
+              <button
+                type="button"
+                role="radio"
+                aria-checked={effectiveScope === 'pick'}
+                className="quiz-btn quiz-scope"
+                data-testid="quiz-scope-pick"
+                onClick={() => chooseScope('pick')}
+              >
+                {t('quiz.saveScopePick')}
+              </button>
+            </div>
+
+            <div className="quiz-save-list" data-testid="quiz-save-list">
+              {effectiveScope === 'pick' ? candidates.map(({ index, outcome }) => (
+                <label key={index} className="quiz-save-row">
+                  <input
+                    type="checkbox"
+                    className="quiz-save-check"
+                    data-testid="quiz-save-pick"
+                    checked={picked.has(index)}
+                    onChange={() => togglePicked(index)}
+                  />
+                  <span className="quiz-save-index">{index + 1}</span>
+                  <span className="quiz-save-stem">{previewStem(quiz.questions[index]!.stem)}</span>
+                  <span className={`quiz-save-badge ${outcome}`}>
+                    {outcome === 'correct' ? t('quiz.outcomeCorrect')
+                      : outcome === 'wrong' ? t('quiz.outcomeWrong') : t('quiz.outcomeUngraded')}
+                  </span>
+                </label>
+              )) : selected.map(({ index, outcome }) => (
+                <div key={index} className="quiz-save-row quiz-save-row--static">
+                  <span className="quiz-save-index">{index + 1}</span>
+                  <span className="quiz-save-stem">{previewStem(quiz.questions[index]!.stem)}</span>
+                  <span className={`quiz-save-badge ${outcome}`}>
+                    {outcome === 'correct' ? t('quiz.outcomeCorrect')
+                      : outcome === 'wrong' ? t('quiz.outcomeWrong') : t('quiz.outcomeUngraded')}
+                  </span>
+                </div>
+              ))}
+            </div>
+
+            <div className="quiz-save-actions">
+              <button
+                type="button"
+                className="quiz-btn quiz-btn-primary"
+                data-testid="quiz-save-confirm"
+                disabled={saving || selected.length === 0}
+                onClick={handleSave}
+              >
+                {saving ? t('quiz.saving') : t('quiz.saveConfirm', { count: selected.length })}
+              </button>
+              <button
+                type="button"
+                className="quiz-btn"
+                data-testid="quiz-save-cancel"
+                onClick={() => setSaveOpen(false)}
+              >
+                {t('quiz.saveCancel')}
+              </button>
+            </div>
+
+            {saveError && <span className="quiz-error" role="alert">{saveError}</span>}
+          </div>
         )}
-        {saveError && <span className="quiz-error" role="alert">{saveError}</span>}
+
+        {saved && (
+          <div className="quiz-save-result" data-testid="quiz-save-result">
+            <span className="quiz-save-result-text" title={saved.path}>
+              {t('quiz.savedSummary', { count: saved.count, path: saved.path })}
+            </span>
+            {(saveActionsVisible || undoError) && (
+              <span
+                className="quiz-save-result-actions"
+                // 键盘焦点落进按钮就把窗口收掉：否则读到「撤销」时按钮被计时器抽走，
+                // 焦点跌回 body。
+                onFocusCapture={clearSaveActionsTimer}
+              >
+                <button
+                  type="button"
+                  className="quiz-btn quiz-save-action"
+                  data-testid="quiz-save-open"
+                  onClick={() => { if (vaultId) openFile(vaultId, saved.path); }}
+                >
+                  {t('quiz.saveOpen')}
+                </button>
+                {revealReady && (
+                  <button
+                    type="button"
+                    className="quiz-btn quiz-save-action"
+                    data-testid="quiz-save-reveal"
+                    onClick={() => { if (targetVault?.path) revealInFolder(targetVault.path, saved.path); }}
+                  >
+                    {t('quiz.saveReveal')}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="quiz-btn quiz-save-action"
+                  data-testid="quiz-save-undo"
+                  disabled={undoing}
+                  onClick={handleUndo}
+                >
+                  {t('quiz.saveUndo')}
+                </button>
+              </span>
+            )}
+            {undoError && <span className="quiz-error" role="alert">{undoError}</span>}
+          </div>
+        )}
       </div>
     </div>
   );

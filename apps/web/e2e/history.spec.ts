@@ -684,6 +684,80 @@ test.describe('History', () => {
 });
 
 /**
+ * 「做过题」徽标：历史列表里标出该会话做过几道题、答对几道。
+ *
+ * 卡数判定与聊天渲染器同源（`countQuizCards` = splitContent + parseQuizBlock），
+ * 所以这里的夹具必须是**合法题卡**——字段不全的 JSON 会被判为「没渲染出题卡」，
+ * 那是正确行为。徽标文案随语言变，断言只认 `data-cards` / `data-correct`。
+ */
+test.describe('History quiz badge', () => {
+  /** 一张合法题卡（judge 题，省略 options 走 judge 默认项）。 */
+  const CARD = JSON.stringify({
+    version: 1,
+    title: '徽标测试',
+    questions: [{
+      id: 'q1', type: 'judge', stem: '1+1=2？',
+      answer: ['A'], explanation: 'e', sources: [{ path: 'p.md' }],
+    }],
+  });
+  const quizMessage = (extra = '') => `前面这段话：\n\`\`\`quiz\n${CARD}\n\`\`\`${extra}`;
+
+  test('marks conversations that rendered a quiz card, and strips the card from the summary', async ({ page }) => {
+    const project = await createProject(`e2e-quizbadge-${Date.now()}`);
+    const conv = await createConversation(project.id, 'Quiz Badge Row');
+    await addMessage(project.id, conv.id, {
+      id: `msg-qb-${Date.now()}`,
+      role: 'assistant',
+      content: quizMessage(),
+      timestamp: Date.now(),
+      agentId: 'claude',
+    });
+    try {
+      await gotoHome(page);
+      await clickNav(page, 'history');
+      await expect(page.locator('.history-shell')).toBeVisible({ timeout: 5_000 });
+
+      const row = rowByTitle(page, 'Quiz Badge Row');
+      await expect(row).toBeVisible({ timeout: 5_000 });
+
+      // 徽标：卡数 1、答对 0（没提交作答记录）。
+      const badge = row.locator('[data-testid=history-quiz-badge]');
+      await expect(badge).toBeVisible({ timeout: 5_000 });
+      await expect(badge).toHaveAttribute('data-cards', '1');
+      await expect(badge).toHaveAttribute('data-correct', '0');
+
+      // 摘要剥掉题卡，只留首行文字——不再吐裸 JSON。
+      await expect(row.locator('.history-row__summary')).toHaveText('前面这段话：');
+    } finally {
+      await deleteProject(project.id);
+    }
+  });
+
+  test('does not mark conversations without a quiz card', async ({ page }) => {
+    const project = await createProject(`e2e-quizbadge-none-${Date.now()}`);
+    const conv = await createConversation(project.id, 'No Quiz Badge Row');
+    await addMessage(project.id, conv.id, {
+      id: `msg-qbn-${Date.now()}`,
+      role: 'assistant',
+      content: '就是普通的一段话。',
+      timestamp: Date.now(),
+      agentId: 'claude',
+    });
+    try {
+      await gotoHome(page);
+      await clickNav(page, 'history');
+      await expect(page.locator('.history-shell')).toBeVisible({ timeout: 5_000 });
+
+      const row = rowByTitle(page, 'No Quiz Badge Row');
+      await expect(row).toBeVisible({ timeout: 5_000 });
+      await expect(row.locator('[data-testid=history-quiz-badge]')).toHaveCount(0);
+    } finally {
+      await deleteProject(project.id);
+    }
+  });
+});
+
+/**
  * Multi-window default scope: when the window has an active vault, the history
  * page defaults to "this vault + unassociated" (`__current__`). The window's
  * vault is pinned via localStorage (`molio.activeVaultId`) — the same source

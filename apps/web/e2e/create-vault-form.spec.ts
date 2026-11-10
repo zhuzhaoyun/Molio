@@ -32,8 +32,8 @@ async function navigateToCreateForm(page: import('@playwright/test').Page) {
   await vaultBar.click({ timeout: 5_000 });
   await page.waitForTimeout(300);
 
-  // Click the "创建" action button in the VaultActionPanel to open the create form
-  const createAction = page.locator('.vm-action-btn-primary').filter({ hasText: '创建' });
+  // Click the "新建仓库" action button in the VaultActionPanel to open the create form
+  const createAction = page.locator('[data-testid="vault-create-action"]');
   await createAction.click({ timeout: 5_000 });
   await page.waitForTimeout(300);
 

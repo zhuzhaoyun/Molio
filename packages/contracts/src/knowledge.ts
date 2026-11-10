@@ -199,6 +199,33 @@ export interface SearchResponse {
   truncated: boolean; // 是否因 limit 截断
 }
 
+// ─── External source roots ───
+
+/**
+ * A read-only external folder mounted into a vault under `external/<label>`.
+ *
+ * Mirrors the registry row; `valid` is not persisted but computed per response
+ * (target still on disk and its mount link intact) — false means the UI should
+ * offer an unmount rather than pretend the folder is still readable.
+ */
+export interface ExternalRoot {
+  id: string;
+  vaultId: string;
+  label: string;
+  target: string; // Absolute path of the source folder
+  valid: boolean; // false when the target no longer exists on disk
+  createdAt: number;
+}
+
+export interface ExternalRootsResponse {
+  roots: ExternalRoot[];
+}
+
+export interface AddExternalRootRequest {
+  target: string;
+  label?: string;
+}
+
 /** 一次提交里单题的作答记录。 */
 export interface QuizAttemptInput {
   questionId: string;

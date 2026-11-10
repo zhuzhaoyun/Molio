@@ -36,13 +36,13 @@ test.describe('知识库术语统一', () => {
 
     await expect(manager).not.toContainText('仓库');
 
-    // 两级表单（打开 / 新建）都要干净
-    await manager.locator('.vm-action-btn').filter({ hasText: '打开' }).click();
+    // 两级表单（打开 / 新建）都要干净（动作卡整卡可点，见 vault-open-action）
+    await manager.locator('[data-testid="vault-open-action"]').click();
     await expect(page.locator('.vm-submit-btn')).toBeVisible({ timeout: 5_000 });
     await expect(manager).not.toContainText('仓库');
 
     await page.locator('.vm-back-btn').click().catch(() => {});
-    await manager.locator('.vm-action-btn').filter({ hasText: '创建' }).click();
+    await manager.locator('[data-testid="vault-create-action"]').click();
     await expect(page.locator('.vm-create-title')).toBeVisible({ timeout: 5_000 });
     await expect(manager).not.toContainText('仓库');
   });

@@ -33,7 +33,10 @@ test.describe('Graph as tab', () => {
 
   test('NavRail 图谱 opens a graph tab in the KB workspace', async ({ page }) => {
     // Hold vault resolution until after the click: the graph intent must survive
-    // opening the page before its per-vault tab store has been created.
+    // opening the page before its per-vault tab store has been created, AND the
+    // vault-list arrival that follows the click (store → URL mirror) must not
+    // rewrite the query string while the navigation transition is still pending
+    // — a whole-query replace there wipes ?panel=graph and the tab never opens.
     let release!: () => void;
     const pending = new Promise<void>(resolve => { release = resolve; });
     await page.route('**/api/knowledge/vaults', async route => {

@@ -89,6 +89,8 @@ interface Props {
   onDeleteConversations?: (ids: string[]) => void;
   /** Stable key for persisting draft text across navigation. */
   composerKey?: string;
+  /** 当前会话 id —— 历史下拉里对应那条要高亮（用户报障：分不清在看哪条会话）。 */
+  conversationId?: string | null;
 }
 
 export function ChatComposer({
@@ -101,6 +103,7 @@ export function ChatComposer({
   onOpenConversation,
   onDeleteConversations,
   composerKey,
+  conversationId,
 }: Props) {
   const { t } = useI18n();
   // 大题作答锚（quiz 卡「作答」挂上）：chip 展示 + 发送时物化。全局单值，
@@ -718,7 +721,11 @@ export function ChatComposer({
                 </svg>
               </button>
               {onOpenConversation && (
-                <ConversationHistoryMenu onSelect={onOpenConversation} onDeleteConversations={onDeleteConversations} />
+                <ConversationHistoryMenu
+                  onSelect={onOpenConversation}
+                  onDeleteConversations={onDeleteConversations}
+                  activeConversationId={conversationId}
+                />
               )}
             </>
           )}

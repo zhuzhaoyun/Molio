@@ -62,6 +62,28 @@ describe('reindexVault', () => {
   });
 });
 
+describe('reindexVault — external source roots', () => {
+  // The registry is the whitelist, same as scanTree: an unregistered mount
+  // link is just a symlink and stays invisible; registering it makes its
+  // content indexable under the virtual `external/<label>/…` path.
+  test('登记挂载的内容进索引；未登记的挂载链接不进', async () => {
+    const ext = fs.mkdtempSync(path.join(os.tmpdir(), 'molio-vsr-ext-'));
+    fs.writeFileSync(path.join(ext, 'note.md'), '素材甲乙丙', 'utf-8');
+    db.prepare("INSERT INTO vaults (id, name, path, created_at) VALUES (?,'ext',?,?)")
+      .run(V, vaultDir, Date.now());
+    fs.mkdirSync(path.join(vaultDir, 'external'), { recursive: true });
+    fs.symlinkSync(ext, path.join(vaultDir, 'external', 'AgentA'), 'dir');
+
+    await reindexVault(db, V, vaultDir);
+    assert.equal(hit('素材甲乙'), 0, 'unregistered mount link stays invisible to the index');
+
+    const { addExternalRoot } = await import('../../src/core/db.js');
+    addExternalRoot(db, V, 'AgentA', fs.realpathSync(ext));
+    await reindexVault(db, V, vaultDir);
+    assert.equal(hit('素材甲乙'), 1, 'registered mount content is indexed');
+  });
+});
+
 describe('rebuildVaultFtsAll', () => {
   test('清空重建：多 vault 隔离 + 删文件后索引归零', async () => {
     db.prepare("INSERT INTO vaults (id, name, path, created_at) VALUES (?,'一',?,?)")

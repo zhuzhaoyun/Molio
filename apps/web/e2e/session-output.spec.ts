@@ -526,12 +526,20 @@ test.describe('Home 会话产出面板', () => {
     }
   });
 
-  test('切换知识库 → 旧 vault 会话被重置（消息清空 + 产出面板空态）', async ({ page }) => {
+  test('切换知识库 → 旧 vault 的会话在新 vault 里整体隐藏（切回原库即恢复）', async ({ page }) => {
+    // 会话标签按库隔离（2026-11 用户报障：切库后旧库的会话标签仍出现在新库、
+    // 点进去查不到内容）。新语义：切库 → 旧会话在新库不可见（不是「重置成空壳」），
+    // 切回原库 → 会话与内容原样恢复。
     const vaultA = await createTempVault('e2e-reset-a');
     const vaultB = await createTempVault('e2e-reset-b');
     try {
       await page.addInitScript((id) => { localStorage.setItem('molio.activeVaultId', id); }, vaultA.id);
-      await mockChatRun(page, { script: outputRun });
+      // 切回原库时 controller 按 conversationId 从「DB」拉历史 → 给 mock 一条持久化消息，
+      // 断言「内容原样回来」。（mockChatRun 自带该路由，别再叠一层 page.route——会被它盖掉。）
+      await mockChatRun(page, {
+        script: outputRun,
+        persistedMessages: [{ id: 'm1', role: 'user', content: '整理产出', timestamp: Date.now() }],
+      });
       await gotoHome(page);
       await sendMessage(page, '整理产出');
       await expect(page.locator('[data-testid="work-timeline-summary"]')).toBeVisible({ timeout: 15_000 });
@@ -555,15 +563,32 @@ test.describe('Home 会话产出面板', () => {
         }, vaultB.id);
         await expect(page.locator('.kb-vault-bar__name')).toHaveText(vaultB.name, { timeout: 1_500 });
       }).toPass({ timeout: 15_000 });
-      // 回主页 → 旧会话已清空：标签保留、落在空的全屏 shell（不再是 landing），
-      // 产出面板仍在（它是当前会话产出的视图，开关状态不随会话重置），但必须回空态。
-      // （跨 vault 重置由 KbChatSessionController 按标签处理。）
+      // 回主页 → 旧 vault 的会话在新 vault 里**整体不可见**：没有旧消息，
+      // 也不该再有「带旧会话的全屏 shell」（那是旧会话的宿主）。
       await gotoChatSpa(page);
       await expect(page.locator('[data-testid="assistant-message"]')).toHaveCount(0);
-      await expect(page.locator('.home-page.chat-active')).toBeVisible({ timeout: 5_000 });
-      await expect(page.locator('[data-testid="session-output-empty"]')).toBeVisible({ timeout: 5_000 });
-      // 关键回归判据：旧 vault 的写入项不得残留（空态断言本身不足以证明这一点）
+      await expect(page.locator('.home-page.chat-active')).toHaveCount(0);
+      // 关键回归判据：旧 vault 的写入项不得残留
       await expect(page.locator('[data-testid="session-output-write"]')).toHaveCount(0);
+
+      // 切回原库 → 会话回来（标签 + 历史内容从 DB 重新载入）
+      await clickNav(page, 'knowledge');
+      await expect(page.locator('.kb-vault-bar')).toBeVisible();
+      await expect(async () => {
+        await page.evaluate((vid) => {
+          window.history.pushState({}, '', '/knowledge');
+          window.dispatchEvent(new PopStateEvent('popstate'));
+          window.history.pushState({}, '', `/knowledge?vault=${vid}`);
+          window.dispatchEvent(new PopStateEvent('popstate'));
+        }, vaultA.id);
+        await expect(page.locator('.kb-vault-bar__name')).toHaveText(vaultA.name, { timeout: 1_500 });
+      }).toPass({ timeout: 15_000 });
+      await gotoChatSpa(page);
+      await expect(page.locator('.home-page.chat-active')).toBeVisible({ timeout: 5_000 });
+      // 内容原样回来（历史从 DB 重载）。**不要**断言「没有 assistant-message」——
+      // 切回后 controller 会重订阅那条仍在跑的 run（kb-chat-resume 的直播恢复），
+      // 回复会重新流一遍，assistant 消息出现与否取决于时序。
+      await expect(page.locator('.home-chat-log')).toContainText('整理产出', { timeout: 5_000 });
     } finally {
       await cleanupTempVault(vaultA);
       await cleanupTempVault(vaultB);

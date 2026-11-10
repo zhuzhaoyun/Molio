@@ -8,6 +8,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useI18n } from '../i18n';
 import type { ConversationHistoryItem } from '@molio/contracts';
 import { api } from '../api/client';
+import { buildListQuery, initialVaultFilter } from '../hooks/historyFilterQuery';
+import { useActiveVault } from '../stores/vaultStore';
 
 interface Props {
   /** 用户选中的会话 id */
@@ -20,6 +22,11 @@ interface Props {
   buttonTestId?: string;
   /** 下拉展开方向：'up' = 输入框（底部上弹，默认）；'down' = 顶栏（向下展开） */
   align?: 'up' | 'down';
+  /**
+   * 当前正在看的会话 id —— 列表里对应那条要高亮（用户报障：打开历史记录后
+   * 分不清「现在这条」是哪条）。不传 = 不高亮。
+   */
+  activeConversationId?: string | null;
 }
 
 export function ConversationHistoryMenu({
@@ -28,8 +35,14 @@ export function ConversationHistoryMenu({
   buttonClassName,
   buttonTestId,
   align = 'up',
+  activeConversationId,
 }: Props) {
   const { t } = useI18n();
+  // 历史下拉与「历史记录」页默认口径保持一致：**当前知识库 + 未归属任何库的
+  // 渠道会话**（用户报障：两处数据对不上，下拉里混着别的库的会话）。没有活动库
+  // 时无从限定，退回全量。映射复用历史页同一个纯函数，避免两处口径漂移。
+  const activeVault = useActiveVault();
+  const activeVaultId = activeVault?.id ?? null;
   const [show, setShow] = useState(false);
   const [items, setItems] = useState<ConversationHistoryItem[]>([]);
   const [search, setSearch] = useState('');
@@ -56,13 +69,23 @@ export function ConversationHistoryMenu({
 
   const load = useCallback(async (query: string) => {
     try {
-      // query 为空时传 undefined，等价原来的全量列表
-      const { items: list, pinnedItems } = await api.listConversationHistory(query ? { query } : undefined);
+      const { items: list, pinnedItems } = await api.listConversationHistory(
+        buildListQuery({ vaultFilter: initialVaultFilter(activeVaultId), query }, activeVaultId),
+      );
       setItems([...pinnedItems, ...list]);
     } catch {
       // silently fail
     }
-  }, []);
+  }, [activeVaultId]);
+
+  // 下拉展开期间活动库变了（程序化切库 / 多窗口同步）→ 重新按新库拉一次，
+  // 否则列表还停在旧库的会话上。展开时由 toggle 自行拉取，这里只管切库。
+  useEffect(() => {
+    if (!show) return;
+    void load(search);
+    // 只对库变化做出反应；search/show 由各自的交互负责
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeVaultId]);
 
   const toggle = useCallback(async () => {
     if (show) {
@@ -160,6 +183,12 @@ export function ConversationHistoryMenu({
               autoFocus
             />
           </div>
+          {/* 过滤口径提示：下拉只列当前库的会话，不说清楚会像「历史记录丢了」 */}
+          {activeVault && (
+            <div className="composer-history-scope" data-testid="composer-history-scope">
+              {t('composer.historyScope', { vault: activeVault.name })}
+            </div>
+          )}
           <div className="composer-history-list">
             {items.length === 0 ? (
               <div className="composer-history-empty">
@@ -173,11 +202,15 @@ export function ConversationHistoryMenu({
                     const id = item.conversation.id;
                     const isRenaming = renamingId === id;
                     const channelType = item.conversation.channelType;
+                    // 当前正在看的会话 → 高亮（左侧强调条 + 「当前」标记）
+                    const isCurrent = !!activeConversationId && activeConversationId === id;
                     return (
                       <div
                         key={id}
-                        className={`composer-history-item${isRenaming ? ' is-renaming' : ''}`}
+                        className={`composer-history-item${isRenaming ? ' is-renaming' : ''}${isCurrent ? ' is-current' : ''}`}
                         data-testid="composer-history-item"
+                        data-current={isCurrent ? 'true' : undefined}
+                        aria-current={isCurrent ? 'true' : undefined}
                       >
                         {isRenaming ? (
                           <input
@@ -206,6 +239,11 @@ export function ConversationHistoryMenu({
                               {channelType && channelType !== 'desktop' && (
                                 <span className="composer-history-channel">
                                   {channelType === 'weixin' ? '微信' : channelType}
+                                </span>
+                              )}
+                              {isCurrent && (
+                                <span className="composer-history-current" data-testid="composer-history-current">
+                                  {t('composer.currentSession')}
                                 </span>
                               )}
                               <span className="composer-history-time">

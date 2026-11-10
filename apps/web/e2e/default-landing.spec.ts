@@ -69,8 +69,9 @@ test.describe('默认落点：打开即进知识库', () => {
     await expect(cta).toBeVisible();
     await cta.click();
 
-    // 落到仓库管理器：面板可见，且「创建」动作可用（而不是把自己又关回去）
-    await expect(page.locator('.vm-action-btn-primary')).toBeVisible({ timeout: 5_000 });
+    // 落到仓库管理器：面板可见，且「创建」动作可用（而不是把自己又关回去）。
+    // 动作卡整卡可点（testid 稳定），旧版是 .vm-action-btn-primary 内嵌按钮。
+    await expect(page.locator('[data-testid="vault-create-action"]')).toBeVisible({ timeout: 5_000 });
   });
 
   test('入口的 query 在重定向中原样保留（?vault= / ?file= 是跨路由深链参数）', async ({ page }) => {
