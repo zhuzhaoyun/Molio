@@ -144,6 +144,7 @@
         "market-community",
         "kb-create-at-root",
         "kb-tree-refresh-search",
+        "kb-sse-focus",
         "kb-chat-resume-multi",
         "kb-chat-resume",
         "kb-tab-drag",
@@ -653,6 +654,10 @@
     "kb-tree-refresh-search": {
       "priority": "P1",
       "file": "kb-tree-refresh-search.spec.ts"
+    },
+    "kb-sse-focus": {
+      "priority": "P1",
+      "file": "kb-sse-focus.spec.ts"
     },
     "composer-skill-palette": {
       "priority": "P1",
