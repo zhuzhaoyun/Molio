@@ -44,6 +44,9 @@ describe('bundled quiz-repractice skill', () => {
     assert.ok(parsed.instructions.includes('部分命中数 × 0.5'), 'score formula must be pinned');
     assert.ok(parsed.instructions.includes('X 必须等于逐点行的加权总和'), 'score and breakdown must agree');
     assert.ok(parsed.instructions.includes('题目指纹'), 'fingerprint line is bookkeeping — ignore when grading');
+    // 指纹边界（PR #405 审查反馈）：存档丢 quote + 前端现算含 quote ⇒ 带 quote 存档跨会话指纹必变。
+    assert.ok(parsed.instructions.includes('含 sources.quote'), 'fingerprint canonical includes sources.quote');
+    assert.ok(parsed.instructions.includes('不是重建错误'), 'quote loss is an archive-side loss, not a reconstruction bug');
     // 移除协议：答对才问；客观题判分不进对话（agent 无从自行得知对错）；
     // 移空删整文件；不生成新题。
     assert.ok(parsed.instructions.includes('移除'), 'removal offer after correct answers');
