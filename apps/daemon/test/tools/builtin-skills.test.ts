@@ -28,6 +28,14 @@ describe('builtin wiki operation skills', () => {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
+  const readFrontmatter = (name: string): string => {
+    const content = fs.readFileSync(path.join(skillsDir, name, 'SKILL.md'), 'utf8');
+    // Tolerate CRLF (Windows CI checks out with core.autocrlf=true).
+    const fmMatch = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+    assert.ok(fmMatch, `${name} SKILL.md should start with YAML frontmatter`);
+    return fmMatch![1]!;
+  };
+
   for (const name of WIKI_SKILLS) {
     describe(`${name} skill`, () => {
       const skillMdPath = path.join(skillsDir, name, 'SKILL.md');
@@ -36,13 +44,8 @@ describe('builtin wiki operation skills', () => {
         assert.ok(fs.existsSync(skillMdPath), `missing installed ${skillMdPath}`);
         const content = fs.readFileSync(skillMdPath, 'utf8');
 
-        // Tolerate CRLF (Windows CI checks out with core.autocrlf=true).
-        const fmMatch = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
-        assert.ok(fmMatch, 'SKILL.md should start with YAML frontmatter');
-        const frontmatter = fmMatch![1]!;
-
-        assert.match(frontmatter, new RegExp(`name:\\s*${name}\\b`), 'frontmatter name must match skill dir');
-        assert.match(frontmatter, /description:\s*[\s\S]/, 'frontmatter must have a description');
+        assert.match(content, new RegExp(`name:\\s*${name}\\b`), 'frontmatter name must match skill dir');
+        assert.match(content, /description:\s*[\s\S]/, 'frontmatter must have a description');
       });
 
       it('lists trigger keywords so the agent can route intent', () => {
@@ -51,6 +54,31 @@ describe('builtin wiki operation skills', () => {
         // chat-typed commands (入库/构建/健康检查/归档) hit the skill reliably.
         assert.match(content, /Triggers on:/i, 'description should list "Triggers on:" keywords');
       });
+
+      it('has exactly one version key and no stray fence lines in frontmatter', () => {
+        const frontmatter = readFrontmatter(name);
+        const versionLines = frontmatter.split(/\r?\n/).filter((line) => /^version:\s*/.test(line));
+        assert.equal(
+          versionLines.length,
+          1,
+          `${name} frontmatter must contain exactly one version: key (a duplicate is a merge-conflict artifact)`
+        );
+        assert.ok(!frontmatter.includes('```'), `${name} frontmatter must not contain a stray code-fence line (merge artifact)`);
+      });
     });
   }
+
+  describe('wiki skill version discipline', () => {
+    // apps/daemon/CLAUDE.md: wiki-* 五件套（build/query/ingest/save/lint）
+    // 同版本号共进——改任一 skill 时五个 version 一起 bump 到同一版本。
+    it('all five wiki skills share the same version', () => {
+      const versions = WIKI_SKILLS.map((name) => {
+        const match = readFrontmatter(name).match(/^version:\s*(\S+)/m);
+        assert.ok(match, `${name} frontmatter must have a version`);
+        return `${name}=${match![1]}`;
+      });
+      const unique = new Set(versions.map((entry) => entry.split('=')[1]));
+      assert.equal(unique.size, 1, `wiki-* skills must share one version, got: ${versions.join(', ')}`);
+    });
+  });
 });
