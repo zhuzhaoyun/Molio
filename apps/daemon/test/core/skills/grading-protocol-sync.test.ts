@@ -15,8 +15,8 @@ const FROZEN_GRADED_FRAGMENTS: { fragment: string; why: string }[] = [
   { fragment: '题目指纹', why: 'fingerprint line is bookkeeping — ignore when grading' },
 ];
 
-// 有第三处调用方（tutor）后在此加一行。
-const FROZEN_PROTOCOL_FILES = ['quiz-generate', 'quiz-repractice'];
+// 第三处调用方 tutor 已接入；第四处调用方在此加一行。
+const FROZEN_PROTOCOL_FILES = ['quiz-generate', 'quiz-repractice', 'tutor'];
 
 describe('grading protocol cross-skill sync', () => {
   it('every grading-capable skill carries the frozen protocol core verbatim', () => {
