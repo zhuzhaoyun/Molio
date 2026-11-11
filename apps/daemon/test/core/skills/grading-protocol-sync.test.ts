@@ -32,4 +32,30 @@ describe('grading protocol cross-skill sync', () => {
       }
     }
   });
+
+  it('twin copies (quiz-repractice / tutor) keep the whole section byte-identical except the sync parenthetical', () => {
+    // quiz-generate 的导语与措辞本就与孪生副本不同（历史事实，只受片段钉住）；
+    // quiz-repractice 与 tutor 两份必须整节逐字一致（括注除外）——节内任何
+    // 「顺手补一句」都是第三变体的开端，漂移在这里拦住。
+    const sectionOf = (skill: string): string => {
+      const md = fs.readFileSync(path.join(resolveSkillsSourceDir(), skill, 'SKILL.md'), 'utf8');
+      const start = md.indexOf('### 解答题批改');
+      assert.ok(start >= 0, `${skill}/SKILL.md has no 解答题批改 section`);
+      // 节边界 = 下一个任意层级的标题（### 或 ##）——quiz-repractice 节后是 ### 4. 移除，tutor 节后是 ## 自检
+      const h3 = md.indexOf('\n### ', start + 1);
+      const h2 = md.indexOf('\n## ', start + 1);
+      const candidates = [h3, h2].filter((i) => i > 0);
+      const next = candidates.length > 0 ? Math.min(...candidates) : md.length;
+      return md.slice(start, next);
+    };
+    const stripParenthetical = (section: string): string =>
+      section.replace(/（本节与[^）]*）/, '（SYNC-PARENTHETICAL）');
+    const repri = stripParenthetical(sectionOf('quiz-repractice'));
+    const tutor = stripParenthetical(sectionOf('tutor'));
+    assert.equal(
+      tutor,
+      repri,
+      'tutor/SKILL.md 解答题批改 drifted from quiz-repractice — the twin copies must stay byte-identical except the sync parenthetical',
+    );
+  });
 });
