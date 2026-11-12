@@ -50,6 +50,8 @@ describe('bundled tutor skill', () => {
     assert.ok(parsed.instructions.includes('告诉我'), 'agent invites the user to report results — without it the loop stalls silently');
     // 反馈调整（教学的核心新行为）
     assert.ok(parsed.instructions.includes('变式'), 'wrong answer → re-teach from another angle + variant question');
+    // 真机回归（2026-11-12，glm）：反馈回合以 sandbox-suggest 替代变式题收尾 → 钉死变式题不可替代
+    assert.ok(parsed.instructions.includes('不能替代变式题'), 'a sandbox suggestion must not replace the variant question');
     // 教程沉淀（C2）：确认后才写、一次性询问、日期在前文件名
     assert.ok(parsed.instructions.includes('教程/'), 'tutorials land in 教程/');
     assert.ok(parsed.instructions.includes('<日期>-<主题>.md'), 'filename is date-first, aligned with 题库/');
