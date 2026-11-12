@@ -23,7 +23,8 @@ describe('grading protocol cross-skill sync', () => {
     for (const skill of FROZEN_PROTOCOL_FILES) {
       const file = path.join(resolveSkillsSourceDir(), skill, 'SKILL.md');
       assert.ok(fs.existsSync(file), `missing ${file}`);
-      const md = fs.readFileSync(file, 'utf8');
+      // 归一化行尾：Windows runner 是 CRLF checkout，冻结串里的 \n 只按 LF 比
+      const md = fs.readFileSync(file, 'utf8').replace(/\r\n/g, '\n');
       for (const { fragment, why } of FROZEN_GRADED_FRAGMENTS) {
         assert.ok(
           md.includes(fragment),
@@ -38,7 +39,9 @@ describe('grading protocol cross-skill sync', () => {
     // quiz-repractice 与 tutor 两份必须整节逐字一致（括注除外）——节内任何
     // 「顺手补一句」都是第三变体的开端，漂移在这里拦住。
     const sectionOf = (skill: string): string => {
-      const md = fs.readFileSync(path.join(resolveSkillsSourceDir(), skill, 'SKILL.md'), 'utf8');
+      const md = fs
+        .readFileSync(path.join(resolveSkillsSourceDir(), skill, 'SKILL.md'), 'utf8')
+        .replace(/\r\n/g, '\n');
       const start = md.indexOf('### 解答题批改');
       assert.ok(start >= 0, `${skill}/SKILL.md has no 解答题批改 section`);
       // 节边界 = 下一个任意层级的标题（### 或 ##）——quiz-repractice 节后是 ### 4. 移除，tutor 节后是 ## 自检
