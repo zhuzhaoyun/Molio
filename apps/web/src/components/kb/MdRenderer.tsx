@@ -138,7 +138,18 @@ export const MdRenderer = memo(function MdRenderer({
           untrusted ? { untrusted: true } : undefined,
         );
         const finalHtml = postProcessHtml(html, readingTime, renderer);
-        if (!cancelled) setRendered({ html: finalHtml, source: content });
+        // 关键：html 没变就返回原引用（React bail out）。MathJax 就绪后的二次
+        // doRender 对无公式文档产出**逐字节相同**的 html——若照常 setState（新
+        // 对象），React 19 会在 commitUpdate 里对 dangerouslySetInnerHTML 重新
+        // 赋值 innerHTML（即使字符串相同），整个子树被换掉，用户正拖选的选区
+        // 随之清空。2026-09-30（#283 把 state 从字符串改为对象）起 nightly 的
+        // kb-doc-context-menu 5 连红即此机制，快机上 MathJax 先于用户就绪所以
+        // 本地难复现。
+        if (!cancelled) {
+          setRendered(prev => (prev.html === finalHtml && prev.source === content
+            ? prev
+            : { html: finalHtml, source: content }));
+        }
       } catch (error) {
         console.error('Markdown rendering error:', error);
         if (!cancelled) setRendered({ html: `<p>Error rendering content: ${String(error)}</p>`, source: content });
