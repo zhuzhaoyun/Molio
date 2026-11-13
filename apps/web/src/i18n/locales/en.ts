@@ -127,6 +127,7 @@ const en: Record<string, string> = {
   'quiz.correct': 'Correct',
   'quiz.wrong': 'Incorrect',
   'quiz.answer': 'Answer: {answer}',
+  'quiz.yourAnswer': 'Your answer: {answer}',
   'quiz.explanation': 'Explanation',
   'quiz.sources': 'Sources',
   'quiz.submit': 'Submit answers',

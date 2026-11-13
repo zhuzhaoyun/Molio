@@ -289,6 +289,38 @@ test.describe('Quiz interaction block', () => {
     ).toHaveClass(/wrong/);
   });
 
+  test('marks picked options and shows your answer after submitting', async ({ page }) => {
+    await mockChatRun(page, { runId: 'run-1', conversationId: 'conv-1', script: SCRIPT });
+    await gotoHome(page);
+    await sendMessage(page, '出几道题');
+
+    const card = page.locator('[data-testid="quiz-card"]');
+    await expect(card).toBeVisible({ timeout: 10_000 });
+
+    // 多选题故意错答：选 A（对）和 C（错），漏掉答案里的 B——复现「颜色只能看出
+    // 对错、看不出自己当时选了哪些」：✓ 标记（data-picked）只表达「选没选」，
+    // 绿/红颜色只表达「对不对」，两条信息解耦后四种状态一目了然。
+    await card.locator('[data-testid="quiz-option"][data-question-id="q1"][data-key="A"]').click();
+    await card.locator('[data-testid="quiz-option"][data-question-id="q2"][data-key="A"]').click();
+    await card.locator('[data-testid="quiz-option"][data-question-id="q2"][data-key="C"]').click();
+    await card.locator('[data-testid="quiz-option"][data-question-id="q3"][data-key="B"]').click();
+    await card.locator('[data-testid="quiz-submit"]').click();
+
+    // 选中标记：选过的一律 data-picked=true（含选错的 C）；漏选的 B 不得标。
+    await expect(card.locator('[data-testid="quiz-option"][data-question-id="q1"][data-key="A"]')).toHaveAttribute('data-picked', 'true');
+    await expect(card.locator('[data-testid="quiz-option"][data-question-id="q2"][data-key="A"]')).toHaveAttribute('data-picked', 'true');
+    await expect(card.locator('[data-testid="quiz-option"][data-question-id="q2"][data-key="C"]')).toHaveAttribute('data-picked', 'true');
+    await expect(card.locator('[data-testid="quiz-option"][data-question-id="q2"][data-key="B"]')).toHaveAttribute('data-picked', 'false');
+    await expect(card.locator('[data-testid="quiz-option"][data-question-id="q3"][data-key="B"]')).toHaveAttribute('data-picked', 'true');
+
+    // 「你的答案」行：客观题逐题显示，选项按字母序（与判分归一化同源、与「正确答案」同格式）。
+    const yourAnswers = card.locator('[data-testid="quiz-your-answer"]');
+    await expect(yourAnswers).toHaveCount(3);
+    await expect(yourAnswers.nth(0)).toContainText('A');
+    await expect(yourAnswers.nth(1)).toContainText('A / C');
+    await expect(yourAnswers.nth(2)).toContainText('B');
+  });
+
   test('shows a generating placeholder while the quiz fence is still streaming', async ({ page }) => {
     await mockChatRun(page, {
       runId: 'run-1',
@@ -1050,6 +1082,8 @@ test.describe('Quiz interaction block', () => {
     await submit.click();
     await expect(card.locator('[data-testid="quiz-result"]').locator('nth=0')).toHaveAttribute('data-correct', 'false');
     await expect(card.locator('[data-testid="quiz-answer"]')).toHaveText('正确答案：25 / 二十五');
+    // 填空不显示「你的答案」行：作答原文留在上方输入框里可见，再印一行是重复。
+    await expect(card.locator('[data-testid="quiz-your-answer"]')).toHaveCount(0);
     await expect(card.locator('[data-testid="quiz-explanation"]')).toContainText('25 分钟');
   });
 
