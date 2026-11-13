@@ -201,6 +201,13 @@ export {
   MARKET_TINTS,
 } from './market.js';
 
+export {
+  SILICONFLOW,
+  SILICONFLOW_MODELS,
+  SILICONFLOW_DEFAULT_MODEL,
+} from './siliconflow.js';
+export type { SiliconFlowModel } from './siliconflow.js';
+
 export { CODEX_PROVIDER_PRESETS, getCodexPreset } from './codex-provider.js';
 export type {
   CodexWireApi,

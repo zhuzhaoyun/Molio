@@ -58,20 +58,40 @@ describe('resolveClaudeModels', () => {
       assert.ok(r);
       // 跟随默认的真实默认
       assert.equal(r.defaultModel?.label, 'glm-5.3-flash[1M]');
-      // opus 槽位：主行 = NAME（glm-5.3-flash），发送 id = opus，detail 带真实映射
+      // opus/sonnet 映射到同一模型 → 合并为一行；主行 = 首个槽位的 NAME
       const opus = r.models.find((m) => m.id === 'opus');
       assert.ok(opus);
       assert.equal(opus.label, 'glm-5.3-flash');
-      assert.equal(opus.detail, 'Opus 映射 · glm-5.3-flash[1M]');
-      // 无 NAME 时回退 MODEL 本身
-      const sonnet = r.models.find((m) => m.id === 'sonnet');
-      assert.equal(sonnet?.label, 'glm-5.3-flash[1M]');
-      assert.ok(sonnet?.detail?.startsWith('Sonnet 映射'));
-      // 无映射的槽位不出现行（haiku 有 MODEL 无行吗？——有映射就有一行）
+      assert.equal(opus.detail, 'Opus/Sonnet 映射 · glm-5.3-flash[1M]');
+      assert.equal(r.models.find((m) => m.id === 'sonnet'), undefined);
+      // 无映射的槽位不出现行（haiku 有映射就有一行）
       assert.ok(r.models.find((m) => m.id === 'haiku'));
       assert.equal(r.models.find((m) => m.id === 'fable'), undefined);
       // 静态官方 ID 不混入
       assert.equal(r.models.find((m) => m.id === 'claude-opus-4-5'), undefined);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('三档映射同一模型（SiliconFlow 免费模型）→ 合并为一行', () => {
+    const dir = withSettings({
+      env: {
+        ANTHROPIC_MODEL: 'Qwen/Qwen3-8B',
+        ANTHROPIC_DEFAULT_SONNET_MODEL: 'Qwen/Qwen3-8B',
+        ANTHROPIC_DEFAULT_HAIKU_MODEL: 'Qwen/Qwen3-8B',
+        ANTHROPIC_DEFAULT_OPUS_MODEL: 'Qwen/Qwen3-8B',
+      },
+    });
+    try {
+      const r = resolveClaudeModels({ settingsDir: dir, env: {} });
+      assert.ok(r);
+      const rows = r.models.filter((m) => m.label === 'Qwen/Qwen3-8B');
+      assert.equal(rows.length, 1);
+      assert.equal(rows[0]?.id, 'opus');
+      assert.equal(rows[0]?.detail, 'Opus/Sonnet/Haiku 映射 · Qwen/Qwen3-8B');
+      // 显式 ANTHROPIC_MODEL 被同一行覆盖，不再追加「自定义模型」
+      assert.equal(r.models.find((m) => m.detail === '自定义模型'), undefined);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

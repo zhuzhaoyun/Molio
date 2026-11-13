@@ -10,10 +10,14 @@ import {
   detectDshProvider,
   buildProviderEnv,
   buildDshEnv,
+  getPrimaryModel,
+  applyPrimaryModel,
+  EMPTY_CLAUDE_MODEL_MAPPING,
   type ProviderPreset,
   type CodexProviderPreset,
   type HermesProviderPreset,
   type DshProviderPreset,
+  type ClaudeModelMapping,
 } from './providers';
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'error';
@@ -21,14 +25,6 @@ type SaveState = 'idle' | 'saving' | 'saved' | 'error';
 interface ProviderConfigProps {
   agentId: string;
 }
-
-interface ModelMapping {
-  sonnet: string;
-  haiku: string;
-  opus: string;
-}
-
-const EMPTY_MAPPING: ModelMapping = { sonnet: '', haiku: '', opus: '' };
 
 export function ProviderConfig({ agentId }: ProviderConfigProps) {
   const { t } = useI18n();
@@ -38,7 +34,7 @@ export function ProviderConfig({ agentId }: ProviderConfigProps) {
   const [providerId, setProviderId] = useState('deepseek');
   const [apiKey, setApiKey] = useState('');
   const [customBaseUrl, setCustomBaseUrl] = useState('');
-  const [mapping, setMapping] = useState<ModelMapping>(EMPTY_MAPPING);
+  const [mapping, setMapping] = useState<ClaudeModelMapping>(EMPTY_CLAUDE_MODEL_MAPPING);
   const [showMapping, setShowMapping] = useState(false);
   const [saveState, setSaveState] = useState<SaveState>('idle');
 
@@ -136,11 +132,15 @@ export function ProviderConfig({ agentId }: ProviderConfigProps) {
       if (detected === 'custom') {
         setCustomBaseUrl(env['ANTHROPIC_BASE_URL'] ?? '');
       }
-      // Load saved model mapping
-      const savedMapping: ModelMapping = {
-        sonnet: env['ANTHROPIC_DEFAULT_SONNET_MODEL'] ?? '',
-        haiku: env['ANTHROPIC_DEFAULT_HAIKU_MODEL'] ?? '',
-        opus: env['ANTHROPIC_DEFAULT_OPUS_MODEL'] ?? '',
+      // Load saved model mapping. Providers with a 1M-context suffix persist
+      // `model[1M]` while the selector lists the raw model id — strip only for
+      // those providers (buildProviderEnv re-adds it on save).
+      const detectedPreset = CLAUDE_PROVIDERS.find((p) => p.id === detected);
+      const stripSuffix = (v: string) => (detectedPreset?.useOneMContextSuffix ? v.replace(/\[1M\]$/, '') : v);
+      const savedMapping: ClaudeModelMapping = {
+        sonnet: stripSuffix(env['ANTHROPIC_DEFAULT_SONNET_MODEL'] ?? ''),
+        haiku: stripSuffix(env['ANTHROPIC_DEFAULT_HAIKU_MODEL'] ?? ''),
+        opus: stripSuffix(env['ANTHROPIC_DEFAULT_OPUS_MODEL'] ?? ''),
       };
       if (savedMapping.sonnet || savedMapping.haiku || savedMapping.opus) {
         setMapping(savedMapping);
@@ -178,6 +178,10 @@ export function ProviderConfig({ agentId }: ProviderConfigProps) {
       // endpoint); presets without one clear the field.
       const p = HERMES_PROVIDERS.find((x) => x.id === id);
       setCustomBaseUrl(p?.defaultBaseUrl ?? '');
+      // Presets with a model list (siliconflow) pre-fill its first — usually a
+      // free model. hermes cannot discover a custom endpoint's catalog, so a
+      // blank field would leave the user guessing.
+      if (p && p.models.length > 0) setHermesModel(p.models[0]!.id);
       return;
     }
     if (isDsh) {
@@ -209,10 +213,10 @@ export function ProviderConfig({ agentId }: ProviderConfigProps) {
           opus: p.defaultModelMapping.opus ?? '',
         });
       } else {
-        setMapping(EMPTY_MAPPING);
+        setMapping(EMPTY_CLAUDE_MODEL_MAPPING);
       }
     } else {
-      setMapping(EMPTY_MAPPING);
+      setMapping(EMPTY_CLAUDE_MODEL_MAPPING);
     }
   }, [isCodex, isHermes, isDsh, markTouched]);
 
@@ -265,6 +269,20 @@ export function ProviderConfig({ agentId }: ProviderConfigProps) {
 
   const isThirdParty = providerId !== 'anthropic';
 
+  /** Claude 第三方 provider（有模型目录时展示主模型下拉）。 */
+  const claudePreset = !isCodex && !isHermes && !isDsh && isThirdParty
+    ? (provider as ProviderPreset)
+    : undefined;
+  const claudeModelOptions = claudePreset?.models ?? [];
+  const claudePrimaryModel = getPrimaryModel(mapping);
+  const claudePrimaryInList = claudeModelOptions.some((m) => m.id === claudePrimaryModel);
+  const codexPreset = isCodex ? (provider as CodexProviderPreset) : undefined;
+  const modelsUrl = isCodex ? codexPreset?.modelsUrl : claudePreset?.modelsUrl;
+  const hasFreeModels = Boolean(
+    claudePreset?.models.some((m) => m.free)
+    || codexPreset?.models.some((m) => m.free),
+  );
+
   if (!expanded) {
     // A fresh hermes install is not configured — say so instead of showing the
     // form-default provider name (which reads like a saved, working choice).
@@ -302,6 +320,7 @@ export function ProviderConfig({ agentId }: ProviderConfigProps) {
         <label className="rt-provider-form__field">
           <span className="rt-provider-form__label">{t('runtimes.provider')}</span>
           <select
+            data-testid="provider-select"
             className="rt-provider-form__select"
             value={providerId}
             onChange={(e) => handleProviderChange(e.target.value)}
@@ -324,18 +343,29 @@ export function ProviderConfig({ agentId }: ProviderConfigProps) {
 
         {isHermes && (
           <>
-            {/* Model — free-form; blank = hermes default (session/new returns
-                the live model list, so no per-preset suggestions here) */}
+            {/* Model — free-form; blank = hermes default. Presets that ship a
+                model list (siliconflow) only offer suggestions: the field stays
+                editable and blank still means "let hermes decide". */}
             <label className="rt-provider-form__field">
               <span className="rt-provider-form__label">{t('runtimes.model')}</span>
               <input
                 data-testid="hermes-model-field"
                 type="text"
                 className="rt-provider-form__input"
+                list={hermesPreset && hermesPreset.models.length > 0 ? 'hermes-model-suggestions' : undefined}
                 value={hermesModel}
                 onChange={(e) => { setHermesModel(e.target.value); markTouched(); }}
                 placeholder="deepseek-chat"
               />
+              {hermesPreset && hermesPreset.models.length > 0 && (
+                <datalist id="hermes-model-suggestions">
+                  {hermesPreset.models.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.label}{m.free ? t('runtimes.freeSuffix') : ''}
+                    </option>
+                  ))}
+                </datalist>
+              )}
               <span className="rt-provider-form__hint">{t('runtimes.hermesModelHint')}</span>
             </label>
 
@@ -379,7 +409,11 @@ export function ProviderConfig({ agentId }: ProviderConfigProps) {
                     value={inList || !codexModel ? (codexModel || options[0]?.id || '') : ''}
                     onChange={(e) => { setCodexModel(e.target.value); markTouched(); }}
                   >
-                    {options.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
+                    {options.map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {m.label}{m.free ? t('runtimes.freeSuffix') : ''}
+                      </option>
+                    ))}
                   </select>
                 );
               }
@@ -395,6 +429,10 @@ export function ProviderConfig({ agentId }: ProviderConfigProps) {
               );
             })()}
           </label>
+        )}
+
+        {isCodex && codexPreset?.models.some((m) => m.free) && (
+          <p className="rt-provider-form__hint">{t('runtimes.freeModelsHint')}</p>
         )}
 
         {isCodex && providerId === 'custom' && (
@@ -462,6 +500,43 @@ export function ProviderConfig({ agentId }: ProviderConfigProps) {
           </label>
         )}
 
+        {/* Primary model selector — Claude third-party providers with a catalog.
+            Picking one sets sonnet+opus (haiku follows unless customized), so
+            the main model is visible instead of hidden in the advanced mapping. */}
+        {claudePreset && claudeModelOptions.length > 0 && (
+          <label className="rt-provider-form__field">
+            <span className="rt-provider-form__label">{t('runtimes.model')}</span>
+            <select
+              data-testid="claude-model-field"
+              className="rt-provider-form__select"
+              value={
+                claudePrimaryInList
+                  ? claudePrimaryModel
+                  : claudePrimaryModel
+                    ? '__custom__'
+                    : (claudeModelOptions[0]?.id ?? '')
+              }
+              onChange={(e) => {
+                if (e.target.value === '__custom__') return;
+                setMapping(applyPrimaryModel(mapping, e.target.value));
+                markTouched();
+              }}
+            >
+              {!claudePrimaryInList && claudePrimaryModel && (
+                <option value="__custom__">{claudePrimaryModel}</option>
+              )}
+              {claudeModelOptions.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.label}{m.free ? t('runtimes.freeSuffix') : ''}
+                </option>
+              ))}
+            </select>
+            {hasFreeModels && (
+              <span className="rt-provider-form__hint">{t('runtimes.freeModelsHint')}</span>
+            )}
+          </label>
+        )}
+
         {/* Base URL (for claude custom provider) */}
         {!isCodex && !isHermes && !isDsh && providerId === 'custom' && (
           <label className="rt-provider-form__field">
@@ -523,6 +598,18 @@ export function ProviderConfig({ agentId }: ProviderConfigProps) {
               </div>
             )}
           </div>
+        )}
+
+        {/* Model catalog link (e.g. SiliconFlow 模型广场) */}
+        {modelsUrl && (
+          <a
+            className="rt-provider-form__link"
+            href={modelsUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            {t('runtimes.moreModels')} →
+          </a>
         )}
 
         {/* Provider docs link */}

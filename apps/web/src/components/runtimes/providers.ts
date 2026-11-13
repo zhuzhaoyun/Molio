@@ -11,19 +11,31 @@
  *    to the provider's actual model identifiers)
  */
 
+import {
+  CODEX_PROVIDER_PRESETS,
+  HERMES_PROVIDER_PRESETS,
+  SILICONFLOW,
+  SILICONFLOW_DEFAULT_MODEL,
+  SILICONFLOW_MODELS,
+  type CodexProviderPreset,
+  type HermesProviderPreset,
+} from '@molio/contracts';
+
 export interface ProviderPreset {
   id: string;
   name: string;
   /** Base URL for the API. Empty string = use default (Anthropic official). */
   baseUrl: string;
   /** Available models for this provider. */
-  models: { id: string; label: string }[];
+  models: { id: string; label: string; free?: boolean }[];
   /** Hint text for API key input (e.g. "sk-..." prefix). */
   apiKeyHint?: string;
   /** Link to the provider's API key page. */
   apiKeyUrl?: string;
   /** Link to provider docs. */
   docsUrl?: string;
+  /** Link to the provider's model catalog (e.g. SiliconFlow 模型广场). */
+  modelsUrl?: string;
   /**
    * Default model mapping for Claude Code internal aliases.
    * Claude Code routes all requests through sonnet/haiku/opus aliases;
@@ -94,20 +106,19 @@ export const CLAUDE_PROVIDERS: ProviderPreset[] = [
   },
   {
     id: 'siliconflow',
-    name: 'SiliconFlow (硅基流动)',
-    baseUrl: 'https://api.siliconflow.cn/v1',
-    models: [
-      { id: 'deepseek-ai/DeepSeek-V3', label: 'DeepSeek V3' },
-      { id: 'deepseek-ai/DeepSeek-R1', label: 'DeepSeek R1' },
-      { id: 'Qwen/Qwen2.5-72B-Instruct', label: 'Qwen 2.5 72B' },
-    ],
+    name: SILICONFLOW.name,
+    // Claude Code 走 Anthropic Messages 协议，官方要求根地址并保留结尾斜杠；
+    // 写成 OpenAI 兼容的 /v1 会直接 404/401。
+    baseUrl: SILICONFLOW.anthropicBaseUrl,
+    models: SILICONFLOW_MODELS,
     apiKeyHint: 'sk-...',
-    apiKeyUrl: 'https://cloud.siliconflow.cn/account/ak',
-    docsUrl: 'https://docs.siliconflow.cn/',
+    apiKeyUrl: SILICONFLOW.apiKeyUrl,
+    docsUrl: SILICONFLOW.docsUrl,
+    modelsUrl: SILICONFLOW.modelPlazaUrl,
     defaultModelMapping: {
-      sonnet: 'deepseek-ai/DeepSeek-V3',
-      haiku: 'deepseek-ai/DeepSeek-V3',
-      opus: 'deepseek-ai/DeepSeek-R1',
+      sonnet: SILICONFLOW_DEFAULT_MODEL,
+      haiku: SILICONFLOW_DEFAULT_MODEL,
+      opus: SILICONFLOW_DEFAULT_MODEL,
     },
   },
   {
@@ -209,6 +220,43 @@ function formatClaudeModelId(
   return modelId;
 }
 
+export interface ClaudeModelMapping {
+  sonnet: string;
+  haiku: string;
+  opus: string;
+}
+
+export const EMPTY_CLAUDE_MODEL_MAPPING: ClaudeModelMapping = {
+  sonnet: '',
+  haiku: '',
+  opus: '',
+};
+
+/**
+ * The model shown in the primary selector. `sonnet` is Claude Code's main
+ * alias (ANTHROPIC_MODEL is derived from it), so it wins; fall back to the
+ * other tiers for configs that only set one of them.
+ */
+export function getPrimaryModel(mapping: ClaudeModelMapping): string {
+  return mapping.sonnet || mapping.opus || mapping.haiku;
+}
+
+/**
+ * Apply a primary model selection. sonnet + opus follow the choice; haiku
+ * follows only when it wasn't customized separately (fast-model override).
+ */
+export function applyPrimaryModel(
+  mapping: ClaudeModelMapping,
+  modelId: string,
+): ClaudeModelMapping {
+  const haikuFollows = !mapping.haiku || mapping.haiku === mapping.sonnet;
+  return {
+    sonnet: modelId,
+    opus: modelId,
+    haiku: haikuFollows ? modelId : mapping.haiku,
+  };
+}
+
 /**
  * Codex CLI provider presets. Unlike CLAUDE_PROVIDERS (env-var based, applied
  * at spawn), these are applied by the daemon writing ~/.codex/config.toml +
@@ -217,13 +265,6 @@ function formatClaudeModelId(
  * Single source of truth: @molio/contracts (shared with the daemon's
  * codex-config.ts) — re-exported here so existing imports keep working.
  */
-import {
-  CODEX_PROVIDER_PRESETS,
-  HERMES_PROVIDER_PRESETS,
-  type CodexProviderPreset,
-  type HermesProviderPreset,
-} from '@molio/contracts';
-
 export type { CodexProviderPreset, HermesProviderPreset };
 export const CODEX_PROVIDERS: CodexProviderPreset[] = CODEX_PROVIDER_PRESETS;
 
