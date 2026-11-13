@@ -44,7 +44,9 @@ const HEALTH_TIMEOUT_MS = 5_000;
 export function defaultBaseUrl(): string {
   const explicit = process.env['MOLIO_DAEMON_URL'];
   if (explicit && explicit.trim()) return stripTrailingSlash(explicit.trim());
-  return `http://127.0.0.1:${process.env['MOLIO_PORT'] ?? 3100}`;
+  // MCPB / 客户端配置可能注入空串，不能拼出 http://127.0.0.1:
+  const port = process.env['MOLIO_PORT']?.trim() || '3100';
+  return `http://127.0.0.1:${port}`;
 }
 
 function stripTrailingSlash(url: string): string {

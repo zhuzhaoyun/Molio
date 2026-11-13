@@ -1,0 +1,54 @@
+{
+  "manifest_version": "0.3",
+  "name": "molio-kb",
+  "display_name": "Molio Knowledge Base",
+  "version": "0.1.2",
+  "description": "Read-only access to your Molio local knowledge base: search, read, browse, and AI Q&A.",
+  "long_description": "Molio is a local-first knowledge base app. This bundle exposes 7 strictly read-only tools over your vaults: full-text search, file reading with encoding/binary handling, tree browsing, vault listing, and grounded AI Q&A (async start/poll).\n\nRequires the Molio desktop app (or a Docker deployment of the Molio daemon) running on the same machine. Nothing is ever written back to your notes.",
+  "author": {
+    "name": "Molio",
+    "url": "https://molio.cn"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/zhuzhaoyun/Molio.git"
+  },
+  "homepage": "https://molio.cn/",
+  "documentation": "https://github.com/zhuzhaoyun/Molio/blob/main/apps/cli/README.md",
+  "support": "https://github.com/zhuzhaoyun/Molio/issues",
+  "icon": "icon.png",
+  "server": {
+    "type": "node",
+    "entry_point": "server/index.js",
+    "mcp_config": {
+      "command": "node",
+      "args": ["${__dirname}/server/index.js"],
+      "env": {
+        "MOLIO_PORT": "${user_config.molio_port}",
+        "MOLIO_DAEMON_URL": "${user_config.daemon_url}"
+      }
+    }
+  },
+  "user_config": {
+    "molio_port": {
+      "type": "string",
+      "title": "Molio daemon port",
+      "description": "Port of the local Molio daemon HTTP API.",
+      "default": "3100",
+      "required": false
+    },
+    "daemon_url": {
+      "type": "string",
+      "title": "Daemon URL",
+      "description": "Optional explicit daemon base URL (e.g. a NAS deployment). Leave empty to use http://127.0.0.1:<port>.",
+      "required": false
+    }
+  },
+  "keywords": ["knowledge-base", "notes", "search", "read-only", "local-first", "markdown"],
+  "compatibility": {
+    "platforms": ["darwin", "win32", "linux"],
+    "runtimes": {
+      "node": ">=20.0.0"
+    }
+  }
+}
