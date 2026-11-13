@@ -1,7 +1,11 @@
 // apps/web/src/stores/kbChatSessionsStore.ts
-import { useSyncExternalStore } from 'react';
+import { useMemo, useSyncExternalStore } from 'react';
 // kbChatPrompts 对本模块只有 type import（运行时无环）：标题/提示词常量的家在那边
-import { legacyWikiTitleFix } from '../components/kb/kbChatPrompts';
+import { legacyWikiTitleFix } from '../components/kb/kbChatPrompts.ts';
+// 当前活跃知识库 —— 会话标签按库隔离的唯一判据（见 sessionsOfVault）
+import { vaultStore, useActiveVaultId } from './vaultStore.ts';
+// 会话滚动记忆：记忆存在 ⇄ 标签还开着 ⇄ 切回恢复；标签关闭/换绑即删 ⇄ 重开贴底
+import { forgetChatScroll } from './chatScrollMemory.ts';
 
 export const MAX_CHAT_SESSIONS = 10;
 const STORAGE_KEY_SESSIONS = 'molio.kb.chatSessions';
@@ -14,8 +18,37 @@ export interface ChatSessionTab {
   title: string;
   conversationId: string | null;
   mode: ChatSessionMode;
-  vaultId?: string;
+  /**
+   * 归属的知识库 id。会话标签按库隔离：只显示当前库的会话（切库即隐藏，切回即恢复）。
+   *
+   * 三态：`'vault-x'` = 属于该库；`null` = **通用会话**（不属于任何库，任何库都可见）；
+   * `undefined` = 旧会话（隔离机制之前创建的，没有这个字段）→ 载入时迁移到当前活跃库。
+   */
+  vaultId?: string | null;
   filePath?: string | null;
+}
+
+/**
+ * 属于指定库的会话（可见集合）。
+ *
+ * 会话标签按知识库隔离的落点：切到另一个库 → 别的库的会话不出现在标签栏；
+ * 切回来 → 原样恢复（会话仍在底层清单里，controller 重新挂载后从 DB 拉历史）。
+ *
+ * 通用会话（`vaultId === null`）不属于任何库 → 任何库都可见（它是「还没进知识库
+ * 时的普通对话」，不该因为用户切了个库就凭空消失）。
+ */
+export function sessionsOfVault(
+  sessions: ChatSessionTab[],
+  vaultId: string | null | undefined,
+): ChatSessionTab[] {
+  const key = vaultId ?? null;
+  return sessions.filter((s) => {
+    // undefined = 尚未迁移的旧会话（载入时已迁移，运行时不该出现）→ 先不显示
+    if (s.vaultId === undefined) return false;
+    // null = 通用会话（不属于任何库）→ 任何库都可见
+    if (s.vaultId === null) return true;
+    return s.vaultId === key;
+  });
 }
 
 interface StoreState {
@@ -39,13 +72,21 @@ function readPersistedSessions(): ChatSessionTab[] {
       const arr = JSON.parse(raw);
       if (Array.isArray(arr)) {
         const sessions = arr as ChatSessionTab[];
+        let dirty = false;
         // 一次性迁移：旧版提示词片段标题 → 规范 wiki 标题（就地改写并回写 storage，
         // 之后这份脏数据不再存在）。用户重命名过的不受影响（见 legacyWikiTitleFix）。
-        let dirty = false;
         for (const s of sessions) {
           if (typeof s?.title !== 'string') continue;
           const fixed = legacyWikiTitleFix(s.mode, s.title);
           if (fixed) { s.title = fixed; dirty = true; }
+        }
+        // 一次性迁移：会话标签按库隔离之前创建的旧会话**没有 vaultId 字段**
+        // （undefined）→ 归属当前活跃库；没有活跃库则算通用会话（null）。
+        // 不迁移的话它们对不上任何库（永远不可见），用户会以为自己的会话没了。
+        // 只动 undefined：显式 null 表示「通用会话」（不属于任何库），要保留。
+        const activeVaultId = vaultStore.getActiveVaultId() ?? null;
+        for (const s of sessions) {
+          if (s.vaultId === undefined) { s.vaultId = activeVaultId; dirty = true; }
         }
         if (dirty) {
           try { localStorage.setItem(STORAGE_KEY_SESSIONS, JSON.stringify(sessions)); } catch { /* ignore */ }
@@ -95,16 +136,34 @@ function emit(next: StoreState) {
   for (const l of listeners) l();
 }
 
+/**
+ * 活动会话（**按当前库取作用域**）：别的库的会话不可见，不能当活动。
+ * 当前库没有对应活动会话时，回落到本库最后一个（切库后不至于面板全黑）。
+ *
+ * 模块级函数而非 store 上的方法：useSyncExternalStore 会把方法**拆出来**传，
+ * 那样 `this` 是 undefined（踩过：getActiveSession undefined 报错，整页白屏）。
+ */
+function activeSession(): ChatSessionTab | undefined {
+  const scoped = sessionsOfVault(state.sessions, vaultStore.getActiveVaultId());
+  return scoped.find((s) => s.id === state.activeSessionId) ?? scoped[scoped.length - 1];
+}
+
 export const kbChatSessionsStore = {
   subscribe(cb: () => void) {
     listeners.add(cb);
     return () => { listeners.delete(cb); };
   },
   getSessions(): ChatSessionTab[] { return state.sessions; },
-  getActiveSessionId(): string | null { return state.activeSessionId; },
-  getActiveSession(): ChatSessionTab | undefined {
-    return state.sessions.find((s) => s.id === state.activeSessionId);
+  /** 属于指定库的会话（可见集合）——标签栏/面板只渲染这一份。 */
+  getSessionsForVault(vaultId: string | null | undefined): ChatSessionTab[] {
+    return sessionsOfVault(state.sessions, vaultId);
   },
+  /**
+   * 活动会话（**按当前库取作用域**）：别的库的会话不可见，不能当活动。
+   * 当前库没有对应活动会话时，回落到本库最后一个（切库后不至于面板全黑）。
+   */
+  getActiveSession(): ChatSessionTab | undefined { return activeSession(); },
+  getActiveSessionId(): string | null { return activeSession()?.id ?? null; },
   isPanelOpen(): boolean { return state.panelOpen; },
   setPanelOpen(open: boolean) {
     if (state.panelOpen === open) return;
@@ -122,19 +181,23 @@ export const kbChatSessionsStore = {
   },
 
   openSession(tab: Omit<ChatSessionTab, 'id'>): OpenSessionResult {
-    // 同一 conversation 已开 → 去重激活
+    // 会话归属库：调用方给了就用它的（null = 通用会话），没给就归属当前活跃库。
+    const vaultId = tab.vaultId === undefined ? (vaultStore.getActiveVaultId() ?? null) : tab.vaultId;
+    const scoped = sessionsOfVault(state.sessions, vaultId);
+    // 同一 conversation 已开 → 去重激活（**只在本库内**去重：别的库的同名会话不可见）
     if (tab.conversationId) {
-      const existing = state.sessions.find((s) => s.conversationId === tab.conversationId);
+      const existing = scoped.find((s) => s.conversationId === tab.conversationId);
       if (existing) {
         emit({ ...state, activeSessionId: existing.id, panelOpen: true });
         return { opened: false, tab: existing };
       }
     }
-    if (state.sessions.length >= MAX_CHAT_SESSIONS) {
+    // 标签上限按库计：A 库占满不妨碍 B 库开新会话
+    if (scoped.length >= MAX_CHAT_SESSIONS) {
       return { opened: false, reason: 'limit' };
     }
     const id = nextId();
-    const newTab: ChatSessionTab = { ...tab, id };
+    const newTab: ChatSessionTab = { ...tab, id, vaultId };
     emit({ ...state, sessions: [...state.sessions, newTab], activeSessionId: id, panelOpen: true });
     return { opened: true, tab: newTab };
   },
@@ -147,10 +210,22 @@ export const kbChatSessionsStore = {
   closeSession(id: string) {
     const idx = state.sessions.findIndex((s) => s.id === id);
     if (idx === -1) return;
+    const closed = state.sessions[idx]!;
+    // 关标签即删滚动记忆（2026-11-09 拍板）：从历史重开同会话要贴底，
+    // 不能恢复一个陈旧的阅读位置。
+    forgetChatScroll(closed.conversationId);
     const sessions = state.sessions.filter((s) => s.id !== id);
     let activeSessionId = state.activeSessionId;
     if (activeSessionId === id) {
-      activeSessionId = sessions[idx - 1]?.id ?? sessions[0]?.id ?? null;
+      // 替补在**同一个库**里选：别的库的会话不可见，不能当活动。
+      // 优先取被关会话的前一个（与旧行为一致），否则取本库最后一个。
+      let next: ChatSessionTab | undefined;
+      for (let i = Math.min(idx, sessions.length) - 1; i >= 0; i--) {
+        const cand = sessions[i];
+        if (cand && cand.vaultId === closed.vaultId) { next = cand; break; }
+      }
+      const sameVault = sessions.filter((s) => s.vaultId === closed.vaultId);
+      activeSessionId = (next ?? sameVault[sameVault.length - 1])?.id ?? null;
     }
     emit({ ...state, sessions, activeSessionId });
   },
@@ -158,17 +233,15 @@ export const kbChatSessionsStore = {
   updateSession(id: string, patch: Partial<ChatSessionTab>) {
     let changed = false;
     const sessions = state.sessions.map((s) => {
-      if (s.id === id) { changed = true; return { ...s, ...patch }; }
-      return s;
-    });
-    if (changed) emit({ ...state, sessions });
-  },
-
-  /** vault 切换时清空所有会话的 @文件上下文（旧库引用失效）。会话本身保留。 */
-  clearFilePaths() {
-    let changed = false;
-    const sessions = state.sessions.map((s) => {
-      if (s.filePath) { changed = true; return { ...s, filePath: null }; }
+      if (s.id === id) {
+        // 会话换绑（历史就地切换到另一条 / 清空归零）：旧会话不再开着任何标签，
+        // 其滚动记忆一并作废 —— 否则从历史重开它会恢复一个无主的位置。
+        if (patch.conversationId !== undefined && s.conversationId && s.conversationId !== patch.conversationId) {
+          forgetChatScroll(s.conversationId);
+        }
+        changed = true;
+        return { ...s, ...patch };
+      }
       return s;
     });
     if (changed) emit({ ...state, sessions });
@@ -178,9 +251,14 @@ export const kbChatSessionsStore = {
    * 打开历史对话（切不像 VS Code Claude Code）：按 conversationId 去重激活；
    * 否则若有活动 qa 会话则「就地切换」其内容（不新建标签，返回 switched）；
    * 否则新建 qa 标签。目标是避免历史打开把标签越开越多。
+   *
+   * 去重与「就地切换」都只在本库内进行 —— 别的库的会话在当前库不可见，
+   * 拿它当活动会切到一个看不见的标签上。
    */
   openConversation(conversationId: string): OpenSessionResult {
-    const existing = state.sessions.find((s) => s.conversationId === conversationId);
+    const vaultId = vaultStore.getActiveVaultId() ?? null;
+    const scoped = sessionsOfVault(state.sessions, vaultId);
+    const existing = scoped.find((s) => s.conversationId === conversationId);
     if (existing) {
       if (state.activeSessionId !== existing.id || !state.panelOpen) {
         emit({ ...state, activeSessionId: existing.id, panelOpen: true });
@@ -189,7 +267,7 @@ export const kbChatSessionsStore = {
     }
     // 就地切换：活动会话是 qa 时，把它的 conversationId 换成目标会话（标题占位）。
     // 切换本身不加载——由调用方（面板 handleOpenConversation）触发该会话的加载。
-    const active = state.sessions.find((s) => s.id === state.activeSessionId);
+    const active = scoped.find((s) => s.id === state.activeSessionId);
     if (active && active.mode === 'qa') {
       const sessions = state.sessions.map((s) =>
         s.id === active.id ? { ...s, conversationId, title: '加载中…' } : s,
@@ -197,23 +275,44 @@ export const kbChatSessionsStore = {
       emit({ ...state, sessions, panelOpen: true });
       return { opened: false, tab: { ...active, conversationId, title: '加载中…' }, switched: true };
     }
-    if (state.sessions.length >= MAX_CHAT_SESSIONS) {
+    if (scoped.length >= MAX_CHAT_SESSIONS) {
       return { opened: false, reason: 'limit' };
     }
     const id = nextId();
     const newTab: ChatSessionTab = {
-      id, title: '加载中…', conversationId, mode: 'qa', filePath: null,
+      id, title: '加载中…', conversationId, mode: 'qa', filePath: null, vaultId,
     };
     emit({ ...state, sessions: [...state.sessions, newTab], activeSessionId: id, panelOpen: true });
     return { opened: true, tab: newTab };
   },
 };
 
+/**
+ * 当前库的会话标签（可见集合）。
+ *
+ * 会话标签按知识库隔离：切到另一个库 → 这里只返回那个库的会话（标签栏不再出现
+ * 旧库的标签）；切回来 → 原样恢复。订阅当前库，所以切库即时生效。
+ */
 export function useKbChatSessions(): ChatSessionTab[] {
-  return useSyncExternalStore(kbChatSessionsStore.subscribe, kbChatSessionsStore.getSessions, kbChatSessionsStore.getSessions);
+  const vaultId = useActiveVaultId();
+  const all = useSyncExternalStore(
+    kbChatSessionsStore.subscribe, kbChatSessionsStore.getSessions, kbChatSessionsStore.getSessions,
+  );
+  return useMemo(() => sessionsOfVault(all, vaultId), [all, vaultId]);
 }
+
+/**
+ * 当前库的活动会话 id。
+ *
+ * 底层 activeSessionId 是全局的，切库后可能指向别的库的会话（不可见）——
+ * 这里取当前库作用域内的那个（store.getActiveSessionId 已按库解析）。
+ * 额外订阅当前库：库一变，活动会话的作用域跟着变，必须重渲染。
+ */
 export function useKbChatActiveSessionId(): string | null {
-  return useSyncExternalStore(kbChatSessionsStore.subscribe, kbChatSessionsStore.getActiveSessionId, kbChatSessionsStore.getActiveSessionId);
+  useActiveVaultId();
+  return useSyncExternalStore(
+    kbChatSessionsStore.subscribe, kbChatSessionsStore.getActiveSessionId, kbChatSessionsStore.getActiveSessionId,
+  );
 }
 export function useKbChatPanelOpen(): boolean {
   return useSyncExternalStore(kbChatSessionsStore.subscribe, kbChatSessionsStore.isPanelOpen, kbChatSessionsStore.isPanelOpen);

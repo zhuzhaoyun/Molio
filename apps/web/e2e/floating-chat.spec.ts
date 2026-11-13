@@ -1207,8 +1207,18 @@ test.describe('Floating chat (方案 D)', () => {
   });
 
   test('悬浮按钮：构建在跑时菜单「构建Wiki」→ 三选一（与 KB 按钮同一互斥）', async ({ page }) => {
-    // frameDelay 400ms × 5 帧：第一个构建保持 running，第二次触发才能命中三选一
-    await mockChatRun(page, { frameDelay: 400 });
+    // 前提是「构建还在跑」——本用例连着做 3 次交互（菜单触发 → 收起面板 → 菜单再触发
+    // → 取消 → KB 按钮再触发），默认的 5 帧 × 400ms ≈ 2s 窗口在慢 CI 上不够用
+    // （2026-11-04 实测：本地 1.8s 过，CI 慢机上窗口先耗尽 → 三选一不弹）。
+    // 加长到 16 帧 ≈ 6.4s，让前提与机器速度解耦。
+    const delta = (t: string) => ({ type: 'text_delta', delta: t });
+    const longBuild = [
+      { type: 'status', label: 'running', model: 'claude-sonnet-4-5' },
+      ...Array.from({ length: 16 }, (_, i) => delta(i === 15 ? '构建完成-END' : '构建中 ')),
+      { type: 'turn_end', stopReason: 'end_turn' },
+      { type: 'usage', usage: { input_tokens: 10, output_tokens: 5, costUsd: 0.001 } },
+    ];
+    await mockChatRun(page, { frameDelay: 400, script: longBuild });
     await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
     const btn = page.locator('[data-testid="floating-chat-btn"]');

@@ -13,13 +13,26 @@
  * ~10k FDs from a vault's node_modules → posix_spawn EBADF → probeVersion
  * failed → "agent unavailable"). A per-directory child counter backstops any
  * non-pruned oversized directory so an unknown giant folder can't exhaust FDs.
+ *
+ * 2026-11-06 second FD-exhaustion incident (v0.4.5): chokidar v4/v5 (fsevents
+ * removed) holds **one open read fd per watched file** on macOS for the
+ * watcher's whole lifetime — a ~11k-file vault alone saturated the NOFILE
+ * ceiling (~10k): every spawn failed with EBADF → all agents probed
+ * "unavailable", sends failed with "spawn EBADF", fs-opening routes 500'd.
+ * Verified isolation: native `fs.watch(root, { recursive: true })` holds zero
+ * per-file fds (FSEvents-backed) and delivers the same events, so on darwin we
+ * watch natively and move `isPrunedDirName` pruning to the event side
+ * (filename path segments). Windows keeps chokidar (usePolling — the libuv
+ * assertion workaround documented below); Linux keeps chokidar (inotify,
+ * per-directory watch descriptors — the macOS per-file fd behavior does not
+ * apply there).
  */
 import { EventEmitter } from 'node:events';
-import { realpathSync } from 'node:fs';
+import { realpathSync, statSync, watch as fsWatch, type FSWatcher as NodeFsWatcher } from 'node:fs';
 import path from 'node:path';
 import type Database from 'better-sqlite3';
-import chokidar, { type FSWatcher } from 'chokidar';
-import { listVaults } from './db.js';
+import chokidar, { type FSWatcher as ChokidarFsWatcher } from 'chokidar';
+import { listExternalRoots, listVaults } from './db.js';
 // Import from vault-prune (not knowledge) so this module does NOT transitively
 // pull in encoding.ts — tests tune encoding's size caps via env vars at load.
 import { isPrunedDirName, MAX_DIR_ENTRIES } from './vault-prune.js';
@@ -38,8 +51,34 @@ export const VAULT_WATCH_STATE_CHANGED_EVENT = 'watch-state-changed';
 
 const DEBOUNCE_MS = 300;
 
+/**
+ * Real paths of those `candidates` that currently resolve to a directory.
+ * Only existing directories can be watch targets: a registered root whose
+ * target is temporarily gone (unplugged drive, deleted folder) is skipped
+ * rather than failing the whole vault watch, and a non-directory would make
+ * chokidar watch a file as if it were a tree.
+ */
+function resolvableDirRealpaths(candidates: string[]): string[] {
+  const dirs: string[] = [];
+  for (const candidate of candidates) {
+    try {
+      const real = realpathSync(candidate);
+      if (statSync(real).isDirectory()) dirs.push(real);
+    } catch {
+      /* missing or unreadable — not watchable right now */
+    }
+  }
+  return dirs;
+}
+
 export class VaultWatcher extends EventEmitter {
-  private watchers = new Map<string, FSWatcher>();
+  private watchers = new Map<string, ChokidarFsWatcher | NodeFsWatcher>();
+  /**
+   * darwin-only: native per-root watchers for the vault's registered external
+   * roots. fs.watch takes one path per call, so each root gets its own handle
+   * — 1 fd per ROOT, so the per-file fd leak stays fixed. Closed in unwatch().
+   */
+  private extraWatchers = new Map<string, NodeFsWatcher[]>();
   private timers = new Map<string, ReturnType<typeof setTimeout>>();
   // 已就绪（初次扫描完成、事件可靠）的 vault。
   private readyVaults = new Set<string>();
@@ -123,26 +162,102 @@ export class VaultWatcher extends EventEmitter {
         /* path may not exist yet — watch the original path */
       }
       const root = path.resolve(resolvedPath);
+      const handleChange = () => this.scheduleEmit(vaultId);
+
+      // Registered external source roots are watched alongside the vault, so a
+      // file landing in a mounted folder also refreshes the tree — the design
+      // rule is "refresh boundary == scan boundary" (scanTree walks the same
+      // roots). Canonicalized like the vault root above: watchers compare the
+      // paths they were handed, and the mount link (`<vault>/external/<label>`)
+      // may point at a target that is itself a symlink.
+      const extraRoots = resolvableDirRealpaths(
+        listExternalRoots(this.db, vaultId).map((r) => r.target),
+      );
+
+      // ── macOS: native recursive fs.watch (FSEvents) ──
+      // chokidar v4/v5 holds one open read fd per watched file for the
+      // watcher's whole lifetime on macOS — watching the ~11k-file vault blew
+      // past the NOFILE ceiling and every spawn in the daemon failed with
+      // EBADF (2026-11-06 incident: all agents "unavailable", sends died with
+      // "spawn EBADF"). Native watch holds zero per-file fds; pruning moves to
+      // the event side via filename segments (see nativeEventPruned).
+      if (process.platform === 'darwin') {
+        const watcher = fsWatch(root, { recursive: true }, (_eventType, filename) => {
+          // darwin types give string | null (Buffer is possible on other
+          // platforms, which keep the chokidar path); null is treated
+          // conservatively — an unknown change is better than a missed one.
+          const rel = typeof filename === 'string' ? filename : null;
+          if (VaultWatcher.nativeEventPruned(rel)) return;
+          handleChange();
+        });
+        watcher.on('error', (err) => {
+          this.setReady(vaultId, false);
+          this.warn.warn(
+            `error:${vaultId}`,
+            `[vault-watcher] error for ${vaultId} (${vaultPath}): ${(err as Error).message}`,
+          );
+        });
+        this.watchers.set(vaultId, watcher);
+        // External roots get their own native watchers (fs.watch takes one
+        // path per call) — 1 fd per root, the per-file leak stays fixed. Same
+        // pruning predicate: `filename` is relative to the watched root, which
+        // is exactly what nativeEventPruned expects. A failing extra root
+        // warns but does NOT kill the vault's readiness: the vault's own
+        // signal is still alive, and mount/unmount re-arms the whole watch.
+        if (extraRoots.length > 0) {
+          const extras: NodeFsWatcher[] = [];
+          for (const extra of extraRoots) {
+            try {
+              const extraWatcher = fsWatch(extra, { recursive: true }, (_eventType, filename) => {
+                const rel = typeof filename === 'string' ? filename : null;
+                if (VaultWatcher.nativeEventPruned(rel)) return;
+                handleChange();
+              });
+              extraWatcher.on('error', (err) => {
+                this.warn.warn(
+                  `error:external:${vaultId}`,
+                  `[vault-watcher] external-root watch error for ${vaultId} (${extra}): ${(err as Error).message}`,
+                );
+              });
+              extras.push(extraWatcher);
+            } catch (err) {
+              this.warn.warn(
+                `error:external:${vaultId}`,
+                `[vault-watcher] failed to watch external root ${extra} for ${vaultId}: ${(err as Error).message}`,
+              );
+            }
+          }
+          this.extraWatchers.set(vaultId, extras);
+        }
+        // FSEvents delivers from subscription time — no initial scan/`ready`
+        // step to wait for. The chokidar path waits ≤2s before declaring
+        // readiness; same contract here, just immediate.
+        this.setReady(vaultId, true);
+        return;
+      }
 
       // Per-directory child counter — best-effort backstop so a non-pruned
       // oversized directory (a folder the user dumped into the vault) can't
       // exhaust file descriptors. chokidar calls `ignored` once per path it
       // considers; once a single parent has been asked about more than
-      // this.maxDirEntries children, ignore the rest. The vault root is never
-      // pruned (handled by the `resolved === root` check below), so this only
-      // bounds nested directories. Walk order is not guaranteed, so this is a
-      // hard cap on per-directory work, not a precise threshold.
+      // this.maxDirEntries children, ignore the rest. The vault root and each
+      // external root are never pruned (handled by the `resolved === root ||
+      // extraRoots.includes(resolved)` check below), so this only bounds
+      // nested directories. Walk order is not guaranteed, so this is a hard cap
+      // on per-directory work, not a precise threshold.
       const dirChildCounts = new Map<string, number>();
 
-      const watcher = await chokidar.watch(resolvedPath, {
+      const watcher = await chokidar.watch([resolvedPath, ...extraRoots], {
         // Ignore dotfile entries (.git, .claude, .gitignore) and build/dependency
         // directories (node_modules, dist, …) via the shared isPrunedDirName —
         // same predicate scanTree uses, so the watcher and the displayed tree
-        // agree on what counts as knowledge. Never ignore the vault root itself,
-        // even if its name or an ancestor starts with a dot.
+        // agree on what counts as knowledge. Never ignore the vault root, nor an
+        // external root itself (same exemption as the vault root — the mounted
+        // folder is knowledge no matter what it is named or where it lives),
+        // even if the name or an ancestor starts with a dot.
         ignored: (p) => {
           const resolved = path.resolve(p);
-          if (resolved === root) return false;
+          if (resolved === root || extraRoots.includes(resolved)) return false;
           const base = resolved.split(/[/\\]/).pop() ?? '';
           if (isPrunedDirName(base)) return true;
           // Per-dir backstop: count how many children of this parent chokidar
@@ -168,8 +283,6 @@ export class VaultWatcher extends EventEmitter {
           ? { usePolling: true, interval: 1000, binaryInterval: 3000 }
           : {}),
       });
-
-      const handleChange = () => this.scheduleEmit(vaultId);
 
       watcher.on('add', handleChange);
       watcher.on('change', handleChange);
@@ -213,6 +326,17 @@ export class VaultWatcher extends EventEmitter {
       clearTimeout(timer);
       this.timers.delete(vaultId);
     }
+    const extras = this.extraWatchers.get(vaultId);
+    if (extras) {
+      for (const extraWatcher of extras) {
+        try {
+          extraWatcher.close();
+        } catch {
+          /* ignore */
+        }
+      }
+      this.extraWatchers.delete(vaultId);
+    }
     const watcher = this.watchers.get(vaultId);
     if (watcher) {
       try {
@@ -231,6 +355,22 @@ export class VaultWatcher extends EventEmitter {
     this.started = false;
   }
 
+  /**
+   * Event-side pruning for the native (darwin) watcher: drop events whose
+   * root-relative filename contains ANY pruned path segment (.git, dotfiles,
+   * node_modules, dist, …) — the native recursive watch cannot pre-filter
+   * subtrees the way chokidar's `ignored` can, so noise events from build
+   * directories are filtered here instead of becoming tree-changed storms.
+   *
+   * `null` filename is treated conservatively (NOT pruned) — an unknown
+   * change is better than a missed one. Events naming the vault root itself
+   * carry the root's basename, which never matches a pruned segment.
+   */
+  private static nativeEventPruned(filename: string | null): boolean {
+    if (filename === null) return false;
+    return filename.split(/[\\/]/).some((seg) => seg !== '' && isPrunedDirName(seg));
+  }
+
   private scheduleEmit(vaultId: string): void {
     const existing = this.timers.get(vaultId);
     if (existing) clearTimeout(existing);
@@ -241,5 +381,22 @@ export class VaultWatcher extends EventEmitter {
     // Don't keep the process alive solely for a debounce timer.
     timer.unref?.();
     this.timers.set(vaultId, timer);
+  }
+
+  /**
+   * Announce a content mutation that chokidar will NOT see, so the whole
+   * tree-changed fan-out (SSE clients, tree/graph cache invalidation, FTS
+   * sweeper) reacts through the single existing channel.
+   *
+   * The consumer is the external-root mount/unmount route: it creates/removes
+   * the mount link inside the vault and immediately re-arms the watcher — the
+   * OLD watcher is closed before the OS delivers the link's add/remove event,
+   * and the new one runs with ignoreInitial:true, so without this call no
+   * tree-changed ever fires: the FTS sweeper never rebuilds (an already-seeded
+   * vault silently misses the entire mounted corpus in search) and other open
+   * KB windows keep a stale tree.
+   */
+  notifyExternalMutation(vaultId: string): void {
+    this.scheduleEmit(vaultId);
   }
 }

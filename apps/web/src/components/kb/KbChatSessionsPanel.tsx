@@ -7,6 +7,7 @@ import {
   MAX_CHAT_SESSIONS,
 } from '../../stores/kbChatSessionsStore';
 import { useCurrentContext } from '../../stores/currentContextStore';
+import { useActiveVaultId } from '../../stores/vaultStore';
 import { CHAT_ROUTE, isFullscreenRoute } from '../../routes';
 import { withSurfaceTransitionSync, skipSurfaceTransition } from '../../stores/surfaceTransition';
 import { ChatSessionTabBar } from './ChatSessionTabBar';
@@ -143,9 +144,11 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
   const sessions = useKbChatSessions();
   const activeSessionId = useKbChatActiveSessionId();
   // 上下文改从全局 store 读（方案 D：面板常驻 App 层，任意页面可用，不依赖 KB 页 props）
-  const { vault, filePath, page } = useCurrentContext();
+  const { filePath, page } = useCurrentContext();
   const panelOpen = useKbChatPanelOpen();
-  const currentVaultId = vault?.id ?? null;
+  // 活跃库 id 取自 vaultStore（不是 currentContext.vault）：后者要等库列表回来才有对象，
+  // 期间会是 null —— 会话归属的判据必须是稳定的 id（与 store 的作用域一致）。
+  const currentVaultId = useActiveVaultId();
   const currentFilePath = filePath;
 
   // 切换打开的文档 → 当前 qa 会话的引用 chip 跟着切（拍板：始终跟随当前文档，
@@ -930,7 +933,9 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
             <KbChatSession
               key={s.id}
               session={s}
-              active={s.id === activeSessionId}
+              // panelOpen 计入可见性：面板收起（含进全屏）时全部标签变 inactive，
+              // 重开/退出全屏时从滚动记忆落位（chatScrollMemory 的恢复时机）。
+              active={panelOpen && s.id === activeSessionId}
               selectedText={pendingSelectionSessionId === s.id ? pendingSelection : null}
               onSelectedTextConsumed={() => { setPendingSelection(null); setPendingSelectionSessionId(null); }}
             />

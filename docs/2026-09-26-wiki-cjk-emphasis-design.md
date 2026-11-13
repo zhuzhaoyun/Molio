@@ -16,7 +16,7 @@
 
 **检查侧**（已写坏的能查出来）：新增确定性扫描脚本 `apps/daemon/src/tools/skills/wiki-build/scripts/cjk-emphasis-check.mjs`，wiki-lint 的检查方法 3 接入调用、检查清单新增第 15 项（与 main 新增的图版检查第 14 项共存）。脚本扫 vault 的 `wiki/` 目录，输出 JSON 报告（每条含文件、行号、失效侧 `side`、配对文本、上下文），恒 exit 0——它是报告工具不是门禁，vault 不存在、`wiki` 不是目录、单文件读失败都不崩。
 
-既有 vault 不需要手动同步：skill-installer 按内容哈希把整棵 skill 目录（含 `scripts/`）镜像到 vault 的 `.claude/skills/`，新脚本随同步自动到位。wiki-\* 五件套版本号按约定共进 2.1.0 → 2.2.0。
+既有 vault 不需要手动同步：skill-installer 按内容哈希把整棵 skill 目录（含 `scripts/`）镜像到 vault 的 `.claude/skills/`，新脚本随同步自动到位。wiki-\* 五件套版本号按约定共进（本分支原 bump 2.1.0 → 2.2.0；与 main 多轮合并期间 wiki-lint 的 frontmatter 一度残留重复 version 键与游离围栏行，已随五件套共进 2.4.0 修复，并由 `builtin-skills.test.ts` 的版本纪律守卫钉住此类合并残留）。
 
 ## 备选方案评估：换宽容的 Markdown 渲染器（不采纳）
 

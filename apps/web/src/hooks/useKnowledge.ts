@@ -486,9 +486,12 @@ export function useKnowledge(): UseKnowledgeReturn {
 
   const activeVault = vaults.find((v) => v.id === activeVaultId) ?? null;
 
+  // Switching does NOT dismiss the manager: the manager is also where a vault's
+  // own settings live (external source roots), and closing on pick forced a
+  // reopen for "pick the vault, then configure it". Leaving is explicit —
+  // the ✕, Escape, or an overlay click.
   const selectVault = useCallback((id: string) => {
     vaultStore.setActiveVaultId(id);
-    setShowVaultSwitcher(false);
   }, []);
 
   const createVault = useCallback(async (name: string, path: string, description?: string) => {
@@ -552,8 +555,37 @@ export function useKnowledge(): UseKnowledgeReturn {
   // Live tree refresh via SSE — daemon's VaultWatcher pushes `tree-changed`
   // when files land externally (Chrome extension clippings, weixin media,
   // external edits), so the tree updates without needing window focus.
+  //
+  // 但这条 SSE 是**长连接**，且只在「窗口在前台」时才有必要持有：
+  // 后台窗口本来就靠 focus 时的 loadTree 补齐（见上面的 focus effect）。
+  //
+  // 为什么必须门控（2026-11-03 黑屏事故）：daemon 只提供 HTTP/1.1，Chromium
+  // 对同一 host 的 HTTP/1.1 socket 上限是 6 条。每个知识库窗口各占一条常驻
+  // SSE → 窗口开够 6 个后连接池被占满 → 之后新窗口的主框架导航永远排队
+  // 拿不到 socket → 窗口停在深色启动页上永远加载不出来（桌面端日志里的
+  // "page load still in flight (daemon busy?)"）。实测：同窗口内持 5 条长
+  // 连接后再导航即卡死 >15s；连开 7 个窗口，第 7 个必挂。
+  //
+  // 改成「只有聚焦的窗口持有 SSE」后，同时最多一条常驻长连接，池子永远用不满。
+  const [windowFocused, setWindowFocused] = useState(true);
+
+  // 窗口聚焦态：blur 时关掉常驻 SSE（省连接），focus 时重新接上。
+  // 初值 true——窗口刚创建时就是前台的；E2E/无头环境不发 focus 事件，
+  // 默认保持有 SSE，避免测试环境与真实行为分叉。
+  useEffect(() => {
+    const onFocus = () => setWindowFocused(true);
+    const onBlur = () => setWindowFocused(false);
+    window.addEventListener('focus', onFocus);
+    window.addEventListener('blur', onBlur);
+    return () => {
+      window.removeEventListener('focus', onFocus);
+      window.removeEventListener('blur', onBlur);
+    };
+  }, []);
+
   useEffect(() => {
     if (!activeVaultId) return;
+    if (!windowFocused) return;
     const es = new EventSource(`/api/knowledge/vaults/${activeVaultId}/events`);
     es.onmessage = (msg) => {
       try {
@@ -565,7 +597,7 @@ export function useKnowledge(): UseKnowledgeReturn {
     };
     // EventSource auto-reconnects on error; nothing to do here.
     return () => es.close();
-  }, [activeVaultId, refreshTree]);
+  }, [activeVaultId, refreshTree, windowFocused]);
 
   // File operations
   const createFile = useCallback(async (relPath: string, content = '') => {

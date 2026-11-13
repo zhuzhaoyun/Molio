@@ -50,9 +50,12 @@
         "apps/web/src/components/QuizCard.*",
         "apps/web/src/utils/quiz.*",
         "apps/web/src/utils/quizFile.*",
+        "packages/contracts/src/quiz.*",
+        "packages/contracts/src/messageSegments.*",
         "apps/web/src/hooks/useWikiLinkClick.*",
         "apps/web/src/components/SandboxCard.*",
-        "apps/web/src/utils/ruleSandbox.*"
+        "apps/web/src/utils/ruleSandbox.*",
+        "apps/web/src/stores/chatScrollMemory.*"
       ],
       "specs": [
         "chat-single",
@@ -81,6 +84,7 @@
         "quiz",
         "sandbox",
         "chat-autoscroll",
+        "chat-scroll-memory",
         "chat-doc-ref-chip",
         "activity-tree",
         "chat-composer-queue",
@@ -95,6 +99,7 @@
     "kb": {
       "paths": [
         "apps/web/src/components/kb/*",
+        "apps/web/src/components/ConversationHistoryMenu*",
         "apps/web/src/components/kb/docExport/*",
         "apps/web/src/utils/exportFileName*",
         "apps/web/src/hooks/useKnowledge*",
@@ -144,12 +149,14 @@
         "market-community",
         "kb-create-at-root",
         "kb-tree-refresh-search",
+        "kb-sse-focus",
         "kb-chat-resume-multi",
         "kb-chat-resume",
         "kb-tab-drag",
         "kb-tabs",
         "kb-tree-folder-state",
-        "navigation-history"
+        "navigation-history",
+        "kb-external-roots"
       ]
     },
     "publish": {
@@ -234,9 +241,14 @@
     },
     "history": {
       "paths": [
-        "apps/web/src/components/history*",
+        "apps/web/src/components/history/*",
+        "apps/web/src/components/ConversationHistoryMenu*",
         "apps/web/src/hooks/useHistory*",
-        "apps/web/src/hooks/historyFilterQuery*"
+        "apps/web/src/hooks/historyFilterQuery*",
+        "apps/web/src/utils/historySummary.*",
+        "apps/daemon/src/core/quiz-trace.*",
+        "packages/contracts/src/api.*",
+        "packages/contracts/src/index.*"
       ],
       "specs": [
         "history"
@@ -462,6 +474,10 @@
       "priority": "P1",
       "file": "kb-chat-entry.spec.ts"
     },
+    "chat-scroll-memory": {
+      "priority": "P1",
+      "file": "chat-scroll-memory.spec.ts"
+    },
     "kb-chat-sessions": {
       "priority": "P1",
       "file": "kb-chat-sessions.spec.ts"
@@ -654,6 +670,10 @@
       "priority": "P1",
       "file": "kb-tree-refresh-search.spec.ts"
     },
+    "kb-sse-focus": {
+      "priority": "P1",
+      "file": "kb-sse-focus.spec.ts"
+    },
     "composer-skill-palette": {
       "priority": "P1",
       "file": "composer-skill-palette.spec.ts"
@@ -725,6 +745,10 @@
     "navigation-history": {
       "priority": "P1",
       "file": "navigation-history.spec.ts"
+    },
+    "kb-external-roots": {
+      "priority": "P1",
+      "file": "kb-external-roots.spec.ts"
     }
   }
 }

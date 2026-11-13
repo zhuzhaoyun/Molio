@@ -20,6 +20,63 @@
 export const APP_LOAD_REVEAL_TIMEOUT_MS = 5000;
 
 /**
+ * 页面加载超时（区别于上面的「显示兜底」）：导航迟迟不结束时，窗口会被兜底
+ * 显示出来，但显示的还是那张深色启动页——用户看到的是「黑屏 + 转圈」，像是卡死。
+ *
+ * 真实故障（2026-11-03）：连开第 3 个知识库窗口后，窗口永远停在启动页上加载不出
+ * 来。根因是 Chromium 对同一 host 的 HTTP/1.1 socket 上限 6 条，被每个窗口常驻的
+ * vault-events SSE 占满 → 新窗口的主框架导航永远排队（web 侧已修：只有聚焦窗口
+ * 持有 SSE）。壳层这边补一层：加载超时就把窗口换成错误页，至少给出可读的提示和
+ * 「重启 Molio」，而不是一片黑。
+ *
+ * 时限取 30s：冷索引等慢场景（daemon 单线程整库索引，mac 实测 5000 文件 ≈ 6.3s，
+ * Windows + Defender 更久）不能被误伤。
+ */
+export const APP_LOAD_TIMEOUT_MS = 30000;
+
+/**
+ * 页面加载看门狗。纯逻辑、无 Electron 依赖；定时器可注入，便于单测。
+ *
+ * @param {object} opts
+ * @param {number} [opts.timeoutMs] 超时时限
+ * @param {() => void} [opts.onTimeout] 超时回调（换错误页）
+ */
+export function createLoadWatchdog({
+  timeoutMs = APP_LOAD_TIMEOUT_MS,
+  onTimeout,
+  setTimeoutFn = setTimeout,
+  clearTimeoutFn = clearTimeout,
+} = {}) {
+  let timer = null;
+  let fired = false;
+
+  timer = setTimeoutFn(() => {
+    timer = null;
+    fired = true;
+    onTimeout?.();
+  }, timeoutMs);
+
+  return {
+    /** 页面加载完成（did-finish-load）→ 撤销看门狗。 */
+    loaded: () => {
+      if (timer !== null) {
+        clearTimeoutFn(timer);
+        timer = null;
+      }
+    },
+    /** 窗口销毁 → 撤销看门狗。 */
+    cancel: () => {
+      if (timer !== null) {
+        clearTimeoutFn(timer);
+        timer = null;
+      }
+    },
+    /** 是否已超时（诊断用）。 */
+    hasFired: () => fired,
+  };
+}
+
+/**
  * @param {object} opts
  * @param {number} [opts.timeoutMs] 兜底时限
  * @param {(reason: 'loaded' | 'timeout') => void} [opts.onReveal] 显示窗口（只会被调一次）

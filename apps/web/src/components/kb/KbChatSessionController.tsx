@@ -3,7 +3,7 @@
 // 无 DOM 的会话 controller：持有该标签的 `useChatCore`（消息 / SSE 订阅 / 历史加载 /
 // resumeRun），并把 imperative API 经 `registerApi` 交出去。渲染完全交给 `children`
 // render-prop（面板 view / 全屏壳共用同一份状态）。此文件不渲染任何 DOM。
-import { useCallback, useEffect, useMemo, useRef, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { ChatMessage as ContractChatMessage, ActivityInfo } from '@molio/contracts';
 import { api } from '../../api/client';
 import { useChatCore, type CreateRunContext, type ChatMessage } from '../../hooks/useChatCore';
@@ -31,6 +31,8 @@ export interface KbChatSessionState {
   isRunning: boolean;
   activity: ActivityInfo | null;
   conversationId: string | null;
+  /** 会话在 daemon 里记录的所属库——存档/落库的真相源（标签上的 vaultId 只是打开时的活动库）。 */
+  conversationVaultId: string | null;
   send: (text: string, opts?: { queueIfRunning?: boolean }) => void;
   cancel: () => void;
   submitToolResult: (toolUseId: string, content: string) => Promise<void>;
@@ -45,9 +47,8 @@ export interface KbChatSessionState {
 export interface KbChatSessionControllerProps {
   session: ChatSessionTab;
   agentId: string | null;
+  /** 当前窗口的 vault 路径（run 的 cwd）。会话按库隔离 → 挂载着的会话必属当前库。 */
   vaultPath: string | null;
-  /** 当前窗口的 vault id — 用于挂载时检测跨库会话泄漏 */
-  vaultId: string | null;
   onRunningChange: (sessionId: string, running: boolean) => void;
   /** wiki 完成 → tree refresh */
   onComplete?: () => void;
@@ -73,7 +74,7 @@ function toChatMessage(m: ContractChatMessage): ChatMessage {
 }
 
 export function KbChatSessionController({
-  session, agentId, vaultPath, vaultId,
+  session, agentId, vaultPath,
   onRunningChange, onComplete, onLoadError, registerApi, unregisterApi, children,
 }: KbChatSessionControllerProps) {
   const { t } = useI18n();
@@ -198,28 +199,39 @@ export function KbChatSessionController({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 会话线程绑定 vault（run 的 cwd）。切换活跃 vault 不得续写旧 vault 的会话线程 ——
-  // 重置会话血统，让下一次发送从新线程开始（多窗口「一窗一 vault」会话隔离）。
-  // 从旧 useKbChat 的 vault 切换重置移植而来：PR #202 的多会话面板在 vault 切换时
-  // 只清 @文件上下文、保留 conversationId，会泄漏旧 vault 线程（multi-window E2E 验证）。
-  // 首轮挂载 prev 为 null → 不触发；仅真正的 vault 变化（prev 非空且不同）才重置。
-  // reset() 会清空消息 + conversationId + 关闭 SSE，但不会 cancel daemon 进程 ——
-  // 与「关闭会话」中途离场一致，遗留 run 的行为可接受（见旧 useKbChat 注释）。
-  const prevVaultPathRef = useRef(vaultPath);
+  // 会话线程绑定 vault（run 的 cwd）。**切库不再重置会话血统** ——
+  // 会话标签已按库隔离（见 kbChatSessionsStore.sessionsOfVault）：切到别的库时，
+  // 别的库的会话根本不挂载（provider 只渲染当前库的 controller），本会话随之卸载；
+  // 切回来时重新挂载并按 conversationId 从 DB 拉历史，内容原样回来。
+  //
+  // 旧实现在这里检测到 vault 变化就 reset()（清消息 + 清 conversationId + 改写 vaultId），
+  // 后果有两个：① 旧库的标签留在新库的标签栏里却查不到内容（用户报障）；
+  // ② vault 对象晚一步就位（vaultPath 由 null 变成真实路径）也会误判成「切库」，
+  // 把刚建的会话内容清掉。现在这两条都不成立了。
+
+  // 会话所属库：daemon 里 conversations.vault_id 才是真相源。标签上的 vaultId
+  // 是「打开时」的活动库——历史会话跨库打开（历史页不切库）时就对不上了。
+  // 题卡按它取库（存为题库 / 解析库内图片 / 答题落库），错了会把文件存进别人库。
+  // 挂在 conversationId 上而不是挂载时取一次：首轮发消息才创建 conversation，
+  // 那时没有加载动作会触发取库。
+  const [conversationVaultId, setConversationVaultId] = useState<string | null>(null);
   useEffect(() => {
-    const prev = prevVaultPathRef.current;
-    prevVaultPathRef.current = vaultPath;
-    // 跨库判定：会话所属 vault 与当前窗口 vault 不一致——两种场景都会触发：
-    // ① SPA 切库（vaultPath 变化）② 多开新窗/重载后首轮挂载继承了旧库会话
-    // （此时 vaultPath 首次渲染为 null、vault 加载后才就位，不能依赖 prev===vaultPath 判首挂载）。
-    // 重置会话血统并重绑定当前库，避免 cwd=当前库 + conversationId=旧库 的串线；
-    // 必须一并更新 vaultId，否则重置后每次重跑判定仍跨库、反复重置。
-    const crossVault = session.vaultId != null && vaultId != null && session.vaultId !== vaultId;
-    if ((prev !== null && prev !== vaultPath) || crossVault) {
-      resetRef.current();
-      kbChatSessionsStore.updateSession(session.id, { conversationId: null, vaultId: vaultId ?? session.vaultId });
+    const id = chat.conversationId;
+    if (!id) {
+      setConversationVaultId(null);
+      return;
     }
-  }, [vaultPath, session.id, session.vaultId, vaultId]);
+    let cancelled = false;
+    api.getConversation(id)
+      .then((conversation) => {
+        if (!cancelled) setConversationVaultId(conversation.vaultId ?? null);
+      })
+      .catch(() => {
+        // 取不到（老 daemon / 会话已删）→ 回落活动库，题卡侧用 activeVaultId 兜底。
+        if (!cancelled) setConversationVaultId(null);
+      });
+    return () => { cancelled = true; };
+  }, [chat.conversationId]);
 
   // running 上报（驱动 wiki 互斥判断 + 关闭确认）
   useEffect(() => { onRunningChange(session.id, chat.isRunning); }, [chat.isRunning, session.id, onRunningChange]);
@@ -292,6 +304,7 @@ export function KbChatSessionController({
     isRunning: chat.isRunning,
     activity: chat.activity ?? null,
     conversationId: chat.conversationId ?? null,
+    conversationVaultId,
     send: (text, opts) => {
       sendRef.current(text, opts);
     },
@@ -302,7 +315,7 @@ export function KbChatSessionController({
     deleteMessages: (ids) => deleteMessagesRef.current(ids),
     buildSend,
   }), [
-    chat.messages, chat.isRunning, chat.activity, chat.conversationId, buildSend, session.mode,
+    chat.messages, chat.isRunning, chat.activity, chat.conversationId, conversationVaultId, buildSend, session.mode,
   ]);
 
   return <>{children(state)}</>;

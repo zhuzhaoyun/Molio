@@ -16,7 +16,9 @@ import { useKbChatSessionState } from './KbChatSessionsProvider';
 
 interface KbChatSessionViewProps {
   session: ChatSessionTab;
-  /** 面板里非活动标签渲染为 display:none；由调用方给（`/chat` 恒为 true） */
+  /** 面板里非活动标签渲染为 display:none；由调用方给（`/chat` 恒为 true）。
+   *  调用方已把 panelOpen 计入：面板收起时全部 false —— 由此驱动滚动记忆的
+   *  「变为可见才恢复」，全屏里读到的位置得以在退回面板时带回来。 */
   active: boolean;
   /** 就此提问带入的选中文本（瞬态，首条消息消费）——只影响 view 的 buildSend 调用 */
   selectedText?: string | null;
@@ -52,6 +54,7 @@ export function KbChatSession({
           isRunning={state.isRunning}
           activity={state.activity}
           conversationId={state.conversationId}
+          conversationVaultId={state.conversationVaultId}
           onSend={state.buildSend(selectedText, onSelectedTextConsumed)}
           onSubmitForm={(text) => state.send(text)}
           onCancel={state.cancel}
@@ -76,6 +79,8 @@ export function KbChatSession({
           composerMountKey={sessionComposerMountKey(session.id, session.filePath)}
           composerKey={sessionComposerKey(session.id)}
           composerInitialFileRefs={initialFileRefs}
+          // 可见性真相源：驱动滚动记忆的恢复时机（false→true 时落位）
+          active={active}
           // 面板保留既有 DOM 结构/类名与空态（空态含「就此提问」的选中文本预览）
           logClassName="file-chat-messages"
           composerBarClassName="file-chat-input"
