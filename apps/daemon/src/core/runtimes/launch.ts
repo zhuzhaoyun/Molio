@@ -16,42 +16,189 @@ export interface ResolveResult {
   source: 'env-override' | 'path' | 'well-known' | 'fallback-bin' | 'not-found';
 }
 
-export function resolveAgentBinary(
+/**
+ * One resolved binary candidate, together with **where** it came from.
+ * 探测按候选顺序试，第一个探测成功的即采用——见 resolveAgentBinaryCandidates。
+ */
+export interface BinaryCandidate {
+  binary: string;
+  source: ResolveResult['source'];
+}
+
+/**
+ * 候选路径去重比较：Windows 上路径大小写不敏感。
+ */
+export function samePath(a: string, b: string): boolean {
+  const norm = (p: string) => {
+    const abs = path.resolve(p);
+    return process.platform === 'win32' ? abs.toLowerCase() : abs;
+  };
+  return norm(a) === norm(b);
+}
+
+/**
+ * 把路径包成 cmd.exe 命令行里安全的形式。
+ *
+ * **为什么必须加引号**：Windows 上 `.cmd`/`.bat` 只能由 cmd.exe 执行，Node 的
+ * `shell: true` 会拼成 `cmd.exe /d /s /c "<binary> <args>"`。cmd 的 `/s` 会
+ * 剥掉**最外层**那对引号，然后按第一个空格断词——于是
+ * `C:\Program Files\nodejs\claude.cmd --version` 实际执行的是 `C:\Program`，
+ * 报「'C:\Program' 不是内部或外部命令」。**任何带空格路径下的 shim 都会
+ * 探测失败**，哪怕它背后的程序完好。
+ *
+ * 只用于 **binary 路径**——路径里不会出现 `"`，所以转义规则无关紧要。
+ * **参数**的引号转义沿用原有的 `\"` 写法（见 quoteArgForCmd），不改成 cmd
+ * 的 `""`：那条路径上有既存行为，不在本次修复范围内。
+ */
+export function quoteForCmd(p: string): string {
+  return `"${p.replace(/"/g, '""')}"`;
+}
+
+/**
+ * 参数加引号（沿用修复前的 `\"` 转义写法，保持既有行为不变）。
+ *
+ * cmd 的参数以空格分隔，不加引号会被拆成两个参数。
+ */
+export function quoteArgForCmd(a: string): string {
+  return `"${a.replace(/"/g, '\\"')}"`;
+}
+
+/**
+ * 组装一条给 `shell: true` 用的完整命令行：binary 路径加引号，含空格或
+ * 引号的参数也加引号。
+ */
+export function shellCommandFor(bin: string, args: string[]): string {
+  const quotedArgs = args.map((a) => (/[ "]/.test(a) ? quoteArgForCmd(a) : a));
+  return [quoteForCmd(bin), ...quotedArgs].join(' ');
+}
+
+/**
+ * 候选二进制的**有序列表**（去重）。
+ *
+ * 为什么要有列表而不是单个：Windows 上 `where claude` 的第一个命中常常是
+ * 早年 npm 全局安装留下的 `.cmd` shim（`C:\Program Files\nodejs\claude.cmd`），
+ * 而一键安装的健康副本在 `~/.molio/bin\claude.exe`。合成 PATH 时系统 PATH
+ * 永远排在用户 PATH 之前，所以坏 shim 永远在前。若只取第一个候选且它探测
+ * 失败，就直接判「未安装」，后面完好的二进制永远轮不到（见
+ * docs/windows-runtime-detection-fix.md 的 Bug 2）。
+ *
+ * 优先级不变：env-override → PATH → well-known → fallbackBins（尊重用户自装
+ * 版本）。列表里同一路径只出现一次。
+ */
+export function resolveAgentBinaryCandidates(
   def: RuntimeAgentDef,
   options: ResolveOptions = {},
-): ResolveResult {
+): BinaryCandidate[] {
+  const out: BinaryCandidate[] = [];
+  const push = (binary: string | null, source: BinaryCandidate['source']) => {
+    if (!binary) return;
+    if (out.some((c) => samePath(c.binary, binary))) return;
+    out.push({ binary, source });
+  };
+
   // 1. Environment variable override
   const envKey = `${def.id.toUpperCase()}_BIN`;
   const envBin = options.configuredEnv?.[envKey] || process.env[envKey];
   if (envBin && fs.existsSync(envBin)) {
-    return { binary: envBin, source: 'env-override' };
+    push(envBin, 'env-override');
   }
 
-  // 2. PATH lookup
-  const pathResult = resolveOnPath(def.bin);
-  if (pathResult) {
-    return { binary: pathResult, source: 'path' };
-  }
+  // 2. PATH lookup（全部命中，不只是第一个）
+  for (const p of resolveOnPathCandidates(def.bin)) push(p, 'path');
 
   // 3. Well-known user toolchain directories
-  const wellKnownBin = findInWellKnownDirs(def.bin);
-  if (wellKnownBin) {
-    return { binary: wellKnownBin, source: 'well-known' };
-  }
+  for (const p of findInWellKnownDirsCandidates(def.bin)) push(p, 'well-known');
 
   // 4. Fallback binaries
   for (const fb of def.fallbackBins ?? []) {
-    const fbPath = resolveOnPath(fb);
-    if (fbPath) {
-      return { binary: fbPath, source: 'fallback-bin' };
-    }
-    const fbWellKnown = findInWellKnownDirs(fb);
-    if (fbWellKnown) {
-      return { binary: fbWellKnown, source: 'well-known' };
-    }
+    for (const p of resolveOnPathCandidates(fb)) push(p, 'fallback-bin');
+    for (const p of findInWellKnownDirsCandidates(fb)) push(p, 'well-known');
   }
 
-  return { binary: null, source: 'not-found' };
+  return out;
+}
+
+/**
+ * 取第一个候选——保持旧语义（不探测）。
+ * 需要「探测失败就换下一个」时用 {@link resolveAgentBinaryCandidates}。
+ */
+export function resolveAgentBinary(
+  def: RuntimeAgentDef,
+  options: ResolveOptions = {},
+): ResolveResult {
+  const first = resolveAgentBinaryCandidates(def, options)[0];
+  return first
+    ? { binary: first.binary, source: first.source }
+    : { binary: null, source: 'not-found' };
+}
+
+/** 探测函数的签名（同步版）。 */
+export type ProbeFn = (bin: string, args: string[], timeoutMs?: number) => ProbeResult;
+
+/** 探测函数的签名（异步版）。 */
+export type ProbeFnAsync = (bin: string, args: string[], timeoutMs?: number) => Promise<ProbeResult>;
+
+/** 候选探测的结果：选中哪个候选、版本是多少、失败原因是什么。 */
+export interface CandidatePick {
+  candidate: BinaryCandidate;
+  version: string | null;
+  error?: string;
+}
+
+/**
+ * 依序探测候选，返回**第一个探测成功**的那个。
+ *
+ * 为什么不能只看第一个候选：Windows 上 `where claude` 的首个命中常常是
+ * 早年 npm 全局安装留下的 `.cmd` shim，而一键安装的健康副本在
+ * `~/.molio/bin\claude.exe`。合成 PATH 时系统 PATH 恒在用户 PATH 之前，
+ * 坏 shim 永远在前——只探第一个就会把「shim 探测失败」误判成「未安装」，
+ * 后面完好的二进制永远轮不到（见 docs/windows-runtime-detection-fix.md
+ * 的 Bug 2）。
+ *
+ * 全部候选都失败时返回**第一个**候选连同它的错误（供 UI 诊断），
+ * `version` 为 null——调用方据此判定为「不可用」。
+ */
+export function pickFirstWorkingCandidate(
+  candidates: BinaryCandidate[],
+  versionArgs: string[],
+  probe: ProbeFn = probeVersion,
+): CandidatePick | null {
+  if (candidates.length === 0) return null;
+  let firstFailure: ProbeResult | null = null;
+  for (const candidate of candidates) {
+    const result = probe(candidate.binary, versionArgs);
+    if (result.version) {
+      return { candidate, version: result.version };
+    }
+    if (!firstFailure) firstFailure = result;
+  }
+  return {
+    candidate: candidates[0]!,
+    version: null,
+    error: firstFailure?.error ?? 'no usable binary found',
+  };
+}
+
+/** Async twin of {@link pickFirstWorkingCandidate}. */
+export async function pickFirstWorkingCandidateAsync(
+  candidates: BinaryCandidate[],
+  versionArgs: string[],
+  probe: ProbeFnAsync = probeVersionAsync,
+): Promise<CandidatePick | null> {
+  if (candidates.length === 0) return null;
+  let firstFailure: ProbeResult | null = null;
+  for (const candidate of candidates) {
+    const result = await probe(candidate.binary, versionArgs);
+    if (result.version) {
+      return { candidate, version: result.version };
+    }
+    if (!firstFailure) firstFailure = result;
+  }
+  return {
+    candidate: candidates[0]!,
+    version: null,
+    error: firstFailure?.error ?? 'no usable binary found',
+  };
 }
 
 /** Minimum expected size for a valid native binary (1 MB). */
@@ -105,7 +252,13 @@ export function validateBinary(filePath: string, platform: string): string | nul
   }
 }
 
-function resolveOnPath(bin: string): string | null {
+/**
+ * PATH 查找的**全部**命中（按 `where` 顺序），去重前保留原始次序。
+ *
+ * 旧实现只返回第一个可执行命中——Windows 上那常常是坏掉的 npm shim，
+ * 后面的健康副本永远轮不到（见 docs/windows-runtime-detection-fix.md Bug 2）。
+ */
+function resolveOnPathCandidates(bin: string): string[] {
   if (process.platform === 'win32') {
     const whereCmds = [
       'C:\\Windows\\System32\\where.exe',
@@ -124,23 +277,27 @@ function resolveOnPath(bin: string): string | null {
         if (result && result.trim().length > 0) {
           const lines = result.trim().split(/\r?\n/);
           const executableExts = ['.exe', '.cmd', '.bat'];
+          const out: string[] = [];
 
+          // 带可执行扩展名的优先（.exe / .cmd / .bat），按 where 顺序
           for (const line of lines) {
             const ext = path.extname(line).toLowerCase();
             if (executableExts.includes(ext) && fs.existsSync(line)) {
-              return line;
+              out.push(line);
             }
           }
-
+          // 再收无扩展名的（npm 在 Windows 上也会留一个无扩展名的 shim）
           for (const line of lines) {
             if (fs.existsSync(line)) {
               const cmdVersion = line + '.cmd';
               if (fs.existsSync(cmdVersion)) {
-                return cmdVersion;
+                out.push(cmdVersion);
+              } else {
+                out.push(line);
               }
-              return line;
             }
           }
+          return out;
         }
       } catch {
         // try next
@@ -148,31 +305,31 @@ function resolveOnPath(bin: string): string | null {
     }
   } else {
     try {
-      const result = execFileSync('which', [bin], {
+      const result = execFileSync('which', ['-a', bin], {
         encoding: 'utf8',
         stdio: ['ignore', 'pipe', 'ignore'],
         timeout: 3000,
       });
       if (result && result.trim().length > 0) {
-        const firstLine = result.trim().split(/\r?\n/)[0];
-        if (firstLine && fs.existsSync(firstLine)) {
-          return firstLine;
-        }
+        return result
+          .trim()
+          .split(/\r?\n/)
+          .filter((line) => line.trim().length > 0 && fs.existsSync(line.trim()));
       }
     } catch {
       // not found
     }
   }
-  return null;
+  return [];
 }
 
 /**
- * Async twin of {@link resolveOnPath} — replaces the `where.exe` / `which`
- * `execFileSync` spawns with promisified `execFile` so PATH lookups for
- * several agents can run concurrently without blocking the event loop.
+ * Async twin of {@link resolveOnPathCandidates} — replaces the `where.exe` /
+ * `which` `execFileSync` spawns with promisified `execFile` so PATH lookups
+ * for several agents can run concurrently without blocking the event loop.
  * Same candidate-filtering semantics as the sync variant.
  */
-async function resolveOnPathAsync(bin: string): Promise<string | null> {
+async function resolveOnPathCandidatesAsync(bin: string): Promise<string[]> {
   if (process.platform === 'win32') {
     const whereCmds = [
       'C:\\Windows\\System32\\where.exe',
@@ -190,11 +347,12 @@ async function resolveOnPathAsync(bin: string): Promise<string | null> {
         if (stdout && stdout.trim().length > 0) {
           const lines = stdout.trim().split(/\r?\n/);
           const executableExts = ['.exe', '.cmd', '.bat'];
+          const out: string[] = [];
 
           for (const line of lines) {
             const ext = path.extname(line).toLowerCase();
             if (executableExts.includes(ext) && fs.existsSync(line)) {
-              return line;
+              out.push(line);
             }
           }
 
@@ -202,11 +360,13 @@ async function resolveOnPathAsync(bin: string): Promise<string | null> {
             if (fs.existsSync(line)) {
               const cmdVersion = line + '.cmd';
               if (fs.existsSync(cmdVersion)) {
-                return cmdVersion;
+                out.push(cmdVersion);
+              } else {
+                out.push(line);
               }
-              return line;
             }
           }
+          return out;
         }
       } catch {
         // try next
@@ -214,65 +374,76 @@ async function resolveOnPathAsync(bin: string): Promise<string | null> {
     }
   } else {
     try {
-      const { stdout } = await execFileAsync('which', [bin], {
+      const { stdout } = await execFileAsync('which', ['-a', bin], {
         encoding: 'utf8',
         timeout: 3000,
       });
       if (stdout && stdout.trim().length > 0) {
-        const firstLine = stdout.trim().split(/\r?\n/)[0];
-        if (firstLine && fs.existsSync(firstLine)) {
-          return firstLine;
-        }
+        return stdout
+          .trim()
+          .split(/\r?\n/)
+          .filter((line) => line.trim().length > 0 && fs.existsSync(line.trim()));
       }
     } catch {
       // not found
     }
   }
-  return null;
+  return [];
 }
 
 /**
- * Async twin of {@link resolveAgentBinary} — identical resolution order
- * (env override → PATH → well-known dirs → fallback bins), but the PATH
- * lookup spawns (`where.exe` / `which`) are async. The well-known-dir scan
- * stays sync fs.stat (cheap, no subprocess).
+ * Async twin of {@link resolveAgentBinaryCandidates} — same candidate order
+ * (env override → PATH → well-known dirs → fallback bins) and same
+ * "keep every hit" semantics, but the PATH lookup spawns (`where.exe` /
+ * `which`) are async. The well-known-dir scan stays sync fs.stat (cheap, no
+ * subprocess).
+ */
+export async function resolveAgentBinaryCandidatesAsync(
+  def: RuntimeAgentDef,
+  options: ResolveOptions = {},
+): Promise<BinaryCandidate[]> {
+  const out: BinaryCandidate[] = [];
+  const push = (binary: string | null, source: BinaryCandidate['source']) => {
+    if (!binary) return;
+    if (out.some((c) => samePath(c.binary, binary))) return;
+    out.push({ binary, source });
+  };
+
+  // 1. Environment variable override
+  const envKey = `${def.id.toUpperCase()}_BIN`;
+  const envBin = options.configuredEnv?.[envKey] || process.env[envKey];
+  if (envBin && fs.existsSync(envBin)) {
+    push(envBin, 'env-override');
+  }
+
+  // 2. PATH lookup（全部命中）
+  for (const p of await resolveOnPathCandidatesAsync(def.bin)) push(p, 'path');
+
+  // 3. Well-known user toolchain directories
+  for (const p of findInWellKnownDirsCandidates(def.bin)) push(p, 'well-known');
+
+  // 4. Fallback binaries
+  for (const fb of def.fallbackBins ?? []) {
+    for (const p of await resolveOnPathCandidatesAsync(fb)) push(p, 'fallback-bin');
+    for (const p of findInWellKnownDirsCandidates(fb)) push(p, 'well-known');
+  }
+
+  return out;
+}
+
+/**
+ * Async twin of {@link resolveAgentBinary} — takes the first candidate
+ * without probing. Use {@link resolveAgentBinaryCandidatesAsync} when you
+ * need to fall through to the next candidate on probe failure.
  */
 export async function resolveAgentBinaryAsync(
   def: RuntimeAgentDef,
   options: ResolveOptions = {},
 ): Promise<ResolveResult> {
-  // 1. Environment variable override
-  const envKey = `${def.id.toUpperCase()}_BIN`;
-  const envBin = options.configuredEnv?.[envKey] || process.env[envKey];
-  if (envBin && fs.existsSync(envBin)) {
-    return { binary: envBin, source: 'env-override' };
-  }
-
-  // 2. PATH lookup
-  const pathResult = await resolveOnPathAsync(def.bin);
-  if (pathResult) {
-    return { binary: pathResult, source: 'path' };
-  }
-
-  // 3. Well-known user toolchain directories
-  const wellKnownBin = findInWellKnownDirs(def.bin);
-  if (wellKnownBin) {
-    return { binary: wellKnownBin, source: 'well-known' };
-  }
-
-  // 4. Fallback binaries
-  for (const fb of def.fallbackBins ?? []) {
-    const fbPath = await resolveOnPathAsync(fb);
-    if (fbPath) {
-      return { binary: fbPath, source: 'fallback-bin' };
-    }
-    const fbWellKnown = findInWellKnownDirs(fb);
-    if (fbWellKnown) {
-      return { binary: fbWellKnown, source: 'well-known' };
-    }
-  }
-
-  return { binary: null, source: 'not-found' };
+  const first = (await resolveAgentBinaryCandidatesAsync(def, options))[0];
+  return first
+    ? { binary: first.binary, source: first.source }
+    : { binary: null, source: 'not-found' };
 }
 
 export function getWellKnownToolchainDirs(): string[] {
@@ -400,9 +571,10 @@ export function getWellKnownToolchainDirs(): string[] {
   return dirs;
 }
 
-function findInWellKnownDirs(bin: string): string | null {
+function findInWellKnownDirsCandidates(bin: string): string[] {
   const ext = process.platform === 'win32' ? '.cmd' : '';
   const dirs = getWellKnownToolchainDirs();
+  const out: string[] = [];
 
   for (const dir of dirs) {
     if (!fs.existsSync(dir)) continue;
@@ -410,14 +582,14 @@ function findInWellKnownDirs(bin: string): string | null {
     // Must be a regular file: bundled-layout installs (e.g. Codex) create a
     // directory at ~/.molio/bin/<agentId> that would otherwise shadow the
     // real binary in the later ~/.molio/bin/<agentId>/bin candidate dir.
-    if (isRegularFile(candidate)) return candidate;
+    if (isRegularFile(candidate)) out.push(candidate);
     if (process.platform === 'win32') {
       const exeCandidate = path.join(dir, bin + '.exe');
-      if (isRegularFile(exeCandidate)) return exeCandidate;
+      if (isRegularFile(exeCandidate)) out.push(exeCandidate);
     }
   }
 
-  return null;
+  return out;
 }
 
 function isRegularFile(p: string): boolean {
@@ -472,14 +644,26 @@ export function probeVersion(bin: string, args: string[], timeoutMs = 5000): Pro
   try {
     const needsShell = needsShellOnWindows(bin);
 
-    const stdout = execFileSync(bin, args, {
-      encoding: 'utf8',
-      timeout: timeoutMs,
-      stdio: ['ignore', 'pipe', 'pipe'],
-      windowsHide: true,
-      shell: needsShell,
-      env: { ...process.env, PATH: buildProbeEnvPath(bin) },
-    });
+    // 需要 shell 时必须把 binary 路径加引号：Node 拼成
+    // `cmd.exe /d /s /c "<bin> <args>"`，cmd 的 /s 剥掉最外层引号后按第一个
+    // 空格断词——`C:\Program Files\nodejs\claude.cmd` 会被执行成 `C:\Program`。
+    // 见 docs/windows-runtime-detection-fix.md 的 Bug 1。
+    const stdout = needsShell
+      ? execFileSync(shellCommandFor(bin, args), {
+          encoding: 'utf8',
+          timeout: timeoutMs,
+          stdio: ['ignore', 'pipe', 'pipe'],
+          windowsHide: true,
+          shell: true,
+          env: { ...process.env, PATH: buildProbeEnvPath(bin) },
+        })
+      : execFileSync(bin, args, {
+          encoding: 'utf8',
+          timeout: timeoutMs,
+          stdio: ['ignore', 'pipe', 'pipe'],
+          windowsHide: true,
+          env: { ...process.env, PATH: buildProbeEnvPath(bin) },
+        });
     return { version: stdout.trim().split('\n')[0] ?? null };
   } catch (err: any) {
     const msg = err?.stderr || err?.message || String(err);
@@ -503,14 +687,22 @@ export async function probeVersionAsync(
   try {
     const needsShell = needsShellOnWindows(bin);
 
-    const { stdout } = await execFileAsync(bin, args, {
-      encoding: 'utf8',
-      timeout: timeoutMs,
-      windowsHide: true,
-      shell: needsShell,
-      maxBuffer: 4 * 1024 * 1024,
-      env: { ...process.env, PATH: buildProbeEnvPath(bin) },
-    });
+    const { stdout } = needsShell
+      ? await execFileAsync(shellCommandFor(bin, args), {
+          encoding: 'utf8',
+          timeout: timeoutMs,
+          windowsHide: true,
+          shell: true,
+          maxBuffer: 4 * 1024 * 1024,
+          env: { ...process.env, PATH: buildProbeEnvPath(bin) },
+        })
+      : await execFileAsync(bin, args, {
+          encoding: 'utf8',
+          timeout: timeoutMs,
+          windowsHide: true,
+          maxBuffer: 4 * 1024 * 1024,
+          env: { ...process.env, PATH: buildProbeEnvPath(bin) },
+        });
     return { version: stdout.trim().split('\n')[0] ?? null };
   } catch (err: any) {
     const msg = err?.stderr || err?.message || String(err);
