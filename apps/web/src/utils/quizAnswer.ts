@@ -241,23 +241,43 @@ export function gradingMapKey(fingerprintKey: string, questionIndex: number): st
 }
 
 /**
- * 已作答的解答题（键 = `指纹:题号`）。
+ * 物化消息里「作答正文」的起点：指纹行之后的全部内容。
+ *
+ * 头块（标记 / 题干 / 评分点 / 出处 / 指纹）与正文之间隔一个空行，但正文
+ * 自己也可能含空行，所以不能按第一个 `\n\n` 切 —— 按指纹行定位。
+ */
+const ANSWER_FINGERPRINT_LINE_RE = /^题目指纹：[0-9a-f]{8}$/m;
+
+export function subjectAnswerBody(content: string): string {
+  const line = ANSWER_FINGERPRINT_LINE_RE.exec(content);
+  if (!line) return '';
+  return content.slice(line.index + line[0].length).replace(/^\r?\n\r?\n?/, '').trim();
+}
+
+/**
+ * 已作答的解答题（键 = `指纹:题号`，值 = 作答正文）。
  *
  * 解答题的作答发生在聊天输入框里，不在题卡的本地 state——所以「已作答」
  * 只能像批改回写那样从消息序推导：扫到带【大题作答·第N题】标记且带
  * 「题目指纹」行的用户消息，即认为该卡该题已作答。
  *
+ * 值留着正文：存为题库时「你的答案」要写原文（写不出来就只能写「见会话」）。
+ * 同一键后写覆盖先写，与批改一样以最后一条为准。
+ *
  * 键与批改同构（指纹:题号）：两张同有第 3 题的卡各自独立，互不串。
  * 无指纹行的物化消息（v1 形态）无法归属到具体卡 → 不计入。
+ * 正文为空的锚同样不计入：那只说明用户点了「作答」又直接发送，没作答。
  */
 export function pairSubjectAnswers(
   messages: ReadonlyArray<{ role: string; content: string }>,
-): Set<string> {
-  const answered = new Set<string>();
+): Map<string, string> {
+  const answers = new Map<string, string>();
   for (const message of messages) {
     if (message.role !== 'user') continue;
     const meta = extractSubjectAnswerMeta(message.content);
-    if (meta) answered.add(gradingMapKey(meta.key, meta.questionIndex));
+    if (!meta) continue;
+    const body = subjectAnswerBody(message.content);
+    if (body) answers.set(gradingMapKey(meta.key, meta.questionIndex), body);
   }
-  return answered;
+  return answers;
 }

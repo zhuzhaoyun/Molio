@@ -15,7 +15,12 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
-import { createRevealGate, APP_LOAD_REVEAL_TIMEOUT_MS } from '../src/window-reveal.js';
+import {
+  createRevealGate,
+  createLoadWatchdog,
+  APP_LOAD_REVEAL_TIMEOUT_MS,
+  APP_LOAD_TIMEOUT_MS,
+} from '../src/window-reveal.js';
 
 /** 假定时器：手动触发，不依赖真实时间（CI 负载不影响结论）。 */
 function fakeTimers() {
@@ -86,6 +91,42 @@ describe('createRevealGate — 窗口显示闸门', () => {
   });
 });
 
+describe('createLoadWatchdog — 页面加载看门狗', () => {
+  it('加载一直不结束 → 超时回调触发（黑屏卡死的兜底）', () => {
+    const t = fakeTimers();
+    const seen = [];
+    createLoadWatchdog({ timeoutMs: 30000, onTimeout: () => seen.push('timeout'), ...t });
+    assert.equal(t.fire(), true);
+    assert.deepEqual(seen, ['timeout']);
+  });
+
+  it('加载完成 → 撤销看门狗，不再触发', () => {
+    const t = fakeTimers();
+    const seen = [];
+    const watchdog = createLoadWatchdog({ timeoutMs: 30000, onTimeout: () => seen.push('timeout'), ...t });
+    watchdog.loaded();
+    assert.equal(t.isArmed(), false, '加载完成后看门狗必须撤掉');
+    assert.equal(t.fire(), false);
+    assert.deepEqual(seen, []);
+  });
+
+  it('窗口销毁 → 撤销看门狗（别对着死窗口弹错误页）', () => {
+    const t = fakeTimers();
+    const seen = [];
+    const watchdog = createLoadWatchdog({ timeoutMs: 30000, onTimeout: () => seen.push('timeout'), ...t });
+    watchdog.cancel();
+    assert.equal(t.isArmed(), false);
+    assert.deepEqual(seen, []);
+  });
+
+  it('超时时限远长于冷索引等慢场景（别误伤正常加载）', () => {
+    assert.ok(
+      APP_LOAD_TIMEOUT_MS >= 15000,
+      `加载超时时限 ${APP_LOAD_TIMEOUT_MS}ms 不该短于 15s——冷索引/大库首屏可能十几秒`,
+    );
+  });
+});
+
 describe('main.js — 显示路径必须走闸门', () => {
   const mainSource = readFileSync(path.join(import.meta.dirname, '..', 'src', 'main.js'), 'utf-8');
 
@@ -139,8 +180,27 @@ describe('main.js — 显示路径必须走闸门', () => {
       'revealAppWindow 必须先判 isDestroyed()——超时回调可能在窗口关闭后才跑',
     );
     assert.ok(
-      mainSource.includes("import { createRevealGate, APP_LOAD_REVEAL_TIMEOUT_MS } from './window-reveal.js'"),
+      mainSource.includes("from './window-reveal.js'"),
       'main.js 必须从 window-reveal.js 引入闸门',
     );
+  });
+
+  it('加载挂起时换成错误页，而不是永远停在深色启动页', () => {
+    const body = fnBody('function loadAppWindow(');
+    assert.ok(body.includes('createLoadWatchdog('), 'loadAppWindow 必须装加载看门狗');
+    assert.ok(
+      body.includes("showDaemonErrorPage(win, 'load-timeout')"),
+      '看门狗超时必须切到 load-timeout 错误页——否则用户只看到黑屏上的转圈',
+    );
+    assert.ok(
+      body.includes('watchdog.loaded()'),
+      'did-finish-load 必须撤销看门狗（正常加载不该被判超时）',
+    );
+  });
+
+  it('错误页支持 load-timeout 原因文案', () => {
+    const html = readFileSync(path.join(import.meta.dirname, '..', 'src', 'daemon-error.html'), 'utf-8');
+    assert.ok(html.includes('load-timeout'), 'daemon-error.html 必须识别 load-timeout 原因');
+    assert.ok(html.includes('页面加载超时'), 'load-timeout 必须给出可读标题，而不是 daemon 启动失败');
   });
 });

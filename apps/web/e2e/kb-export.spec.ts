@@ -300,6 +300,11 @@ async function openExportFile(page: Page, filename: string, expectOutput = true)
   await page.locator('.vm-vault-item').filter({ hasText: VAULT_NAME }).click({ timeout: 5_000 });
   await page.waitForTimeout(1_000);
 
+  // Picking a vault no longer dismisses the manager (it stays open so the
+  // vault's external-roots settings are reachable) — close it explicitly.
+  await page.locator('[data-testid="vault-manager-close"]').click();
+  await expect(page.locator('.vm-overlay')).toBeHidden({ timeout: 5_000 });
+
   await page.locator('.kb-tree-item').filter({ hasText: filename }).click({ timeout: 10_000 });
   await expect(page.locator('.kb-header-filename-center')).toContainText(filename, {
     timeout: 10_000,

@@ -37,6 +37,7 @@
   --blue-border: #d4dbf0;
   --purple: #5e3a8a;
   --purple-bg: #f0ecf5;
+  --purple-border: #ddd4ea;
   --red: #a8322e;
   --red-bg: #fdf0ef;
   --red-border: #f0d4d2;
@@ -95,6 +96,7 @@
   --blue-border: #2a3658;
   --purple: #b89ad8;
   --purple-bg: #2a1a40;
+  --purple-border: #3d2a55;
   --red: #e87872;
   --red-bg: #3a1816;
   --red-border: #582825;
@@ -156,6 +158,7 @@
     --blue-border: #2a3658;
     --purple: #b89ad8;
     --purple-bg: #2a1a40;
+    --purple-border: #3d2a55;
     --red: #e87872;
     --red-bg: #3a1816;
     --red-border: #582825;

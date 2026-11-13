@@ -68,8 +68,8 @@
 </head>
 <body>
   <div class="card">
-    <div class="title">后端服务启动失败</div>
-    <div class="desc">Molio 的本地服务未能成功启动。请将下方日志文件发送给开发者以便定位问题，或尝试重启应用。</div>
+    <div class="title" id="title">后端服务启动失败</div>
+    <div class="desc" id="desc">Molio 的本地服务未能成功启动。请将下方日志文件发送给开发者以便定位问题，或尝试重启应用。</div>
     <div class="log-path" id="log-path"></div>
     <div class="actions">
       <button id="open-log">打开日志文件夹</button>
@@ -81,6 +81,14 @@
       var params = new URLSearchParams(location.search);
       var logPath = params.get('log') || '';
       document.getElementById('log-path').textContent = logPath;
+
+      // reason=load-timeout：daemon 在跑，但这次页面导航卡住了（Chromium 的
+      // HTTP/1.1 连接池被常驻长连接占满等）——换一套文案，别让用户以为 daemon 没起来。
+      if (params.get('reason') === 'load-timeout') {
+        document.getElementById('title').textContent = '页面加载超时';
+        document.getElementById('desc').textContent =
+          'Molio 的本地服务在运行，但这个窗口的界面没能加载出来（通常是同时打开的知识库太多，浏览器连接被占满）。请关闭多余的知识库窗口后重启 Molio。';
+      }
 
       var api = window.__electron__ || {};
       document.getElementById('open-log').addEventListener('click', function () {

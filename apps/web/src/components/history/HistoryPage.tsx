@@ -6,6 +6,7 @@ import { useHistoryFilters } from '../../hooks/useHistoryFilters';
 import { useActiveVaultId } from '../../stores/vaultStore';
 import { OverflowMenu, type OverflowItem } from '../../components/OverflowMenu';
 import { CheckIcon } from '../icons';
+import { summarizeForHistory } from '../../utils/historySummary';
 
 interface Props {
   onOpenConversation: (conversationId: string) => void;
@@ -405,6 +406,23 @@ function HistoryRow({ item, onOpen, selectMode, selected, onToggleSelect, onEnte
   const channelType = conversation.channelType;
   const showChannelBadge = Boolean(channelType && channelType !== 'desktop');
 
+  // 「做过题」徽标：卡数 + 对数。对数为 0 时不单列（答错几道与没答过在列表里分不清）。
+  // 单数卡数走 One* key（英文 1 card，不是 1 cards）。
+  const cardCount = item.quizCardCount ?? 0;
+  const correctCount = item.quizCorrectCount ?? 0;
+  const singular = cardCount === 1;
+  const quizBadgeLabel = cardCount > 0
+    ? (correctCount > 0
+        ? t(singular ? 'history.quizBadgeCorrectOne' : 'history.quizBadgeCorrect', { cards: cardCount, correct: correctCount })
+        : t(singular ? 'history.quizBadgeOne' : 'history.quizBadge', { cards: cardCount }))
+    : '';
+
+  // 摘要：最后一条消息若是题卡，剥掉围栏只留文字（否则列表里直接吐裸 JSON）。
+  const rawSummary = lastMessage?.content ?? '';
+  const summaryText = rawSummary
+    ? (summarizeForHistory(rawSummary) || t('history.quizSummaryOnly'))
+    : t('history.noMessage');
+
   const overflowItems: OverflowItem[] = [
     {
       icon: conversation.pinnedAt ? <PinIconFilled /> : <PinIcon />,
@@ -462,8 +480,18 @@ function HistoryRow({ item, onOpen, selectMode, selected, onToggleSelect, onEnte
                 {sourceLabel(t, channelType!)}
               </span>
             )}
+            {quizBadgeLabel && (
+              <span
+                className="history-quiz-badge"
+                data-testid="history-quiz-badge"
+                data-cards={cardCount}
+                data-correct={correctCount}
+              >
+                {quizBadgeLabel}
+              </span>
+            )}
           </span>
-          <span className="history-row__summary">{lastMessage?.content || t('history.noMessage')}</span>
+          <span className="history-row__summary">{summaryText}</span>
         </span>
       </button>
       <OverflowMenu

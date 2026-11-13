@@ -27,13 +27,14 @@ describe('createDesktopConversation vaultId', () => {
     const v = createVault(db, 'V', '/tmp/vc-v');
     const c = createDesktopConversation(db, 't', v.id);
     const got = getConversation(db, c.id);
-    // getConversation returns Conversation (no vaultId field); check raw row.
+    assert.equal(got?.vaultId, v.id);
     const raw = db.prepare('SELECT vault_id FROM conversations WHERE id = ?').get(c.id) as { vault_id: string | null };
     assert.equal(raw.vault_id, v.id);
   });
 
   it('writes null vaultId when not provided', () => {
     const c = createDesktopConversation(db, 't2', null);
+    assert.equal(getConversation(db, c.id)?.vaultId, null);
     const raw = db.prepare('SELECT vault_id FROM conversations WHERE id = ?').get(c.id) as { vault_id: string | null };
     assert.equal(raw.vault_id, null);
   });

@@ -503,6 +503,22 @@
   border: 1px solid var(--blue-border);
 }
 
+/* 「做过题」徽标 —— 与库/渠道徽标同一形状，用紫色语义色区分 */
+.history-quiz-badge {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: var(--radius-pill);
+  color: var(--purple);
+  background: var(--purple-bg);
+  border: 1px solid var(--purple-border);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+}
 
 .history-row__summary {
   color: var(--text-muted);

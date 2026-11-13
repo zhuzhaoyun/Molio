@@ -139,6 +139,10 @@ async function openRenderTestFile(page: import('@playwright/test').Page, filenam
   await vaultItem.click({ timeout: 5_000 });
   await page.waitForTimeout(1_000);
 
+  // Picking a vault no longer dismisses the manager — close it explicitly.
+  await page.locator('[data-testid="vault-manager-close"]').click();
+  await expect(page.locator('.vm-overlay')).toBeHidden({ timeout: 5_000 });
+
   // Click the target file in the file tree
   const fileItem = page.locator('.kb-tree-item').filter({ hasText: filename });
   await fileItem.click({ timeout: 10_000 });

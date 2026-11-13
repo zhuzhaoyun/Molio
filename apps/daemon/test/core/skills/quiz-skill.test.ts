@@ -61,7 +61,12 @@ describe('bundled quiz-generate skill', () => {
     // 配图由考点驱动 + 双向锁：不预设学科比例；「如图」必须真嵌图，嵌图必须考点依赖。
     assert.ok(parsed.instructions.includes('考点'), 'image inclusion is driven by the test point, not a subject ratio');
     assert.ok(parsed.instructions.includes('如图'), 'a mentioned figure must be embedded, and vice versa');
+    // 跨库出题（1.6.0，真机排练 2026-11-10）：默认当前库（防混库串题）、点名才跨、出处带挂载命名空间前缀。
+    assert.ok(parsed.instructions.includes('不含挂载'), 'default scope must exclude mounted external vaults');
+    assert.ok(parsed.instructions.includes('防混库串题'), 'default scope rationale must be stated');
+    assert.ok(parsed.instructions.includes('external/'), 'must document the mount namespace prefix');
+    assert.ok(parsed.instructions.includes('external/<标签>/wiki/'), 'source paths must carry the external/<label>/wiki/ form');
     // 版本随协议扩充递增（诊断用）。
-    assert.match(raw, /^version: 1\.5\.0$/m);
+    assert.match(raw, /^version: 1\.6\.0$/m);
   });
 });

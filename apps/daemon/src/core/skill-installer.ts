@@ -51,6 +51,14 @@ export const BUILTIN_SKILLS = [
   // quiz-generate — 从库出客观题。输出纯文本 quiz 围栏，不依赖工具调用，
   // 因此对所有 runtime 可用（Codex/Gemini 等没有 AskUserQuestion）。
   'quiz-generate',
+  // quiz-repractice — 重练题库存题（#397 存为题库的消费端）：从 题库/ 目录
+  // 选题、原样重发 quiz 围栏，判分/批改复用现有链路，答对可从题库移除。
+  // 与 quiz-generate 分工：现场出题 → quiz-generate；重练存过的题 → 本 skill。
+  'quiz-repractice',
+  // tutor — 教学 skill：诊断→KB讲解→示例→练习→按作答反馈调整的闭环。
+  // 与 quiz 家族分工：出题 → quiz-generate；重练存题 → quiz-repractice；
+  // 系统学会一个主题（讲+练+按错处调整）→ 本 skill。
+  'tutor',
   // rule-sandbox — 生成可拖动的阈值演示（声明式 JSON，不执行任何代码）。
   // 与 quiz-generate 分工：出题 → quiz；看懂边界怎么变 → rule-sandbox。
   'rule-sandbox',
