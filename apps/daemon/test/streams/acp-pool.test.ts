@@ -61,6 +61,18 @@ async function createAndAttach(
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+/** Bounded poll: resolve when pred() turns true, throw on timeout. 等真实进程
+ *  事件（exit 等）不能用固定 sleep 赌时序——负载高的 CI runner 上事件可能
+ *  迟到数百毫秒（2026-11-13 Windows pr-check 实录：fake「initialize 后 ~50ms
+ *  退出」，退出事件 >400ms 才落地，固定 sleep(400) 断言 flake）。 */
+async function waitFor(pred: () => boolean, what: string, timeoutMs = 5000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!pred()) {
+    if (Date.now() > deadline) throw new Error(`waitFor timeout (${timeoutMs}ms): ${what}`);
+    await sleep(25);
+  }
+}
+
 describe('AcpPool', () => {
   const pools: AcpPool[] = [];
   function makePool(hooks?: ConstructorParameters<typeof AcpPool>[0]) {
@@ -322,7 +334,12 @@ describe('AcpPool', () => {
       pool.attachSession(entry, 'sess-a', { sink: () => {}, onProcessExit: (i) => exitsA.push(i) });
       pool.attachSession(entry, 'sess-b', { sink: () => {}, onProcessExit: (i) => exitsB.push(i) });
 
-      await sleep(400);
+      // 等退出事件真正落地（alive=false 且两个会话都收到通知）再断言——
+      // 不给「事件多久到」设假设，只给上界；退出迟到不再变成 flake。
+      await waitFor(
+        () => !entry.alive && exitsA.length > 0 && exitsB.length > 0,
+        'process exit to broadcast to both attached sessions',
+      );
       assert.equal(entry.alive, false);
       assert.equal(exitsA.length, 1, 'first attached session must be notified');
       assert.equal(exitsB.length, 1, 'second attached session must be notified');
