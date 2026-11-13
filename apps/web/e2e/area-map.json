@@ -192,7 +192,8 @@
         "graph-local",
         "split-view",
         "graph-camera",
-        "graph-live-refresh"
+        "graph-live-refresh",
+        "graph-resize-flash"
       ]
     },
     "navigation": {
@@ -437,6 +438,10 @@
     "graph-live-refresh": {
       "priority": "P1",
       "file": "graph-live-refresh.spec.ts"
+    },
+    "graph-resize-flash": {
+      "priority": "P1",
+      "file": "graph-resize-flash.spec.ts"
     },
     "split-view": {
       "priority": "P1",

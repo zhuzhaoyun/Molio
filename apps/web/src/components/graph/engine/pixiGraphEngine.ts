@@ -336,6 +336,13 @@ export class PixiGraphEngine {
       this.width = this.container.clientWidth;
       this.height = this.container.clientHeight;
       this.app.renderer.resize(this.width, this.height);
+      // resize 后必须立即补一帧：renderer.resize 只重设 canvas 尺寸、不重绘，而
+      // ResizeObserver 回调在 rAF 之后、上屏之前执行——清空的 backing store 会
+      // 直接合成上屏。引擎 background 不透明 → WebGL context alpha:false →
+      // 清空帧 = 不透明纯黑。拖拽侧边栏（目录框/停靠对话面板，逐帧 resize）时
+      // 表现为图谱持续闪黑屏；窗口 resize 同理。Pixi 官方 ResizePlugin 的
+      // resize() 就是 resize 后紧跟 render() 的成对模式。
+      this.app.renderer.render(this.stage);
     });
     this.resizeObserver.observe(this.container);
   }
