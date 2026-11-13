@@ -1,10 +1,12 @@
 /**
  * @area kb
- * @priority P2
+ * @priority P0
  *
  * 回归：拖选文档内容松手后，选区必须保留（不被 React 重渲染抹掉）。
- * ⚠️ P2（nightly-only）：CI ubuntu headless 上选区/全选失效（getSelection=0，
- * 2026-11 起 nightly 稳定红 5 条），本地 mac 反而绿——根因待查，修好后升回 P0。
+ * 2026-11 起 nightly 稳定红 5 条的根因已查明并修复（#409：MdRenderer state
+ * 对象化后，MathJax 就绪触发的二次渲染 setState 新对象 → React 19 重赋
+ * innerHTML → 整棵子树被换掉，选区陪葬）。曾因此临时降为 P2；修复已 A/B
+ * 实证（无修复 8/36 红 vs 有修复 36/36 绿），按本头注自约升回 P0。
  * 前置：pnpm dev（daemon :3100 + web :5173）。
  */
 import { test, expect } from '@playwright/test';
