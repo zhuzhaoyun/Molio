@@ -46,6 +46,15 @@ function sleepSync(ms) {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 }
 
+// Provide shims so that CJS modules bundled into the ESM output can call
+// require() (for Node.js built-ins) and reference __dirname/__filename.
+// Without __dirname, the Lark SDK's getSdkVersion() throws
+// "ReferenceError: __dirname is not defined in ES module scope" at import
+// time, crashing daemon startup. The SDK is fault-tolerant: when the
+// resolved paths don't point at its own package.json, it falls back to
+// 'unknown' — so pointing __dirname at the bundle's directory is fine.
+const ESM_SHIM_BANNER = `import { createRequire as __molioCreateRequire } from 'module'; import { fileURLToPath as __molioFileURLToPath } from 'url'; import { dirname as __molioDirname } from 'path'; const require = __molioCreateRequire(import.meta.url); const __filename = __molioFileURLToPath(import.meta.url); const __dirname = __molioDirname(__filename);`;
+
 async function bundleDaemon() {
   console.log('Bundling daemon...');
 
@@ -65,20 +74,43 @@ async function bundleDaemon() {
     format: 'esm',
     outfile,
     external: ['better-sqlite3', 'qrcode'],
-    // Provide shims so that CJS modules bundled into the ESM output can call
-    // require() (for Node.js built-ins) and reference __dirname/__filename.
-    // Without __dirname, the Lark SDK's getSdkVersion() throws
-    // "ReferenceError: __dirname is not defined in ES module scope" at import
-    // time, crashing daemon startup. The SDK is fault-tolerant: when the
-    // resolved paths don't point at its own package.json, it falls back to
-    // 'unknown' — so pointing __dirname at daemon.mjs's directory is fine.
-    banner: {
-      js: `import { createRequire as __molioCreateRequire } from 'module'; import { fileURLToPath as __molioFileURLToPath } from 'url'; import { dirname as __molioDirname } from 'path'; const require = __molioCreateRequire(import.meta.url); const __filename = __molioFileURLToPath(import.meta.url); const __dirname = __molioDirname(__filename);`,
-    },
+    banner: { js: ESM_SHIM_BANNER },
     logLevel: 'info',
   });
 
   console.log('Daemon bundled.');
+}
+
+/**
+ * Bundle the vault scan worker separately.
+ *
+ * daemon.mjs is a single-file bundle, so `new Worker(new URL('./vault-worker-entry.js',
+ * import.meta.url))` inside it would point at a file that does not exist in
+ * resources/daemon/. The worker therefore needs its own bundle sitting next to
+ * daemon.mjs; core/vault-worker.ts probes vault-worker-entry.{mjs,js,ts} in the
+ * same directory and picks whichever exists (.mjs in the packaged app).
+ */
+async function bundleVaultWorker() {
+  console.log('Bundling vault worker...');
+
+  const entryPoint = join(daemonDir, 'dist', 'src', 'core', 'vault-worker-entry.js');
+  const outfile = join(resourcesDir, 'daemon', 'vault-worker-entry.mjs');
+
+  mkdirSync(dirname(outfile), { recursive: true });
+
+  await build({
+    entryPoints: [entryPoint],
+    bundle: true,
+    platform: 'node',
+    target: 'node24',
+    format: 'esm',
+    outfile,
+    external: ['better-sqlite3', 'qrcode'],
+    banner: { js: ESM_SHIM_BANNER },
+    logLevel: 'info',
+  });
+
+  console.log('Vault worker bundled.');
 }
 
 /**
@@ -361,6 +393,7 @@ if (existsSync(resourcesDir)) {
 mkdirSync(resourcesDir, { recursive: true });
 
 await bundleDaemon();
+await bundleVaultWorker();
 await bundleMonitoring();
 copyNativeDependencies();
 copyTrashBinaries();

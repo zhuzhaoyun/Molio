@@ -48,15 +48,22 @@ describe('prepare-resources.mjs: __dirname shim in esbuild banner', () => {
   });
 
   it('daemon bundle banner shim should apply to bundleDaemon (daemon.mjs)', () => {
-    // Verify the shim is inside the bundleDaemon call's banner, not only
-    // bundleMonitoring. We check the bundleDaemon function body contains
-    // the shim by locating it near `better-sqlite3` external.
+    // The shim lives in the shared ESM_SHIM_BANNER const (daemon 与 vault worker
+    // 两个 bundle 共用)，bundleDaemon 必须引用它。
+    const shimIdx = prepareResourcesJs.indexOf('const ESM_SHIM_BANNER =');
+    assert.ok(shimIdx > -1, 'ESM_SHIM_BANNER must exist');
+    const shim = prepareResourcesJs.slice(shimIdx, prepareResourcesJs.indexOf('\n', shimIdx));
+    assert.ok(
+      shim.includes('const __dirname =') && shim.includes('const __filename ='),
+      'ESM_SHIM_BANNER must define __dirname/__filename (shim must apply to daemon.mjs)'
+    );
+
     const daemonBundleFnIdx = prepareResourcesJs.indexOf('async function bundleDaemon()');
     assert.ok(daemonBundleFnIdx > -1, 'bundleDaemon function must exist');
     const slice = prepareResourcesJs.slice(daemonBundleFnIdx, daemonBundleFnIdx + 2000);
     assert.ok(
-      slice.includes('const __dirname ='),
-      'bundleDaemon banner must define __dirname (shim must apply to daemon.mjs)'
+      slice.includes('banner: { js: ESM_SHIM_BANNER }'),
+      'bundleDaemon must use ESM_SHIM_BANNER (shim must apply to daemon.mjs)'
     );
   });
 
