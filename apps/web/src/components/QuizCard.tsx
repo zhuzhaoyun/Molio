@@ -691,11 +691,17 @@ function QuizBody({
               ) : question.options.map((option) => {
                 const on = chosen.includes(option.key);
                 const isAnswer = question.answer.includes(option.key);
+                // 提交后两条信息解耦到两个通道：✓ 标记（picked）只表达「我选了」，
+                // 绿/红颜色只表达「对不对」。单选靠红/绿就能反推自己的选择，多选
+                // 不行——「答案里有但没选」（漏选）与「选了且选对」都是绿色，没有
+                // 选中标记就无从区分。chosen 提交后冻结，标记天然持久。
+                const picked = submitted && on;
                 const className = [
                   'quiz-option',
                   on ? 'on' : '',
                   submitted && isAnswer ? 'correct' : '',
                   submitted && on && !isAnswer ? 'wrong' : '',
+                  picked ? 'picked' : '',
                 ].filter(Boolean).join(' ');
                 return (
                   <button
@@ -706,6 +712,7 @@ function QuizBody({
                     data-question-id={question.id}
                     data-key={option.key}
                     aria-pressed={on}
+                    data-picked={picked ? 'true' : 'false'}
                     disabled={submitted}
                     onClick={() => toggle(question.id, question.type, option.key)}
                   >
@@ -723,6 +730,16 @@ function QuizBody({
             {grade && !isSubject && (
               <div className="quiz-answer" data-testid="quiz-answer">
                 {t('quiz.answer', { answer: question.answer.join(' / ') })}
+              </div>
+            )}
+
+            {/* 「你的答案」行：与「正确答案」同格式并排。chosen 来自判分结果
+             * （contracts gradeQuiz 已去重排序），与判分口径同一份真相。只给
+             * 选项型客观题（single/multiple/judge）：填空的作答原文留在上方
+             * 输入框里可见，再印一行是重复；大题有自己的「你的答案」正文。 */}
+            {grade && !isSubject && question.type !== 'fill' && grade.chosen.length > 0 && (
+              <div className="quiz-your-answer" data-testid="quiz-your-answer">
+                {t('quiz.yourAnswer', { answer: grade.chosen.join(' / ') })}
               </div>
             )}
 

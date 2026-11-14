@@ -126,6 +126,7 @@ const zh: Record<string, string> = {
   'quiz.correct': '回答正确',
   'quiz.wrong': '回答错误',
   'quiz.answer': '正确答案：{answer}',
+  'quiz.yourAnswer': '你的答案：{answer}',
   'quiz.explanation': '解析',
   'quiz.sources': '出处',
   'quiz.submit': '提交答案',

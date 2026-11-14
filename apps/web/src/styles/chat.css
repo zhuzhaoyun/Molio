@@ -2064,7 +2064,12 @@
 .quiz-option.on .quiz-option-key { color: var(--accent); }
 .quiz-option.correct .quiz-option-key { color: var(--green); }
 .quiz-option.wrong .quiz-option-key { color: var(--red); }
+/* 提交后的「我选了」标记：✓（picked）只表达「选没选」，绿/红颜色只表达「对不对」。
+ * 多选题的「漏选」（correct 而无 picked）与「选了且对」（picked + correct）靠它区分。
+ * 四态：✓绿=选对、✓红=选错、无✓绿=漏选、无✓无色=非答案。✓ 跟随键位的状态色。 */
+.quiz-option.picked .quiz-option-key::before { content: '✓'; margin-right: 3px; }
 .quiz-answer { margin-top: 8px; font-size: 12px; color: var(--text-muted); }
+.quiz-your-answer { margin-top: 4px; font-size: 12px; color: var(--text-muted); }
 .quiz-explanation {
   margin-top: 8px;
   padding: 10px 12px;
