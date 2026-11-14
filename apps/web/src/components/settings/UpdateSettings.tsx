@@ -14,8 +14,7 @@ import {
   StarIcon,
 } from '../icons';
 
-// 品牌 logo（public/images/main.png）—— 与 HomePage 同一副本
-const LOGO_MAIN_URL = `${import.meta.env.BASE_URL}images/main.png`;
+import { BrandLogo } from '../BrandLogo';
 
 const SITE_URL = 'https://molio.cn';
 const REPO_URL = 'https://github.com/zhuzhaoyun/Molio';
@@ -62,7 +61,7 @@ export function UpdateSettings() {
       <div className="settings-update-card">
         <div className="settings-update-card__info">
           <div className="settings-update-card__brand">
-            <img className="settings-update-card__logo" src={LOGO_MAIN_URL} alt="" />
+            <BrandLogo className="settings-update-card__logo" alt="" />
             <span className="settings-update-card__name">Molio</span>
           </div>
           <div className="settings-update-card__version-row">

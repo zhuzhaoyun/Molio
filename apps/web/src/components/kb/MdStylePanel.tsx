@@ -12,6 +12,7 @@
  */
 
 import { useCallback } from 'react';
+import { MonitorIcon, PhoneIcon } from '../icons';
 import type { IConfigOption } from '@molio/doocs-md/shared/types/common';
 import {
   fontFamilyOptions,
@@ -257,7 +258,7 @@ export function MdStylePanel({ config, onChange }: MdStylePanelProps) {
                   className={`kb-width-item ${isSelected ? 'is-selected' : ''}`}
                   onClick={() => updateConfig({ previewWidth: isMobile ? 'mobile' : 'desktop' })}
                 >
-                  <span className="kb-width-icon">{isMobile ? '📱' : '🖥️'}</span>
+                  <span className="kb-width-icon">{isMobile ? <PhoneIcon size={18} /> : <MonitorIcon size={18} />}</span>
                   <span className="kb-width-label">{opt.label}</span>
                   <span className="kb-width-desc">{opt.desc}</span>
                 </div>

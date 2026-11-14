@@ -25,8 +25,7 @@ function readDockOpen(): boolean {
   try { return localStorage.getItem(STORAGE_KEY_DOCK_OPEN) === 'true'; } catch { return false; }
 }
 
-// 品牌 logo（public/images/main.png）——与官网 landing-page/images/new/main.png 同源副本
-const LOGO_MAIN_URL = `${import.meta.env.BASE_URL}images/main.png`;
+import { BrandLogo } from './BrandLogo';
 
 /** 无活动会话时（首次发送前）落地页输入框的草稿命名空间。 */
 const LANDING_COMPOSER_KEY = 'chat:landing';
@@ -193,7 +192,7 @@ export function HomePage({
         {/* Header */}
         <div className="home-header">
           <div className="home-header-left">
-            <img className="home-header-logo" src={LOGO_MAIN_URL} alt="Molio" />
+            <BrandLogo className="home-header-logo" />
             <span className="home-header-title">Molio</span>
           </div>
           {/* 会话标签栏（header 变体）：与面板同一个组件——会话管理能力对齐面板
@@ -293,7 +292,7 @@ export function HomePage({
         {/* Hero */}
         <div className="home-hero">
           <div className="home-hero__brand">
-            <img className="home-hero__brand-mark" src={LOGO_MAIN_URL} alt="Molio" />
+            <BrandLogo className="home-hero__brand-mark" />
             <span className="home-hero__brand-name" data-testid="hero-brand">Molio</span>
           </div>
           <p className="home-hero__tagline" data-testid="hero-tagline">{t('home.tagline')}</p>

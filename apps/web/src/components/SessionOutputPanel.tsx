@@ -4,6 +4,7 @@
 // 消息内 = 单条 provenance。引用（读入）在独立「引用」tab，不与「概览」（产出）同屏。
 // 纯前端聚合（aggregateSessionOutput），零 daemon/contracts。
 import { useMemo, useState, useRef, useCallback, useEffect } from 'react';
+import { EyeOffIcon, FileIcon, LinkIcon } from './icons';
 import type { ChatMessage } from '../hooks/useChatCore';
 import { aggregateSessionOutput, extractChanges, disambiguateLabels, type ChangeEntry, type SessionWrite } from '../utils/workSteps';
 import { aggregateSessionSources } from '../utils/sessionSources';
@@ -381,7 +382,7 @@ export function SessionOutputPanel({ messages }: Props) {
                       disabled={!vaultId}
                       onClick={() => { if (vaultId) openPreview('read', s.target, s.label); }}
                     >
-                      <span className="session-output-item-icon" aria-hidden>📄</span>
+                      <span className="session-output-item-icon" aria-hidden><FileIcon size={13} /></span>
                       <span className="session-output-item-label">{s.label}</span>
                       <span
                         className="session-output-item-count"
@@ -409,7 +410,7 @@ export function SessionOutputPanel({ messages }: Props) {
                           disabled={!vaultId}
                           onClick={() => { if (vaultId) openPreview('read', s.target, s.label); }}
                         >
-                          <span className="session-output-item-icon" aria-hidden>📄</span>
+                          <span className="session-output-item-icon" aria-hidden><FileIcon size={13} /></span>
                           <span className="session-output-item-label">{s.label}</span>
                           <span className="session-output-item-count">{s.count}</span>
                         </button>
@@ -433,7 +434,7 @@ export function SessionOutputPanel({ messages }: Props) {
                           disabled={!vaultId}
                           onClick={() => { if (vaultId) openPreview('read', s.target, s.label); }}
                         >
-                          <span className="session-output-item-icon" aria-hidden>📄</span>
+                          <span className="session-output-item-icon" aria-hidden><FileIcon size={13} /></span>
                           <span className="session-output-item-label">{s.label}</span>
                           <span className="session-output-item-count">{s.count}</span>
                         </button>
@@ -453,7 +454,7 @@ export function SessionOutputPanel({ messages }: Props) {
                           data-testid="session-output-source-url"
                           title={s.target}
                         >
-                          <span className="session-output-item-icon" aria-hidden>🔗</span>
+                          <span className="session-output-item-icon" aria-hidden><LinkIcon size={13} /></span>
                           <span className="session-output-item-label">{s.label}</span>
                           <span className="session-output-item-count">{s.count}</span>
                         </a>
@@ -479,7 +480,7 @@ export function SessionOutputPanel({ messages }: Props) {
                       data-testid="session-output-omitted-item"
                       title={s.target}
                     >
-                      <span className="session-output-item-icon" aria-hidden>🚫</span>
+                      <span className="session-output-item-icon" aria-hidden><EyeOffIcon size={13} /></span>
                       <span className="session-output-item-label">{s.label}</span>
                       <span className="session-output-item-count">{s.count}</span>
                     </div>

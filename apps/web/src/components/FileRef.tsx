@@ -1,5 +1,6 @@
 import { useCallback } from 'react';
 import { useFileNavigation } from '../hooks/useFileNavigation';
+import { FileBadgeIcon, FileIcon, ImageIcon } from './icons';
 import './FileRef.css';
 
 export interface FileRefProps {
@@ -16,20 +17,23 @@ function extractFileName(path: string): string {
   return parts[parts.length - 1] || path;
 }
 
-function getFileIcon(path: string): string {
+function getFileIcon(path: string, size: number) {
   // Match only the segment after the last dot so a dotless file named e.g.
   // "md" isn't mistaken for a markdown file.
   const ext = path.match(/\.([^.]+)$/)?.[1]?.toLowerCase();
-  if (ext === 'md') return '📄';
-  if (ext === 'png' || ext === 'jpg' || ext === 'jpeg' || ext === 'gif' || ext === 'webp') return '🖼️';
-  if (ext === 'pdf') return '📕';
-  return '📄';
+  if (ext === 'png' || ext === 'jpg' || ext === 'jpeg' || ext === 'gif' || ext === 'webp') {
+    return <ImageIcon size={size} />;
+  }
+  if (ext === 'pdf') {
+    return <FileBadgeIcon size={size} />;
+  }
+  return <FileIcon size={size} />;
 }
 
 export function FileRef({ vaultId, filePath, displayName, className }: FileRefProps) {
   const { openFile } = useFileNavigation();
   const name = displayName || extractFileName(filePath);
-  const icon = getFileIcon(filePath);
+  const icon = getFileIcon(filePath, 13);
 
   const handleClick = useCallback(
     (e: React.MouseEvent) => {

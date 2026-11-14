@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { api } from '../../api/client';
 import { useI18n } from '../../i18n';
+import { GearIcon } from '../icons';
 import {
   CLAUDE_PROVIDERS,
   CODEX_PROVIDERS,
@@ -276,7 +277,7 @@ export function ProviderConfig({ agentId }: ProviderConfigProps) {
         className="rt-btn rt-btn--sm rt-btn--ghost rt-provider-toggle"
         onClick={() => setExpanded(true)}
       >
-        <span className="rt-provider-toggle__icon">⚙</span>
+        <span className="rt-provider-toggle__icon"><GearIcon size={13} /></span>
         {t('runtimes.provider')}
         <span className="rt-provider-toggle__current" data-testid="provider-current-label">
           {currentLabel}

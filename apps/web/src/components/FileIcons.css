@@ -1,0 +1,9 @@
+.file-icon--folder {
+  color: #e8a33d;
+  display: inline-flex;
+}
+
+.file-icon--doc {
+  color: #4a6cf7;
+  display: inline-flex;
+}

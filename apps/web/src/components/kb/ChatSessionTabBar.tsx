@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ChatSessionTab } from '../../stores/kbChatSessionsStore';
 import { ConversationHistoryMenu } from '../ConversationHistoryMenu';
+import { ChatIcon, BookIcon } from '../icons';
 
 interface Props {
   sessions: ChatSessionTab[];
@@ -179,7 +180,7 @@ export function ChatSessionTabBar({ sessions, activeSessionId, runningSessionIds
               }}
             >
               {isRunning && <span className="chat-session-tab-running" data-testid="kb-chat-session-running" />}
-              <span className="chat-session-tab-icon">{s.mode === 'qa' ? '💬' : '⚙️'}</span>
+              <span className="chat-session-tab-icon">{s.mode === 'qa' ? <ChatIcon size={13} /> : <BookIcon size={13} />}</span>
               {editingId === s.id ? (
                 <input
                   className="chat-session-tab-rename"

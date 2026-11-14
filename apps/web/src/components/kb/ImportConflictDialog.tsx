@@ -5,6 +5,7 @@
  */
 
 import { useState } from 'react';
+import { FileIcon } from '../icons';
 
 interface ConflictFile {
   file: string;
@@ -64,7 +65,7 @@ export function ImportConflictDialog({
           <ul className="conflict-file-list">
             {conflicts.map((c) => (
               <li key={c.file} className="conflict-file-item">
-                <span className="conflict-file-icon">📄</span>
+                <span className="conflict-file-icon"><FileIcon size={14} /></span>
                 <span className="conflict-file-name">{c.file}</span>
               </li>
             ))}

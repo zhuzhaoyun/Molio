@@ -4,6 +4,7 @@ import { kbChatSessionsStore, useKbChatPanelOpen } from '../../stores/kbChatSess
 import { useCurrentContext } from '../../stores/currentContextStore';
 import { ContextMenu, type MenuItem } from './ContextMenu';
 import { useI18n } from '../../i18n';
+import { BrandLogo } from '../BrandLogo';
 
 /** 全局悬浮对话按钮：面板收起时显示，点击展开多会话面板。
  *
@@ -36,7 +37,6 @@ const EDGE_MARGIN = 8;    // 自由态/恢复时的最小可见边距
 const SNAP_GAP = 10;      // 吸附预告时按钮与缘的间隙（辉光填充这里）
 const SNAP_ZONE = 48;     // 拖拽中中心距缘 < 48px → 磁吸（松手即隐藏）
 const DRAG_THRESHOLD = 6; // 位移超过才算拖（否则是点击）
-const LOGO_URL = `${import.meta.env.BASE_URL}images/main.png`;
 const STORAGE_KEY = 'molio.kb.chatBtnPos';
 /** 首次藏边的一次性教学标记。与位置分开存：**清位置（「恢复默认位置」）不该让教学重来一次**。 */
 const HINT_SEEN_KEY = 'molio.kb.chatBtnHideHintSeen';
@@ -406,7 +406,7 @@ export function FloatingChatButton({ agentId, onBuildWiki, onOpenSession }: Prop
         aria-label={btnLabel}
       >
         {/* 白色描边聊天气泡已换为品牌标：圆形裁切后波浪圆环居中留呼吸边（CSS __logo） */}
-        <img className="floating-chat-btn__logo" src={LOGO_URL} alt="" draggable={false} />
+        <BrandLogo className="floating-chat-btn__logo" alt="" />
       </button>
       {/* 菜单必须是 button 的兄弟（div 不能嵌进 button）；面板展开 → 按钮卸载 → 菜单随之消失 */}
       {menuPos && (

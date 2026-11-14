@@ -373,7 +373,7 @@
 .kb-tree-item.is-active { background: var(--accent-tint); color: var(--accent); font-weight: 500; }
 .kb-tree-item.is-active .kb-tree-icon { opacity: 0.8; }
 
-.kb-tree-item .kb-tree-icon { font-size: 13px; opacity: 0.5; flex-shrink: 0; }
+.kb-tree-item .kb-tree-icon { font-size: 13px; opacity: 0.68; flex-shrink: 0; display: inline-flex; align-items: center; }
 
 .kb-tree-item .kb-tree-actions {
   display: none;
@@ -653,10 +653,14 @@
 }
 .kb-fm-pill-toggle:hover { background: var(--bg-hover); color: var(--text); }
 
+.kb-fm-badge-icon { display: inline-flex; align-items: center; }
+/* 内联 SVG 默认落在文字基线上，视觉中心偏低；各处统一上提 2px 对齐文字中线 */
+.wiki-cta-btn svg, .kb-outline-header svg, .kb-search-result-file svg, .kb-modal-body svg { vertical-align: -2px; }
+.kb-search-icon { display: inline-flex; align-items: center; }
 .kb-fm-badge {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
+  gap: 5px;
   padding: 1px 8px;
   background: var(--bg-muted);
   border: 1px solid var(--border);
@@ -756,6 +760,11 @@
   flex-shrink: 0;
   min-width: 80px;
   white-space: nowrap;
+}
+.kb-fm-key-icon {
+  display: inline-flex;
+  margin-right: 4px;
+  vertical-align: -2px;
 }
 .kb-fm-val {
   color: var(--text);
@@ -882,7 +891,8 @@
 .kb-empty-state .kb-empty-icon {
   font-size: 48px;
   margin-bottom: 16px;
-  opacity: 0.3;
+  opacity: 0.45;
+  color: var(--text-muted);
 }
 
 .kb-empty-state h3 {
@@ -1198,6 +1208,7 @@
 .kb-load-error-icon {
   font-size: 32px;
   margin-bottom: 4px;
+  color: var(--text-muted);
 }
 
 .kb-load-error-title {
@@ -1978,9 +1989,13 @@
 }
 
 .vm-brand-logo {
-  font-size: 44px;
   margin-bottom: 10px;
-  opacity: 0.8;
+  opacity: 0.9;
+}
+.vm-brand-logo img {
+  width: 48px;
+  height: 48px;
+  display: block;
 }
 
 .vm-brand-title {
@@ -3545,6 +3560,8 @@
 
 .file-chat-empty-icon {
   font-size: 36px;
+  color: var(--text-muted);
+  opacity: 0.6;
 }
 
 /* Selected text preview in empty state */
@@ -3657,7 +3674,7 @@
   outline: 2px solid var(--accent);
   outline-offset: -1px;
 }
-.chat-session-tab-icon { flex-shrink: 0; }
+.chat-session-tab-icon { flex-shrink: 0; display: inline-flex; align-items: center; }
 .chat-session-tab-title {
   overflow: hidden;
   text-overflow: ellipsis;

@@ -117,7 +117,7 @@ export function VaultList({ vaults, activeVaultId, onSelect, onDelete }: VaultLi
       <div className="vm-list-body">
         {vaults.length === 0 && (
           <div className="vm-list-empty">
-            <div>📂</div>
+            <div><FolderIcon size={32} /></div>
             <p>{t('vault.listEmpty')}</p>
           </div>
         )}
