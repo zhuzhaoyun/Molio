@@ -275,6 +275,18 @@ export class PixiGraphEngine {
   /** 上次同步标签 scale 的 k —— 标签恒定屏幕尺寸（scale=1/k），k 变化时才批量更新 */
   private lastLabelK = 0;
 
+  // ── P0-1 帧循环脏标记（失效协议，T2 trunk 渲染沿用）──
+  /** 几何动了（sim tick / 拖拽钉点 / 孤立重铺 / resize / nodeScale）→ 重写节点位置 + 重画边 */
+  private geometryDirty = true;
+  /** 只有变换动了（zoom/pan/fit/视口动画）→ 只同步标签 + minimap + 选中环，边几何不失效 */
+  private transformDirty = true;
+  /** 边样式动了（hover 边 alpha tween 逐帧变 / color 即时切）→ 只重画边 */
+  private edgesDirty = false;
+  /** 选中态变了（selectNode / 点空白清除）→ 只重画选中环 */
+  private selectionDirty = true;
+  /** hover tween 活动窗口的截止时刻（rAF 时钟）：期间帧必须照常上屏，过后可跳过 render */
+  private tweenUntil = 0;
+
   private constructor(container: HTMLElement, opts: EngineOptions) {
     this.container = container;
     this.theme = opts.theme;
@@ -350,6 +362,7 @@ export class PixiGraphEngine {
       // 清空帧 = 不透明纯黑。拖拽侧边栏（目录框/停靠对话面板，逐帧 resize）时
       // 表现为图谱持续闪黑屏；窗口 resize 同理。Pixi 官方 ResizePlugin 的
       // resize() 就是 resize 后紧跟 render() 的成对模式。
+      this.geometryDirty = true; // cx/cy 变 → 所有 stage-local 坐标全变（#411 同步补帧保留）
       this.app.renderer.render(this.stage);
     });
     this.resizeObserver.observe(this.container);
@@ -522,6 +535,7 @@ export class PixiGraphEngine {
         n.radius = this.radiusOf({ linkCount: n.linkCount, dead: n.dead });
       }
       this.sim?.force<ForceCollide<SimNode>>('collide')?.radius(collideRadius);
+      this.geometryDirty = true; // 标签 y 偏移依赖 radius，几何要重写
     }
     this.redrawAllNodes();
   }
@@ -573,6 +587,7 @@ export class PixiGraphEngine {
     if (this.destroyed) return false;
     if (!this.nodeById.has(key)) return false;
     this.selectedId = key;
+    this.selectionDirty = true;
     this.updateFocusAndRender();
     return true;
   }
@@ -736,6 +751,7 @@ export class PixiGraphEngine {
   private rebuildRendering(): void {
     this.sim?.stop();
     this.lastLabelK = 0; // 新标签 scale=1，需重新同步 1/k
+    this.geometryDirty = true; // 重建即全量重画：显示对象全换新，消费过的脏标记不可信
     this.nodeRenderData = [];
     this.linkRenderData = [];
     this.tweens.forEach((t) => t.stop());
@@ -777,6 +793,10 @@ export class PixiGraphEngine {
       if (!this.hasUserInteracted) this.fitView({ animate: true });
     });
     this.sim = sim;
+    // P0-1：任何 sim tick 都意味着几何在动（内部计时器与 preSettle 手动 tick 都会触发）
+    sim.on('tick', () => {
+      this.geometryDirty = true;
+    });
 
     const dpr = window.devicePixelRatio;
 
@@ -929,6 +949,7 @@ export class PixiGraphEngine {
 
   private renderNodesTween(): void {
     this.tweens.get('hover')?.stop();
+    this.tweenUntil = performance.now() + 250; // 200ms tween + 余量：期间帧必须照常上屏
     const group = new Group();
     const focusId = this.focusId;
     const isSelected = focusId !== null && focusId === this.selectedId;
@@ -961,13 +982,21 @@ export class PixiGraphEngine {
 
   private renderLinksTween(): void {
     this.tweens.get('link')?.stop();
+    this.tweenUntil = performance.now() + 250; // 200ms tween + 余量：期间帧必须照常上屏
     const group = new Group();
     const focusId = this.focusId;
+    this.edgesDirty = true; // color 即时切换，下一帧边必须重画
     for (const l of this.linkRenderData) {
       const alpha = focusId === null ? 1 : l.active ? 1 : 0.2;
       l.color = l.active ? this.theme.edgeHover : this.theme.edge;
       // 高亮边置顶改由 redrawEdges 的绘制顺序保证（active 最后画）；alpha 仍 200ms tween
-      group.add(new Tween<LinkRenderData>(l).to({ alpha }, 200));
+      group.add(
+        new Tween<LinkRenderData>(l)
+          .to({ alpha }, 200)
+          .onUpdate(() => {
+            this.edgesDirty = true; // alpha 逐帧变：tween 存活期内每帧重画边
+          }),
+      );
     }
     group.getAll().forEach((tw) => tw.start());
     this.tweens.set('link', makeTweenNode(group));
@@ -1073,6 +1102,7 @@ export class PixiGraphEngine {
   }
 
   private applyTransform(t: ZoomTransform): void {
+    this.transformDirty = true; // zoom/pan/fit/视口动画共用入口：标签+minimap+选中环要跟
     this.currentTransform = t;
     this.stage.scale.set(t.k, t.k);
     this.stage.position.set(t.x, t.y);
@@ -1140,6 +1170,7 @@ export class PixiGraphEngine {
     node.y = y;
     node.fx = x;
     node.fy = y;
+    this.geometryDirty = true; // 单击钉住/未过阈值拖拽：不加热 sim 也在动几何
   }
 
   /** 解除所有节点的 fx/fy（单击路径复位，让图恢复自由布局）。 */
@@ -1203,6 +1234,7 @@ export class PixiGraphEngine {
   private tileIsolated(): void {
     const tiled = tileIsolatedNodes(this.degreeNodes());
     if (tiled.size === 0) return;
+    this.geometryDirty = true;
     for (const [id, p] of tiled) {
       const n = this.nodeById.get(id);
       if (!n) continue;
@@ -1219,6 +1251,8 @@ export class PixiGraphEngine {
     if (active) {
       // 隐藏标签：拖拽期不重测/重传标签纹理
       for (const rd of this.nodeRenderData) rd.label.visible = false;
+    } else {
+      this.geometryDirty = true; // 松手恢复：标签 + minimap 同步要回来
     }
   }
 
@@ -1328,6 +1362,7 @@ export class PixiGraphEngine {
     if (this.selectedId === null) return;
     if (this.hitTest(e)) return; // 点中节点：跳转由 drag end 的单击判定负责
     this.selectedId = null;
+    this.selectionDirty = true;
     this.updateFocusAndRender();
   };
 
@@ -1362,30 +1397,47 @@ export class PixiGraphEngine {
 
   private readonly renderFrame = (time: number): void => {
     if (this.destroyed) return;
-    this.advanceViewport();
-    for (const t of this.tweens.values()) t.update(time);
+    this.advanceViewport(); // 视口动画步进（内部走 applyTransform → transformDirty）
+    const tweensActive = time < this.tweenUntil;
+    for (const t of this.tweens.values()) t.update(time); // onUpdate 置 edgesDirty
 
-    const cx = this.width / 2;
-    const cy = this.height / 2;
-    for (const n of this.nodeRenderData) {
-      const d = n.simulationData;
-      if (d.x == null || d.y == null) continue;
-      const x = d.x + cx;
-      const y = d.y + cy;
-      n.gfx.position.set(x, y);
-      n.label.position.set(x, y - d.radius - LABEL_GAP_SCREEN / this.currentTransform.k);
+    // P0-1：先读后清——本帧消费一次，未标记的工作全部跳过（空闲帧零绘制）
+    const geometryDirty = this.geometryDirty;
+    this.geometryDirty = false;
+    const transformDirty = this.transformDirty;
+    this.transformDirty = false;
+    const selectionDirty = this.selectionDirty;
+    this.selectionDirty = false;
+
+    if (geometryDirty) {
+      const cx = this.width / 2;
+      const cy = this.height / 2;
+      for (const n of this.nodeRenderData) {
+        const d = n.simulationData;
+        if (d.x == null || d.y == null) continue;
+        const x = d.x + cx;
+        const y = d.y + cy;
+        n.gfx.position.set(x, y);
+        n.label.position.set(x, y - d.radius - LABEL_GAP_SCREEN / this.currentTransform.k);
+      }
+      this.redrawEdges();
+      this.edgesDirty = false;
+    } else if (this.edgesDirty) {
+      this.redrawEdges();
+      this.edgesDirty = false;
     }
-    // P0-2：边绘制统一走单 Graphics（本任务先保持每帧重画，脏门控是下一任务）
-    this.redrawEdges();
 
     // 拖拽降质：位移场期跳过标签重排（标签已隐藏）与 minimap 重绘监听
-    if (!this.motionMode) {
+    if (!this.motionMode && (geometryDirty || transformDirty)) {
       this.syncLabels();
       for (const listener of this.renderListeners) listener();
     }
-    this.syncSelectionRing();
+    if (geometryDirty || transformDirty || selectionDirty) this.syncSelectionRing();
 
-    this.app.renderer.render(this.stage);
+    // 无脏且 tween 已停 → 整帧跳过 renderer.render（空闲期 CPU 断崖的本体）
+    if (geometryDirty || transformDirty || tweensActive || selectionDirty) {
+      this.app.renderer.render(this.stage);
+    }
     this.rafId = requestAnimationFrame(this.renderFrame);
   };
 }
