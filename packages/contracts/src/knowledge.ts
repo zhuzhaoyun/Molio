@@ -184,6 +184,44 @@ export interface GraphData {
   deadLinks: DeadLinkInfo[];
   /** 仅局部图接口回填：file=圆心单点；dir=子图全部节点；空图=[]。全量图不设。 */
   focusNodes?: string[];
+  /**
+   * trunk 视图（T1）社区发现结果，随全量图一起算进缓存、一起失效
+   * （设计 docs/2026-11-15-graph-trunk-view-design.md §4.1）。
+   * 局部图接口不携带；旧缓存条目没有该字段 = web fail-open 不启用 trunk。
+   */
+  communities?: GraphCommunities;
+}
+
+/** trunk 对象 id 空间：簇 = "c1".."cn"（按成员最小 key 排序编号）；hub = 节点 key（相对路径，恒以 .md 结尾，无碰撞）。 */
+export interface GraphCluster {
+  /** "c1".."cn" */
+  id: string;
+  /** 簇名：成员主流顶层文件夹 → 主流 frontmatter type → 「簇 #n」；重名追加 ·size 消歧 */
+  label: string;
+  /** 节点 key；hub 不在内，死链幻影/孤立/碎屑不在内 */
+  memberIds: string[];
+  /** = memberIds.length */
+  size: number;
+}
+
+/** trunk 聚合边：簇⇄簇 / 簇⇄hub / hub⇄hub；簇内边不计 */
+export interface GraphCommunityLink {
+  /** 簇 id 或 hub key */
+  source: string;
+  /** 簇 id 或 hub key */
+  target: string;
+  /** 两端对象成员间的真实边数 */
+  weight: number;
+}
+
+export interface GraphCommunities {
+  clusters: GraphCluster[];
+  hubIds: string[];
+  links: GraphCommunityLink[];
+  /** 碎屑（<最小簇成员数）+ 孤立 + 死链幻影合计，trunk 不渲染但显示数字 */
+  crumbCount: number;
+  /** 最大簇吞掉 >50% 非 hub 节点 → "degenerate"（web 端提示「簇结构不明显」） */
+  quality: 'ok' | 'degenerate';
 }
 
 // ─── Search ───
