@@ -12,12 +12,15 @@
 import { parentPort } from 'node:worker_threads';
 import { buildGraph } from './graph-build.js';
 import { buildAnnotatedTree } from './tree-build.js';
+import { detectCommunities } from './graph-communities.js';
 
 export interface VaultJobMessage {
   kind: 'graph' | 'tree' | '__test-crash' | '__test-hang';
   vaultPath?: string;
   /** 外部素材根（#255）——路由侧解析自 db 随 job 传入，worker 线程不碰 db。 */
   externalRoots?: import('./external-roots.js').ExternalRootRef[];
+  /** trunk 视图小库门（T1）：client 侧 readTrunkMinNodesEnv() 现读随消息传入 */
+  trunkMinNodes?: number;
   /**
    * 测试钩子：干正事前空转这么久（毫秒），模拟一次长 CPU 构建。事件循环不被
    * 阻塞的保证靠它来断言——真实 vault 的扫描时长在 CI 上不可控。
@@ -68,7 +71,14 @@ async function runJob({ id, job }: { id: number; job: VaultJobMessage }): Promis
     if (!vaultPath) throw new Error(`vault job '${job.kind}' requires vaultPath`);
 
     if (job.kind === 'graph') {
-      post({ id, ok: true, result: buildGraph(vaultPath, { externalRoots: job.externalRoots }) });
+      // T1：communities 随图一起在 worker 线程算，一起进缓存/失效（不占请求线程）。
+      // result 恒带 communities 字段（小库 = 空簇对象）；「字段缺失」语义留给旧缓存条目。
+      const g = buildGraph(vaultPath, { externalRoots: job.externalRoots });
+      post({
+        id,
+        ok: true,
+        result: { ...g, communities: detectCommunities(g, { minNodes: job.trunkMinNodes }) },
+      });
       return;
     }
     if (job.kind === 'tree') {

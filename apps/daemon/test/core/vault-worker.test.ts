@@ -3,8 +3,9 @@ import assert from 'node:assert/strict';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
-import { VaultWorkerClient, resolveWorkerEntryUrl } from '../../src/core/vault-worker.js';
+import { VaultWorkerClient, resolveWorkerEntryUrl, buildGraphInWorker, readTrunkMinNodesEnv } from '../../src/core/vault-worker.js';
 import { buildGraph } from '../../src/core/graph-build.js';
+import { detectCommunities } from '../../src/core/graph-communities.js';
 import type { GraphData, TreeNode } from '@molio/contracts';
 
 /**
@@ -55,7 +56,12 @@ describe('VaultWorkerClient', () => {
     );
 
     const viaWorker = await makeClient().request<GraphData>({ kind: 'graph', vaultPath: vault });
-    assert.deepEqual(viaWorker, buildGraph(vault));
+    // T1 起 worker 结果恒带 communities（env 阈值现读——env 未设 = 默认 500，小 fixture 走门=空簇对象）
+    const base = buildGraph(vault);
+    assert.deepEqual(viaWorker, {
+      ...base,
+      communities: detectCommunities(base, { minNodes: readTrunkMinNodesEnv() }),
+    });
   });
 
   it('tree 任务返回 scanTree 的结果（含子目录）', async () => {
@@ -116,5 +122,48 @@ describe('VaultWorkerClient', () => {
     ]);
     assert.deepEqual(g1.nodes.map((n) => n.key), ['one.md']);
     assert.deepEqual(g2.nodes.map((n) => n.key), ['two.md']);
+  });
+
+  it('graph 任务结果恒带 communities（T1）；MOLIO_GRAPH_TRUNK_MIN_NODES=0 旁路小库门', async () => {
+    // 两团（各 5 文件互链）+ 1 跨团边（a3→b3）+ 1 孤立文件
+    const clique = (dir: string, names: string[]): Array<[string, string]> =>
+      names.map((n) => [
+        `${dir}/${n}.md`,
+        `# ${n}\n\n${names.filter((m) => m !== n).map((m) => `[[${m}]]`).join(' ')}\n`,
+      ]);
+    const files: Array<[string, string]> = [
+      ...clique('topic-a', ['a1', 'a2', 'a3', 'a4', 'a5']),
+      ...clique('topic-b', ['b1', 'b2', 'b3', 'b4', 'b5']),
+      ['solo.md', '# solo\n'],
+    ];
+    // a3 已在 clique 里链了 a1..a5，补 [[b3]] 形成跨团边
+    const a3 = files.find(([rel]) => rel === 'topic-a/a3.md')!;
+    a3[1] = a3[1].replace('\n', ' [[b3]]\n');
+    const vault = makeVault(...files);
+
+    const prev = process.env.MOLIO_GRAPH_TRUNK_MIN_NODES;
+    process.env.MOLIO_GRAPH_TRUNK_MIN_NODES = '0';
+    let lowered: GraphData;
+    let untouched: GraphData;
+    try {
+      // 走真接缝：env 在 buildGraphInWorker 里现读并随消息传给 worker
+      lowered = await buildGraphInWorker(vault);
+      process.env.MOLIO_GRAPH_TRUNK_MIN_NODES = prev;
+      untouched = await buildGraphInWorker(vault);
+    } finally {
+      if (prev === undefined) delete process.env.MOLIO_GRAPH_TRUNK_MIN_NODES;
+      else process.env.MOLIO_GRAPH_TRUNK_MIN_NODES = prev;
+    }
+
+    // 恒带字段：小库是空簇对象，不是 undefined（web 只认 clusters 空，字段缺失语义留给旧缓存）
+    assert.ok('communities' in lowered);
+    assert.ok(lowered.communities);
+    assert.equal(lowered.communities.clusters.length, 2);
+    assert.equal(lowered.communities.links.length, 1);
+    assert.ok(lowered.communities.crumbCount >= 1, '孤立文件应计入 crumbCount');
+    // 默认阈值（500）下同一库不启用 trunk
+    assert.ok(untouched.communities);
+    assert.equal(untouched.communities.clusters.length, 0);
+    assert.ok('communities' in untouched);
   });
 });
