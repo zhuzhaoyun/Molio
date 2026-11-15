@@ -331,6 +331,49 @@ test.describe('Graph Interactions', () => {
     await expect(page.locator('[data-testid="graph-search-empty"]')).toBeVisible();
   });
 
+  test('setStyle on an idle canvas must repaint (dirty-marking write-source regression)', async ({ page }) => {
+    await gotoGraphWithEngine(page);
+
+    // 图谱静止（空闲帧不渲染）时从设置面板改主题/边宽，setStyle 必须自己把帧标脏
+    // 并触发重画——否则画布冻结在旧外观直到用户交互（2026-11-15 评审发现的回归：
+    // theme/edgeWidth 路径漏接失效协议）。
+    const result = await page.evaluate(async () => {
+      const eng = (window as unknown as {
+        __graphEngine: {
+          app: { renderer: { render: (s: unknown) => void } };
+          setStyle(style: { theme?: unknown; edgeWidth?: number }): void;
+          theme: unknown;
+        };
+      }).__graphEngine;
+      const r = eng.app.renderer;
+      let count = 0;
+      const orig = r.render.bind(r);
+      r.render = (s: unknown) => {
+        count++;
+        orig(s);
+      };
+      // 等一个真正静止的 400ms 零渲染窗口（sim tick / 取景动画全停）确立空闲前提
+      let idle = false;
+      for (let i = 0; i < 40; i++) {
+        const before = count;
+        await new Promise((res) => setTimeout(res, 400));
+        if (count === before) {
+          idle = true;
+          break;
+        }
+      }
+      if (!idle) return { idle, after: -1 };
+      // 同一主题对象仍走 if (style.theme) 分支——测的是「setStyle 必须触发重画」，
+      // 不是配色本身（画布像素断言在 WebGL 下不可靠，渲染计数是行为级可观察量）
+      count = 0;
+      eng.setStyle({ theme: eng.theme, edgeWidth: 3 });
+      await new Promise((res) => setTimeout(res, 400));
+      return { idle, after: count };
+    });
+    expect(result.idle).toBe(true);
+    expect(result.after).toBeGreaterThanOrEqual(1);
+  });
+
   test('minimap drag recenters main viewport', async ({ page }) => {
     await gotoGraphWithEngine(page);
 

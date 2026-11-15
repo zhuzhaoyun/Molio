@@ -528,9 +528,17 @@ export class PixiGraphEngine {
     if (style.theme) {
       this.theme = style.theme;
       this.app.renderer.background.color = style.theme.bg;
+      // P0-1 失效协议：redrawAllNodes 只重写节点 Graphics 上下文与 l.color，不触发
+      // 渲染——空闲帧会停在旧配色，必须自己标脏（选中环边框色也换了）
+      this.edgesDirty = true; // 边色随边重画生效
+      this.selectionDirty = true;
+      this.transformDirty = true; // 强制下一帧 render
     }
     if (style.nodeScale !== undefined) this.nodeScale = style.nodeScale;
-    if (style.edgeWidth !== undefined) this.edgeWidth = style.edgeWidth;
+    if (style.edgeWidth !== undefined) {
+      this.edgeWidth = style.edgeWidth;
+      this.edgesDirty = true; // 边宽只在 redrawEdges 重画时生效
+    }
 
     if (style.nodeScale !== undefined) {
       for (const n of this.nodeById.values()) {
