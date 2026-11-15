@@ -120,7 +120,6 @@ interface NodeRenderData {
 
 interface LinkRenderData {
   simulationData: SimLink;
-  gfx: Graphics;
   color: string;
   alpha: number;
   active: boolean;
@@ -200,6 +199,8 @@ export class PixiGraphEngine {
   private labelsLayer!: Container<Text>;
   private nodesLayer!: Container<Graphics>;
   private linkLayer!: Container<Graphics>;
+  /** P0-2：全部边共用这一个 Graphics（替代 per-link Graphics，23k 边 23k→1 显示对象） */
+  private edgesGfx!: Graphics;
   private selectionGfx!: Graphics;
 
   private theme: ThemeColors;
@@ -326,6 +327,13 @@ export class PixiGraphEngine {
 
     this.selectionGfx = new Graphics();
     this.nodesLayer.addChild(this.selectionGfx);
+
+    // edgesGfx 必须在首帧前存在：rAF 循环（下方启动）早于首次 rebuildRendering，
+    // 而 renderFrame 每帧都调 redrawEdges——否则首帧 TypeError 且抛点在 rAF 重新
+    // 排队之前，整个渲染循环永久死亡（实测：相机/搜索 4 个 spec 超时的根因）。
+    // selectionGfx 同款模式：init 建一份，rebuildRendering 清层后重建。
+    this.edgesGfx = new Graphics({ interactive: false, eventMode: 'none' });
+    this.linkLayer.addChild(this.edgesGfx);
 
     this.bindZoomAndDrag();
     this.bindNativeEvents();
@@ -814,11 +822,14 @@ export class PixiGraphEngine {
       });
     }
 
+    // P0-2：边几何状态留在 linkRenderData，绘制统一收进单个 edgesGfx（redrawEdges）。
+    // 旧版每边一个 Graphics：23k 边 = 23k 显示对象每帧各自 clear+重画，实测占帧预算 ~86%。
     for (const l of this.links) {
-      const gfx = new Graphics({ interactive: false, eventMode: 'none' });
-      this.linkLayer.addChild(gfx);
-      this.linkRenderData.push({ simulationData: l, gfx, color: this.theme.edge, alpha: 1, active: false });
+      this.linkRenderData.push({ simulationData: l, color: this.theme.edge, alpha: 1, active: false });
     }
+    this.edgesGfx = new Graphics({ interactive: false, eventMode: 'none' });
+    this.linkLayer.addChild(this.edgesGfx);
+    this.redrawEdges();
 
     this.updateFocusAndRender();
   }
@@ -833,6 +844,27 @@ export class PixiGraphEngine {
     }
     for (const l of this.linkRenderData) {
       l.color = this.theme.edge;
+    }
+  }
+
+  /** 全部边重画进单个 Graphics。两遍扫描替代 per-link zIndex：active 边最后画 = 置顶。 */
+  private redrawEdges(): void {
+    this.edgesGfx.clear();
+    const cx = this.width / 2;
+    const cy = this.height / 2;
+    // 两遍循环（inactive 先、active 后），零 per-edge 分配：不许 [...linkRenderData].sort()（收敛期每帧调用）
+    for (const pass of [false, true] as const) {
+      for (const l of this.linkRenderData) {
+        if (l.active !== pass) continue;
+        const d = l.simulationData;
+        const s = d.source as SimNode;
+        const t = d.target as SimNode;
+        if (s.x == null || s.y == null || t.x == null || t.y == null) continue;
+        this.edgesGfx
+          .moveTo(s.x + cx, s.y + cy)
+          .lineTo(t.x + cx, t.y + cy)
+          .stroke({ alpha: l.alpha, width: this.edgeWidth, color: l.color });
+      }
     }
   }
 
@@ -934,8 +966,7 @@ export class PixiGraphEngine {
     for (const l of this.linkRenderData) {
       const alpha = focusId === null ? 1 : l.active ? 1 : 0.2;
       l.color = l.active ? this.theme.edgeHover : this.theme.edge;
-      // 高亮边置顶（zIndex 1），不被淡化边遮挡；无焦点时归位 0
-      l.gfx.zIndex = l.active ? 1 : 0;
+      // 高亮边置顶改由 redrawEdges 的绘制顺序保证（active 最后画）；alpha 仍 200ms tween
       group.add(new Tween<LinkRenderData>(l).to({ alpha }, 200));
     }
     group.getAll().forEach((tw) => tw.start());
@@ -1344,17 +1375,8 @@ export class PixiGraphEngine {
       n.gfx.position.set(x, y);
       n.label.position.set(x, y - d.radius - LABEL_GAP_SCREEN / this.currentTransform.k);
     }
-    for (const l of this.linkRenderData) {
-      const d = l.simulationData;
-      const s = d.source as SimNode;
-      const t = d.target as SimNode;
-      if (s.x == null || s.y == null || t.x == null || t.y == null) continue;
-      l.gfx.clear();
-      l.gfx
-        .moveTo(s.x + cx, s.y + cy)
-        .lineTo(t.x + cx, t.y + cy)
-        .stroke({ alpha: l.alpha, width: this.edgeWidth, color: l.color });
-    }
+    // P0-2：边绘制统一走单 Graphics（本任务先保持每帧重画，脏门控是下一任务）
+    this.redrawEdges();
 
     // 拖拽降质：位移场期跳过标签重排（标签已隐藏）与 minimap 重绘监听
     if (!this.motionMode) {
