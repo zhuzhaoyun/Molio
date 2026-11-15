@@ -109,6 +109,9 @@ export type {
   GraphData,
   GraphScope,
   DeadLinkInfo,
+  GraphCluster,
+  GraphCommunityLink,
+  GraphCommunities,
   // Search
   SearchResult,
   SearchResponse,
