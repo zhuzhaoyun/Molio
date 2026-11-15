@@ -286,6 +286,8 @@ export class PixiGraphEngine {
   private selectionDirty = true;
   /** hover tween 活动窗口的截止时刻（rAF 时钟）：期间帧必须照常上屏，过后可跳过 render */
   private tweenUntil = 0;
+  /** getSnapshot 的节点数组缓冲（P0-3 搭车）：长度不变时原地改写，消 minimap 每帧大库对象分配 */
+  private snapshotBuf: { key: string; x: number; y: number }[] = [];
 
   private constructor(container: HTMLElement, opts: EngineOptions) {
     this.container = container;
@@ -629,8 +631,21 @@ export class PixiGraphEngine {
   getSnapshot(): GraphSnapshot | null {
     if (this.nodes.length === 0) return null;
     const t = this.currentTransform;
+    // P0-3：数组原地复用——长度一致就按索引改写既有元素（消费方 Minimap 同步读、不持引用，
+    // 原地改写安全）；换图（setData）必然长度变化走重建。大库省掉每次 6500+ 对象分配。
+    if (this.snapshotBuf.length !== this.nodes.length) {
+      this.snapshotBuf = this.nodes.map((n) => ({ key: n.id, x: n.x ?? 0, y: n.y ?? 0 }));
+    } else {
+      for (let i = 0; i < this.nodes.length; i++) {
+        const b = this.snapshotBuf[i]!;
+        const n = this.nodes[i]!;
+        b.key = n.id;
+        b.x = n.x ?? 0;
+        b.y = n.y ?? 0;
+      }
+    }
     return {
-      nodes: this.nodes.map((n) => ({ key: n.id, x: n.x ?? 0, y: n.y ?? 0 })),
+      nodes: this.snapshotBuf,
       view: {
         x: (0 - t.x) / t.k - this.width / 2,
         y: (0 - t.y) / t.k - this.height / 2,
