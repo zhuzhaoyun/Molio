@@ -105,6 +105,51 @@ describe('detectCommunities', () => {
     assert.equal(c.crumbCount, 2);
   });
 
+  it('4b. 幻影边不计真实度数：断链废页不得成 hub，也不抬高 P90（评审 Important #1）', () => {
+    // 5 团（度 4）+ stub.md 有 10 条断链出边（宽口径度 10 > hubThreshold 5）。
+    // 幻影边若计入度数，stub 会进 hubIds——断链堆积的废页变成 trunk 枢纽。
+    const keysA = ['a1.md', 'a2.md', 'a3.md', 'a4.md', 'a5.md'];
+    const { nodes, edges } = twoCliques('topic-a', keysA, null, []);
+    nodes.push(md('stub.md'));
+    for (let i = 1; i <= 10; i++) edges.push({ source: 'stub.md', target: `__dead__g${i}.md` });
+    nodes.push(...Array.from({ length: 10 }, (_, i) => md(`__dead__g${i + 1}.md`, { dead: true })));
+    const c = detectCommunities(graph(nodes, edges), { minNodes: 0, hubThreshold: 5 });
+
+    assert.deepEqual(c.hubIds, [], '幻影度数不得把 stub 推成 hub');
+    const allMembers = c.clusters.flatMap((x) => x.memberIds);
+    assert.ok(!allMembers.includes('stub.md'), 'stub 真实度数 0 = 孤立，不进簇');
+    assert.equal(c.clusters.length, 1, '5 团完好');
+    // stub（孤立真实）+ 10 幻影 = 11；团成员的度不受幻影边稀释
+    assert.equal(c.crumbCount, 11);
+    assert.deepEqual(c.links, [], '幻影端点不产生聚合边');
+  });
+
+  it('4c. 全幻影/孤立小图走默认 hub 阈值路径不 NaN（评审 Important #2：defaultHubThreshold([]) 曾零覆盖）', () => {
+    const nodes = [md('stub.md'), md('__dead__x.md', { dead: true }), md('y.md')];
+    const edges = [{ source: 'stub.md', target: '__dead__x.md' }];
+    const c = detectCommunities(graph(nodes, edges), { minNodes: 0 });
+    // LPA 输入为空 → defaultHubThreshold([]) 必须返回有限数（曾怕 NaN → 恒 false → 永无 hub）
+    assert.deepEqual(c.hubIds, []);
+    assert.deepEqual(c.clusters, []);
+    assert.equal(c.crumbCount, 3);
+    assert.equal(c.quality, 'ok');
+  });
+
+  it('4d. 默认 hub 阈值公式钉死：星形 51 点（hub 度 50）→ max(50, 5×P90)=50 恰好入选', () => {
+    // P90([1×50, 50]) = 1 → 5×1=5 → max(50,5)=50；hub 度 50 ≥ 50 入选——
+    // 公式任何一处改坏（NaN / 插值错位 / 下限丢失）都会让 hubIds 空。
+    const hub = 'hub.md';
+    const spokes = Array.from({ length: 50 }, (_, i) => `s${i + 1}.md`);
+    const nodes = [md(hub), ...spokes.map((s) => md(s))];
+    const edges = spokes.map((s) => ({ source: hub, target: s }));
+    const c = detectCommunities(graph(nodes, edges), { minNodes: 0 });
+
+    assert.deepEqual(c.hubIds, [hub]);
+    assert.equal(c.clusters.length, 1);
+    assert.equal(c.clusters[0]!.size, 50, '辐条去 hub 后成簇');
+    assert.equal(c.quality, 'degenerate', '最大簇吞掉全部非 hub 节点');
+  });
+
   it('5. 小簇（<clusterMinSize 默认 5）整簇计碎屑，不出 clusters', () => {
     // 4 团（碎屑）+ 5 团（保留）
     const keysSmall = ['n1.md', 'n2.md', 'n3.md', 'n4.md'];

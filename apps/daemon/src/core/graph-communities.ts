@@ -49,11 +49,16 @@ export function detectCommunities(graph: GraphData, opts: DetectCommunitiesOptio
   const nodeByKey = new Map<string, GraphNode>();
   for (const n of graph.nodes) nodeByKey.set(n.key, n);
 
-  // 度数只统计两端都真实存在的边（防御：边引用不存在的 key 时跳过）
+  // 度数只统计两端都真实存在且都不是死链幻影的边（防御：边引用不存在的 key 时跳过）。
+  // 幻影边若计入度数，断链堆积的废页会被推成 trunk hub（且其聚合边为空——屏上一个大点
+  // 孤悬），幻影密集的库还会整体抬高 P90 阈值漏判真 hub——口径：幻影只进 crumbCount。
   const degree = new Map<string, number>();
   for (const e of graph.edges) {
-    if (nodeByKey.has(e.source)) degree.set(e.source, (degree.get(e.source) ?? 0) + 1);
-    if (nodeByKey.has(e.target)) degree.set(e.target, (degree.get(e.target) ?? 0) + 1);
+    const s = nodeByKey.get(e.source);
+    const t = nodeByKey.get(e.target);
+    if (!s || !t || s.deadLink || t.deadLink) continue;
+    degree.set(e.source, (degree.get(e.source) ?? 0) + 1);
+    degree.set(e.target, (degree.get(e.target) ?? 0) + 1);
   }
 
   // crumbCount 基数：死链幻影 + 孤立真实节点（两者永不进簇/聚合边）
