@@ -91,7 +91,7 @@ export interface ChatSessionViewProps {
  * 浮标按钮（chat-jump-bottom）不是消息，剔除——保存与恢复两侧用同一过滤，
  * 锚点序号才有意义。
  */
-function measureMessages(el: HTMLElement): { tops: number[]; heights: number[] } {
+export function measureMessages(el: HTMLElement): { tops: number[]; heights: number[] } {
   const logTop = el.getBoundingClientRect().top;
   const tops: number[] = [];
   const heights: number[] = [];
