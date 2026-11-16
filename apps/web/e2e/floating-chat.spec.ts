@@ -40,7 +40,7 @@ test.describe('Floating chat (方案 D)', () => {
 
   test('KB 页有右下角悬浮按钮；面板默认收起', async ({ page }) => {
     await mockChatRun(page);
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await page.goto(`/knowledge?vault=${vault.id}&file=doc.md`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
 
     // 方案 D：面板收起时右下角常驻悬浮按钮
@@ -51,7 +51,7 @@ test.describe('Floating chat (方案 D)', () => {
 
   test('💬问答唤起面板，按钮让位；收起后按钮复现', async ({ page }) => {
     await mockChatRun(page);
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await page.goto(`/knowledge?vault=${vault.id}&file=doc.md`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
 
     await page.locator('[data-testid="kb-btn-ask"]').click();
@@ -67,7 +67,7 @@ test.describe('Floating chat (方案 D)', () => {
 
   test('KB 页内 💬问答展开的是同一全局面板，按钮隐藏', async ({ page }) => {
     await mockChatRun(page);
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await page.goto(`/knowledge?vault=${vault.id}&file=doc.md`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
 
     // 方案 D：KB 页不再渲染页内面板，💬问答直接展开全局面板
@@ -79,7 +79,7 @@ test.describe('Floating chat (方案 D)', () => {
 
   test('离开 KB 页面板保持开启；非 KB 页有悬浮按钮', async ({ page }) => {
     await mockChatRun(page);
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await page.goto(`/knowledge?vault=${vault.id}&file=doc.md`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
     await page.locator('[data-testid="kb-btn-ask"]').click();
     const panel = page.locator('[data-testid="kb-chat-panel"]');
@@ -100,7 +100,7 @@ test.describe('Floating chat (方案 D)', () => {
 
   test('非 KB 页收起面板后，悬浮按钮可重新唤起', async ({ page }) => {
     await mockChatRun(page);
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await page.goto(`/knowledge?vault=${vault.id}&file=doc.md`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
     await page.locator('[data-testid="kb-btn-ask"]').click();
     await expect(page.locator('[data-testid="kb-chat-panel"]')).toBeVisible();
@@ -123,7 +123,7 @@ test.describe('Floating chat (方案 D)', () => {
 
   test('主页是例外：到达主页时面板不渲染，无悬浮按钮', async ({ page }) => {
     await mockChatRun(page);
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await page.goto(`/knowledge?vault=${vault.id}&file=doc.md`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
     await page.locator('[data-testid="kb-btn-ask"]').click();
     const panel = page.locator('[data-testid="kb-chat-panel"]');
@@ -142,7 +142,7 @@ test.describe('Floating chat (方案 D)', () => {
 
   test('面板开合有升入动画：open 态配置 opacity+transform 过渡，收起后 visibility 隐藏', async ({ page }) => {
     await mockChatRun(page);
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await page.goto(`/knowledge?vault=${vault.id}&file=doc.md`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
 
     await page.locator('[data-testid="kb-btn-ask"]').click();
@@ -174,7 +174,7 @@ test.describe('Floating chat (方案 D)', () => {
 
   test('面板可拖拽调整宽度（左缘 handle 320–720），重载后宽度持久化保留', async ({ page }) => {
     await mockChatRun(page);
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await page.goto(`/knowledge?vault=${vault.id}&file=doc.md`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
 
     await page.locator('[data-testid="kb-btn-ask"]').click();
@@ -209,7 +209,7 @@ test.describe('Floating chat (方案 D)', () => {
     // 顶缘高度 handle 是悬浮形态独有（停靠形态 display:none）。KB 页默认停靠，
     // 故经 💬问答 打开（停靠）→ 切悬浮 → 验证拖高。
     await mockChatRun(page);
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await page.goto(`/knowledge?vault=${vault.id}&file=doc.md`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
 
     await page.locator('[data-testid="kb-btn-ask"]').click();
@@ -260,7 +260,7 @@ test.describe('Floating chat (方案 D)', () => {
 
   test('边缘跟随光标：移动面板后拖宽/拖高，被拖边动、对侧固定', async ({ page }) => {
     await mockChatRun(page);
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await page.goto(`/knowledge?vault=${vault.id}&file=doc.md`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
 
     await page.locator('[data-testid="kb-btn-ask"]').click();
@@ -323,7 +323,7 @@ test.describe('Floating chat (方案 D)', () => {
   test('停靠切换按钮：悬浮 ⇄ 页内分栏（同一个表面形变），停靠时文档区让出宽度、拖宽联动', async ({ page }) => {
     await page.addInitScript(VT_COUNTER_SCRIPT);
     await mockChatRun(page);
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await page.goto(`/knowledge?vault=${vault.id}&file=doc.md`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
 
     await page.locator('[data-testid="kb-btn-ask"]').click();
@@ -397,7 +397,7 @@ test.describe('Floating chat (方案 D)', () => {
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await page.addInitScript(VT_COUNTER_SCRIPT);
     await mockChatRun(page);
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await page.goto(`/knowledge?vault=${vault.id}&file=doc.md`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
 
     await page.locator('[data-testid="kb-btn-ask"]').click();
@@ -418,7 +418,7 @@ test.describe('Floating chat (方案 D)', () => {
   test('停靠态单击顶部空白区不脱离（仅真实拖动才变悬浮）', async ({ page }) => {
     // 回归：onHeaderDragStart 原在 pointerdown 立即切 dock→float，单击（无位移）也误触脱离。
     await mockChatRun(page);
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await page.goto(`/knowledge?vault=${vault.id}&file=doc.md`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
     await page.locator('[data-testid="kb-btn-ask"]').click();
     const panel = page.locator('[data-testid="kb-chat-panel"]');
@@ -437,7 +437,7 @@ test.describe('Floating chat (方案 D)', () => {
     // inline width 超过渲染上限 → left 按 inline 算 → 右缘漂移、面板偏出屏（释放后跳回）。
     await page.setViewportSize({ width: 700, height: 800 });
     await mockChatRun(page);
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await page.goto(`/knowledge?vault=${vault.id}&file=doc.md`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
     await page.locator('[data-testid="kb-btn-ask"]').click();
     const panel = page.locator('[data-testid="kb-chat-panel"]');
@@ -469,7 +469,7 @@ test.describe('Floating chat (方案 D)', () => {
     // 回归：拖宽提交依赖 el.style.width，真实环境下它可能在释放前被清空/覆盖，
     // 回退到旧 panelWidth。现从 dragWidthRef 提交（真值源），拖到最大松开必须保持。
     await mockChatRun(page);
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await page.goto(`/knowledge?vault=${vault.id}&file=doc.md`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
     await page.locator('[data-testid="kb-btn-ask"]').click();
     const panel = page.locator('[data-testid="kb-chat-panel"]');
@@ -497,7 +497,7 @@ test.describe('Floating chat (方案 D)', () => {
     // 回归：释放时 el.style.left 被清空会把已移动的悬浮面板甩到 CSS 默认 right:24px
     // （最右侧）再等重渲染跳回。修复后保持拖拽左缘、同步 floatPos，位置不跳变。
     await mockChatRun(page);
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await page.goto(`/knowledge?vault=${vault.id}&file=doc.md`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
     await page.locator('[data-testid="kb-btn-ask"]').click();
     const panel = page.locator('[data-testid="kb-chat-panel"]');
@@ -533,7 +533,7 @@ test.describe('Floating chat (方案 D)', () => {
   test('悬浮形态可拖拽移动位置，重载后位置保留', async ({ page }) => {
     // KB 页默认停靠 → 经 💬问答 打开后切悬浮，验证移动与位置持久化。
     await mockChatRun(page);
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await page.goto(`/knowledge?vault=${vault.id}&file=doc.md`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
 
     await page.locator('[data-testid="kb-btn-ask"]').click();
@@ -579,7 +579,7 @@ test.describe('Floating chat (方案 D)', () => {
   test('拖拽互切：悬浮拖到右缘 → 停靠；停靠后向左拖 → 恢复悬浮', async ({ page }) => {
     // KB 页默认停靠 → 切悬浮 → 拖右缘停靠（页内分栏）→ 再拖回悬浮。
     await mockChatRun(page);
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await page.goto(`/knowledge?vault=${vault.id}&file=doc.md`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
 
     await page.locator('[data-testid="kb-btn-ask"]').click();
@@ -625,7 +625,7 @@ test.describe('Floating chat (方案 D)', () => {
       localStorage.setItem('molio.kb.chatPanelWidth', '720');
       localStorage.setItem('molio.kb.chatPanelHeight', '772');
     });
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await page.goto(`/knowledge?vault=${vault.id}&file=doc.md`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
 
     // 默认停靠：打开即侧边栏（可正常看到）
@@ -648,7 +648,7 @@ test.describe('Floating chat (方案 D)', () => {
 
   test('活跃标签加粗 + 标签字号 13px（P0 视觉精修）', async ({ page }) => {
     await mockChatRun(page);
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await page.goto(`/knowledge?vault=${vault.id}&file=doc.md`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
     await page.locator('[data-testid="kb-btn-ask"]').click();
 
@@ -659,7 +659,7 @@ test.describe('Floating chat (方案 D)', () => {
 
   test('双击标签标题重命名：Enter 提交生效', async ({ page }) => {
     await mockChatRun(page);
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await page.goto(`/knowledge?vault=${vault.id}&file=doc.md`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
     await page.locator('[data-testid="kb-btn-ask"]').click();
 
@@ -677,7 +677,7 @@ test.describe('Floating chat (方案 D)', () => {
     await mockChatRun(page, {
       persistedMessages: [{ id: 'm1', role: 'user', content: '原始问题', timestamp: 1 }],
     });
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await page.goto(`/knowledge?vault=${vault.id}&file=doc.md`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
     await page.locator('[data-testid="kb-btn-ask"]').click();
 
@@ -704,7 +704,7 @@ test.describe('Floating chat (方案 D)', () => {
     // 后台标签保活护栏（L2a 第 3 步）：状态生命周期必须与面板 DOM 解耦。
     // frameDelay 拉长流式，保证 SPA 导航发生在 run 结束之前。
     await mockChatRun(page, { frameDelay: 400 });
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await page.goto(`/knowledge?vault=${vault.id}&file=doc.md`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
     await page.locator('[data-testid="kb-btn-ask"]').click();
 
@@ -736,7 +736,7 @@ test.describe('Floating chat (方案 D)', () => {
     await page.route('**/api/conversations/test-conv-1/messages', (route) =>
       route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ error: 'not found' }) }));
 
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await page.goto(`/knowledge?vault=${vault.id}&file=doc.md`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
     await page.locator('[data-testid="kb-btn-ask"]').click();
     const panel = page.locator('[data-testid="kb-chat-panel"]');
@@ -756,7 +756,7 @@ test.describe('Floating chat (方案 D)', () => {
 
   test('KB 页经 💬问答 打开默认停靠（页内分栏）', async ({ page }) => {
     await mockChatRun(page);
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await page.goto(`/knowledge?vault=${vault.id}&file=doc.md`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
     await page.locator('[data-testid="kb-btn-ask"]').click();
     const panel = page.locator('[data-testid="kb-chat-panel"]');
@@ -769,7 +769,7 @@ test.describe('Floating chat (方案 D)', () => {
 
   test('悬浮按钮：图标为品牌标（尺寸被按钮容纳）', async ({ page }) => {
     await mockChatRun(page);
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await page.goto(`/knowledge?vault=${vault.id}&file=doc.md`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
     const btn = page.locator('[data-testid="floating-chat-btn"]');
     await expect(btn).toBeVisible();
@@ -788,7 +788,7 @@ test.describe('Floating chat (方案 D)', () => {
 
   test('悬浮按钮：中间松手 = 自由位持久化', async ({ page }) => {
     await mockChatRun(page);
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await page.goto(`/knowledge?vault=${vault.id}&file=doc.md`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
     const btn = page.locator('[data-testid="floating-chat-btn"]');
     await expect(btn).toBeVisible();
@@ -813,7 +813,7 @@ test.describe('Floating chat (方案 D)', () => {
 
   test('悬浮按钮：拖近右缘实时磁吸 → 松手吸进缘里隐藏 → 点签唤回 → 重载保持', async ({ page }) => {
     await mockChatRun(page);
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await page.goto(`/knowledge?vault=${vault.id}&file=doc.md`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
     const btn = page.locator('[data-testid="floating-chat-btn"]');
     const panel = page.locator('[data-testid="kb-chat-panel"]');
@@ -877,7 +877,7 @@ test.describe('Floating chat (方案 D)', () => {
 
   test('悬浮按钮：首次藏边弹一次性教学提示，唤回/再藏/重载都不再弹', async ({ page }) => {
     await mockChatRun(page);
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await page.goto(`/knowledge?vault=${vault.id}&file=doc.md`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
     const btn = page.locator('[data-testid="floating-chat-btn"]');
     const hintEl = page.locator('[data-testid="floating-chat-hint"]');
@@ -982,7 +982,7 @@ test.describe('Floating chat (方案 D)', () => {
       await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
     };
 
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await page.goto(`/knowledge?vault=${vault.id}&file=doc.md`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
 
     // ① 显式深色：data-theme="dark"
@@ -1012,7 +1012,7 @@ test.describe('Floating chat (方案 D)', () => {
 
   test('悬浮按钮：四缘之顶缘同样吸附隐藏（不只左右）', async ({ page }) => {
     await mockChatRun(page);
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await page.goto(`/knowledge?vault=${vault.id}&file=doc.md`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
     const btn = page.locator('[data-testid="floating-chat-btn"]');
     await expect(btn).toBeVisible();
@@ -1040,7 +1040,7 @@ test.describe('Floating chat (方案 D)', () => {
       localStorage.setItem('molio.kb.chatBtnPos', JSON.stringify({ edge: null, x: -500, y: 158, hidden: false }));
     });
     await mockChatRun(page);
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await page.goto(`/knowledge?vault=${vault.id}&file=doc.md`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
     const btn = page.locator('[data-testid="floating-chat-btn"]');
     await expect(btn).toBeVisible();
@@ -1060,7 +1060,7 @@ test.describe('Floating chat (方案 D)', () => {
       localStorage.setItem('molio.kb.chatFloatPos', JSON.stringify({ left: 820, top: 60 }));
     });
     await mockChatRun(page);
-    await page.goto('http://localhost:5173/history');
+    await page.goto('/history');
     const panel = page.locator('[data-testid="kb-chat-panel"]');
     await page.locator('[data-testid="floating-chat-btn"]').click();
     await expect(panel).toBeVisible();
@@ -1098,7 +1098,7 @@ test.describe('Floating chat (方案 D)', () => {
       localStorage.setItem('molio.kb.chatBtnPos', JSON.stringify({ edge: null, x: 1330, y: 836, hidden: false }));
     });
     await mockChatRun(page);
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await page.goto(`/knowledge?vault=${vault.id}&file=doc.md`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
     const btn = page.locator('[data-testid="floating-chat-btn"]');
     await expect(btn).toBeVisible();
@@ -1133,7 +1133,7 @@ test.describe('Floating chat (方案 D)', () => {
       localStorage.setItem('molio.kb.chatBtnPos', JSON.stringify({ edge: 'right', x: null, y: 836, hidden: true }));
     });
     await mockChatRun(page);
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await page.goto(`/knowledge?vault=${vault.id}&file=doc.md`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
     const btn = page.locator('[data-testid="floating-chat-btn"]');
     await expect(btn).toHaveClass(/floating-chat-btn--hidden/);
@@ -1165,7 +1165,7 @@ test.describe('Floating chat (方案 D)', () => {
 
   test('悬浮按钮：右键菜单固定动作——构建Wiki / 打开会话 / 位置管理', async ({ page }) => {
     await mockChatRun(page);
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await page.goto(`/knowledge?vault=${vault.id}&file=doc.md`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
     const btn = page.locator('[data-testid="floating-chat-btn"]');
     await expect(btn).toBeVisible();
@@ -1188,7 +1188,7 @@ test.describe('Floating chat (方案 D)', () => {
 
   test('悬浮按钮：菜单「构建Wiki」与 KB 固定按钮同源——复用同一标签', async ({ page }) => {
     await mockChatRun(page);
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await page.goto(`/knowledge?vault=${vault.id}&file=doc.md`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
     const btn = page.locator('[data-testid="floating-chat-btn"]');
     const tabs = page.locator('[data-testid="kb-chat-session-tab"]');
@@ -1219,7 +1219,7 @@ test.describe('Floating chat (方案 D)', () => {
       { type: 'usage', usage: { input_tokens: 10, output_tokens: 5, costUsd: 0.001 } },
     ];
     await mockChatRun(page, { frameDelay: 400, script: longBuild });
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await page.goto(`/knowledge?vault=${vault.id}&file=doc.md`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
     const btn = page.locator('[data-testid="floating-chat-btn"]');
     const panel = page.locator('[data-testid="kb-chat-panel"]');
@@ -1257,7 +1257,7 @@ test.describe('Floating chat (方案 D)', () => {
       localStorage.setItem('molio.kb.chatActiveSessionId', 'chat:mig1');
     });
     await mockChatRun(page);
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await page.goto(`/knowledge?vault=${vault.id}&file=doc.md`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
     const btn = page.locator('[data-testid="floating-chat-btn"]');
     await expect(btn).toBeVisible();
@@ -1277,7 +1277,7 @@ test.describe('Floating chat (方案 D)', () => {
 
   test('悬浮按钮：右键「隐藏按钮」吸进最近缘；小签右键「唤回按钮」', async ({ page }) => {
     await mockChatRun(page);
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await page.goto(`/knowledge?vault=${vault.id}&file=doc.md`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
     const btn = page.locator('[data-testid="floating-chat-btn"]');
     await expect(btn).toBeVisible();
@@ -1302,7 +1302,7 @@ test.describe('Floating chat (方案 D)', () => {
       localStorage.setItem('molio.kb.chatBtnPos', JSON.stringify({ edge: null, x: 100, y: 100, hidden: false }));
     });
     await mockChatRun(page);
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await page.goto(`/knowledge?vault=${vault.id}&file=doc.md`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
     const btn = page.locator('[data-testid="floating-chat-btn"]');
     await expect(btn).toBeVisible();
@@ -1328,7 +1328,7 @@ test.describe('Floating chat (方案 D)', () => {
 
 /** 经真实问答流建一个会话标签（与 chat-fullscreen.spec 的 seedSession 同法）。 */
 async function seedChatSession(page: import('@playwright/test').Page, text: string) {
-  await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+  await page.goto(`/knowledge?vault=${vault.id}&file=doc.md`);
   await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
   await page.locator('[data-testid="kb-btn-ask"]').click();
   await page.locator('[data-testid="kb-chat-panel"] [data-testid="composer-input"]').fill(text);

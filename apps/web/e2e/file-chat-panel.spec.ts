@@ -25,7 +25,7 @@ test.describe('File chat panel', () => {
   test.afterEach(async ({ page }) => { await unmockAll(page); });
 
   test('toolbar button opens file chat panel', async ({ page }) => {
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await page.goto(`/knowledge?vault=${vault.id}&file=doc.md`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
 
     // 💬问答 (document-scoped) opens the multi-session panel.
@@ -39,7 +39,7 @@ test.describe('File chat panel', () => {
   });
 
   test('empty state shows composer with current file as a removable chip', async ({ page }) => {
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await page.goto(`/knowledge?vault=${vault.id}&file=doc.md`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
 
     await page.locator('[data-testid="kb-btn-ask"]').click();
@@ -63,7 +63,7 @@ test.describe('File chat panel', () => {
 
   test('面板里的助手消息带完整工具条（重新生成/继续/删除）', async ({ page }) => {
     await mockChatRun(page);
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await page.goto(`/knowledge?vault=${vault.id}&file=doc.md`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
     await page.locator('[data-testid="kb-btn-ask"]').click();
 

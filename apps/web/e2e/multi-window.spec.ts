@@ -12,7 +12,9 @@
 import { test, expect } from '@playwright/test';
 import { mkdirSync, writeFileSync, rmSync } from 'node:fs';
 
-const WEB = 'http://localhost:5173';
+/** web 基址：自建 context（browser.newContext）不继承 config 的 baseURL，必须绝对地址；
+ *  跟随 MOLIO_E2E_WEB_PORT 平移（见 playwright.config.ts 头注）。 */
+const WEB = `http://localhost:${process.env.MOLIO_E2E_WEB_PORT ?? '5173'}`;
 const DAEMON_API = `http://localhost:${process.env.MOLIO_E2E_DAEMON_PORT ?? '3100'}/api`;
 
 async function createVault(name: string, vaultPath: string): Promise<string> {

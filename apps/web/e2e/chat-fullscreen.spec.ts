@@ -35,7 +35,7 @@ test.describe('/chat 全屏态与面板共享活动会话', () => {
         { id: 'cf-a1', role: 'assistant', content: 'Hello, how can I help you?', timestamp: Date.now() + 1, agentId: 'claude' },
       ],
     });
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await page.goto(`/knowledge?vault=${vault.id}&file=doc.md`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
     await page.locator('[data-testid="kb-btn-ask"]').click();
     await page.locator('[data-testid="kb-chat-panel"] [data-testid="composer-input"]').fill('冷启动测试');
@@ -45,7 +45,7 @@ test.describe('/chat 全屏态与面板共享活动会话', () => {
     ).toBeVisible({ timeout: 10_000 });
 
     // 冷启动：整页重载到 /chat（活动标签从 localStorage 恢复）→ 直接落进该会话
-    await page.goto('http://localhost:5173/chat');
+    await page.goto('/chat');
     await expect(page.locator('[data-testid="assistant-message"]').last()).toBeVisible({ timeout: 10_000 });
     // landing（hero）不应该出现 —— 说明展示的是同一个会话，而不是空的 /chat
     await expect(page.locator('.home-hero-view')).toBeHidden();
@@ -73,7 +73,7 @@ test.describe('/chat 全屏态与面板共享活动会话', () => {
     });
 
     // 先在 KB 面板聊一句 → 该会话写入持久化 conversationId（localStorage）。
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await page.goto(`/knowledge?vault=${vault.id}&file=doc.md`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
     await page.locator('[data-testid="kb-btn-ask"]').click();
     await page.locator('[data-testid="kb-chat-panel"] [data-testid="composer-input"]').fill('冷启动');
@@ -83,7 +83,7 @@ test.describe('/chat 全屏态与面板共享活动会话', () => {
     ).toBeVisible({ timeout: 10_000 });
 
     // 冷启动整页重载到 /chat：活动标签已绑定 conversation，历史仍在加载中。
-    await page.goto('http://localhost:5173/chat');
+    await page.goto('/chat');
     // 关键断言：**在加载窗口内**（< HISTORY_DELAY_MS）全屏 shell 必须已就位。
     // 这里用短超时是有意的 —— 若判据退回「有消息」，此刻仍是 landing（`.home-header` 不存在，
     // 直到 ~HISTORY_DELAY_MS 历史到达才出现），断言会在窗口内超时失败。用默认 5s 会一直重试
@@ -100,19 +100,19 @@ test.describe('/chat 全屏态与面板共享活动会话', () => {
 
   test('/chat 冷启动：没有任何标签时显示 landing', async ({ page }) => {
     await mockChatRun(page);
-    await page.goto('http://localhost:5173/knowledge');
+    await page.goto('/knowledge');
     await page.evaluate(() => {
       localStorage.removeItem('molio.kb.chatSessions');
       localStorage.removeItem('molio.kb.chatActiveSessionId');
     });
-    await page.goto('http://localhost:5173/chat');
+    await page.goto('/chat');
     await expect(page.locator('[data-testid="hero-tagline"]')).toBeVisible({ timeout: 5_000 });
     await expect(page.locator('[data-testid="composer-input"]')).toBeVisible();
   });
 
   test('面板态与全屏态之间切换不丢草稿', async ({ page }) => {
     await mockChatRun(page);
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await page.goto(`/knowledge?vault=${vault.id}&file=doc.md`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
     await page.locator('[data-testid="kb-btn-ask"]').click();
     const panelInput = page.locator('[data-testid="kb-chat-panel"] [data-testid="composer-input"]');
@@ -126,7 +126,7 @@ test.describe('/chat 全屏态与面板共享活动会话', () => {
 
   test('删除选择态不残留到另一个视图', async ({ page }) => {
     await mockChatRun(page);
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await page.goto(`/knowledge?vault=${vault.id}&file=doc.md`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
     await page.locator('[data-testid="kb-btn-ask"]').click();
     await page.locator('[data-testid="kb-chat-panel"] [data-testid="composer-input"]').fill('选择态测试');
@@ -149,7 +149,7 @@ test.describe('/chat 全屏态与面板共享活动会话', () => {
 
   test('/chat 上无可用运行时显示 NoRuntimeCard', async ({ page }) => {
     await mockNoAgents(page);
-    await page.goto('http://localhost:5173/chat');
+    await page.goto('/chat');
     await expect(page.locator('[data-testid="no-runtime-card"]')).toBeVisible({ timeout: 5_000 });
     await expect(page.locator('[data-testid="composer-input"]')).toBeHidden();
   });
@@ -158,7 +158,7 @@ test.describe('/chat 全屏态与面板共享活动会话', () => {
 
   /** 在知识库页开面板、发一句、等回复 —— 让 store 里存在一个带消息的活动会话。 */
   async function seedSession(page: import('@playwright/test').Page, text: string) {
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await page.goto(`/knowledge?vault=${vault.id}&file=doc.md`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
     await page.locator('[data-testid="kb-btn-ask"]').click();
     await page.locator('[data-testid="kb-chat-panel"] [data-testid="composer-input"]').fill(text);
@@ -257,7 +257,7 @@ test.describe('/chat 全屏态与面板共享活动会话', () => {
     // 首个导航：应用从入口 `/` 进来。EntryRedirect 是 <Navigate replace/> ——
     // **原地替换**首个 entry：idx 仍是 0，但 key 被换成生成值。
     // 这正是「用 location.key 判有没有上一页」会翻车的那条路径（桌面端每次启动/新窗口都走它）。
-    await page.goto('http://localhost:5173/');
+    await page.goto('/');
     await expect(page).toHaveURL(/\/chat$/);
     await expect(page.locator('.home-header')).toBeVisible({ timeout: 5_000 });
 
@@ -306,7 +306,7 @@ test.describe('/chat 全屏态与面板共享活动会话', () => {
 
   test('全屏态下没有会话时切页 → 不该弹出空面板', async ({ page }) => {
     await mockChatRun(page);
-    await page.goto('http://localhost:5173/chat');
+    await page.goto('/chat');
     await expect(page.locator('.home-landing')).toBeVisible({ timeout: 5_000 });
 
     await clickNav(page, 'knowledge');
@@ -333,7 +333,7 @@ test.describe('/chat 全屏态与面板共享活动会话', () => {
     // 破坏运行时列表 → 冷启动回 /chat：会话恢复，输入框位置换成空状态卡片
     await page.unroute('**/api/agents');
     await mockNoAgents(page);
-    await page.goto('http://localhost:5173/chat');
+    await page.goto('/chat');
     await expect(page.locator('[data-testid="no-runtime-card"]')).toBeVisible({ timeout: 5_000 });
 
     // 容器仍带着「输入栏」的装饰（全宽分隔缝 + 白底 + 10px 内边距），卡片像被塞进页脚。

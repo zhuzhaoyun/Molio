@@ -30,7 +30,7 @@ test.describe('KB drag-to-root (real mouse)', () => {
   });
 
   test('drag subFolder out onto empty panel area moves it to vault root', async ({ page }) => {
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+    await page.goto(`/knowledge?vault=${vault.id}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 10_000 });
     // Expand container so subFolder is visible.
     await page.locator('.kb-tree-group-label').filter({ hasText: 'container' }).click();

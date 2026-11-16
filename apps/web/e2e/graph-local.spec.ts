@@ -45,7 +45,7 @@ test.describe('Graph local scope', () => {
   const graphTab = (page: Page) => page.locator('[data-testid="kb-graph-pane"]');
 
   async function gotoVault(page: Page) {
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+    await page.goto(`/knowledge?vault=${vault.id}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 10_000 });
   }
 

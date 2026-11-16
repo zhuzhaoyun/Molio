@@ -25,7 +25,7 @@ test.describe('KB split view', () => {
   test.afterAll(async () => { if (vault) await cleanupTempVault(vault); });
 
   async function openAlpha(page: import('@playwright/test').Page) {
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+    await page.goto(`/knowledge?vault=${vault.id}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 10_000 });
     const alpha = page.locator('.kb-tree-item').filter({ hasText: 'alpha.md' });
     await expect(alpha).toBeVisible({ timeout: 10_000 });

@@ -28,7 +28,7 @@ test.describe('KB chat entry (scoped buttons)', () => {
   test.afterEach(async ({ page }) => { await unmockAll(page); });
 
   test('💬问答 opens chat in qa mode with @当前文档 (one click)', async ({ page }) => {
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await page.goto(`/knowledge?vault=${vault.id}&file=doc.md`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
 
     await page.locator('[data-testid="kb-btn-ask"]').click();
@@ -45,7 +45,7 @@ test.describe('KB chat entry (scoped buttons)', () => {
     // mockChatRun 同时 mock /api/agents → 模拟已配置 agent。真实 CI daemon 无 agent，
     // 否则 handleBuildWiki 的 `if (!agentId) return` 会静默拦截，面板永不打开（回归）。
     await mockChatRun(page);
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+    await page.goto(`/knowledge?vault=${vault.id}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
 
     await page.locator('[data-testid="kb-btn-build-wiki"]').click();
@@ -68,7 +68,7 @@ test.describe('KB chat entry (scoped buttons)', () => {
     // 同上：mock /api/agents → 模拟已配置 agent，否则 build 被 agentId guard 拦截、面板不开。
     await mockChatRun(page);
     // Open with a file so the 💬问答 (document-scoped) button is available.
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await page.goto(`/knowledge?vault=${vault.id}&file=doc.md`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
 
     // Start a wiki build — it lives in its OWN ⚙️ session tab (auto-sends the skill prompt).
@@ -93,13 +93,13 @@ test.describe('KB chat entry (scoped buttons)', () => {
   });
 
   test('🩺健康检查 disabled when wiki not initialized', async ({ page }) => {
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+    await page.goto(`/knowledge?vault=${vault.id}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
     await expect(page.locator('[data-testid="kb-btn-lint-wiki"]')).toBeDisabled();
   });
 
   test('💬问答 available when no file open (tab-bar entry, vault-scoped)', async ({ page }) => {
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+    await page.goto(`/knowledge?vault=${vault.id}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
     // 头部文档级按钮仍只在选中文件时渲染（就近上下文入口，职责不变）
     await expect(page.locator('[data-testid="kb-btn-ask"]')).toHaveCount(0);
@@ -118,7 +118,7 @@ test.describe('KB chat entry (scoped buttons)', () => {
   });
 
   test('💬问答 empty-state CTA opens chat when no file open', async ({ page }) => {
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+    await page.goto(`/knowledge?vault=${vault.id}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
     const cta = page.locator('[data-testid="kb-empty-ask-cta"]');
     await expect(cta).toBeVisible();
@@ -128,7 +128,7 @@ test.describe('KB chat entry (scoped buttons)', () => {
   });
 
   test('Cmd+K opens qa panel', async ({ page }) => {
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await page.goto(`/knowledge?vault=${vault.id}&file=doc.md`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
     await expect(page.locator('[data-testid="kb-btn-ask"]')).toBeVisible();
     await page.locator('.kb-main').click();
@@ -140,7 +140,7 @@ test.describe('KB chat entry (scoped buttons)', () => {
   test('💬问答 re-points an existing empty qa session to the newly opened file', async ({ page }) => {
     // 先无文件开会话（@ 为空）→ 关面板 → 打开文件 → 再点问答：
     // #4 语义（显式问答把活跃会话重新指向当前文件）必须真正落到 composer
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+    await page.goto(`/knowledge?vault=${vault.id}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
     await page.locator('[data-testid="kb-btn-ask-tab"]').click();
     const panel = page.locator('[data-testid="kb-chat-panel"]');
@@ -149,7 +149,7 @@ test.describe('KB chat entry (scoped buttons)', () => {
     await page.locator('[data-testid="kb-chat-close"]').click();
     await expect(panel).toBeHidden();
 
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await page.goto(`/knowledge?vault=${vault.id}&file=doc.md`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
     // 头部文档级按钮渲染 = selectedFile 已就绪（?file= 异步解析完成），否则点击时 filePath 仍为 null
     await expect(page.locator('[data-testid="kb-btn-ask"]')).toBeVisible({ timeout: 10_000 });
@@ -161,7 +161,7 @@ test.describe('KB chat entry (scoped buttons)', () => {
   test('💬问答 re-point updates @ when switching files between asks', async ({ page }) => {
     // 会话 @ doc.md → 关面板 → 切到 doc2.md → 再点问答：@ 必须跟着切到 doc2
     // （composer 草稿缓存按 会话:文件 分桶，不得让旧文件的草稿压过新种子）
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await page.goto(`/knowledge?vault=${vault.id}&file=doc.md`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
     await expect(page.locator('[data-testid="kb-btn-ask"]')).toBeVisible({ timeout: 10_000 });
     await page.locator('[data-testid="kb-btn-ask-tab"]').click();
@@ -171,7 +171,7 @@ test.describe('KB chat entry (scoped buttons)', () => {
     await page.locator('[data-testid="kb-chat-close"]').click();
     await expect(panel).toBeHidden();
 
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc2.md`);
+    await page.goto(`/knowledge?vault=${vault.id}&file=doc2.md`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
     await expect(page.locator('[data-testid="kb-btn-ask"]')).toBeVisible({ timeout: 10_000 });
     // 头部按钮可见只证明「有选中文件」——文件 tab 栏会从 localStorage 恢复旧 tab，
@@ -186,7 +186,7 @@ test.describe('KB chat entry (scoped buttons)', () => {
     // 契约（2026-10-22 修订）：引用 chip 始终跟随当前打开的文档——打开新文档即改绑，
     // 不再需要再点一次 💬问答。图谱标签页激活时可见上下文是库（filePath=null），
     // 点 💬 = 打开/继续会话，不改绑、不清除已有文件绑定（被隐藏的 selectedFile 不参与）。
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await page.goto(`/knowledge?vault=${vault.id}&file=doc.md`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
     await expect(page.locator('.kb-main')).toContainText('Doc', { timeout: 10_000 });
     await page.locator('[data-testid="kb-btn-ask-tab"]').click();
@@ -197,7 +197,7 @@ test.describe('KB chat entry (scoped buttons)', () => {
     await expect(panel).toBeHidden();
 
     // 打开 doc2.md → 会话绑定自动跟随 doc2（页面重载也不影响：store 里的绑定会被改写）
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc2.md`);
+    await page.goto(`/knowledge?vault=${vault.id}&file=doc2.md`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
     await expect(page.locator('.kb-main')).toContainText('Doc2', { timeout: 10_000 });
     // SPA 路径进图谱（不用 ?panel=graph 首载：tab 恢复会与图谱激活竞态，图谱会被抢回文档 tab）
@@ -212,7 +212,7 @@ test.describe('KB chat entry (scoped buttons)', () => {
 
   test('💬问答 from graph tab starts vault-scoped session (no hidden file)', async ({ page }) => {
     // 图谱页新建会话：不带被隐藏的 selectedFile，纯库级问答
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await page.goto(`/knowledge?vault=${vault.id}&file=doc.md`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
     await expect(page.locator('.kb-main')).toContainText('Doc', { timeout: 10_000 });
     // 不创建任何会话，经 NavRail 切图谱（SPA，避开 ?panel=graph 首载竞态）
@@ -230,7 +230,7 @@ test.describe('KB chat entry (scoped buttons)', () => {
       if (request.url().includes(`/knowledge/vaults/${vault.id}/resolve/doc.md`)) resolveRequests++;
     });
     // 同一契约覆盖面板「+」入口：图谱页新建会话不绑被隐藏的 selectedFile
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await page.goto(`/knowledge?vault=${vault.id}&file=doc.md`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
     await expect(page.locator('.kb-main')).toContainText('Doc', { timeout: 10_000 });
     await page.locator('[data-testid="kb-btn-ask-tab"]').click();
@@ -256,7 +256,7 @@ test.describe('KB chat entry (scoped buttons)', () => {
     // （放 describe 末尾：写 INDEX.md 会翻转后续测试的 wiki 状态）
     fs.mkdirSync(path.join(vault.path, 'wiki'), { recursive: true });
     fs.writeFileSync(path.join(vault.path, 'wiki', 'INDEX.md'), '# Index\n');
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+    await page.goto(`/knowledge?vault=${vault.id}`);
     // 限定 .kb-main：文件面板的「Empty vault」也用 .kb-empty-state，不限定会 strict 冲突
     await expect(page.locator('.kb-main .kb-empty-state')).toContainText('未选择文件');
     const cta = page.locator('[data-testid="kb-empty-ask-cta"]');

@@ -32,7 +32,7 @@ test.describe('KB tab bar', () => {
   test.afterAll(async () => { if (vault) await cleanupTempVault(vault); });
 
   test('open second file reuses the current tab; + creates a fresh tab', async ({ page }) => {
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+    await page.goto(`/knowledge?vault=${vault.id}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
 
     const alphaItem = page.locator('.kb-tree-item').filter({ hasText: 'alpha.md' });
@@ -70,7 +70,7 @@ test.describe('KB tab bar', () => {
   });
 
   test('tree right-click「在新标签页中打开」opens a brand-new tab', async ({ page }) => {
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+    await page.goto(`/knowledge?vault=${vault.id}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
 
     const alphaItem = page.locator('.kb-tree-item').filter({ hasText: 'alpha.md' });
@@ -88,7 +88,7 @@ test.describe('KB tab bar', () => {
   });
 
   test('double-click pins a tab; a pinned tab is never overwritten by a doc click', async ({ page }) => {
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+    await page.goto(`/knowledge?vault=${vault.id}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
 
     const alphaItem = page.locator('.kb-tree-item').filter({ hasText: 'alpha.md' });
@@ -110,7 +110,7 @@ test.describe('KB tab bar', () => {
   });
 
   test('double-click does NOT pin the graph tab (pinning only applies to file/blank tabs)', async ({ page }) => {
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+    await page.goto(`/knowledge?vault=${vault.id}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
 
     // 图谱标签永不回收（per-vault 单例），固定对它无意义：双击不应打 pinned 标记，
@@ -125,7 +125,7 @@ test.describe('KB tab bar', () => {
   });
 
   test('switching tabs with unsaved edits prompts to discard', async ({ page }) => {
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+    await page.goto(`/knowledge?vault=${vault.id}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
 
     const alphaItem = page.locator('.kb-tree-item').filter({ hasText: 'alpha.md' });
