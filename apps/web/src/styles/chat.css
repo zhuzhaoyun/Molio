@@ -2579,36 +2579,64 @@
   display: flex;
   flex-direction: column;
   width: 14px;
-  align-items: stretch;
-  /* 极端刻度数（提问多到 4px 保底也放不下，如 150+ 问的短面板）时裁剪而不是
-     溢出压到输入框——「全部容纳」在 4px 下限下不可满足，裁剪是设计文档修订后的落点。 */
-  overflow: hidden;
   pointer-events: none; /* 容器不吃事件，刻度自己恢复——消息区右缘不留死区 */
+  animation: chat-message-rail-enter 180ms ease-out both;
 }
 
-.chat-message-rail > button {
+@keyframes chat-message-rail-enter {
+  from { opacity: 0; transform: translateX(4px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+/* 刻度轨道：极端刻度数（4px 保底也放不下，如 150+ 问的短面板）在此裁剪、
+   不压输入框；预览气泡是轨道的**兄弟**节点，不受这道裁剪（曾因裁剪挂在
+   容器上把气泡整个吃掉——toBeVisible 不查祖先裁剪，E2E 假绿）。 */
+.chat-message-rail-track {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* 墨点式刻度：常态细圆棒（深浅主题都用 --text-soft，深色下不再融进背景），
+   hover 微胀、active 胀到 12px 并上墨——宽度呼吸即「当前位置」的活信号。 */
+.chat-message-rail-track > button {
   pointer-events: auto;
   flex: 0 0 auto;
-  width: 100%;
+  width: 6px;
   padding: 0;
   border: none;
-  border-radius: 4px;
-  background-color: var(--border);
-  cursor: pointer;
-  transition: background-color 120ms ease, transform 120ms ease;
-}
-
-.chat-message-rail > button:hover {
+  border-radius: 999px;
   background-color: var(--text-soft);
+  opacity: 0.55;
+  cursor: pointer;
+  transition: width 150ms ease, background-color 150ms ease, opacity 150ms ease;
 }
 
-.chat-message-rail > button.is-active {
+.chat-message-rail-track > button:hover {
+  width: 8px;
+  background-color: var(--text-muted);
+  opacity: 0.8;
+}
+
+.chat-message-rail-track > button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.chat-message-rail-track > button.is-active {
+  width: 12px;
   background-color: var(--accent);
+  opacity: 1;
 }
 
+/* 提问预览：衬线体（与历史页日期标题同族——知识产品的提问就该长这样），
+   定位在容器外侧左侧，不受轨道裁剪。 */
 .chat-message-rail-preview {
   position: absolute;
-  right: 22px; /* rail 宽 14px + 8px 间隔 */
+  right: calc(100% + 8px);
   top: 0; /* JS 按 hover 刻度落位（style top 覆盖） */
   width: max-content;
   max-width: 240px;
@@ -2620,12 +2648,40 @@
   border: 1px solid var(--border);
   box-shadow: var(--shadow-md);
   color: var(--text);
-  font-size: 12px;
-  line-height: 1.5;
+  font-family: var(--serif);
+  font-size: 12.5px;
+  line-height: 1.55;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow-wrap: anywhere;
   pointer-events: none;
   white-space: normal;
+  animation: chat-message-rail-preview-in 120ms ease-out both;
+}
+
+@keyframes chat-message-rail-preview-in {
+  from { opacity: 0; transform: translateX(2px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+/* 气泡右缘的小箭头指向刻度（previewTop 以刻度中心为锚，气泡中点即对齐刻度）。 */
+.chat-message-rail-preview::after {
+  content: '';
+  position: absolute;
+  right: -5px;
+  top: 50%;
+  transform: translateY(-50%);
+  border: 4px solid transparent;
+  border-left-color: var(--bg-elevated);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-message-rail,
+  .chat-message-rail-preview {
+    animation: none;
+  }
+  .chat-message-rail-track > button {
+    transition: none;
+  }
 }

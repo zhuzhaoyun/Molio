@@ -84,6 +84,7 @@ const zh: Record<string, string> = {
   'chat.jumpToBottom': '回到最新消息',
   'chat.messageRailNav': '消息导航',
   'chat.messageRailJump': '跳到这条提问',
+  'chat.messageRailImageOnly': '图片提问',
   'composer.placeholder': '想做点什么？@ 引用文件 · / 调用技能',
   'composer.stop': '停止',
   'composer.send': '发送',

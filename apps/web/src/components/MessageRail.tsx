@@ -102,36 +102,42 @@ function MessageRailImpl({ logRef, pairs, onJumpScroll }: MessageRailProps) {
       role="navigation"
       aria-label={t('chat.messageRailNav')}
     >
-      {pairs.map((pair, i) => (
-        <button
-          key={pair.userMsgIndex}
-          type="button"
-          data-testid="chat-message-rail-tick"
-          className={i === active ? 'is-active' : undefined}
-          style={{ height: tick, marginBottom: i < pairs.length - 1 ? gap : undefined }}
-          aria-label={t('chat.messageRailJump')}
-          onClick={() => {
-            const el = logRef.current;
-            if (!el || el.clientHeight === 0) return;
-            // 点击时刻同步重量：刻度刚出现 / 流式长高中，缓存几何可能落后一帧
-            // （E2E 实测：追加一轮后秒点新刻度，tops 尚无该消息 → 跳转失效）。
-            // 跳转精度是点击语义本身，值得这一次 O(n) 量测。
-            const { tops } = measureMessages(el);
-            const top = tops[pair.userMsgIndex];
-            if (top === undefined) return;
-            onJumpScroll(Math.max(0, top - RAIL_INSET));
-          }}
-          onMouseEnter={() => setHover(i)}
-          onMouseLeave={() => setHover((h) => (h === i ? null : h))}
-        />
-      ))}
+      {/* 轨道：极端刻度数的裁剪在 CSS 的 track 上；预览气泡必须是它的兄弟，
+          否则容器级 overflow 会把外侧定位的气泡整个裁掉（验收实测踩中）。 */}
+      <div className="chat-message-rail-track">
+        {pairs.map((pair, i) => (
+          <button
+            key={pair.userMsgIndex}
+            type="button"
+            data-testid="chat-message-rail-tick"
+            className={i === active ? 'is-active' : undefined}
+            style={{ height: tick, marginBottom: i < pairs.length - 1 ? gap : undefined }}
+            aria-label={t('chat.messageRailJump')}
+            onClick={() => {
+              const el = logRef.current;
+              if (!el || el.clientHeight === 0) return;
+              // 点击时刻同步重量：刻度刚出现 / 流式长高中，缓存几何可能落后一帧
+              // （E2E 实测：追加一轮后秒点新刻度，tops 尚无该消息 → 跳转失效）。
+              // 跳转精度是点击语义本身，值得这一次 O(n) 量测。
+              const { tops } = measureMessages(el);
+              const top = tops[pair.userMsgIndex];
+              if (top === undefined) return;
+              onJumpScroll(Math.max(0, top - RAIL_INSET));
+            }}
+            onMouseEnter={() => setHover(i)}
+            onMouseLeave={() => setHover((h) => (h === i ? null : h))}
+            onFocus={() => setHover(i)}
+            onBlur={() => setHover((h) => (h === i ? null : h))}
+          />
+        ))}
+      </div>
       {hover !== null && pairs[hover] && (
         <div
           className="chat-message-rail-preview"
           data-testid="chat-message-rail-preview"
           style={{ top: previewTop }}
         >
-          {pairs[hover].preview}
+          {pairs[hover].preview || t('chat.messageRailImageOnly')}
         </div>
       )}
     </div>

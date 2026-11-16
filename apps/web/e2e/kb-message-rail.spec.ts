@@ -103,6 +103,8 @@ test.describe('KB message rail', () => {
     await openQaWithConv(page, vault, 'conv-rail', '出题会话', 3);
     await expect(panelRail(page)).toBeVisible();
     await expect(panelTicks(page)).toHaveCount(3);
+    // 高亮唯一：恰好一个 active 刻度（截图验收曾误读为多个——钉死它）
+    await expect(panelRail(page).locator('.is-active')).toHaveCount(1);
   });
 
   test('2 提问 → 不出现（阈值之下）', async ({ page }) => {
@@ -123,12 +125,23 @@ test.describe('KB message rail', () => {
     await expectPinnedToUserMsg(page, 1);
   });
 
-  test('hover 刻度 → 提问预览（含该问文本）', async ({ page }) => {
+  test('hover 刻度 → 提问预览（含该问文本、不被容器裁剪）', async ({ page }) => {
     await openQaWithConv(page, vault, 'conv-rail', '出题会话', 3);
-    await panelTicks(page).nth(1).hover();
+    const tick = panelTicks(page).nth(1);
+    await tick.hover();
     const preview = page.locator('[data-testid="kb-chat-panel"] [data-testid="chat-message-rail-preview"]');
     await expect(preview).toBeVisible();
     await expect(preview).toContainText('第 1 问');
+    // 假绿守卫：toBeVisible 不查祖先 overflow 裁剪（曾把气泡整个吃掉仍绿）——
+    // 几何断言气泡真实可见：右缘不越过刻度、左缘不出消息区。
+    const pbox = await preview.boundingBox();
+    const tbox = await tick.boundingBox();
+    const lbox = await panelLog(page).boundingBox();
+    expect(pbox).not.toBeNull();
+    expect(tbox).not.toBeNull();
+    expect(lbox).not.toBeNull();
+    expect(pbox!.x + pbox!.width, '气泡右缘应在刻度左侧').toBeLessThanOrEqual(tbox!.x + 1);
+    expect(pbox!.x, '气泡左缘不应出消息区').toBeGreaterThanOrEqual(lbox!.x);
   });
 
   test('追加一轮消息 → 刻度数 +1，点新刻度落位不陈旧', async ({ page }) => {
@@ -161,6 +174,9 @@ test.describe('KB message rail', () => {
 
   test('rail 不遮原生滚动条（右缘距 log 右缘 ≥6px）', async ({ page }) => {
     await openQaWithConv(page, vault, 'conv-rail', '出题会话', 3);
+    // 等挂载动画（180ms translateX）结算——boundingBox 量的是 transform 后的盒子，
+    // 动画中途量会带着残影偏移。
+    await page.waitForTimeout(250);
     const railBox = await panelRail(page).boundingBox();
     const logBox = await panelLog(page).boundingBox();
     expect(railBox).not.toBeNull();

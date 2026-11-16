@@ -175,8 +175,13 @@ export function ChatSessionView({
     if (!el) return;
     // 程序化置底也会走这里：置底后判定为 near bottom，pinned 保持 true（不会自锁）。
     const near = isNearBottom(el.scrollTop, el.scrollHeight, el.clientHeight);
-    pinnedRef.current = near;
-    setShowJumpBottom(!near);
+    // rail 平滑跳转途经底部邻域时不许把贴底翻回来：动画前几帧仍「近底」，
+    // 若在此翻回 true，任何迟到的 DOM 变更（代码高亮等）都会把飞行中的动画
+    // 拽回底部（实测 flake：点击后 2s 停在原地）。
+    if (!railJumpingRef.current) {
+      pinnedRef.current = near;
+      setShowJumpBottom(!near);
+    }
     // 位置持续写入会话记忆（同 useScrollMemory 约束 1：不依赖「切走时保存」，
     // 那一刻 DOM 可能已经换人）。隐藏容器（display:none）读到的 scrollTop 恒 0，
     // 写入会把记忆污染成顶部 —— 必须跳过。
@@ -223,7 +228,10 @@ export function ChatSessionView({
   const settleRafRef = useRef<number[]>([]);
   useEffect(() => {
     const ids = settleRafRef;
-    return () => { ids.current.forEach((id) => cancelAnimationFrame(id)); ids.current = []; };
+    return () => {
+      ids.current.forEach((id) => cancelAnimationFrame(id)); ids.current = [];
+      window.clearTimeout(railJumpTimerRef.current);
+    };
   }, []);
 
   const settlePosition = useCallback(() => {
@@ -323,18 +331,38 @@ export function ChatSessionView({
   // 刻度 = 问答对（user 开对）。重算 O(n) 且只清洗 user 文本；assistant 流式
   // 更新引起的重算可忽略——真正拦掉无谓重渲的是 MessageRail 的 memo 逐元素比较。
   const railPairs = useMemo(() => buildRailPairs(messages), [messages]);
-  // 点刻度跳转：先脱离贴底（否则流式输出立刻把视口拽回底部），再写 scrollTop。
-  // 写入推迟两帧：setShowJumpBottom 让回底浮标进流（sticky 占流，~32px），末轮
-  // 刻度的目标常被 clamp——用浮标进流**前**的天花板会永远差一个浮标高（CI 实测
-  // 32px，本地时序碰巧掩盖）。双 rAF 保证 clamp 看到的是含浮标的最终布局；
-  // 与浮标点击处理器自身的「rAF 后再置底」同款手法。
+  // rail 平滑跳转进行中（scrollend / 700ms 兜底解除）——期间 handleLogScroll
+  // 不得重算贴底态，见其注释。
+  const railJumpingRef = useRef(false);
+  const railJumpTimerRef = useRef(0);
+  // 点刻度跳转：先脱离贴底（否则流式输出立刻把视口拽回底部），再平滑滚动。
+  // ① 写入推迟两帧：setShowJumpBottom 让回底浮标进流（sticky 占流，~32px），末轮
+  //   刻度的目标常被 clamp——用浮标进流**前**的天花板会永远差一个浮标高（CI 实测
+  //   32px）。双 rAF 保证 clamp 看到的是含浮标的最终布局。
+  // ② smooth 只用于这一次用户动作；流式贴底跟随仍是瞬时写 scrollTop（那条
+  //   「动画被反复打断」的老规则不受影响）。prefers-reduced-motion 退回瞬时。
   const onJumpScroll = useCallback((target: number) => {
     const el = logRef.current;
     if (!el) return;
     pinnedRef.current = false;
     setShowJumpBottom(true);
+    const behavior: ScrollBehavior = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+      ? 'auto'
+      : 'smooth';
+    railJumpingRef.current = true;
+    window.clearTimeout(railJumpTimerRef.current);
+    railJumpTimerRef.current = window.setTimeout(() => {
+      railJumpingRef.current = false;
+    }, 700);
     requestAnimationFrame(() => requestAnimationFrame(() => {
-      if (logRef.current === el) el.scrollTop = target;
+      if (logRef.current !== el) return;
+      el.scrollTo({ top: target, behavior });
+      const onEnd = () => {
+        railJumpingRef.current = false;
+        window.clearTimeout(railJumpTimerRef.current);
+      };
+      // 用户中途真滚动会取消动画并触发自己的 scrollend——两种结束都走这。
+      el.addEventListener('scrollend', onEnd, { once: true });
     }));
   }, []);
 
