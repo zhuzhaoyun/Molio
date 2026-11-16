@@ -107,7 +107,17 @@ function MessageRailImpl({ logRef, pairs, onJumpScroll }: MessageRailProps) {
           style={{ height: tick, marginBottom: i < pairs.length - 1 ? gap : undefined }}
           aria-label={t('chat.messageRailJump')}
           title={t('chat.messageRailJump')}
-          onClick={() => onJumpScroll(Math.max(0, (geom.tops[pair.userMsgIndex] ?? 0) - RAIL_INSET))}
+          onClick={() => {
+            const el = logRef.current;
+            if (!el || el.clientHeight === 0) return;
+            // 点击时刻同步重量：刻度刚出现 / 流式长高中，缓存几何可能落后一帧
+            // （E2E 实测：追加一轮后秒点新刻度，tops 尚无该消息 → 跳转失效）。
+            // 跳转精度是点击语义本身，值得这一次 O(n) 量测。
+            const { tops } = measureMessages(el);
+            const top = tops[pair.userMsgIndex];
+            if (top === undefined) return;
+            onJumpScroll(Math.max(0, top - RAIL_INSET));
+          }}
           onMouseEnter={() => setHover(i)}
           onMouseLeave={() => setHover((h) => (h === i ? null : h))}
         />
