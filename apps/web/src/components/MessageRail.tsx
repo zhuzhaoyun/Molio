@@ -57,6 +57,10 @@ function MessageRailImpl({ logRef, pairs, onJumpScroll }: MessageRailProps) {
       if (rafRef.current) return;
       rafRef.current = requestAnimationFrame(measure);
     };
+    // 滚动路径也走全量重量（rAF 去抖后每帧一次 O(n) rect 读）而非「缓存几何做算术」：
+    // ① 成本与既有 handleLogScroll 每 scroll 事件量一次同级（ChatSessionView 本就如此）；
+    // ② 图片/字体加载完成引起的 reflow 不产生 DOM 变更（MO 不响）也不改 log 边框盒
+    //    （RO 不响），全量重量能自愈这类几何漂移——纯算术路径会读到陈旧 tops。
     el.addEventListener('scroll', scheduleMeasure, { passive: true });
     // 内容长高（流式文本/工具卡/题卡）→ 几何失效，与 ChatSessionView 贴底那套同配置。
     const mo = new MutationObserver(scheduleMeasure);
@@ -106,7 +110,6 @@ function MessageRailImpl({ logRef, pairs, onJumpScroll }: MessageRailProps) {
           className={i === active ? 'is-active' : undefined}
           style={{ height: tick, marginBottom: i < pairs.length - 1 ? gap : undefined }}
           aria-label={t('chat.messageRailJump')}
-          title={t('chat.messageRailJump')}
           onClick={() => {
             const el = logRef.current;
             if (!el || el.clientHeight === 0) return;

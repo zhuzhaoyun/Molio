@@ -2570,6 +2570,8 @@
 
 .chat-message-rail {
   position: absolute;
+  /* 8px 内缩 ×3 与 MessageRail.tsx 的 RAIL_INSET 是同一组数：TS 拿它当跳转呼吸位，
+     CSS 拿它定位——改任何一处必须同步另一处（终审 Minor：跨文件常量交叉引用）。 */
   top: 8px;
   bottom: 8px;
   right: 8px;
@@ -2578,6 +2580,9 @@
   flex-direction: column;
   width: 14px;
   align-items: stretch;
+  /* 极端刻度数（提问多到 4px 保底也放不下，如 150+ 问的短面板）时裁剪而不是
+     溢出压到输入框——「全部容纳」在 4px 下限下不可满足，裁剪是设计文档修订后的落点。 */
+  overflow: hidden;
   pointer-events: none; /* 容器不吃事件，刻度自己恢复——消息区右缘不留死区 */
 }
 
