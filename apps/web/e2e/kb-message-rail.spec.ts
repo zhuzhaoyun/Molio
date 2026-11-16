@@ -72,19 +72,21 @@ async function openQaWithConv(page: Page, vault: TempVault, id: string, title: s
   await expect(panelLog(page)).toContainText(`第 ${rounds - 1} 答`, { timeout: 10_000 });
 }
 
-/** 视口顶应钉在第 idx 条 user 消息顶部 - 8px（±4px 容差）。 */
+/** 视口顶应钉在第 idx 条 user 消息顶部 - 8px（±4px 容差；poll 消化跳转双 rAF
+ *  与浮标进流的时序——CI 与本地帧时序不同，一次性读值会竞态）。 */
 async function expectPinnedToUserMsg(page: Page, idx: number) {
-  const vals = await panelLog(page).evaluate((el, i) => {
-    const users = Array.from(el.querySelectorAll('[data-testid="user-message"]'));
-    const first = users[i];
-    if (!first) return false;
-    const top = first.getBoundingClientRect().top - el.getBoundingClientRect().top + el.scrollTop;
-    // 末轮回答较短时目标位置超出 maxScrollTop，浏览器钳到边界——这是滚动
-    // 边界的正确语义：断言「钉住目标 或 恰好钳在 maxScrollTop」。
-    return { scrollTop: el.scrollTop, target: top - 8, maxScroll: el.scrollHeight - el.clientHeight };
-  }, idx);
-  const expected = Math.min(vals.target, vals.maxScroll);
-  expect(Math.abs(vals.scrollTop - expected), `视口顶应钉在第 ${idx} 条 user 消息：scrollTop=${vals.scrollTop} target=${vals.target} maxScroll=${vals.maxScroll}`).toBeLessThanOrEqual(4);
+  await expect.poll(async () => {
+    const vals = await panelLog(page).evaluate((el, i) => {
+      const users = Array.from(el.querySelectorAll('[data-testid="user-message"]'));
+      const first = users[i];
+      if (!first) return { delta: Number.MAX_SAFE_INTEGER };
+      const top = first.getBoundingClientRect().top - el.getBoundingClientRect().top + el.scrollTop;
+      // 末轮回答较短时目标位置超出 maxScrollTop，浏览器钳到边界——这是滚动
+      // 边界的正确语义：断言「钉住目标 或 恰好钳在 maxScrollTop」。
+      return { delta: Math.abs(el.scrollTop - Math.min(top - 8, el.scrollHeight - el.clientHeight)) };
+    }, idx);
+    return vals.delta;
+  }, { timeout: 2_000, message: `视口顶应钉在第 ${idx} 条 user 消息（目标或钳位 ±4px）` }).toBeLessThanOrEqual(4);
 }
 
 let vault: TempVault;

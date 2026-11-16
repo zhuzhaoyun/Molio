@@ -324,12 +324,18 @@ export function ChatSessionView({
   // 更新引起的重算可忽略——真正拦掉无谓重渲的是 MessageRail 的 memo 逐元素比较。
   const railPairs = useMemo(() => buildRailPairs(messages), [messages]);
   // 点刻度跳转：先脱离贴底（否则流式输出立刻把视口拽回底部），再写 scrollTop。
+  // 写入推迟两帧：setShowJumpBottom 让回底浮标进流（sticky 占流，~32px），末轮
+  // 刻度的目标常被 clamp——用浮标进流**前**的天花板会永远差一个浮标高（CI 实测
+  // 32px，本地时序碰巧掩盖）。双 rAF 保证 clamp 看到的是含浮标的最终布局；
+  // 与浮标点击处理器自身的「rAF 后再置底」同款手法。
   const onJumpScroll = useCallback((target: number) => {
     const el = logRef.current;
     if (!el) return;
     pinnedRef.current = false;
     setShowJumpBottom(true);
-    el.scrollTop = target;
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      if (logRef.current === el) el.scrollTop = target;
+    }));
   }, []);
 
   // Wire onAnswerToolUse: route tool_result back to the open stream-json child
