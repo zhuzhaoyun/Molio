@@ -2601,6 +2601,11 @@
   flex: 1;
   min-height: 0;
   overflow: hidden;
+  /* 整条轨道可按住拖动刷选（scrub）：轨道自己收指针事件（不再只靠刻度），
+     touch-action 关掉滚动让位给拖选（触摸设备）。 */
+  pointer-events: auto;
+  touch-action: none;
+  cursor: pointer;
 }
 
 /* 墨点式刻度：常态细圆棒（深浅主题都用 --text-soft，深色下不再融进背景），
@@ -2635,7 +2640,7 @@
   opacity: 1;
 }
 
-/* 提问预览：衬线体（与历史页日期标题同族——知识产品的提问就该长这样），
+/* 提问预览：元信息行（序号，无衬线小字）+ 衬线问题文本（与历史页日期标题同族），
    定位在容器外侧左侧，不受轨道裁剪。 */
 .chat-message-rail-preview {
   position: absolute;
@@ -2643,24 +2648,35 @@
   top: 0; /* JS 按 hover 刻度落位（style top 覆盖） */
   width: max-content;
   max-width: 240px;
-  max-height: 48px;
-  overflow: hidden;
   padding: 6px 10px;
   border-radius: var(--radius-sm);
   background-color: var(--bg-elevated);
   border: 1px solid var(--border);
   box-shadow: var(--shadow-md);
   color: var(--text);
-  font-family: var(--serif);
-  font-size: 12.5px;
-  line-height: 1.55;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
   overflow-wrap: anywhere;
   pointer-events: none;
   white-space: normal;
   animation: chat-message-rail-preview-in 120ms ease-out both;
+}
+
+.chat-message-rail-preview-meta {
+  font-family: var(--serif);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  margin-bottom: 2px;
+}
+
+.chat-message-rail-preview-text {
+  font-family: var(--serif);
+  font-size: 12.5px;
+  line-height: 1.55;
+  max-height: 39px; /* 两行封顶 */
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
 }
 
 @keyframes chat-message-rail-preview-in {

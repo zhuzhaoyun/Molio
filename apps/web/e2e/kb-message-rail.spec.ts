@@ -146,6 +146,8 @@ test.describe('KB message rail', () => {
     const preview = page.locator('[data-testid="kb-chat-panel"] [data-testid="chat-message-rail-preview"]');
     await expect(preview).toBeVisible();
     await expect(preview).toContainText('第 1 问');
+    // 元信息行：hover 第 2 格（nth(1)）→ 序号显示「第 2 问」
+    await expect(preview.locator('.chat-message-rail-preview-meta')).toHaveText('第 2 问');
     // 假绿守卫：toBeVisible 不查祖先 overflow 裁剪（曾把气泡整个吃掉仍绿）——
     // 几何断言气泡真实可见：右缘不越过刻度、左缘不出消息区。
     const pbox = await preview.boundingBox();
@@ -184,6 +186,32 @@ test.describe('KB message rail', () => {
     await expect(panelRail(page)).toHaveCount(0);
     await page.locator('[data-testid="selection-cancel-btn"]').click();
     await expect(panelRail(page)).toBeVisible();
+  });
+
+  test('拖动刷选：按住轨道拖到中位刻度 → 视口即时跟随、松手停在该轮', async ({ page }) => {
+    await openQaWithConv(page, vault, 'conv-rail', '出题会话', 3);
+    const first = await panelTicks(page).nth(0).boundingBox();
+    const mid = await panelTicks(page).nth(1).boundingBox();
+    expect(first).not.toBeNull();
+    expect(mid).not.toBeNull();
+    await page.mouse.move(first!.x + first!.width / 2, first!.y + first!.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(mid!.x + mid!.width / 2, mid!.y + mid!.height / 2, { steps: 6 });
+    await page.mouse.up();
+    // 拖选是即时跳转（无平滑动画），落位断言可直接读
+    await expectPinnedToUserMsg(page, 1);
+    // 拖动中预览跟手：松手后 hover 仍在（指针停在轨道上），元信息对应第 2 问
+    await expect(page.locator('[data-testid="kb-chat-panel"] [data-testid="chat-message-rail-preview"]')).toContainText('第 2 问');
+  });
+
+  test('键盘走格：↑/↓ 移动焦点并联动预览，Enter 跳转', async ({ page }) => {
+    await openQaWithConv(page, vault, 'conv-rail', '出题会话', 3);
+    await panelTicks(page).nth(0).click();
+    await expectPinnedToUserMsg(page, 0);
+    await page.keyboard.press('ArrowDown');
+    await expect(page.locator('[data-testid="kb-chat-panel"] [data-testid="chat-message-rail-preview"]')).toContainText('第 2 问');
+    await page.keyboard.press('Enter');
+    await expectPinnedToUserMsg(page, 1);
   });
 
   test('rail 不遮原生滚动条（右缘距 log 右缘 ≥6px）', async ({ page }) => {

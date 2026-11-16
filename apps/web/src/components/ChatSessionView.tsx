@@ -341,14 +341,15 @@ export function ChatSessionView({
   //   32px）。双 rAF 保证 clamp 看到的是含浮标的最终布局。
   // ② smooth 只用于这一次用户动作；流式贴底跟随仍是瞬时写 scrollTop（那条
   //   「动画被反复打断」的老规则不受影响）。prefers-reduced-motion 退回瞬时。
-  const onJumpScroll = useCallback((target: number) => {
+  const onJumpScroll = useCallback((target: number, smooth = true) => {
     const el = logRef.current;
     if (!el) return;
     pinnedRef.current = false;
     setShowJumpBottom(true);
-    const behavior: ScrollBehavior = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-      ? 'auto'
-      : 'smooth';
+    // 拖动刷选传 smooth=false（即时跟手，逐帧直写）；单次点击走平滑动画。
+    const behavior: ScrollBehavior = smooth && !window.matchMedia('(prefers-reduced-motion: reduce)').matches
+      ? 'smooth'
+      : 'auto';
     railJumpingRef.current = true;
     window.clearTimeout(railJumpTimerRef.current);
     railJumpTimerRef.current = window.setTimeout(() => {

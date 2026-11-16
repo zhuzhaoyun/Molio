@@ -86,6 +86,7 @@ const en: Record<string, string> = {
   'chat.messageRailNav': 'Message navigation',
   'chat.messageRailJump': 'Jump to this question',
   'chat.messageRailImageOnly': 'Image question',
+  'chat.messageRailRound': 'Question {n}',
   'composer.placeholder': 'Ask anything… @ to reference · / for skills',
   'composer.stop': 'Stop',
   'composer.send': 'Send',
