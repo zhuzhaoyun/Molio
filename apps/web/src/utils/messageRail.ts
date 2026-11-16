@@ -34,7 +34,10 @@ export function buildRailPairs(
 }
 
 /**
- * 活跃刻度：第一个与视口 [scrollTop, viewportBottom) 相交的对。
+ * 活跃刻度：第一个与视口 [scrollTop + topTolerance, viewportBottom) 相交的对。
+ * topTolerance 是视口顶的「呼吸位」——跳转把目标钉在视口顶 +8px，前一对的尾巴
+ * 可能伸进这 8px（消息间距可小到 ~1px），不计容差会把活跃算给前一对（跳转后
+ * 高亮落在隔壁格）。与跳转偏移共用 RAIL_INSET，语义对称。
  * 视口低于全部内容（贴底 / overscroll / 对间空隙落到底）→ 末对；空 → -1。
  * 线性扫描：提问数 ≤ 百级，缓存几何上做算术足够便宜。
  */
@@ -44,6 +47,7 @@ export function findActivePair(
   heights: number[],
   scrollTop: number,
   viewportBottom: number,
+  topTolerance = 0,
 ): number {
   if (pairs.length === 0) return -1;
   for (let i = 0; i < pairs.length; i++) {
@@ -51,7 +55,7 @@ export function findActivePair(
     const top = tops[p.userMsgIndex];
     const bottom = tops[p.lastMsgIndex] + heights[p.lastMsgIndex];
     if (top === undefined || bottom === undefined) continue;
-    if (bottom > scrollTop && top < viewportBottom) return i;
+    if (bottom > scrollTop + topTolerance && top < viewportBottom) return i;
   }
   return pairs.length - 1;
 }

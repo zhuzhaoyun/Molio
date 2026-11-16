@@ -67,6 +67,17 @@ describe('findActivePair', () => {
   test('空 pairs → -1', () => {
     assert.equal(findActivePair([], [], [], 0, 100), -1);
   });
+
+  test('topTolerance=8：前一对尾巴伸进视口顶呼吸位（≤8px）不抢活跃', () => {
+    // 跳转语义：视口顶 = 目标 user 顶 - 8。真实布局消息间距可小到 ~1px，
+    // 前一对尾巴会伸进呼吸位——无容差时活跃算给前一对（验收：回车后高亮在隔壁格）。
+    const tops = [0, 60, 200, 280, 350, 500];
+    const heights = [60, 135, 60, 60, 70, 90]; // pair0 底=195，pair1 顶=200（间距 5px）
+    // 无容差（旧行为）：pair0 底 195 > scrollTop 192 → 选中 pair0
+    assert.equal(findActivePair(pairs, tops, heights, 192, 700), 0);
+    // 容差 8：从 scrollTop+8=200 起算，pair0 出局 → 选中 pair1（与跳转目标一致）
+    assert.equal(findActivePair(pairs, tops, heights, 192, 700, 8), 1);
+  });
 });
 
 describe('railTickLayout', () => {

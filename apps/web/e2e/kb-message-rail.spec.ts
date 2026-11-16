@@ -141,6 +141,9 @@ test.describe('KB message rail', () => {
     // 中位刻度也准
     await panelTicks(page).nth(1).click();
     await expectPinnedToUserMsg(page, 1);
+    // 跳转后高亮 = 被跳到的刻度本身：视口顶的 8px 呼吸位不算阅读区——
+    // 前一对的尾巴伸进呼吸位时不得抢走高亮（验收：回车后高亮落在隔壁格）。
+    await expect(panelTicks(page).nth(1)).toHaveClass(/is-active/);
   });
 
   test('hover 刻度 → 提问预览（含该问文本、不被容器裁剪）', async ({ page }) => {
@@ -216,6 +219,8 @@ test.describe('KB message rail', () => {
     await expect(page.locator('[data-testid="kb-chat-panel"] [data-testid="chat-message-rail-preview"]')).toContainText('第 2 问');
     await page.keyboard.press('Enter');
     await expectPinnedToUserMsg(page, 1);
+    // 用户实测路径：回车后高亮必须是选中的那格（不是隔壁）
+    await expect(panelTicks(page).nth(1)).toHaveClass(/is-active/);
   });
 
   test('rail 不遮原生滚动条（右缘距 log 右缘 ≥6px）', async ({ page }) => {

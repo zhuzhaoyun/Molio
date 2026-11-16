@@ -93,6 +93,7 @@ function MessageRailImpl({ logRef, pairs, onJumpScroll }: MessageRailProps) {
   const active = findActivePair(
     pairs, geom.tops, geom.heights,
     geom.scrollTop, geom.scrollTop + geom.clientHeight,
+    RAIL_INSET, // 视口顶呼吸位不算阅读区：跳转钉在 +8px，活跃刻度同口径起算
   );
 
   // 刻度块纵向居中（CSS safe center）——锚点数学必须同规则：装得下带居中偏移，溢出退回 0。
