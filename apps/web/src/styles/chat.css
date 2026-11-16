@@ -2595,6 +2595,9 @@
   display: flex;
   flex-direction: column;
   align-items: center;
+  /* 对齐豆包/DSH 原型：刻度块纵向居中。safe：极端溢出时退回顶部对齐——
+     居中 + overflow 会两头裁，首问刻度会被吃掉。 */
+  justify-content: safe center;
   flex: 1;
   min-height: 0;
   overflow: hidden;

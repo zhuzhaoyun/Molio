@@ -89,8 +89,11 @@ function MessageRailImpl({ logRef, pairs, onJumpScroll }: MessageRailProps) {
   );
 
   // hover 预览的纵向落位：以刻度中心为锚、估高 48px（CSS 两行截断封顶），
-  // clamp 在容器内保证不出视口。
-  const tickCenter = (i: number) => i * (tick + gap) + tick / 2;
+  // clamp 在容器内保证不出视口。刻度块纵向居中（CSS safe center）——
+  // 锚点数学必须同规则：装得下带居中偏移，溢出退回 0。
+  const contentH = pairs.length * tick + Math.max(0, pairs.length - 1) * gap;
+  const blockOffset = contentH < containerHeight ? (containerHeight - contentH) / 2 : 0;
+  const tickCenter = (i: number) => blockOffset + i * (tick + gap) + tick / 2;
   const previewTop = hover !== null
     ? Math.min(Math.max(tickCenter(hover) - 24, 0), Math.max(containerHeight - 52, 0))
     : 0;

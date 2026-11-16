@@ -105,6 +105,20 @@ test.describe('KB message rail', () => {
     await expect(panelTicks(page)).toHaveCount(3);
     // 高亮唯一：恰好一个 active 刻度（截图验收曾误读为多个——钉死它）
     await expect(panelRail(page).locator('.is-active')).toHaveCount(1);
+    // 对齐参考原型（豆包/DSH）：刻度块纵向居中——块中心 ≈ 轨道中心（±2px），
+    // 而不是 flex-start 贴顶。
+    await page.waitForTimeout(250); // 等挂载动画结算
+    const first = await panelTicks(page).nth(0).boundingBox();
+    const last = await panelTicks(page).nth(2).boundingBox();
+    const rail = await panelRail(page).boundingBox();
+    expect(first).not.toBeNull();
+    expect(last).not.toBeNull();
+    expect(rail).not.toBeNull();
+    const topRel = first!.y - rail!.y;
+    const bottomRel = last!.y + last!.height - rail!.y;
+    const blockCenter = (topRel + bottomRel) / 2;
+    const railCenter = rail!.height / 2;
+    expect(Math.abs(blockCenter - railCenter), '刻度块应纵向居中').toBeLessThanOrEqual(2);
   });
 
   test('2 提问 → 不出现（阈值之下）', async ({ page }) => {
