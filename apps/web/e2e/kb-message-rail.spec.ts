@@ -132,6 +132,10 @@ test.describe('KB message rail', () => {
     // 历史加载后贴底：回底浮标不可见
     await expect(page.locator('[data-testid="kb-chat-panel"] [data-testid="chat-jump-bottom"]')).toBeHidden();
     await panelTicks(page).nth(0).click();
+    // 平滑动画守卫（回归曾把点击变瞬移）：click 返回时滚动尚未开始——
+    // 双 rAF + smooth 下 scrollTop 仍应停在出发地（贴底 ~3000px）附近。
+    const s0 = await panelLog(page).evaluate((el) => el.scrollTop);
+    expect(s0, '点击后不应瞬移到目标').toBeGreaterThan(500);
     await expectPinnedToUserMsg(page, 0);
     await expect(page.locator('[data-testid="kb-chat-panel"] [data-testid="chat-jump-bottom"]')).toBeVisible();
     // 中位刻度也准

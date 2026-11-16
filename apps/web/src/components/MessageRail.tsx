@@ -39,7 +39,8 @@ function MessageRailImpl({ logRef, pairs, onJumpScroll }: MessageRailProps) {
   const [hover, setHover] = useState<number | null>(null);
   const rafRef = useRef(0);
   const trackRef = useRef<HTMLDivElement>(null);
-  const dragRef = useRef(false);
+  /** 按压-拖动判别态：按下即建，移动超阈值翻 moved，松手清空 */
+  const dragRef = useRef<{ startY: number; moved: boolean } | null>(null);
   const dragJumpRafRef = useRef(0);
 
   useEffect(() => {
@@ -166,22 +167,25 @@ function MessageRailImpl({ logRef, pairs, onJumpScroll }: MessageRailProps) {
         className="chat-message-rail-track"
         ref={trackRef}
         onPointerDown={(e) => {
-          // 拖动刷选：按下即跳，移动实时刷（预览跟手、视口即时跟随），松手收尾。
-          // 指针捕获到轨道 → 拖动后的 click 重定目标，刻度 onClick 不会重复触发。
-          e.currentTarget.setPointerCapture(e.pointerId);
-          dragRef.current = true;
-          const i = pairIndexAtY(e.clientY);
-          setHover(i);
-          jumpToIndex(i, false);
+          // 按压-拖动判别：按下只记录，**不跳**——立刻跳会把每次点击都变成
+          // 瞬移，click 的平滑动画就无路可滚（验收实测回归）。移动超过阈值才
+          // 判定为拖动刷选，此刻捕获指针（吞掉松手后的 click，不与跳转叠加）。
+          dragRef.current = { startY: e.clientY, moved: false };
         }}
         onPointerMove={(e) => {
-          if (!dragRef.current) return;
+          const st = dragRef.current;
+          if (!st) return;
+          if (!st.moved) {
+            if (Math.abs(e.clientY - st.startY) < 5) return;
+            st.moved = true;
+            e.currentTarget.setPointerCapture(e.pointerId);
+          }
           const i = pairIndexAtY(e.clientY);
           setHover(i);
           scheduleDragJump(i);
         }}
-        onPointerUp={() => { dragRef.current = false; }}
-        onPointerCancel={() => { dragRef.current = false; }}
+        onPointerUp={() => { dragRef.current = null; }}
+        onPointerCancel={() => { dragRef.current = null; }}
       >
         {pairs.map((pair, i) => (
           <button
