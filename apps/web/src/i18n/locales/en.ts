@@ -83,6 +83,8 @@ const en: Record<string, string> = {
   'composer.queuePlaceholder': 'Reply in progress — sends when finished',
   'composer.queueTooltip': 'Sends after the current reply finishes',
   'chat.jumpToBottom': 'Jump to latest',
+  'chat.messageRailNav': 'Message navigation',
+  'chat.messageRailJump': 'Jump to this question',
   'composer.placeholder': 'Ask anything… @ to reference · / for skills',
   'composer.stop': 'Stop',
   'composer.send': 'Send',

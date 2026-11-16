@@ -7,6 +7,8 @@ import { SessionWriteKindsProvider } from './SessionWriteKinds';
 import { findLastAssistant } from '../utils/workSteps';
 import { isNearBottom } from './chatScrollPin';
 import { rememberChatScroll, recallChatScroll, findVisibleAnchor, applyAnchorOffset } from '../stores/chatScrollMemory';
+import { MessageRail } from './MessageRail';
+import { buildRailPairs } from '../utils/messageRail';
 import { useSelectMode, messageSelectionStore } from '../stores/messageSelectionStore';
 import { quizSubjectStore } from '../stores/quizSubjectStore';
 import { pairQuizGradings, pairSubjectAnswers } from '../utils/quizAnswer';
@@ -84,6 +86,11 @@ export interface ChatSessionViewProps {
    * 还开着 ⇄ 切回恢复；关标签删记忆 ⇄ 重开贴底。
    */
   active?: boolean;
+  /**
+   * 消息导航 rail（KB 问答会话启用）：日志区外包 wrapper、右缘挂提问刻度条。
+   * 包装只看本 prop 不看阈值——DOM 结构从挂载起稳定，显隐阈值由 MessageRail 自理。
+   */
+  messageRail?: boolean;
 }
 
 /**
@@ -137,6 +144,7 @@ export function ChatSessionView({
   pruneSelection = true,
   saveHint,
   active = true,
+  messageRail = false,
 }: ChatSessionViewProps) {
   const { t } = useI18n();
   const logRef = useRef<HTMLDivElement>(null);
@@ -311,6 +319,19 @@ export function ChatSessionView({
   const lastAssistant = useMemo(() => findLastAssistant(messages), [messages]);
   const lastAssistantId = lastAssistant?.id ?? null;
 
+  // ── 消息导航 rail ────────────────────────────────────────────────────────
+  // 刻度 = 问答对（user 开对）。重算 O(n) 且只清洗 user 文本；assistant 流式
+  // 更新引起的重算可忽略——真正拦掉无谓重渲的是 MessageRail 的 memo 逐元素比较。
+  const railPairs = useMemo(() => buildRailPairs(messages), [messages]);
+  // 点刻度跳转：先脱离贴底（否则流式输出立刻把视口拽回底部），再写 scrollTop。
+  const onJumpScroll = useCallback((target: number) => {
+    const el = logRef.current;
+    if (!el) return;
+    pinnedRef.current = false;
+    setShowJumpBottom(true);
+    el.scrollTop = target;
+  }, []);
+
   // Wire onAnswerToolUse: route tool_result back to the open stream-json child
   const onAnswerToolUse = useCallback(
     async (toolUseId: string, content: string) => {
@@ -372,12 +393,8 @@ export function ChatSessionView({
     ? `${composerBarClassName ?? 'home-composer-bar'} home-composer-bar--card`
     : composerBarClassName ?? 'home-composer-bar';
 
-  return (
-    // 写入的「新建 / 更新」判据要会话级上下文（写之前该路径出现过没有），
-    // 逐消息的产物横幅自己判不出来 —— 这里算一次，供其与产出面板共用。
-    <SessionWriteKindsProvider messages={messages}>
-    <>
-      {/* Chat log */}
+  // 日志区节点：messageRail 启用时外包 wrapper（rail 的定位宿主），否则原样。
+  const logNode = (
       <div
         className={logClassName ?? 'home-chat-log'}
         ref={logRef}
@@ -454,6 +471,23 @@ export function ChatSessionView({
           </button>
         )}
       </div>
+  );
+
+  return (
+    // 写入的「新建 / 更新」判据要会话级上下文（写之前该路径出现过没有），
+    // 逐消息的产物横幅自己判不出来 —— 这里算一次，供其与产出面板共用。
+    <SessionWriteKindsProvider messages={messages}>
+    <>
+      {/* Chat log（rail 启用时包在 wrapper 里，rail 钉其右缘） */}
+      {messageRail ? (
+        <div className="chat-log-wrap">
+          {logNode}
+          {/* 勾选删除态：右侧已有方框，rail 让位 */}
+          {!selectMode && (
+            <MessageRail logRef={logRef} pairs={railPairs} onJumpScroll={onJumpScroll} />
+          )}
+        </div>
+      ) : logNode}
 
       {/* 后台 subagent/workflow 活动树（activity SSE 事件驱动） */}
       <ActivityTree activity={activity ?? null} />
