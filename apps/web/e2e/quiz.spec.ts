@@ -313,6 +313,15 @@ test.describe('Quiz interaction block', () => {
     await expect(card.locator('[data-testid="quiz-option"][data-question-id="q2"][data-key="B"]')).toHaveAttribute('data-picked', 'false');
     await expect(card.locator('[data-testid="quiz-option"][data-question-id="q3"][data-key="B"]')).toHaveAttribute('data-picked', 'true');
 
+    // 标记形状承载结果（真机反馈：错选挂 ✓ 会被对勾的固有含义误读成「正确」）：
+    // data-mark ✓＝选对、✗＝选错、无属性＝没选。与picked的解耦语义一致：
+    // 有标（✓或✗）＝选了，形状+颜色只管结果。
+    await expect(card.locator('[data-testid="quiz-option"][data-question-id="q1"][data-key="A"]')).toHaveAttribute('data-mark', '✗');
+    await expect(card.locator('[data-testid="quiz-option"][data-question-id="q2"][data-key="A"]')).toHaveAttribute('data-mark', '✓');
+    await expect(card.locator('[data-testid="quiz-option"][data-question-id="q2"][data-key="C"]')).toHaveAttribute('data-mark', '✗');
+    await expect(card.locator('[data-testid="quiz-option"][data-question-id="q2"][data-key="B"]')).not.toHaveAttribute('data-mark', /.+/);
+    await expect(card.locator('[data-testid="quiz-option"][data-question-id="q3"][data-key="B"]')).toHaveAttribute('data-mark', '✓');
+
     // 「你的答案」行：客观题逐题显示，选项按字母序（与判分归一化同源、与「正确答案」同格式）。
     const yourAnswers = card.locator('[data-testid="quiz-your-answer"]');
     await expect(yourAnswers).toHaveCount(3);
