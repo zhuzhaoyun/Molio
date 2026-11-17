@@ -4,6 +4,8 @@ import { useRuntimes } from '../../hooks/useRuntimes';
 import { useI18n, type Locale } from '../../i18n';
 import { InstallButton } from '../runtimes/InstallButton';
 import { ProviderConfig } from '../runtimes/ProviderConfig';
+import { AgentIcon } from '../runtimes/agentIcons';
+import { InboxIcon, SearchIcon } from '../icons';
 
 type Tab = 'agents' | 'runs';
 
@@ -17,14 +19,6 @@ type RescanState =
   | { status: 'running' }
   | { status: 'done'; count: number }
   | { status: 'error'; message: string };
-
-const AGENT_ICONS: Record<string, string> = {
-  claude: '🟣',
-  codex: '🟢',
-  gemini: '🔵',
-  qwen: '🟠',
-  dsh: '🐳',
-};
 
 function getStatusLabels(locale: Locale): Record<string, { label: string; className: string }> {
   const t = (key: string) => {
@@ -103,7 +97,6 @@ function AgentCard({
   onRescan: () => void;
 }) {
   const { t } = useI18n();
-  const icon = AGENT_ICONS[agent.id] ?? '⚙️';
   const sourceLabel = agent.source === 'not-found' ? t('runtimes.notFound') : agent.source ?? 'unknown';
 
   const handleDoubleClick = () => {
@@ -115,7 +108,7 @@ function AgentCard({
       className={`rt-agent-card${agent.available ? '' : ' rt-agent-card--unavailable'}${isDefault ? ' rt-agent-card--default' : ''}`}
       onDoubleClick={handleDoubleClick}
     >
-      <div className="rt-agent-card__icon">{icon}</div>
+      <div className="rt-agent-card__icon"><AgentIcon agentId={agent.id} size={30} /></div>
       <div className="rt-agent-card__body">
         <div className="rt-agent-card__header">
           <span className="rt-agent-card__name">{agent.name}</span>
@@ -201,7 +194,7 @@ function RunRow({ run, onCancel }: { run: RunInfo; onCancel: (id: string) => voi
   return (
     <div className="rt-run-row">
       <div className="rt-run-row__agent">
-        <span className="rt-run-row__agent-icon">{AGENT_ICONS[run.agentId] ?? '⚙️'}</span>
+        <span className="rt-run-row__agent-icon"><AgentIcon agentId={run.agentId} size={14} /></span>
         <span className="rt-run-row__agent-name">{run.agentId}</span>
       </div>
       <div className="rt-run-row__status">
@@ -359,7 +352,7 @@ function AgentsView({
   if (agents.length === 0) {
     return (
       <div className="rt-empty">
-        <div className="rt-empty__icon">🔍</div>
+        <div className="rt-empty__icon"><SearchIcon size={36} /></div>
         <div className="rt-empty__text">{t('runtimes.noAgents')}</div>
         <div className="rt-empty__hint">{t('runtimes.installHint')}</div>
       </div>
@@ -418,7 +411,7 @@ function RunsView({ runs, onCancel }: { runs: RunInfo[]; onCancel: (id: string) 
   if (runs.length === 0) {
     return (
       <div className="rt-empty">
-        <div className="rt-empty__icon">📭</div>
+        <div className="rt-empty__icon"><InboxIcon size={36} /></div>
         <div className="rt-empty__text">{t('runtimes.noRuns')}</div>
         <div className="rt-empty__hint">{t('runtimes.startHint')}</div>
       </div>

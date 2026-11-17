@@ -1,5 +1,6 @@
 import { Component, type ReactNode } from 'react';
 import { useI18n } from '../../i18n';
+import { WarningIcon } from '../icons';
 import type { I18nContextValue } from '../../i18n';
 
 interface Props {
@@ -28,7 +29,7 @@ class ViewerErrorBoundaryClass extends Component<ClassProps, State> {
     if (this.state.error) {
       return (
         <div className="kb-load-error">
-          <div className="kb-load-error-icon">⚠</div>
+          <div className="kb-load-error-icon"><WarningIcon size={32} /></div>
           <p className="kb-load-error-title">{t('kb.loadFailed')}</p>
           <p className="kb-load-error-hint">{this.state.error.message}</p>
           {onRetry && (

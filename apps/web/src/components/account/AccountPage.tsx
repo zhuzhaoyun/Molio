@@ -12,6 +12,7 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useI18n } from '../../i18n';
+import { EditIcon } from '../icons';
 import { api } from '../../api/client';
 import { authStore, useAuthStatus } from '../../stores/authStore';
 import { authErrorRef } from './authErrors';
@@ -168,7 +169,7 @@ export function AccountPage() {
                     setEditingNickname(true);
                   }}
                 >
-                  ✎
+                  <EditIcon size={14} />
                 </button>
               </div>
             )}

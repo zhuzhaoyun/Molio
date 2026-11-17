@@ -1,4 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
+import { PuzzleIcon } from '../icons';
 import type { SkillManifestEntry, ImportSkillRequest } from '@molio/contracts';
 import { useSkills } from '../../hooks/useSkills';
 import { useI18n } from '../../i18n';
@@ -315,7 +316,7 @@ export function SkillsPanel() {
             <div className="rt-loading">{t('skills.loading')}</div>
           ) : skills.length === 0 ? (
             <div className="rt-empty">
-              <div className="rt-empty__icon">🧩</div>
+              <div className="rt-empty__icon"><PuzzleIcon size={44} /></div>
               <div className="rt-empty__text">{t('skills.empty')}</div>
               <div className="rt-empty__hint">{t('skills.emptyHint')}</div>
             </div>

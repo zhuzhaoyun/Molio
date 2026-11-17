@@ -4,6 +4,7 @@
  */
 
 import { useState, useCallback, useRef, useEffect } from 'react';
+import { FolderInputIcon, FileIcon, PackageIcon, WarningIcon } from '../icons';
 import type { Vault } from '@molio/contracts';
 import { MAX_IMPORT_FILE_SIZE } from '@molio/contracts';
 import { api } from '../../api/client';
@@ -81,7 +82,7 @@ export function VaultSwitcherModal({
               <span style={{ fontSize: 15 }}>+</span> Add Vault...
             </button>
             <button className="kb-btn kb-btn-primary" onClick={() => { onClose(); onImport(); }} style={{ flex: 1, justifyContent: 'center' }}>
-              ⤵ Import
+              <FolderInputIcon size={14} /> Import
             </button>
           </div>
         </div>
@@ -115,7 +116,7 @@ export function CoseInstallPrompt({ show, onClose }: CoseInstallPromptProps) {
             请先在 Chrome 浏览器中安装该扩展，然后重新点击发布按钮。
           </p>
           <div style={{ padding: '12px 14px', background: 'var(--bg-subtle)', borderRadius: 'var(--radius-sm)', fontSize: 12.5, color: 'var(--text-muted)', marginBottom: 4 }}>
-            <div style={{ marginBottom: 6 }}>📦 安装方式：</div>
+            <div style={{ marginBottom: 6 }}><PackageIcon size={14} /> 安装方式：</div>
             <ol style={{ margin: 0, paddingLeft: 18, lineHeight: 1.7 }}>
               <li>打开 Chrome 应用商店搜索 <strong>COSE</strong></li>
               <li>或访问 <a href="https://github.com/doocs/cose" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent)' }}>github.com/doocs/cose</a></li>
@@ -373,7 +374,7 @@ export function ImportModal({ show, vaultName, vaultId, onClose, onImportComplet
             onDragLeave={handleDragLeave}
             onDrop={handleDrop}
           >
-            <div style={{ fontSize: 32, marginBottom: 8, opacity: 0.4 }}>📦</div>
+            <div style={{ marginBottom: 8, opacity: 0.4 }}><PackageIcon size={32} /></div>
             <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)', marginBottom: 4 }}>
               {t('kb.importDropHint')}
             </div>
@@ -399,7 +400,7 @@ export function ImportModal({ show, vaultName, vaultId, onClose, onImportComplet
               <div style={{ display: 'flex', flexDirection: 'column', gap: 3, maxHeight: 140, overflowY: 'auto' }}>
                 {files.map((f, i) => (
                   <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 8px', background: f.error ? 'var(--bg-warning, rgba(255,200,50,0.12))' : 'var(--bg-subtle)', borderRadius: 'var(--radius-sm)', fontSize: 12.5 }}>
-                    <span style={{ fontSize: 13 }}>{f.error ? '⚠️' : '📄'}</span>
+                    <span>{f.error ? <WarningIcon size={13} /> : <FileIcon size={13} />}</span>
                     <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: f.error ? 'var(--text-muted)' : 'var(--text)' }}>{f.name}</span>
                     {f.error ? (
                       <span style={{ fontSize: 10.5, color: 'var(--accent)', flexShrink: 0, fontWeight: 500 }}>{f.error}</span>

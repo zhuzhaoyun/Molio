@@ -1,5 +1,6 @@
 import { useI18n } from '../../i18n';
 import { formatFileSize } from '../../utils/format';
+import { FileIcon } from '../icons';
 
 interface Props {
   fileName: string;
@@ -24,7 +25,7 @@ export function TooLargeCard({
   return (
     <div className="kb-content-area">
       <div className="kb-file-card">
-        <div className="kb-file-card-icon">📄</div>
+        <div className="kb-file-card-icon"><FileIcon size={32} /></div>
         <div className="kb-file-card-info">
           <h3>{fileName}</h3>
           <p>{formatFileSize(size)}{encoding ? ` · ${encoding}` : ''}</p>

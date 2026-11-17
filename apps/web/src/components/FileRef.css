@@ -21,6 +21,8 @@
 .file-ref__icon {
   font-size: 1em;
   line-height: 1;
+  display: inline-flex;
+  align-items: center;
 }
 
 .file-ref__name {

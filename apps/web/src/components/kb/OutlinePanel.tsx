@@ -4,6 +4,7 @@
  */
 import { useMemo, useCallback, useEffect, useState } from 'react';
 import { useI18n } from '../../i18n';
+import { ListIcon } from '../icons';
 import './OutlinePanel.css';
 
 interface Heading {
@@ -62,7 +63,7 @@ export function OutlinePanel({ content, onClose }: OutlinePanelProps) {
   return (
     <aside className="kb-outline-panel" data-testid="kb-outline-panel" style={{ top }}>
       <div className="kb-outline-header">
-        <span>📋 {t('kb.outlineTitle')}</span>
+        <span><ListIcon size={14} /> {t('kb.outlineTitle')}</span>
         <button type="button" className="kb-outline-close" data-testid="kb-outline-close"
           onClick={onClose} aria-label={t('kb.close')}>✕</button>
       </div>
