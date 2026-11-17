@@ -11,96 +11,31 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert';
 
 const {
-  subjectAnchorLabel,
-  buildSubjectAnswerMessage,
-  extractSubjectAnswerMeta,
   parseGradingReply,
   pairQuizGradings,
   pairSubjectAnswers,
   gradingMapKey,
-  backfillAnchorFingerprint,
-  anchorBelongsToQuestion,
 } = await import('../src/utils/quizAnswer.ts');
-type QuizAnswerAnchor = import('../src/utils/quizAnswer.ts').QuizAnswerAnchor;
 
 const ANCHOR = {
   questionIndex: 3,
-  typeLabel: '解答题',
   stem: '证明：C_n^0 + C_n^1 + … + C_n^n = 2^n。',
   points: ['写出二项式定理公式', '代入 n=5 计算', '指出系数对称性'],
   sources: ['wiki/二项式定理.md', 'wiki/组合数的两个性质.md'],
   fingerprintKey: 'a1b2c3d4',
 };
 
-describe('subjectAnchorLabel', () => {
-  it('joins index and type label', () => {
-    assert.equal(subjectAnchorLabel({ questionIndex: 3, typeLabel: '解答题' }), '第3题 · 解答题');
-    assert.equal(
-      subjectAnchorLabel({ questionIndex: 12, typeLabel: 'Subjective' }),
-      '第12题 · Subjective',
-    );
-  });
-});
-
-describe('buildSubjectAnswerMessage', () => {
-  it('materializes stem, points, sources and the fingerprint line (v2)', () => {
-    assert.equal(
-      buildSubjectAnswerMessage(ANCHOR, '我的解答：由数学归纳法，n=1 时……'),
-      [
-        '【大题作答·第3题】',
-        '题干：证明：C_n^0 + C_n^1 + … + C_n^n = 2^n。',
-        '评分点：',
-        '1. 写出二项式定理公式',
-        '2. 代入 n=5 计算',
-        '3. 指出系数对称性',
-        '出处：wiki/二项式定理.md；wiki/组合数的两个性质.md',
-        '题目指纹：a1b2c3d4',
-        '',
-        '我的解答：由数学归纳法，n=1 时……',
-      ].join('\n'),
-    );
-  });
-
-  it('omits the fingerprint line when the key is empty (fingerprint not ready)', () => {
-    const msg = buildSubjectAnswerMessage({ ...ANCHOR, fingerprintKey: '' }, '答');
-    assert.equal(msg.includes('题目指纹'), false);
-    // 触发标记行仍在（批改契约不因指纹缺失而失效）。
-    assert.ok(msg.startsWith('【大题作答·第3题】'));
-  });
-
-  it('renders a single point and single source without separators', () => {
-    const msg = buildSubjectAnswerMessage(
-      { ...ANCHOR, points: ['唯一评分点'], sources: ['wiki/a.md'] },
-      '答',
-    );
-    assert.ok(msg.includes('1. 唯一评分点'));
-    assert.equal(msg.includes('；'), false);
-  });
-
-  it('ends with the user text; empty text leaves only the blank separator', () => {
-    const msg = buildSubjectAnswerMessage(ANCHOR, '');
-    assert.equal(msg.endsWith('\n\n'), true);
-    // 除收尾空行分隔符外不产生多余内容（没有「作答：」之类的空标签行）。
-    const lines = msg.split('\n');
-    assert.equal(lines[lines.length - 1], '');
-    assert.equal(lines[lines.length - 2], '');
-  });
-});
-
-describe('extractSubjectAnswerMeta', () => {
-  it('reads questionIndex and fingerprint key from a v2 materialized message', () => {
-    const msg = buildSubjectAnswerMessage(ANCHOR, '答');
-    assert.deepEqual(extractSubjectAnswerMeta(msg), { questionIndex: 3, key: 'a1b2c3d4' });
-    // 消息里带评分点编号等数字行不干扰题号提取。
-    assert.ok(msg.includes('1. 写出二项式定理公式'));
-  });
-
-  it('returns null for v1 messages (no fingerprint line) and non-materialized text', () => {
-    const v1 = buildSubjectAnswerMessage({ ...ANCHOR, fingerprintKey: '' }, '答');
-    assert.equal(extractSubjectAnswerMeta(v1), null);
-    assert.equal(extractSubjectAnswerMeta('普通聊天消息'), null);
-  });
-});
+/** v2 单题物化消息的字面构建（buildSubjectAnswerMessage 已收为模块私有）。 */
+const v2Message = (index: number, key: string, body = '我的作答') => [
+  `【大题作答·第${index}题】`,
+  `题干：${ANCHOR.stem}`,
+  '评分点：',
+  ...ANCHOR.points.map((point, i) => `${i + 1}. ${point}`),
+  `出处：${ANCHOR.sources.join('；')}`,
+  ...(key ? [`题目指纹：${key}`] : []),
+  '',
+  body,
+].join('\n');
 
 describe('parseGradingReply', () => {
   const REPLY = [
@@ -260,11 +195,7 @@ describe('parseGradingReply', () => {
 });
 
 describe('pairQuizGradings', () => {
-  const answerFor = (index: number, key: string) =>
-    buildSubjectAnswerMessage(
-      { ...ANCHOR, questionIndex: index, fingerprintKey: key },
-      '我的作答',
-    );
+  const answerFor = (index: number, key: string) => v2Message(index, key);
 
   it('attaches a grading to the fingerprint of the most recent answer for that index', () => {
     const map = pairQuizGradings([
@@ -316,14 +247,9 @@ describe('pairQuizGradings', () => {
 });
 
 describe('pairSubjectAnswers', () => {
-  // 解答题的「已作答」态不在题卡本地（作答发生在聊天输入框里），只能从
-  // 消息序推导——跟批改回写同一条路。键与批改同构（指纹:题号），因此
-  // 两张同有第 3 题的卡不会互相污染。
-  const answerFor = (index: number, key: string) =>
-    buildSubjectAnswerMessage(
-      { ...ANCHOR, questionIndex: index, fingerprintKey: key },
-      '我的作答',
-    );
+  // 解答题的「已作答」态不在题卡本地——从会话消息序推导（交卷消息是消息
+  // 流里的事实）。键与批改同构（指纹:题号），两张同有第 3 题的卡互不污染。
+  const answerFor = (index: number, key: string) => v2Message(index, key);
 
   it('records the answered subject questions keyed by fingerprint and index', () => {
     const map = pairSubjectAnswers([
@@ -350,15 +276,14 @@ describe('pairSubjectAnswers', () => {
   });
 
   it('drops the header block when the body itself has blank lines', () => {
-    const header = buildSubjectAnswerMessage({ ...ANCHOR, questionIndex: 1, fingerprintKey: 'aaaa1111' }, '');
-    const withBody = `${header}第一段\n\n第二段`;
+    const withBody = `${v2Message(1, 'aaaa1111', '')}第一段\n\n第二段`;
     const map = pairSubjectAnswers([{ role: 'user', content: withBody }]);
     assert.equal(map.get('aaaa1111:1'), '第一段\n\n第二段');
   });
 
-  it('does not record an anchor whose body is empty', () => {
+  it('does not record an answer whose body is empty', () => {
     const map = pairSubjectAnswers([
-      { role: 'user', content: buildSubjectAnswerMessage({ ...ANCHOR, questionIndex: 2, fingerprintKey: 'aaaa1111' }, '') },
+      { role: 'user', content: v2Message(2, 'aaaa1111', '') },
     ]);
     assert.equal(map.size, 0);
   });
@@ -371,111 +296,6 @@ describe('pairSubjectAnswers', () => {
       { role: 'user', content: '【大题作答·第3题】\n题干：x\n评分点：\n1. y' },
     ]);
     assert.equal(map.size, 0);
-  });
-});
-
-describe('anchorBelongsToQuestion', () => {
-  // 「作答」按钮的 .on 态与「再点当前题 = 取消」判定。题目 id 只在围栏内
-  // 唯一——两张卡几乎必然撞 id（「q3」）。仅凭 id 会让 B 卡的按钮把 A 卡的锚
-  // 误判成「当前题」→ 点第二张卡变成取消而不是换锚 → 作答静默失效。
-  const QUESTION_A = { stem: '证明甲', answer: ['要点甲', '要点甲2'] };
-  const QUESTION_B = { stem: '证明乙', answer: ['要点乙'] };
-  const anchor = (over: Partial<QuizAnswerAnchor> = {}): QuizAnswerAnchor => ({
-    questionIndex: 3,
-    typeLabel: '解答题',
-    stem: '证明甲',
-    points: ['要点甲', '要点甲2'],
-    sources: ['p'],
-    fingerprintKey: 'aaaa1111',
-    ...over,
-  });
-
-  it('owns the anchor when the fingerprint and the question index match', () => {
-    assert.equal(anchorBelongsToQuestion(anchor(), QUESTION_A, 'aaaa1111', 3), true);
-  });
-
-  it('does not own an anchor from another card (same question id, different card)', () => {
-    // 同 id 不同卡：指纹不同 → 不是本题的锚。
-    assert.equal(anchorBelongsToQuestion(anchor(), QUESTION_B, 'bbbb2222', 3), false);
-  });
-
-  it('does not own an anchor for a different question index in the same card', () => {
-    assert.equal(anchorBelongsToQuestion(anchor(), QUESTION_A, 'aaaa1111', 4), false);
-  });
-
-  it('falls back to content comparison when the fingerprint is not ready yet', () => {
-    // 指纹未算出时（异步）：退到内容判定（题干 + 评分点逐项一致）。
-    const pending = anchor({ fingerprintKey: '' });
-    assert.equal(anchorBelongsToQuestion(pending, QUESTION_A, '', 3), true);
-    // 内容不同 → 不是本题的锚（指纹未就绪时也不能串卡）。
-    assert.equal(anchorBelongsToQuestion(pending, QUESTION_B, '', 3), false);
-    // 评分点不同（题干相同）→ 仍不是本题的锚。
-    assert.equal(
-      anchorBelongsToQuestion(pending, { stem: '证明甲', answer: ['别的要点'] }, '', 3),
-      false,
-    );
-  });
-
-  it('returns false for a missing anchor', () => {
-    assert.equal(anchorBelongsToQuestion(null, QUESTION_A, 'aaaa1111', 3), false);
-  });
-});
-
-describe('backfillAnchorFingerprint', () => {
-  // 题目 id 只在围栏内唯一（SKILL.md 示例就是 q1/q2/q3）：两张同存的卡
-  // 几乎必然撞 id。补齐逻辑必须用内容（题干+评分点）认定归属，且只碰
-  // 「key 为空」的锚——否则卡 A 的 effect 会把卡 B 挂的锚改写成自己的题。
-  const quizA = {
-    version: 1 as const,
-    title: '第一套',
-    questions: [
-      { id: 'q1', type: 'single' as const, stem: '选择甲', options: [{ key: 'A', text: 'a' }, { key: 'B', text: 'b' }], answer: ['A'], explanation: 'x', sources: [{ path: 'p' }] },
-      { id: 'q3', type: 'subject' as const, stem: '证明甲', answer: ['要点甲'], explanation: 'x', sources: [{ path: 'p' }] },
-    ],
-  };
-  const quizB = {
-    version: 1 as const,
-    title: '第二套',
-    questions: [
-      { id: 'q2', type: 'single' as const, stem: '选择乙', options: [{ key: 'A', text: 'a' }, { key: 'B', text: 'b' }], answer: ['A'], explanation: 'x', sources: [{ path: 'p' }] },
-      { id: 'q3', type: 'subject' as const, stem: '证明乙', answer: ['要点乙'], explanation: 'x', sources: [{ path: 'p' }] },
-    ],
-  };
-  const pendingAnchor = (stem: string, points: string[]) => ({
-    anchor: { questionIndex: 2, typeLabel: '解答题', stem, points, sources: ['p'], fingerprintKey: '' },
-    questionId: 'q3',
-  });
-
-  it('fills the key for a pending anchor this quiz owns (id + stem + points match)', () => {
-    const healed = backfillAnchorFingerprint(quizA, '11111111abc', pendingAnchor('证明甲', ['要点甲']));
-    assert.equal(healed?.fingerprintKey, '11111111');
-    // 其余字段原样保留。
-    assert.equal(healed?.stem, '证明甲');
-    assert.equal(healed?.questionIndex, 2);
-  });
-
-  it('never touches an anchor whose key is already set', () => {
-    const anchor = {
-      anchor: { questionIndex: 2, typeLabel: '解答题', stem: '证明乙', points: ['要点乙'], sources: ['p'], fingerprintKey: '99999999' },
-      questionId: 'q3',
-    };
-    assert.equal(backfillAnchorFingerprint(quizA, '11111111abc', anchor), null);
-  });
-
-  it('does not hijack a sibling card pending anchor that merely shares the id', () => {
-    // 卡 B 挂的锚（stem=证明乙）：卡 A 的 effect 不得因 id 相同就改写成甲。
-    const bPending = pendingAnchor('证明乙', ['要点乙']);
-    assert.equal(backfillAnchorFingerprint(quizA, '11111111abc', bPending), null);
-  });
-
-  it('returns null when the anchor belongs to no question in this quiz', () => {
-    const stranger = { ...pendingAnchor('证明甲', ['要点甲']), questionId: 'q99' };
-    assert.equal(backfillAnchorFingerprint(quizA, '11111111abc', stranger), null);
-  });
-
-  it('returns null when the id and stem match but the points differ (content guard)', () => {
-    const forged = pendingAnchor('证明甲', ['伪造要点']);
-    assert.equal(backfillAnchorFingerprint(quizA, '11111111abc', forged), null);
   });
 });
 
@@ -550,14 +370,14 @@ describe('extractSubjectAnswers（多作答块提取）', () => {
   });
 
   it('still extracts the single block from a legacy v2 message (regression)', () => {
-    const msg = buildSubjectAnswerMessage(ANCHOR, '旧版单题作答');
+    const msg = v2Message(3, 'a1b2c3d4', '旧版单题作答');
     assert.deepEqual(extractSubjectAnswers(msg), [
       { questionIndex: 3, key: 'a1b2c3d4', body: '旧版单题作答' },
     ]);
   });
 
   it('skips v1 blocks without fingerprint line and blocks with empty body', () => {
-    const v1Block = buildSubjectAnswerMessage({ ...ANCHOR, fingerprintKey: '' }, '无指纹作答');
+    const v1Block = v2Message(3, '', '无指纹作答');
     const emptyBody = buildQuizSubmissionMessage('卷', [{ ...ENTRY_A, body: '   ' }]);
     const msg = `${v1Block}\n\n${emptyBody}`;
     assert.deepEqual(extractSubjectAnswers(msg), []);

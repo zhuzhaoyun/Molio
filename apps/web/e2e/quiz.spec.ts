@@ -191,7 +191,7 @@ test.describe('Quiz interaction block', () => {
     await page.unroute('**/api/quiz/attempts');
   });
 
-  test('renders questions, options and a disabled submit until every question is answered', async ({ page }) => {
+  test('renders questions, options and enables submit once at least one question is answered', async ({ page }) => {
     await mockChatRun(page, { runId: 'run-1', conversationId: 'conv-1', script: SCRIPT });
     await gotoHome(page);
     await sendMessage(page, '出几道题');
@@ -201,20 +201,11 @@ test.describe('Quiz interaction block', () => {
     await expect(card.locator('[data-testid="quiz-title"]')).toHaveText('番茄工作法 · 3 题');
     await expect(card.locator('[data-testid="quiz-question"]')).toHaveCount(3);
 
+    // 整卷表单门槛：≥1 题已答即可交（可交白卷的对称面）；按钮文案统一「提交判卷」。
     const submit = card.locator('[data-testid="quiz-submit"]');
     await expect(submit).toBeDisabled();
-
-    // q1 single
+    await expect(submit).toHaveText('提交判卷');
     await card.locator('[data-testid="quiz-option"][data-question-id="q1"][data-key="B"]').click();
-    await expect(submit).toBeDisabled();
-
-    // q2 multiple
-    await card.locator('[data-testid="quiz-option"][data-question-id="q2"][data-key="A"]').click();
-    await card.locator('[data-testid="quiz-option"][data-question-id="q2"][data-key="B"]').click();
-    await expect(submit).toBeDisabled();
-
-    // q3 judge (B = 错误)
-    await card.locator('[data-testid="quiz-option"][data-question-id="q3"][data-key="B"]').click();
     await expect(submit).toBeEnabled();
   });
 
@@ -411,66 +402,10 @@ test.describe('Quiz interaction block', () => {
     await expect(cards.nth(0).locator('[data-testid="quiz-option"][data-question-id="s1"]')).toHaveCount(0);
   });
 
-  test('keeps the answer anchor scoped to its own card when two cards share a question id', async ({ page }) => {
-    // 多卡回归：两张卡都有题号 q3 的解答题（题目 id 只在围栏内唯一）。
-    // 点第二张卡的「作答」必须**换锚**到那张卡，而不是把第一张卡的锚
-    // 误判成「再点当前题 = 取消」——否则作答静默失效（消息不带物化块，
-    // 模型不批改、进度不涨、聊天里看不出异常）。
-    const second = `\n\n\`\`\`quiz
-{
-  "version": 1,
-  "title": "第二组",
-  "questions": [
-    {
-      "id": "q3",
-      "type": "subject",
-      "stem": "证明：第二组的题目（与第一组题号相同、内容不同）。",
-      "answer": ["写出第二组的评分点", "补上边界情形"],
-      "explanation": "按评分点逐步给分。",
-      "sources": [{ "path": "notes/组合数.md" }]
-    }
-  ]
-}
-\`\`\``;
-
-    await mockChatRun(page, {
-      runId: 'run-1',
-      conversationId: 'conv-1',
-      script: [
-        { type: 'status', label: 'running' },
-        { type: 'text_delta', delta: MIXED_QUIZ + second },
-        { type: 'turn_end', stopReason: 'end_turn' },
-      ],
-    });
-    await gotoHome(page);
-    await sendMessage(page, '出两组题');
-
-    const cards = page.locator('[data-testid="quiz-card"]');
-    await expect(cards).toHaveCount(2, { timeout: 10_000 });
-
-    const firstBtn = cards.nth(0).locator('[data-testid="quiz-answer-btn"][data-question-id="q3"]');
-    const secondBtn = cards.nth(1).locator('[data-testid="quiz-answer-btn"][data-question-id="q3"]');
-
-    // 第一张卡挂锚 → 只有第一张卡的按钮是 .on 态。
-    await firstBtn.click();
-    await expect(firstBtn).toHaveClass(/on/);
-    await expect(secondBtn).not.toHaveClass(/on/);
-
-    // 点第二张卡 → 换锚（不是取消）：第二张卡 .on，第一张卡不再是。
-    await secondBtn.click();
-    await expect(secondBtn).toHaveClass(/on/);
-    await expect(firstBtn).not.toHaveClass(/on/);
-
-    // 锚确实挂在第二张卡上：发送的消息物化的是第二张卡的题干。
-    await page.locator('[data-testid="composer-input"]').fill('第二组的作答');
-    await page.locator('[data-testid="composer-send"]').click();
-    await expect(page.locator('[data-testid="user-message"]').last()).toContainText('第二组的题目');
-  });
-
   test('does not leak the subject state to another card with the same question id', async ({ page }) => {
-    // 多卡隔离：A 卡作答后，B 卡（同有题号 q3 的解答题）不得出现状态徽标 /
-    // 得分徽标，也不得把 A 卡的作答算进自己的进度。键 = 指纹:题号，两卡内容
-    // 不同 → 指纹不同 → 互不串。
+    // 多卡隔离：A 卡草稿交卷后，B 卡（同有题号 q3 的解答题）不得出现状态
+    // 徽标 / 得分徽标 / 回显，也不得把 A 卡的作答算进自己的进度。
+    // 键 = 指纹:题号，两卡内容不同 → 指纹不同 → 互不串。
     const second = `\n\n\`\`\`quiz
 {
   "version": 1,
@@ -505,15 +440,16 @@ test.describe('Quiz interaction block', () => {
     const cards = page.locator('[data-testid="quiz-card"]');
     await expect(cards).toHaveCount(2, { timeout: 10_000 });
 
-    // 在第一张卡作答（物化 + 批改）。
-    await cards.nth(0).locator('[data-testid="quiz-answer-btn"][data-question-id="q3"]').click();
-    await page.locator('[data-testid="composer-input"]').fill('第一组的作答');
-    await page.locator('[data-testid="composer-send"]').click();
-    await expect(cards.nth(0).locator('[data-testid="quiz-subject-status"]')).toHaveText('已批改');
+    // 在第一张卡草稿并交卷（客观题全空 → 走未答完确认条）。
+    await cards.nth(0).locator('[data-testid="quiz-subject-input"][data-question-id="q3"]').fill('第一组的作答');
+    await cards.nth(0).locator('[data-testid="quiz-submit"]').click();
+    await cards.nth(0).locator('[data-testid="quiz-confirm-submit"]').click();
+    await expect(cards.nth(0).locator('[data-testid="quiz-subject-score"]')).toHaveText('1/2');
 
-    // 第二张卡：不得出现状态徽标 / 得分徽标，进度仍是 0（它自己没答）。
+    // 第二张卡：无徽标、无得分、无回显，进度仍是 0（它自己没答）。
     await expect(cards.nth(1).locator('[data-testid="quiz-subject-status"]')).toHaveCount(0);
     await expect(cards.nth(1).locator('[data-testid="quiz-subject-score"]')).toHaveCount(0);
+    await expect(cards.nth(1).locator('[data-testid="quiz-subject-echo"]')).toHaveCount(0);
     await expect(cards.nth(1).locator('[data-testid="quiz-progress"]')).toHaveText('已作答 0/1');
 
     // 第一张卡：进度含解答题（客观题 2 道 + 解答题 1 道 = 3 道）。
@@ -1185,9 +1121,9 @@ test.describe('Quiz interaction block', () => {
     await expect(results.nth(1)).toHaveAttribute('data-correct', 'true');
   });
 
-  test('renders subject questions with an answer button and excludes them from local submission', async ({ page }) => {
-    // 主观题：行内只有「作答」按钮（无选项/输入框），不进本地判分批次——
-    // 作答走问答输入框挂锚物化（批改协议由模型按 skill 执行）。
+  test('renders a subject answer area in the card and counts drafts into progress', async ({ page }) => {
+    // M1 表单语义：作答区在卡内（textarea + 符号 + 插图），composer 不参与；
+    // 非空草稿计入进度（口径 = 整张卷子）；解答题不进本地判分批次。
     await mockChatRun(page, { runId: 'run-1', conversationId: 'conv-1', script: [
       { type: 'status', label: 'running' },
       { type: 'text_delta', delta: MIXED_QUIZ },
@@ -1202,50 +1138,29 @@ test.describe('Quiz interaction block', () => {
 
     const subjectRow = card.locator('[data-testid="quiz-question"][data-question-id="q3"]');
     await expect(subjectRow.locator('[data-testid="quiz-type"]')).toHaveText('解答题');
-    await expect(subjectRow.locator('[data-testid="quiz-answer-btn"]')).toBeVisible();
+    await expect(subjectRow.locator('[data-testid="quiz-subject-input"]')).toBeVisible();
     await expect(subjectRow.locator('[data-testid="quiz-option"]')).toHaveCount(0);
     await expect(subjectRow.locator('[data-testid="quiz-fill-input"]')).toHaveCount(0);
+    // 锚时代的「作答」按钮已退役。
+    await expect(card.locator('[data-testid="quiz-answer-btn"]')).toHaveCount(0);
 
-    // 锚开关：点「作答」挂锚（.on 强调态），再点当前题取消。
-    const answerBtn = subjectRow.locator('[data-testid="quiz-answer-btn"]');
-    await answerBtn.click();
-    await expect(answerBtn).toHaveClass(/on/);
-    await answerBtn.click();
-    await expect(answerBtn).not.toHaveClass(/on/);
-
-    // 进度口径 = 整张卷子（3 道，含解答题）：解答题答了就算已作答。
-    // 但解答题不阻塞提交——按钮只看客观题。
-    const submit = card.locator('[data-testid="quiz-submit"]');
-    await expect(card.locator('[data-testid="quiz-progress"]')).toHaveText('已作答 0/3');
-    await card.locator('[data-testid="quiz-option"][data-question-id="q1"][data-key="B"]').click();
-    await expect(submit).toBeDisabled();
+    // 符号托盘：卡内唤起，插入 textarea（无 64 上限——那是填空/daemon chosen 契约）。
+    await subjectRow.locator('[data-testid="quiz-subject-symbol"]').click();
+    await expect(subjectRow.locator('[data-testid="quiz-subject-symbol-tray"]')).toBeVisible();
+    await subjectRow.locator('[data-testid="quiz-symbol-btn"][data-char="√"]').click();
+    await expect(subjectRow.locator('[data-testid="quiz-subject-input"]')).toHaveValue('√');
+    // 非空草稿计入进度（整卷口径 3 题）：插入一个符号就算已答。
     await expect(card.locator('[data-testid="quiz-progress"]')).toHaveText('已作答 1/3');
-    await card.locator('[data-testid="quiz-option"][data-question-id="q2"][data-key="A"]').click();
-    await card.locator('[data-testid="quiz-option"][data-question-id="q2"][data-key="B"]').click();
-
-    await page.unroute('**/api/quiz/attempts');
-    let attemptBody: any = null;
-    await page.route('**/api/quiz/attempts', async (route) => {
-      attemptBody = JSON.parse(route.request().postData() || '{}');
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({ ok: true, inserted: 2 }),
-      });
-    });
-    await submit.click();
-
-    // 只落库 2 道客观题；subject 行不出现判分着色，也不展开解析（评分点保密）。
-    await expect.poll(() => attemptBody?.attempts?.length).toBe(2);
-    expect(attemptBody.attempts.map((a: { questionId: string }) => a.questionId)).toEqual(['q1', 'q2']);
-    await expect(subjectRow.locator('[data-testid="quiz-result"]')).toHaveCount(0);
-    await expect(subjectRow.locator('[data-testid="quiz-explanation"]')).toHaveCount(0);
-    await expect(card.locator('[data-testid="quiz-result"]')).toHaveCount(2);
+    // 清空文本 → 回到未答；再输入正文 → 又算已答。
+    await card.locator('[data-testid="quiz-subject-input"][data-question-id="q3"]').fill('');
+    await expect(card.locator('[data-testid="quiz-progress"]')).toHaveText('已作答 0/3');
+    await card.locator('[data-testid="quiz-subject-input"][data-question-id="q3"]').fill('证明过程……');
+    await expect(card.locator('[data-testid="quiz-progress"]')).toHaveText('已作答 1/3');
   });
 
-  test('subject-only quiz renders stem without a submit area', async ({ page }) => {
-    // 纯 subject 围栏：没有可判分题 → 没有「提交答案」按钮（提交区整体不渲染），
-    // 但进度计数仍然显示（口径 = 整张卷子，这里是 1 道解答题）。
+  test('subject-only quiz renders a submit button gated on drafts', async ({ page }) => {
+    // 纯 subject 卷也有「提交判卷」（旧版无提交区的特例消失）：0 草稿禁用，
+    // 草稿即解锁；进度口径 = 整张卷子。
     await mockChatRun(page, { runId: 'run-1', conversationId: 'conv-1', script: [
       { type: 'status', label: 'running' },
       { type: 'text_delta', delta: SUBJECT_ONLY_QUIZ },
@@ -1257,49 +1172,67 @@ test.describe('Quiz interaction block', () => {
     const card = page.locator('[data-testid="quiz-card"]');
     await expect(card).toBeVisible({ timeout: 10_000 });
     await expect(card.locator('[data-testid="quiz-question"]')).toHaveCount(1);
-    await expect(card.locator('[data-testid="quiz-answer-btn"]')).toHaveCount(1);
-    await expect(card.locator('[data-testid="quiz-submit"]')).toHaveCount(0);
+    const submit = card.locator('[data-testid="quiz-submit"]');
+    await expect(submit).toBeDisabled();
     await expect(card.locator('[data-testid="quiz-progress"]')).toHaveText('已作答 0/1');
+    await card.locator('[data-testid="quiz-subject-input"][data-question-id="s1"]').fill('论述……');
+    await expect(submit).toBeEnabled();
   });
 
-  test('anchors the composer via 作答 and materializes stem and points into the sent message', async ({ page }) => {
+  test('submitting the paper materializes one message and leaves the composer alone', async ({ page }) => {
+    // 整卷一次提交：交卷 = 一条消息（首行给人读 + 每题作答块），composer
+    // 全程不参与（输入框不收作答，也没有锚 chip）。
+    let sentMessage: string | null = null;
     await mockChatRun(page, { runId: 'run-1', conversationId: 'conv-1', script: [
       { type: 'status', label: 'running' },
       { type: 'text_delta', delta: MIXED_QUIZ },
       { type: 'turn_end', stopReason: 'end_turn' },
     ] });
+    await page.route('**/api/runs', async (route) => {
+      if (route.request().method() === 'POST') {
+        sentMessage = (JSON.parse(route.request().postData() || '{}') as { message?: string }).message ?? null;
+      }
+      await route.fallback();
+    });
+    await page.route('**/api/runs/*/messages', async (route) => {
+      if (route.request().method() === 'POST') {
+        sentMessage = (JSON.parse(route.request().postData() || '{}') as { message?: string }).message ?? null;
+      }
+      await route.fallback();
+    });
     await gotoHome(page);
     await sendMessage(page, '出混合题');
 
     const card = page.locator('[data-testid="quiz-card"]');
     await expect(card).toBeVisible({ timeout: 10_000 });
 
-    const answerBtn = card.locator('[data-testid="quiz-answer-btn"][data-question-id="q3"]');
-    const chip = page.locator('[data-testid="composer-anchor-chip"]');
+    // 全卷答完（客观 2 + 解答草稿 1）→ 直接放行，无确认条。
+    await card.locator('[data-testid="quiz-option"][data-question-id="q1"][data-key="B"]').click();
+    await card.locator('[data-testid="quiz-option"][data-question-id="q2"][data-key="B"]').click();
+    await card.locator('[data-testid="quiz-subject-input"][data-question-id="q3"]').fill('我的解答过程：由帕斯卡法则……');
+    await expect(card.locator('[data-testid="quiz-progress"]')).toHaveText('已作答 3/3');
+    await card.locator('[data-testid="quiz-submit"]').click();
+    await expect(card.locator('[data-testid="quiz-submit-confirm"]')).toHaveCount(0);
 
-    // 点「作答」→ composer 挂 chip 锚；× 摘除；重新挂上。
-    await answerBtn.click();
-    await expect(chip).toBeVisible();
-    await expect(chip).toContainText('第3题 · 解答题');
-    await chip.locator('[data-testid="composer-anchor-chip-remove"]').click();
-    await expect(chip).toHaveCount(0);
-    await answerBtn.click();
-    await expect(chip).toBeVisible();
+    await expect.poll(() => sentMessage).not.toBeNull();
+    const msg = sentMessage!;
+    expect(msg.startsWith('提交判卷：《混合 · 3 题》')).toBe(true);
+    expect(msg).toContain('【大题作答·第3题】');
+    expect(msg).toContain('题干：证明：从 n 个不同元素中选 k 个的方法数满足帕斯卡法则。');
+    expect(msg).toContain('1. 写出帕斯卡法则 C(n,k)=C(n-1,k-1)+C(n-1,k)');
+    expect(msg).toContain('出处：notes/组合数.md');
+    expect(msg).toContain('题目指纹：');
+    expect(msg).toContain('我的解答过程：由帕斯卡法则……');
 
-    await page.locator('[data-testid="composer-input"]').fill('我的解答过程：由帕斯卡法则……');
-    await page.locator('[data-testid="composer-send"]').click();
-
-    // 发出的消息 = 物化格式（题干 + 隐藏评分点 + 出处 + 用户原文）。
-    const lastUser = page.locator('[data-testid="user-message"]').last();
-    await expect(lastUser).toContainText('【大题作答·第3题】');
-    await expect(lastUser).toContainText('题干：证明：从 n 个不同元素中选 k 个的方法数满足帕斯卡法则。');
-    await expect(lastUser).toContainText('评分点：');
-    await expect(lastUser).toContainText('1. 写出帕斯卡法则 C(n,k)=C(n-1,k-1)+C(n-1,k)');
-    await expect(lastUser).toContainText('出处：notes/组合数.md');
-    await expect(lastUser).toContainText('我的解答过程：由帕斯卡法则……');
-
-    // 锚随发送一次性消费。
-    await expect(chip).toHaveCount(0);
+    // composer 未参与：输入框仍是空的，锚 chip 不存在。
+    await expect(page.locator('[data-testid="composer-input"]')).toHaveValue('');
+    await expect(page.locator('[data-testid="composer-anchor-chip"]')).toHaveCount(0);
+    // 交卷后本地客观题揭晓 + 作答区换只读回显。
+    await expect(card.locator('[data-testid="quiz-result"]')).toHaveCount(2);
+    await expect(card.locator('[data-testid="quiz-subject-echo"]')).toContainText('我的解答过程');
+    // 客观题落库照旧（2 道客观题）。
+    await page.unroute('**/api/runs');
+    await page.unroute('**/api/runs/*/messages');
   });
 
   test('fill symbol insert refuses beyond the 64-char limit', async ({ page }) => {
@@ -1346,10 +1279,9 @@ test.describe('Quiz interaction block', () => {
     await expect(card.locator('.quiz-input-row')).not.toHaveCSS('border-color', 'rgb(168, 50, 46)');
   });
 
-  test('keeps the grading marker first when the answer carries a pasted image', async ({ page }) => {
-    // 拍照作答（spec §3.4 点名的公式正解形态）：宿主会把图片附件前置到消息
-    // 最前——锚激活时图片必须折进物化的作答段内，保证【大题作答·第N题】
-    // 标记行是消息第一行（skill 批改协议的触发依据）。
+  test('keeps the marker blocks intact when the answer carries an image', async ({ page }) => {
+    // 拍照作答（P4）：卡内上传图片 → 交卷消息里图片 markdown 折进该题的作答
+    // 块内（指纹行之后），提交判卷首行仍是消息第一行——skill 触发依据不受影响。
     await page.route('**/api/knowledge/vaults/vault-1/assets/upload', async (route) => {
       await route.fulfill({
         status: 200,
@@ -1389,24 +1321,37 @@ test.describe('Quiz interaction block', () => {
 
     const card = page.locator('[data-testid="quiz-card"]');
     await expect(card).toBeVisible({ timeout: 10_000 });
-    await card.locator('[data-testid="quiz-answer-btn"][data-question-id="q3"]').click();
 
-    await page.locator('[data-testid="composer-file-input"]').setInputFiles({
+    // 卡内上传（隐藏 file input 直灌）→ 缩略图可见。
+    await card.locator('[data-testid="quiz-subject-file"][data-question-id="q3"]').setInputFiles({
       name: 'answer.png',
       mimeType: 'image/png',
       buffer: TINY_PNG,
     });
-    await expect(page.locator('[data-testid="composer-image-thumb"]')).toBeVisible();
+    await expect(card.locator('[data-testid="quiz-answer-assets"] img')).toBeVisible();
 
-    await page.locator('[data-testid="composer-input"]').fill('看图作答：由图可知……');
-    await page.locator('[data-testid="composer-send"]').click();
+    // 草稿文本 + 交卷（客观题未答 → 确认条放行）。
+    await card.locator('[data-testid="quiz-subject-input"][data-question-id="q3"]').fill('看图作答：由图可知……');
+    await card.locator('[data-testid="quiz-submit"]').click();
+    await card.locator('[data-testid="quiz-confirm-submit"]').click();
 
     await expect.poll(() => sentMessage).not.toBeNull();
-    expect(sentMessage!.startsWith('【大题作答·第3题】')).toBe(true);
-    // 图片 markdown 在作答段内（userText），不在消息头部。
-    expect(sentMessage).toContain('![image](raw/feishu/2026-10-26/answer.png)');
-    expect(sentMessage!.indexOf('![image]')).toBeGreaterThan(sentMessage!.indexOf('出处：'));
-    expect(sentMessage).toContain('看图作答：由图可知……');
+    const msg = sentMessage!;
+    // 首行给人读；标记块紧随其后。
+    expect(msg.startsWith('提交判卷：《混合 · 3 题》')).toBe(true);
+    expect(msg).toContain('【大题作答·第3题】');
+    // 图片 markdown 在作答块内（指纹行之后），正文紧随。
+    expect(msg).toContain('![作答图片](raw/feishu/2026-10-26/answer.png)');
+    expect(msg.indexOf('![作答图片]')).toBeGreaterThan(msg.indexOf('题目指纹：'));
+    expect(msg).toContain('看图作答：由图可知……');
+
+    // 草稿图持久化：subjectImages 与 selections/submitted 同键落 localStorage。
+    const stored = await page.evaluate(() => {
+      const key = Object.keys(localStorage).find((k) => k.startsWith('molio.quiz.conv-1.'));
+      return key ? localStorage.getItem(key) : null;
+    });
+    expect(stored).not.toBeNull();
+    expect(JSON.parse(stored!).subjectImages).toEqual({ q3: ['raw/feishu/2026-10-26/answer.png'] });
   });
 
   /** turn_end 后的作答发送会新建 run（不走 /messages 排队），所以二轮批改
@@ -1448,9 +1393,8 @@ test.describe('Quiz interaction block', () => {
   }
 
   test('writes the grading back into the subject question row', async ({ page }) => {
-    // 批改回写：批改标记行（含题号+得分+逐点行）被配对到题卡，解答题行
-    // 出现得分徽标 + 可折叠的逐点评定；聊天里的批改文本照常保留。
-    // 揭晓时机：与客观题同批——交卷后才显示分数与逐点（一次交卷、一次揭晓）。
+    // 批改回写：交卷消息触发批改协议，批改块回流后配对到题卡——得分徽标
+    // + 可折叠逐点评定；聊天里的批改文本照常保留。
     const gradingReply = [
       '【批改·第3题】得分 2/3',
       '1. 命中｜写出帕斯卡法则，形式正确',
@@ -1476,30 +1420,21 @@ test.describe('Quiz interaction block', () => {
     const card = page.locator('[data-testid="quiz-card"]');
     await expect(card).toBeVisible({ timeout: 10_000 });
 
-    await card.locator('[data-testid="quiz-answer-btn"][data-question-id="q3"]').click();
-    await page.locator('[data-testid="composer-input"]').fill('证明过程……');
-    await page.locator('[data-testid="composer-send"]').click();
-
-    // 交卷前：只显示状态徽标（已批改），分数与逐点详情都不出现。
-    const status = card.locator('[data-testid="quiz-subject-status"]');
-    await expect(status).toHaveText('已批改');
-    await expect(card.locator('[data-testid="quiz-subject-score"]')).toHaveCount(0);
-    await expect(card.locator('[data-testid="quiz-subject-points-toggle"]')).toHaveCount(0);
-
-    // 进度含解答题：客观题 2 道 + 解答题 1 道 = 3 道。
-    await expect(card.locator('[data-testid="quiz-progress"]')).toHaveText('已作答 1/3');
-
-    // 交卷（客观题全答）→ 与客观题同批揭晓。
-    await card.locator('[data-testid="quiz-option"][data-question-id="q1"][data-key="B"]').click();
-    await card.locator('[data-testid="quiz-option"][data-question-id="q2"][data-key="B"]').click();
+    // 卡内草稿 + 交卷（客观题 2 道未答 → amber 确认条 → 仍要交卷）。
+    await card.locator('[data-testid="quiz-subject-input"][data-question-id="q3"]').fill('证明过程……');
     await card.locator('[data-testid="quiz-submit"]').click();
+    await expect(card.locator('[data-testid="quiz-submit-confirm"]')).toContainText('还有 2 题');
+    await card.locator('[data-testid="quiz-confirm-submit"]').click();
 
-    // 得分徽标出现在解答题行头。
+    // 得分徽标出现在解答题行头；未答的客观题不计错（无对错徽标）。
     const score = card.locator('[data-testid="quiz-subject-score"]');
     await expect(score).toHaveText('2/3');
     await expect(card.locator('[data-testid="quiz-subject-status"]')).toHaveCount(0);
-    // 交卷后进度仍在（口径 = 整张卷子 3 道，此刻全答了）。
-    await expect(card.locator('[data-testid="quiz-progress"]')).toHaveText('已作答 3/3');
+    await expect(card.locator('[data-testid="quiz-result"]')).toHaveCount(0);
+    // 交卷后进度仍在（口径 = 整张卷子 3 道，此刻答了 1 题）。
+    await expect(card.locator('[data-testid="quiz-progress"]')).toHaveText('已作答 1/3');
+    // 你的作答（只读回显）：草稿镜像立即可见，不等消息落库。
+    await expect(card.locator('[data-testid="quiz-subject-echo"]')).toContainText('证明过程……');
 
     // 逐点评定默认收起，展开后 3 行：判定徽章走 i18n + 依据文本。
     await card.locator('[data-testid="quiz-subject-points-toggle"]').click();
@@ -1519,7 +1454,7 @@ test.describe('Quiz interaction block', () => {
 
   test('writes back a fractional score grading', async ({ page }) => {
     // 真机事故（2026-10-27）：模型给了「得分 1.5/5」（部分给分），旧解析器只认
-    // 整数分 → 整块批改被丢弃 → 题卡没有徽标，只在聊天里留下批改文本。
+    // 整数分 → 整块批改被丢弃。解析器已宽容小数，这里回归。
     const gradingReply = [
       '【批改·第3题】得分 1.5/5',
       '',
@@ -1550,18 +1485,9 @@ test.describe('Quiz interaction block', () => {
     const card = page.locator('[data-testid="quiz-card"]');
     await expect(card).toBeVisible({ timeout: 10_000 });
 
-    await card.locator('[data-testid="quiz-answer-btn"][data-question-id="q3"]').click();
-    await page.locator('[data-testid="composer-input"]').fill('证明过程……');
-    await page.locator('[data-testid="composer-send"]').click();
-
-    // 交卷前：状态徽标「已批改」，分数不出现。
-    await expect(card.locator('[data-testid="quiz-subject-status"]')).toHaveText('已批改');
-    await expect(card.locator('[data-testid="quiz-subject-score"]')).toHaveCount(0);
-
-    // 交卷 → 小数分也要回写成功：徽标显示 1.5/5。
-    await card.locator('[data-testid="quiz-option"][data-question-id="q1"][data-key="B"]').click();
-    await card.locator('[data-testid="quiz-option"][data-question-id="q2"][data-key="B"]').click();
+    await card.locator('[data-testid="quiz-subject-input"][data-question-id="q3"]').fill('证明过程……');
     await card.locator('[data-testid="quiz-submit"]').click();
+    await card.locator('[data-testid="quiz-confirm-submit"]').click();
 
     const score = card.locator('[data-testid="quiz-subject-score"]');
     await expect(score).toHaveText('1.5/5');
@@ -1578,8 +1504,9 @@ test.describe('Quiz interaction block', () => {
     await page.unroute('**/api/runs/run-2/events**');
   });
 
-  test('keeps the subject row bare when the reply has no grading marker', async ({ page }) => {
-    // 优雅降级：模型没按批改格式回（自由文本）→ 卡片无回写，聊天批改兜底。
+  test('falls back to the submitted pill when the reply has no grading marker', async ({ page }) => {
+    // 优雅降级（Review Focus #3）：模型没按批改格式回 → 该题停在「已交卷」
+    // （run 结束、无回写），绝不永远「批改中」；聊天批改兜底。
     await mockChatRun(page, {
       runId: 'run-1',
       conversationId: 'conv-1',
@@ -1596,23 +1523,25 @@ test.describe('Quiz interaction block', () => {
 
     const card = page.locator('[data-testid="quiz-card"]');
     await expect(card).toBeVisible({ timeout: 10_000 });
-    await card.locator('[data-testid="quiz-answer-btn"][data-question-id="q3"]').click();
-    await page.locator('[data-testid="composer-input"]').fill('证明过程……');
-    await page.locator('[data-testid="composer-send"]').click();
+    await card.locator('[data-testid="quiz-subject-input"][data-question-id="q3"]').fill('证明过程……');
+    await card.locator('[data-testid="quiz-submit"]').click();
+    await card.locator('[data-testid="quiz-confirm-submit"]').click();
 
     await expect(page.locator('[data-testid="assistant-prose"]').last()).toContainText('总体答得不错');
     await expect(card.locator('[data-testid="quiz-subject-score"]')).toHaveCount(0);
     await expect(card.locator('[data-testid="quiz-subject-points-toggle"]')).toHaveCount(0);
-    // 作答了但模型没按格式回 → 状态徽标停在「已作答」（区别于「已批改」）。
-    await expect(card.locator('[data-testid="quiz-subject-status"]')).toHaveText('已作答');
+    // run 结束仍无回写 → 「已交卷」（中性），不是卡死的「批改中」。
+    const status = card.locator('[data-testid="quiz-subject-status"]');
+    await expect(status).toHaveAttribute('data-state', 'awaiting');
+    await expect(status).toHaveText('已交卷');
 
     await page.unroute('**/api/runs');
     await page.unroute('**/api/runs/run-2/events**');
   });
 
-  test('keeps the subject state after redo while clearing objective answers', async ({ page }) => {
-    // 「重做」只清客观题：解答题的作答与批改是聊天消息里的事实，清不掉
-    // （方案一）。重做后回到未交卷态 → 分数重新隐藏，状态徽标回到「已批改」。
+  test('redo clears drafts but keeps message-derived answers as read-only echo', async ({ page }) => {
+    // 重做（M1）：清草稿 + 判分态，回作答态；交卷消息是事实——推导已答的题
+    // 变成只读回显，进度不丢（旧会话语义：重做不动历史消息）。
     const gradingReply = [
       '【批改·第3题】得分 2/3',
       '1. 命中｜写出帕斯卡法则',
@@ -1636,29 +1565,36 @@ test.describe('Quiz interaction block', () => {
     const card = page.locator('[data-testid="quiz-card"]');
     await expect(card).toBeVisible({ timeout: 10_000 });
 
-    await card.locator('[data-testid="quiz-answer-btn"][data-question-id="q3"]').click();
-    await page.locator('[data-testid="composer-input"]').fill('证明过程……');
-    await page.locator('[data-testid="composer-send"]').click();
-
-    // 交卷 → 揭晓。
-    await card.locator('[data-testid="quiz-option"][data-question-id="q1"][data-key="B"]').click();
-    await card.locator('[data-testid="quiz-option"][data-question-id="q2"][data-key="B"]').click();
+    await card.locator('[data-testid="quiz-subject-input"][data-question-id="q3"]').fill('证明过程……');
     await card.locator('[data-testid="quiz-submit"]').click();
+    await card.locator('[data-testid="quiz-confirm-submit"]').click();
     await expect(card.locator('[data-testid="quiz-subject-score"]')).toHaveText('2/3');
 
-    // 重做 → 客观题清空、分数隐藏；解答题状态保留（消息是事实）。
+    // 重做 → 草稿与判分态清空；推导已答转只读回显（消息是事实）。
     await card.locator('[data-testid="quiz-redo"]').click();
     await expect(card.locator('[data-testid="quiz-subject-score"]')).toHaveCount(0);
-    await expect(card.locator('[data-testid="quiz-subject-status"]')).toHaveText('已批改');
+    await expect(card.locator('[data-testid="quiz-subject-input"]')).toHaveCount(0);
+    await expect(card.locator('[data-testid="quiz-subject-echo"]')).toContainText('证明过程……');
+    const status = card.locator('[data-testid="quiz-subject-status"]');
+    await expect(status).toHaveAttribute('data-state', 'graded');
+    await expect(status).toHaveText('已批改');
+    // 进度并集：草稿没了但推导已答仍在 → 1/3。
     await expect(card.locator('[data-testid="quiz-progress"]')).toHaveText('已作答 1/3');
+    // 本地草稿态已清：键会被恢复 effect 以空态重写（既有行为），断言内容为空。
+    const stored = await page.evaluate(() => {
+      const key = Object.keys(localStorage).find((k) => k.startsWith('molio.quiz.conv-1.'));
+      return key ? localStorage.getItem(key) : null;
+    });
+    expect(stored ? JSON.parse(stored).selections : {}).toEqual({});
+    expect(stored ? JSON.parse(stored).submitted : false).toBe(false);
 
     await page.unroute('**/api/runs');
     await page.unroute('**/api/runs/run-2/events**');
   });
 
-  test('shows the grading directly on a subject-only card (no submit button)', async ({ page }) => {
-    // 纯解答题卡没有「提交答案」这一步（无客观题可交卷）→ 批改直接显示，
-    // 不能因为没有交卷动作而永远看不到结果。
+  test('subject-only card: submit exists, grading returns after submission', async ({ page }) => {
+    // 纯解答卷也有「提交判卷」（旧版没有提交区的特例消失）：草稿即进度，
+    // 交卷 → 批改回流 → 得分 + 回显。
     const gradingReply = [
       '【批改·第1题】得分 1/2',
       '1. 命中｜指出了定理左端是选 k 个元素的计数',
@@ -1680,18 +1616,89 @@ test.describe('Quiz interaction block', () => {
 
     const card = page.locator('[data-testid="quiz-card"]');
     await expect(card).toBeVisible({ timeout: 10_000 });
+    const submit = card.locator('[data-testid="quiz-submit"]');
+    await expect(submit).toBeDisabled();
+    await expect(card.locator('[data-testid="quiz-progress"]')).toHaveText('已作答 0/1');
 
-    await card.locator('[data-testid="quiz-answer-btn"]').click();
-    await page.locator('[data-testid="composer-input"]').fill('我的论述……');
-    await page.locator('[data-testid="composer-send"]').click();
-
-    // 没有交卷按钮，但批改照样显示。
-    await expect(card.locator('[data-testid="quiz-submit"]')).toHaveCount(0);
-    await expect(card.locator('[data-testid="quiz-subject-score"]')).toHaveText('1/2');
+    // 草稿即已答：可交卷（全部已答 → 无确认条直接放行）。
+    await card.locator('[data-testid="quiz-subject-input"][data-question-id="s1"]').fill('我的论述……');
     await expect(card.locator('[data-testid="quiz-progress"]')).toHaveText('已作答 1/1');
+    await submit.click();
+    await expect(card.locator('[data-testid="quiz-submit-confirm"]')).toHaveCount(0);
+
+    const score = card.locator('[data-testid="quiz-subject-score"]');
+    await expect(score).toHaveText('1/2');
+    await expect(card.locator('[data-testid="quiz-subject-echo"]')).toContainText('我的论述……');
+    await expect(card.locator('[data-testid="quiz-progress"]')).toHaveText('已作答 1/1');
+    // 批改已到、无待回题 → foot 回「重做」。
+    await expect(card.locator('[data-testid="quiz-redo"]')).toBeVisible();
 
     await page.unroute('**/api/runs');
     await page.unroute('**/api/runs/run-2/events**');
+  });
+
+  test('pure-objective submission grades locally and sends no message', async ({ page }) => {
+    // 边界（Review Focus #2）：纯客观卷交卷 = 本地判分，不发消息、不建 run
+    // （解答题全空同理——没有作答块就不触发批改协议，避免白跑轮次）。
+    let runPosts = 0;
+    await mockChatRun(page, { runId: 'run-1', conversationId: 'conv-1', script: SCRIPT });
+    await gotoHome(page);
+    await sendMessage(page, '出几道题');
+    // 计数层在首发送之后注册（Playwright LIFO）：只统计交卷动作发出的 POST。
+    await page.route('**/api/runs', async (route) => {
+      if (route.request().method() === 'POST') runPosts += 1;
+      await route.fallback();
+    });
+
+    const card = page.locator('[data-testid="quiz-card"]');
+    await expect(card).toBeVisible({ timeout: 10_000 });
+    await card.locator('[data-testid="quiz-option"][data-question-id="q1"][data-key="B"]').click();
+    await card.locator('[data-testid="quiz-option"][data-question-id="q2"][data-key="A"]').click();
+    await card.locator('[data-testid="quiz-option"][data-question-id="q2"][data-key="B"]').click();
+    await card.locator('[data-testid="quiz-option"][data-question-id="q3"][data-key="B"]').click();
+    await card.locator('[data-testid="quiz-submit"]').click();
+
+    await expect(card.locator('[data-testid="quiz-result"]')).toHaveCount(3);
+    // 只有最初那一条提问消息；没有交卷消息，也没有新 run。
+    await expect(page.locator('[data-testid="user-message"]')).toHaveCount(1);
+    await expect.poll(() => runPosts).toBe(0);
+  });
+
+  test('submitting with unanswered questions shows the amber confirm bar', async ({ page }) => {
+    // 未答完交卷（可交白卷）：先 amber 确认条说后果；「继续作答」收条回去，
+    // 「仍要交卷」放行——空题标「未作答」、不计错、不发消息（无解答草稿）。
+    await mockChatRun(page, {
+      runId: 'run-1',
+      conversationId: 'conv-1',
+      script: [
+        { type: 'status', label: 'running' },
+        { type: 'text_delta', delta: MIXED_QUIZ },
+        { type: 'turn_end', stopReason: 'end_turn' },
+      ],
+    });
+    await gotoHome(page);
+    await sendMessage(page, '出混合题');
+
+    const card = page.locator('[data-testid="quiz-card"]');
+    await expect(card).toBeVisible({ timeout: 10_000 });
+    await card.locator('[data-testid="quiz-option"][data-question-id="q1"][data-key="B"]').click();
+
+    const confirm = card.locator('[data-testid="quiz-submit-confirm"]');
+    await card.locator('[data-testid="quiz-submit"]').click();
+    await expect(confirm).toBeVisible();
+    await expect(confirm).toContainText('还有 2 题');
+    await card.locator('[data-testid="quiz-confirm-continue"]').click();
+    await expect(confirm).toHaveCount(0);
+
+    // 再交 → 仍要交卷：q1 判分揭晓，q3 空题标「未作答」，无交卷消息。
+    await card.locator('[data-testid="quiz-submit"]').click();
+    await card.locator('[data-testid="quiz-confirm-submit"]').click();
+    await expect(card.locator('[data-testid="quiz-result"]')).toHaveCount(1);
+    const status = card.locator('[data-testid="quiz-subject-status"]');
+    await expect(status).toHaveAttribute('data-state', 'unanswered');
+    await expect(status).toHaveText('未作答');
+    await expect(card.locator('[data-testid="quiz-progress"]')).toHaveText('已作答 1/3');
+    await expect(page.locator('[data-testid="user-message"]')).toHaveCount(1);
   });
 
   test('appends a sequence number when the quiz filename already exists', async ({ page }) => {
