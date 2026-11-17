@@ -1736,6 +1736,138 @@ test.describe('Quiz interaction block', () => {
     await expect(bubble).not.toContainText('评分点：');
   });
 
+  test('photo-only subject draft counts as answered and submits (P4)', async ({ page }) => {
+    // 拍照作答的最自然形态：不打字、只贴照片。图片草稿必须计入已答
+    //（否则纯解答卷的提交永远禁用——照片作答交不出去），且物化进交卷消息。
+    await page.route('**/api/knowledge/vaults/vault-1/assets/upload', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          filePath: 'raw/feishu/2026-10-26/answer.png',
+          url: '/api/knowledge/vaults/vault-1/raw/raw%2Ffeishu%2F2026-10-26%2Fanswer.png',
+        }),
+      });
+    });
+    await mockRawImage(page);
+    let sentMessage: string | null = null;
+    await mockChatRun(page, { runId: 'run-1', conversationId: 'conv-1', script: [
+      { type: 'status', label: 'running' },
+      { type: 'text_delta', delta: SUBJECT_ONLY_QUIZ },
+      { type: 'turn_end', stopReason: 'end_turn' },
+    ] });
+    await page.route('**/api/runs', async (route) => {
+      if (route.request().method() === 'POST') {
+        sentMessage = (JSON.parse(route.request().postData() || '{}') as { message?: string }).message ?? null;
+      }
+      await route.fallback();
+    });
+    await page.route('**/api/runs/*/messages', async (route) => {
+      if (route.request().method() === 'POST') {
+        sentMessage = (JSON.parse(route.request().postData() || '{}') as { message?: string }).message ?? null;
+      }
+      await route.fallback();
+    });
+    await gotoHome(page);
+    await sendMessage(page, '出一道解答题');
+
+    const card = page.locator('[data-testid="quiz-card"]');
+    await expect(card).toBeVisible({ timeout: 10_000 });
+    const submit = card.locator('[data-testid="quiz-submit"]');
+    await expect(submit).toBeDisabled();
+
+    // 只传图、不打字 → 已答 1/1，提交解锁（无确认条——整卷已答）。
+    await card.locator('[data-testid="quiz-subject-file"][data-question-id="s1"]').setInputFiles({
+      name: 'answer.png',
+      mimeType: 'image/png',
+      buffer: TINY_PNG,
+    });
+    await expect(card.locator('[data-testid="quiz-answer-assets"] img')).toBeVisible();
+    await expect(card.locator('[data-testid="quiz-progress"]')).toHaveText('已作答 1/1');
+    await expect(submit).toBeEnabled();
+
+    await submit.click();
+    await expect(card.locator('[data-testid="quiz-submit-confirm"]')).toHaveCount(0);
+    await expect.poll(() => sentMessage).not.toBeNull();
+    const msg = sentMessage!;
+    expect(msg.startsWith('提交判卷：《')).toBe(true);
+    expect(msg).toContain('【大题作答·第1题】');
+    expect(msg).toContain('![作答图片](raw/feishu/2026-10-26/answer.png)');
+    // 回显（草稿镜像）在交卷后立即可见。
+    await expect(card.locator('[data-testid="quiz-subject-echo"]')).toBeVisible();
+    await page.unroute('**/api/runs');
+    await page.unroute('**/api/runs/*/messages');
+  });
+
+  test('card image upload lands in the conversation vault, not the active vault', async ({ page }) => {
+    // Review Focus #5：跨库历史会话里卡内传图必须落会话归属库（uploadAsset
+    // 用 conversationVaultId 解析）——传错库，交卷消息里的相对路径会裂图。
+    const other = await createTempVault('e2e-quiz-upload');
+    try {
+      await page.route('**/api/knowledge/vaults', async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            vaults: [
+              { id: VAULT_ID, name: 'Test Vault', path: '/tmp/vault', createdAt: 0, updatedAt: 0 },
+              { id: other.id, name: other.name, path: other.path, createdAt: 0, updatedAt: 0 },
+            ],
+          }),
+        });
+      });
+      await page.route(/\/api\/conversations\/conv-1(\?.*)?$/, async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            id: 'conv-1', projectId: 'p', title: null, vaultId: other.id, createdAt: 0, updatedAt: 0,
+          }),
+        });
+      });
+      let uploadedToConversationVault = false;
+      let uploadedToActiveVault = false;
+      await page.route(`**/api/knowledge/vaults/${other.id}/assets/upload`, async (route) => {
+        uploadedToConversationVault = true;
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ filePath: 'raw/feishu/2026-10-26/paper.png', url: '/raw/paper.png' }),
+        });
+      });
+      await page.route('**/api/knowledge/vaults/vault-1/assets/upload', async (route) => {
+        uploadedToActiveVault = true;
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ filePath: 'raw/feishu/2026-10-26/wrong.png', url: '/raw/wrong.png' }),
+        });
+      });
+
+      await mockChatRun(page, { runId: 'run-1', conversationId: 'conv-1', script: [
+        { type: 'status', label: 'running' },
+        { type: 'text_delta', delta: SUBJECT_ONLY_QUIZ },
+        { type: 'turn_end', stopReason: 'end_turn' },
+      ] });
+      await gotoHome(page);
+      await sendMessage(page, '出一道解答题');
+
+      const card = page.locator('[data-testid="quiz-card"]');
+      await expect(card).toBeVisible({ timeout: 10_000 });
+      await card.locator('[data-testid="quiz-subject-file"][data-question-id="s1"]').setInputFiles({
+        name: 'paper.png',
+        mimeType: 'image/png',
+        buffer: TINY_PNG,
+      });
+      await expect(card.locator('[data-testid="quiz-answer-assets"] img')).toBeVisible({ timeout: 10_000 });
+
+      await expect.poll(() => uploadedToConversationVault).toBe(true);
+      expect(uploadedToActiveVault).toBe(false);
+    } finally {
+      await cleanupTempVault(other);
+    }
+  });
+
   test('appends a sequence number when the quiz filename already exists', async ({ page }) => {
     let savedUrl: string | null = null;
 

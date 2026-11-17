@@ -245,9 +245,10 @@ function QuizBody({
     [quiz, selections, subjectImages, subjectStates, fingerprintKey],
   );
 
-  // 进度口径 = 整张卷子：草稿 ∪ 旧会话推导已答（锚时代会话重开时进度不丢）。
+  // 进度口径 = 整张卷子：草稿（文本或图片）∪ 旧会话推导已答（锚时代会话重开
+  // 时进度不丢）。纯图片草稿也算已答——图片会物化进交卷消息，批改方读得到。
   const answeredCount = useMemo(() => {
-    let count = countQuizAnswered(quiz, selections);
+    let count = countQuizAnswered(quiz, selections, subjectImages);
     if (fingerprint && subjectStates) {
       const key8 = fingerprint.slice(0, 8);
       for (const [index, question] of quiz.questions.entries()) {
@@ -257,7 +258,7 @@ function QuizBody({
       }
     }
     return count;
-  }, [quiz, selections, fingerprint, subjectStates, subjectHasDraft]);
+  }, [quiz, selections, subjectImages, fingerprint, subjectStates, subjectHasDraft]);
 
   const totalQuestionCount = quiz.questions.length;
   const unansweredCount = totalQuestionCount - answeredCount;
@@ -543,6 +544,11 @@ function QuizBody({
     el.style.height = `${Math.min(320, Math.max(48, el.scrollHeight))}px`;
   }, []);
 
+  // 确认条开着时把剩余的题答完了 → 文案会变成「还有 0 题」——自动收起。
+  useEffect(() => {
+    if (confirmOpen && unansweredCount === 0) setConfirmOpen(false);
+  }, [confirmOpen, unansweredCount]);
+
   // 保存口径从同一份上下文派生（判定三态 / 作答正文 / 批改分数）。
   const saveContext = useMemo<QuizSaveContext>(() => ({
     submitted,
@@ -674,11 +680,14 @@ function QuizBody({
         //   「批改中」（呼吸点）、run 结束仍无回写 → 「已交卷」（无卡死态）。
         const subjectDrafted = isSubject && subjectHasDraft(question.id);
         const subjectUnanswered = isSubject && !subjectAnswered && !subjectDrafted;
+        // 「批改中」只给本次交卷快照里的题（有本地草稿）：旧会话推导已答但未
+        // 重新物化的题，新 run 不会为它产生批改——直接显示「已交卷」，不挂误导
+        // 性的等待态（终态本就正确，这里修的是过渡标签）。
         const subjectPillState = subjectGrading
           ? null
           : subjectUnanswered
             ? 'unanswered'
-            : conversationRunning
+            : conversationRunning && subjectDrafted
               ? 'grading'
               : 'awaiting';
         // 回显（只读）：交卷后用草稿镜像（消息可能还在排队——不等消息落库
@@ -818,7 +827,8 @@ function QuizBody({
                     type="button"
                     className="quiz-subject-tool"
                     data-testid="quiz-subject-upload"
-                    disabled={submitted || uploadingFor === question.id}
+                    disabled={submitted || uploadingFor === question.id || !vaultId}
+                    title={!vaultId ? t('quiz.saveNoVault') : undefined}
                     onClick={() => uploadInputRefs.current[question.id]?.click()}
                   >
                     {uploadingFor === question.id ? t('quiz.uploading') : t('quiz.insertImage')}

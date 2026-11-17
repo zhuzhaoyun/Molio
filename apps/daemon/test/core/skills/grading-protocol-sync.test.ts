@@ -13,6 +13,7 @@ const FROZEN_GRADED_FRAGMENTS: { fragment: string; why: string }[] = [
   { fragment: '命中 / 部分 / 未中', why: 'frozen three-word status enum' },
   { fragment: 'X 必须等于逐点行的加权总和', why: 'score badge and breakdown must agree' },
   { fragment: '题目指纹', why: 'fingerprint line is bookkeeping — ignore when grading' },
+  { fragment: '多个**`【大题作答·第N题】`作答块（整卷提交）', why: 'whole-paper multi-block grading rule (v3) — drift here would desync paper submissions' },
 ];
 
 // 第三处调用方 tutor 已接入；第四处调用方在此加一行。

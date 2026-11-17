@@ -346,14 +346,24 @@ export function gradeQuiz(quiz: Quiz, selections: QuizSelections): QuizGrade[] {
  * 与 isQuizComplete 的「全部完成才可交」不同：整卷表单允许未答完交卷（考试
  * 心智），提交门槛是「至少答了一题」，确认条要报「还有几题没答」——两者都
  * 从这一个计数派生。subject 与 fill 同形：草稿存 selections[qid] = [text]，
- * 首项 trim 非空即算已答（图片不算已答——空文本附图的作答无法批改）。
+ * 首项 trim 非空即算已答。subject 另接受 subjectImages（题目 id → vault 相对
+ * 路径列表）：**纯图片作答也算已答**（P4 拍照作答——图片 markdown 会物化进
+ * 交卷消息，run 的 cwd 就是库根，批改方读得到）。
  */
-export function countQuizAnswered(quiz: Quiz, selections: QuizSelections): number {
+export function countQuizAnswered(
+  quiz: Quiz,
+  selections: QuizSelections,
+  subjectImages: Record<string, ReadonlyArray<string>> = {},
+): number {
   let count = 0;
   for (const question of quiz.questions) {
     const picked = selections[question.id] ?? [];
-    if (question.type === 'fill' || question.type === 'subject') {
+    if (question.type === 'fill') {
       if ((picked[0] ?? '').trim().length > 0) count += 1;
+    } else if (question.type === 'subject') {
+      if ((picked[0] ?? '').trim().length > 0 || (subjectImages[question.id]?.length ?? 0) > 0) {
+        count += 1;
+      }
     } else {
       const validKeys = new Set(question.options.map((option) => option.key));
       if (picked.some((key) => validKeys.has(key))) count += 1;
@@ -407,7 +417,7 @@ export function parseStoredQuizState(
       }
     }
     // 解答题草稿图（M1）：与 selections 同风格宽容清洗——值必须逐项是字符串，
-    // 否则整个字段作废为 {}（部分信任比脏数据安全；缺字段是旧存储常态）。
+    // 否则该条目丢弃（其余保留；缺字段是旧存储常态）。
     const subjectImages: Record<string, string[]> = {};
     if (isRecord(data.subjectImages)) {
       for (const [questionId, value] of Object.entries(data.subjectImages)) {
