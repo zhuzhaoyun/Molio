@@ -354,6 +354,28 @@ export function isQuizComplete(quiz: Quiz, selections: QuizSelections): boolean 
   });
 }
 
+/**
+ * 已作答题数（M1 整卷表单口径）。
+ *
+ * 与 isQuizComplete 的「全部完成才可交」不同：整卷表单允许未答完交卷（考试
+ * 心智），提交门槛是「至少答了一题」，确认条要报「还有几题没答」——两者都
+ * 从这一个计数派生。subject 与 fill 同形：草稿存 selections[qid] = [text]，
+ * 首项 trim 非空即算已答（图片不算已答——空文本附图的作答无法批改）。
+ */
+export function countQuizAnswered(quiz: Quiz, selections: QuizSelections): number {
+  let count = 0;
+  for (const question of quiz.questions) {
+    const picked = selections[question.id] ?? [];
+    if (question.type === 'fill' || question.type === 'subject') {
+      if ((picked[0] ?? '').trim().length > 0) count += 1;
+    } else {
+      const validKeys = new Set(question.options.map((option) => option.key));
+      if (picked.some((key) => validKeys.has(key))) count += 1;
+    }
+  }
+  return count;
+}
+
 /** 指纹只覆盖 {version, questions}，不含 title / 引导语。 */
 export function canonicalQuizJson(quiz: Quiz): string {
   return JSON.stringify({
@@ -385,7 +407,7 @@ export function quizStorageKey(conversationId: string, fingerprint: string): str
 
 export function parseStoredQuizState(
   raw: string | null,
-): { selections: QuizSelections; submitted: boolean } | null {
+): { selections: QuizSelections; submitted: boolean; subjectImages: Record<string, string[]> } | null {
   if (!raw) return null;
   try {
     const data: unknown = JSON.parse(raw);
@@ -398,7 +420,17 @@ export function parseStoredQuizState(
         }
       }
     }
-    return { selections, submitted: data.submitted === true };
+    // 解答题草稿图（M1）：与 selections 同风格宽容清洗——值必须逐项是字符串，
+    // 否则整个字段作废为 {}（部分信任比脏数据安全；缺字段是旧存储常态）。
+    const subjectImages: Record<string, string[]> = {};
+    if (isRecord(data.subjectImages)) {
+      for (const [questionId, value] of Object.entries(data.subjectImages)) {
+        if (Array.isArray(value) && value.every((item) => typeof item === 'string')) {
+          subjectImages[questionId] = value;
+        }
+      }
+    }
+    return { selections, submitted: data.submitted === true, subjectImages };
   } catch {
     return null;
   }
