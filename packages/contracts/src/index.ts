@@ -139,6 +139,7 @@ export {
   isFillAnswerCorrect,
   gradeQuiz,
   isQuizComplete,
+  countQuizAnswered,
   canonicalQuizJson,
   computeQuizFingerprint,
   quizStorageKey,
