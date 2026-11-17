@@ -270,6 +270,8 @@ export function HomePage({
             composerArea={composerFallback ?? undefined}
             onOpenConversation={onOpenConversation}
             onDeleteConversations={onDeleteConversations}
+            // 消息导航 rail：KB 会话全屏态同样启用（ HomePage 渲染的就是面板会话的全屏形态）
+            messageRail
           />
         )}
         </div>
