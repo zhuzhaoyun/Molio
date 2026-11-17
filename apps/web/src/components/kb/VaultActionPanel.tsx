@@ -13,6 +13,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { ExternalRoot, Vault } from '@molio/contracts';
 import { api } from '../../api/client';
+import { BrandLogo } from '../BrandLogo';
 
 interface VaultActionPanelProps {
   onCreate: () => void;
@@ -52,7 +53,7 @@ export function VaultActionPanel({
     <div className="vm-action-panel">
       <div className="vm-brand">
         <div className="vm-brand-logo" aria-hidden="true">
-          📚
+          <BrandLogo alt="" />
         </div>
         <div className="vm-brand-title">Molio 知识库</div>
         {appVersion && <div className="vm-brand-version">v{appVersion}</div>}

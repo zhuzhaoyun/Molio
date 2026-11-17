@@ -9,7 +9,14 @@
  */
 
 import { useMemo } from 'react';
+import type { ComponentType } from 'react';
 import { useI18n } from '../../i18n';
+import {
+  BracesIcon, CalendarCheck2Icon, CalendarClockIcon, CalendarPlusIcon,
+  FileIcon, FolderIcon, LinkIcon, ListIcon, QuoteIcon, TagIcon, UserIcon,
+} from '../icons';
+
+type FmFieldIcon = ComponentType<{ size?: number; className?: string }>;
 
 interface KbFrontmatterCardProps {
   data: Record<string, unknown>;
@@ -171,30 +178,30 @@ export function KbFrontmatterCard({ data, onNavigate, onCollapse }: KbFrontmatte
   if (Object.keys(data).length === 0) return null;
 
   // Build ordered field list
-  const fields: Array<{ key: string; i18nKey: string; icon: string }> = [];
+  const fields: Array<{ key: string; i18nKey: string; icon: FmFieldIcon }> = [];
 
-  const add = (key: string, icon: string) => {
+  const add = (key: string, icon: FmFieldIcon) => {
     if (data[key] !== undefined && data[key] !== null) {
       fields.push({ key, i18nKey: `kb.frontmatter.${key}`, icon });
     }
   };
 
-  add('title', '📝');        // 📝
-  add('source', '🔗');       // 🔗
-  add('author', '✍️');       // ✍️
-  add('description', '📋');  // 📋
-  add('created', '📅');      // 📅
-  add('updated', '🔄');      // 🔄
-  add('published', '📰');    // 📰
-  add('category', '📂');     // 📂
-  add('tags', '🏷');         // 🏷
-  add('related', '🔗');      // 🔗
-  add('sources', '📄');      // 📄
+  add('title', FileIcon);
+  add('source', QuoteIcon);
+  add('author', UserIcon);
+  add('description', ListIcon);
+  add('created', CalendarPlusIcon);
+  add('updated', CalendarClockIcon);
+  add('published', CalendarCheck2Icon);
+  add('category', FolderIcon);
+  add('tags', TagIcon);
+  add('related', LinkIcon);
+  add('sources', QuoteIcon);
 
   // Any remaining unknown keys
   for (const key of Object.keys(data)) {
     if (!KNOWN_KEYS.has(key) && data[key] !== undefined && data[key] !== null) {
-      fields.push({ key, i18nKey: '', icon: '📌' }); // 📌
+      fields.push({ key, i18nKey: '', icon: BracesIcon });
     }
   }
 
@@ -215,7 +222,8 @@ export function KbFrontmatterCard({ data, onNavigate, onCollapse }: KbFrontmatte
         {fields.map((field) => (
           <div key={field.key} className="kb-fm-line">
             <span className="kb-fm-key">
-              <span aria-hidden="true">{field.icon}</span> {field.i18nKey ? t(field.i18nKey) : field.key}
+              <span className="kb-fm-key-icon" aria-hidden="true"><field.icon size={14} /></span>
+              {field.i18nKey ? t(field.i18nKey) : field.key}
             </span>
             <span className="kb-fm-val">
               <RenderValue

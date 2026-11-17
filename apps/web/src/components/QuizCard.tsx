@@ -691,10 +691,12 @@ function QuizBody({
               ) : question.options.map((option) => {
                 const on = chosen.includes(option.key);
                 const isAnswer = question.answer.includes(option.key);
-                // 提交后两条信息解耦到两个通道：✓ 标记（picked）只表达「我选了」，
+                // 提交后两条信息解耦到两个通道：标记（picked）只表达「我选了」，
                 // 绿/红颜色只表达「对不对」。单选靠红/绿就能反推自己的选择，多选
                 // 不行——「答案里有但没选」（漏选）与「选了且选对」都是绿色，没有
                 // 选中标记就无从区分。chosen 提交后冻结，标记天然持久。
+                // 标记形状承载结果（真机反馈：错选挂 ✓ 会被对勾的固有含义误读成
+                // 「正确」）：✓＝选对、✗＝选错、无标＝没选，与 CSS ::before 同形。
                 const picked = submitted && on;
                 const className = [
                   'quiz-option',
@@ -713,6 +715,7 @@ function QuizBody({
                     data-key={option.key}
                     aria-pressed={on}
                     data-picked={picked ? 'true' : 'false'}
+                    data-mark={picked ? (isAnswer ? '✓' : '✗') : undefined}
                     disabled={submitted}
                     onClick={() => toggle(question.id, question.type, option.key)}
                   >

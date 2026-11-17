@@ -184,6 +184,15 @@
   opacity: 0.7;
 }
 
+.agent-icon { display: block; }
+.agent-icon--dark { display: none; }
+[data-theme="dark"] .agent-icon--light:has(+ .agent-icon--dark) { display: none; }
+[data-theme="dark"] .agent-icon--dark { display: block; }
+@media (prefers-color-scheme: dark) {
+  html:not([data-theme]) .agent-icon--light:has(+ .agent-icon--dark) { display: none; }
+  html:not([data-theme]) .agent-icon--dark { display: block; }
+}
+
 .rt-agent-card__icon {
   flex-shrink: 0;
   width: 40px;
@@ -192,8 +201,6 @@
   align-items: center;
   justify-content: center;
   font-size: 22px;
-  background: var(--bg-subtle);
-  border-radius: var(--radius-sm);
 }
 
 .rt-agent-card__body {
@@ -483,6 +490,7 @@
 
 .rt-empty__icon {
   font-size: 36px;
+  color: var(--text-muted);
   opacity: 0.5;
   margin-bottom: 4px;
 }

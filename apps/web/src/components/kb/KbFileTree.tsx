@@ -9,6 +9,7 @@ import { useCallback, useRef, useEffect } from 'react';
 import type { TreeNode, IngestStatus } from '@molio/contracts';
 import { isExternalPath } from './kb-constants';
 import { useI18n } from '../../i18n';
+import { FileIcon, FolderIcon, SearchIcon } from '../icons';
 
 /** Directories that reject drag-and-drop operations. */
 const PROTECTED_DIRS = ['wiki', 'docling_output'];
@@ -91,7 +92,7 @@ export function KbFileTree({
   if (nodes.length === 0) {
     return (
       <div className="kb-empty-state" style={{ padding: '32px 16px' }}>
-        <div className="kb-empty-icon">📂</div>
+        <div className="kb-empty-icon"><FolderIcon size={32} /></div>
         <h3>{t('kb.treeEmptyTitle')}</h3>
         {/* 明说拖拽这件事——原来只有一句英文，既没本地化也没告诉你文件怎么进来 */}
         <p data-testid="kb-tree-empty-hint">{t('kb.treeEmptyHint')}</p>
@@ -110,7 +111,7 @@ export function KbFileTree({
         data-testid="kb-tree-search-empty"
         style={{ padding: '32px 16px' }}
       >
-        <div className="kb-empty-icon">🔍</div>
+        <div className="kb-empty-icon"><SearchIcon size={32} /></div>
         <h3>{t('kb.searchEmptyTitle')}</h3>
         <p>{t('kb.searchEmptyHint')}</p>
         {onClearSearch && (
@@ -497,7 +498,7 @@ function TreeNodeItem({
       draggable={canDrag}
       onDragStart={handleDragStart}
     >
-      <span className="kb-tree-icon">📄</span>
+      <span className="kb-tree-icon"><FileIcon size={14} /></span>
       {isRenaming ? (
         <RenameInput
           initialValue={node.name}

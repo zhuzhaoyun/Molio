@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback, type ClipboardEvent, type DragEvent } from 'react';
+import { FileUpIcon } from '../icons';
 import { parseSkillMd } from '@molio/contracts';
 import type {
   SkillManifestEntry, PrefillResult, ImportSkillRequest,
@@ -383,7 +384,7 @@ export function SkillEditor({
               onDragLeave={() => setDragActive(false)}
               onDrop={handleDrop}
             >
-              <span className="sk-import-dropzone__icon">📥</span>
+              <span className="sk-import-dropzone__icon"><FileUpIcon size={22} /></span>
               {/* Re-drag semantics are REPLACE: with a preview already on
                   screen, say so at drag-time instead of leaving the user to
                   guess whether the drop appends or overwrites. */}

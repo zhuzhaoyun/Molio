@@ -3,7 +3,7 @@ import { api } from '../api/client';
 import { useActiveVault, useActiveVaultId } from '../stores/vaultStore';
 import { onboardingStore } from '../stores/onboardingStore';
 import { isRevealAvailable, revealInFolder } from '../utils/reveal';
-import { SaveIcon, CheckIcon, FolderIcon } from './icons';
+import { BookPlusIcon, CheckIcon, FolderIcon } from './icons';
 
 interface Props {
   /** Raw markdown content of the assistant message to persist. */
@@ -107,7 +107,7 @@ export function SaveToKbButton({ content, labeled }: Props) {
         disabled={!vaultId}
         aria-label={tip}
       >
-        {saved ? <CheckIcon size={15} /> : <SaveIcon size={15} />}
+        {saved ? <CheckIcon size={15} /> : <BookPlusIcon size={15} />}
         {labeled && <span className="icon-btn__label">{label}</span>}
       </button>
       {saved && canReveal && savedPath && (

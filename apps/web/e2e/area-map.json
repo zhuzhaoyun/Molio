@@ -55,7 +55,9 @@
         "apps/web/src/hooks/useWikiLinkClick.*",
         "apps/web/src/components/SandboxCard.*",
         "apps/web/src/utils/ruleSandbox.*",
-        "apps/web/src/stores/chatScrollMemory.*"
+        "apps/web/src/stores/chatScrollMemory.*",
+        "apps/web/src/components/MessageRail.*",
+        "apps/web/src/utils/messageRail.*"
       ],
       "specs": [
         "chat-single",
@@ -93,7 +95,8 @@
         "composer-file-picker",
         "composer-ime",
         "run-progress",
-        "source-chips-spacing"
+        "source-chips-spacing",
+        "kb-message-rail"
       ]
     },
     "kb": {
@@ -156,7 +159,8 @@
         "kb-tabs",
         "kb-tree-folder-state",
         "navigation-history",
-        "kb-external-roots"
+        "kb-external-roots",
+        "kb-message-rail"
       ]
     },
     "publish": {
@@ -350,6 +354,10 @@
     "auth": {
       "priority": "P1",
       "file": "auth.spec.ts"
+    },
+    "kb-message-rail": {
+      "priority": "P1",
+      "file": "kb-message-rail.spec.ts"
     },
     "bootstrap": {
       "priority": "P0",

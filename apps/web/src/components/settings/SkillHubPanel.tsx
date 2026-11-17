@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { ShopIcon } from '../icons';
 import type { HubSkillSummary, InstallHubSkillResponse } from '@molio/contracts';
 import { useSkillHub, type HubSort } from '../../hooks/useSkillHub';
 import { useI18n } from '../../i18n';
@@ -213,7 +214,7 @@ export function SkillHubPanel({ onInstalled }: { onInstalled: (res: InstallHubSk
         <div className="rt-loading">{t('hub.loading')}</div>
       ) : skills.length === 0 && !error ? (
         <div className="rt-empty">
-          <div className="rt-empty__icon">🛍️</div>
+          <div className="rt-empty__icon"><ShopIcon size={36} /></div>
           <div className="rt-empty__text">{t('hub.empty')}</div>
           <div className="rt-empty__hint">{t('hub.emptyHint')}</div>
         </div>
