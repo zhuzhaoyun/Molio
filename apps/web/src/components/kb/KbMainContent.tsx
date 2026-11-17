@@ -30,6 +30,13 @@ import { formatFileSize } from '../../utils/format';
 import { preprocessKbMarkdown } from '../../hooks/useKnowledge';
 import { useScrollMemory, type ScrollIntent } from '../../hooks/useScrollMemory';
 import { api } from '../../api/client';
+import {
+  BookIcon, BoxIcon, BulbIcon, ChatIcon, FileIcon, FileType2Icon, FolderInputIcon,
+  LinkIcon, NewsIcon, PaperclipIcon, PhoneIcon, QuestionIcon, ScaleIcon, UserIcon, WarningIcon,
+} from '../icons';
+import type { ComponentType } from 'react';
+
+type BadgeIcon = ComponentType<{ size?: number; className?: string }>;
 import { useI18n } from '../../i18n';
 import { useActiveVault } from '../../stores/vaultStore';
 import { useNavigationHistory, navigationHistoryStore } from '../../stores/navigationHistoryStore';
@@ -411,36 +418,36 @@ export function KbMainContent({
       (source !== null && source.includes('mp.weixin.qq.com'));
 
     // Derive the primary badge (icon + label) from frontmatter properties.
-    interface Badge { icon: string; label: string; }
+    interface Badge { icon: BadgeIcon; label: string; }
     let primaryBadge: Badge | null = null;
     let secondaryBadge: Badge | null = null;
 
     if (wikiType) {
       const typeBadges: Record<string, Badge> = {
-        entity: { icon: '📌', label: '实体' },
-        concept: { icon: '💡', label: '概念' },
-        source: { icon: '📰', label: '数据源' },
-        comparison: { icon: '⚖️', label: '对比' },
-        question: { icon: '❓', label: '问答' },
+        entity: { icon: BoxIcon, label: '实体' },
+        concept: { icon: BulbIcon, label: '概念' },
+        source: { icon: NewsIcon, label: '数据源' },
+        comparison: { icon: ScaleIcon, label: '对比' },
+        question: { icon: QuestionIcon, label: '问答' },
       };
       primaryBadge = typeBadges[wikiType] ?? null;
       if (relatedCount > 0) {
-        secondaryBadge = { icon: '🔗', label: `${relatedCount}` };
+        secondaryBadge = { icon: LinkIcon, label: `${relatedCount}` };
       }
     } else if (isWeChat) {
-      primaryBadge = { icon: '📱', label: '微信' };
-      if (author) secondaryBadge = { icon: '✍️', label: author };
+      primaryBadge = { icon: PhoneIcon, label: '微信' };
+      if (author) secondaryBadge = { icon: UserIcon, label: author };
     } else if (source) {
-      primaryBadge = { icon: '📎', label: '剪藏' };
-      if (author) secondaryBadge = { icon: '✍️', label: author };
+      primaryBadge = { icon: PaperclipIcon, label: '剪藏' };
+      if (author) secondaryBadge = { icon: UserIcon, label: author };
     } else if (tags.length > 0) {
-      primaryBadge = { icon: '📄', label: tags[0]! };
+      primaryBadge = { icon: FileIcon, label: tags[0]! };
     }
 
     // Fallback: frontmatter exists but no badge pattern matched —
     // show a generic "文档" badge so the collapsed bar & expand button stay accessible.
     if (!primaryBadge) {
-      primaryBadge = { icon: '📄', label: '文档' };
+      primaryBadge = { icon: FileIcon, label: '文档' };
     }
     return { primaryBadge, secondaryBadge };
   }, [frontmatterData]);
@@ -743,13 +750,13 @@ export function KbMainContent({
             <span className="kb-fm-pill-title">{t('kb.frontmatter.properties')}</span>
             {fmCollapsed.primaryBadge && (
               <span className={'kb-fm-badge' + (fmExpanded ? ' kb-fm-badge-dimmed' : '')}>
-                <span aria-hidden="true">{fmCollapsed.primaryBadge.icon}</span>
+                <span className="kb-fm-badge-icon" aria-hidden="true"><fmCollapsed.primaryBadge.icon size={13} /></span>
                 <span>{fmCollapsed.primaryBadge.label}</span>
               </span>
             )}
             {fmCollapsed.secondaryBadge && (
               <span className={'kb-fm-badge kb-fm-badge-secondary' + (fmExpanded ? ' kb-fm-badge-dimmed' : '')}>
-                <span aria-hidden="true">{fmCollapsed.secondaryBadge.icon}</span>
+                <span className="kb-fm-badge-icon" aria-hidden="true"><fmCollapsed.secondaryBadge.icon size={13} /></span>
                 <span>{fmCollapsed.secondaryBadge.label}</span>
               </span>
             )}
@@ -1196,9 +1203,7 @@ export function KbMainContent({
               title={t('kb.askButton')}
               data-testid="kb-btn-ask"
             >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="14" height="14">
-                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-              </svg>
+              <ChatIcon size={14} />
             </button>
           )}
             </>
@@ -1226,7 +1231,7 @@ export function KbMainContent({
       {!selectedFile ? (
         !vaultId ? (
           <div className="kb-empty-state kb-empty-state--welcome">
-            <div className="kb-empty-icon">📚</div>
+            <div className="kb-empty-icon"><BookIcon size={40} /></div>
             <h3>{t('kb.welcomeTitle')}</h3>
             <p>{t('kb.welcomeBody')}</p>
 
@@ -1270,7 +1275,7 @@ export function KbMainContent({
              原先这两态是两段各写各的硬编码中文，英文用户看到的是中文；
              现在共用一份 i18n 文案，也对齐了「这一屏属于同一个页面」的观感。 */
           <div className="kb-empty-state">
-            <div className="kb-empty-icon">{importFirst ? '📥' : '🏗'}</div>
+            <div className="kb-empty-icon">{importFirst ? <FolderInputIcon size={40} /> : <BookIcon size={40} />}</div>
             <h3>{importFirst ? t('kb.emptyImportTitle') : t('kb.buildWikiTitle')}</h3>
             <p>{importFirst ? t('kb.emptyImportBody') : t('kb.buildWikiBody')}</p>
 
@@ -1288,26 +1293,26 @@ export function KbMainContent({
                 data-testid="kb-empty-ask-cta"
                 onClick={onAskAboutFile}
               >
-                💬 {t('kb.askVault')}
+                <ChatIcon size={14} /> {t('kb.askVault')}
               </button>
             )}
           </div>
         ) : (
           <div className="kb-empty-state">
-            <div className="kb-empty-icon">📄</div>
+            <div className="kb-empty-icon"><FileIcon size={40} /></div>
             <h3>{t('kb.noFileTitle')}</h3>
             <p>{t('kb.noFileBody')}</p>
             {/* 库级问答 CTA —— 未打开文件时也能对话（样式复用「开始构建 Wiki」） */}
             {onAskAboutFile && (
               <button type="button" className="wiki-cta-btn" data-testid="kb-empty-ask-cta" onClick={onAskAboutFile}>
-                💬 {t('kb.askVault')}
+                <ChatIcon size={14} /> {t('kb.askVault')}
               </button>
             )}
           </div>
         )
       ) : fileLoadError ? (
         <div className="kb-load-error">
-          <div className="kb-load-error-icon">⚠</div>
+          <div className="kb-load-error-icon"><WarningIcon size={36} /></div>
           <p className="kb-load-error-title">{t('kb.cannotOpen')}</p>
           <p className="kb-load-error-path">{selectedFile}</p>
           <p className="kb-load-error-hint">{t('kb.fileNotFound')}</p>
@@ -1439,7 +1444,7 @@ export function KbMainContent({
         <div className="kb-content-area">
           <div className="kb-file-card">
             <div className="kb-file-card-icon">
-              {fileName.endsWith('.pdf') ? '📄' : fileName.match(/\.docx?$/i) ? '📝' : '📁'}
+              {fileName.endsWith('.pdf') ? <FileIcon size={16} /> : fileName.match(/\.docx?$/i) ? <FileType2Icon size={16} /> : <FileIcon size={16} />}
             </div>
             <div className="kb-file-card-info">
               <h3>{fileName}</h3>

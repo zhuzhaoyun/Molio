@@ -84,6 +84,20 @@ test.describe('Runtimes page', () => {
     expect(await installBtn.count() + await testBtn.count()).toBeGreaterThan(0);
   });
 
+  test('uses dark agent assets when following the system dark theme', async ({ page }) => {
+    await page.emulateMedia({ colorScheme: 'dark' });
+    await openRuntimesPanel(page);
+    await page.waitForSelector('.rt-agent-card', { timeout: 10_000 });
+
+    // 默认「跟随系统」不会写 data-theme；此用例专门覆盖媒体查询路径。
+    await expect(page.locator('html')).not.toHaveAttribute('data-theme', /./);
+    const dshCard = page.locator('.rt-agent-card').filter({
+      has: page.locator('.rt-agent-card__name', { hasText: /DeepSeek Harness/i }),
+    });
+    await expect(dshCard.locator('.agent-icon--light')).toBeHidden();
+    await expect(dshCard.locator('.agent-icon--dark')).toBeVisible();
+  });
+
   test('should show install button or test button for Claude agent', async ({ page }) => {
     await openRuntimesPanel(page);
 

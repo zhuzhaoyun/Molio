@@ -44,7 +44,7 @@ test.describe('KB tree folder expand state', () => {
   });
 
   test('empty folder shows 「空文件夹」 ghost row while expanded', async ({ page }) => {
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+    await page.goto(`/knowledge?vault=${vault.id}`);
     await expect(page.locator('.kb-file-panel')).toBeVisible({ timeout: 5_000 });
 
     const label = page.locator('.kb-tree-group-label').filter({ hasText: 'emptyDir' });
@@ -68,7 +68,7 @@ test.describe('KB tree folder expand state', () => {
   });
 
   test('folder with children expands without a ghost row', async ({ page }) => {
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+    await page.goto(`/knowledge?vault=${vault.id}`);
     await expect(page.locator('.kb-file-panel')).toBeVisible({ timeout: 5_000 });
 
     const label = page.locator('.kb-tree-group-label').filter({ hasText: 'normalDir' });
@@ -80,7 +80,7 @@ test.describe('KB tree folder expand state', () => {
 
   test('oversized pruned folder shows 「文件过多，未显示」 ghost row', async ({ page }) => {
     test.setTimeout(60_000);
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+    await page.goto(`/knowledge?vault=${vault.id}`);
     await expect(page.locator('.kb-file-panel')).toBeVisible({ timeout: 5_000 });
 
     const label = page.locator('.kb-tree-group-label').filter({ hasText: 'dumpDir' });
@@ -96,7 +96,7 @@ test.describe('KB tree folder expand state', () => {
   });
 
   test('search filtering does not surface ghost rows', async ({ page }) => {
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+    await page.goto(`/knowledge?vault=${vault.id}`);
     await expect(page.locator('.kb-file-panel')).toBeVisible({ timeout: 5_000 });
 
     // Expand emptyDir first, then search for something that empties its

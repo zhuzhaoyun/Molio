@@ -77,7 +77,7 @@ test.describe('Graph Settings Panel', () => {
   });
 
   test('pixi canvas renders when graph data loads', async ({ page }) => {
-    await page.goto(`http://localhost:5173/knowledge?vault=${vaultId}`);
+    await page.goto(`/knowledge?vault=${vaultId}`);
     await clickNav(page, 'graph');
     await expect(page.locator('.graph-page')).toBeVisible({ timeout: 5_000 });
 
@@ -88,7 +88,7 @@ test.describe('Graph Settings Panel', () => {
   });
 
   test('settings button opens and closes panel', async ({ page }) => {
-    await page.goto(`http://localhost:5173/knowledge?vault=${vaultId}`);
+    await page.goto(`/knowledge?vault=${vaultId}`);
     await clickNav(page, 'graph');
     await expect(page.locator('.graph-page')).toBeVisible({ timeout: 5_000 });
 
@@ -110,7 +110,7 @@ test.describe('Graph Settings Panel', () => {
   });
 
   test('tab switching works', async ({ page }) => {
-    await page.goto(`http://localhost:5173/knowledge?vault=${vaultId}`);
+    await page.goto(`/knowledge?vault=${vaultId}`);
     await clickNav(page, 'graph');
     await expect(page.locator('.graph-page')).toBeVisible({ timeout: 5_000 });
 
@@ -127,7 +127,7 @@ test.describe('Graph Settings Panel', () => {
   });
 
   test('force sliders exist and are interactive', async ({ page }) => {
-    await page.goto(`http://localhost:5173/knowledge?vault=${vaultId}`);
+    await page.goto(`/knowledge?vault=${vaultId}`);
     await clickNav(page, 'graph');
     await expect(page.locator('.graph-page')).toBeVisible({ timeout: 5_000 });
 
@@ -154,7 +154,7 @@ test.describe('Graph Settings Panel', () => {
    * 断言走 localStorage（设置的唯一真相），同时验 UI 也真的跟着回位了。
    */
   test('restore defaults: resets filter/appearance/forces and persists', async ({ page }) => {
-    await page.goto(`http://localhost:5173/knowledge?vault=${vaultId}`);
+    await page.goto(`/knowledge?vault=${vaultId}`);
     await clickNav(page, 'graph');
     await expect(page.locator('.graph-page')).toBeVisible({ timeout: 5_000 });
 
@@ -209,7 +209,7 @@ test.describe('Graph Settings Panel', () => {
   });
 
   test('old info button is removed', async ({ page }) => {
-    await page.goto(`http://localhost:5173/knowledge?vault=${vaultId}`);
+    await page.goto(`/knowledge?vault=${vaultId}`);
     await clickNav(page, 'graph');
     await expect(page.locator('.graph-page')).toBeVisible({ timeout: 5_000 });
 
@@ -223,7 +223,7 @@ test.describe('Graph Settings Panel', () => {
     await page.addInitScript(() => {
       localStorage.setItem('molio.theme', 'dark');
     });
-    await page.goto(`http://localhost:5173/knowledge?vault=${vaultId}`);
+    await page.goto(`/knowledge?vault=${vaultId}`);
     await clickNav(page, 'graph');
     await expect(page.locator('.graph-page')).toBeVisible({ timeout: 5_000 });
 
@@ -251,7 +251,7 @@ test.describe('Graph Interactions', () => {
   });
 
   async function gotoGraphWithEngine(page: import('@playwright/test').Page) {
-    await page.goto(`http://localhost:5173/knowledge?vault=${vaultId}`);
+    await page.goto(`/knowledge?vault=${vaultId}`);
     await clickNav(page, 'graph');
     await expect(page.locator('.graph-page')).toBeVisible({ timeout: 5_000 });
     // 搜索默认折叠为 🔍 图标——点开展开输入框（引擎就绪 + 数据加载完成）

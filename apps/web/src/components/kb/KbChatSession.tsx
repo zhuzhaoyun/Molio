@@ -5,6 +5,7 @@
 // API 注册）在 `KbChatSessionController.tsx`，由 Provider 常驻挂载 —— 本文件只负责
 // 面板特有的外壳类名、空态/选中预览、以及发送包装所需的 selectedText。
 import { useSyncExternalStore } from 'react';
+import { ChatIcon, RobotIcon } from '../icons';
 import { ChatSessionView } from '../ChatSessionView';
 import { messageSelectionStore } from '../../stores/messageSelectionStore';
 import { onboardingStore } from '../../stores/onboardingStore';
@@ -81,12 +82,14 @@ export function KbChatSession({
           composerInitialFileRefs={initialFileRefs}
           // 可见性真相源：驱动滚动记忆的恢复时机（false→true 时落位）
           active={active}
+          // 消息导航 rail：KB 问答会话（面板形态）启用
+          messageRail
           // 面板保留既有 DOM 结构/类名与空态（空态含「就此提问」的选中文本预览）
           logClassName="file-chat-messages"
           composerBarClassName="file-chat-input"
           emptyState={
             <div className="file-chat-empty">
-              <div className="file-chat-empty-icon">{session.mode === 'qa' ? '💬' : '🤖'}</div>
+              <div className="file-chat-empty-icon">{session.mode === 'qa' ? <ChatIcon size={36} /> : <RobotIcon size={36} />}</div>
               <p>{session.mode === 'qa' ? t('fileChat.ready') : t('kb.chatStarting')}</p>
               {session.mode === 'qa' && selectedText && (
                 <div className="file-chat-selected-preview" data-testid="kb-chat-selected-preview">

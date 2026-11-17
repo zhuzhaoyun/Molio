@@ -35,7 +35,7 @@ test.describe('KB qa — wiki-query trigger wraps only the first turn', () => {
   });
 
   test('first question carries the trigger; follow-up is sent verbatim', async ({ page }) => {
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await page.goto(`/knowledge?vault=${vault.id}&file=doc.md`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
 
     // Open qa mode (💬问答).

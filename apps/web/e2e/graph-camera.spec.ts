@@ -164,7 +164,7 @@ test.describe('Graph camera framing', () => {
   };
 
   test('scope switch re-frames the camera after the layout settles (both directions)', async ({ page }) => {
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+    await page.goto(`/knowledge?vault=${vault.id}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 10_000 });
     await clickNav(page, 'graph');
 
@@ -221,7 +221,7 @@ test.describe('Graph camera framing', () => {
    * 且布局同步跑完，不做「先落位 → 收敛后再动画」的两段式过渡。
    */
   test('companion frames the whole 1-hop neighborhood immediately, with no late re-frame', async ({ page }) => {
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+    await page.goto(`/knowledge?vault=${vault.id}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 10_000 });
 
     // 主格打开 hub.md，再右键标签 → 图谱对照
@@ -253,7 +253,7 @@ test.describe('Graph camera framing', () => {
    * （早先是 focusNode(k=1.5) 圆心居中放大 —— 大 hub 下会裁掉外圈邻居。）
    */
   test('main graph tab: file scope frames the whole 1-hop neighborhood and selects the anchor', async ({ page }) => {
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+    await page.goto(`/knowledge?vault=${vault.id}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 10_000 });
 
     const item = page.locator('.kb-tree-item').filter({ hasText: 'hub.md' }).first();

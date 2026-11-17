@@ -38,7 +38,7 @@ test.describe('KB Drag-and-Drop Import', () => {
   // ── External drop tests (via dataTransfer) ──
 
   test('drops a single .md file onto root, file appears in tree', async ({ page }) => {
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+    await page.goto(`/knowledge?vault=${vault.id}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
     // Wait for the vault to be fully loaded and the file tree to render
     await expect(page.locator('.kb-file-panel')).toBeVisible({ timeout: 5_000 });
@@ -83,7 +83,7 @@ test.describe('KB Drag-and-Drop Import', () => {
   });
 
   test('shows drag-over-root class when file is dragged over the panel', async ({ page }) => {
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+    await page.goto(`/knowledge?vault=${vault.id}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
     await expect(page.locator('.kb-file-panel')).toBeVisible({ timeout: 5_000 });
 
@@ -111,7 +111,7 @@ test.describe('KB Drag-and-Drop Import', () => {
   });
 
   test('drops multiple files onto root, all appear in tree', async ({ page }) => {
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+    await page.goto(`/knowledge?vault=${vault.id}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
     await expect(page.locator('.kb-file-panel')).toBeVisible({ timeout: 5_000 });
     await expect(page.locator('.kb-tree-name').filter({ hasText: 'existing.md' })).toBeVisible({ timeout: 10_000 });
@@ -154,7 +154,7 @@ test.describe('KB Drag-and-Drop Import', () => {
   // ── Internal drag-move test ──
 
   test('drags a file from one directory to another within the tree', async ({ page }) => {
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+    await page.goto(`/knowledge?vault=${vault.id}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
     await page.waitForTimeout(1000);
 
@@ -238,7 +238,7 @@ test.describe('KB Drag-and-Drop Import', () => {
     // 而那个按钮压根不存在（vault bar 打开的是仓库管理器，里面没有 Import 按钮），
     // 于是永远静默通过——「导入入口不存在」这个真 bug 就这么溜过去了。
     // 现在锚定真实的工具栏入口，并且一路跑到文件落树。
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+    await page.goto(`/knowledge?vault=${vault.id}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
 
     await page.locator('[data-testid="kb-btn-import"]').click();
@@ -263,7 +263,7 @@ test.describe('KB Drag-and-Drop Import', () => {
 
   test('shows import result toast when dropping a file', async ({ page }) => {
     // Create a file on disk that we'll drop, so the import flow runs
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+    await page.goto(`/knowledge?vault=${vault.id}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
     await expect(page.locator('.kb-file-panel')).toBeVisible({ timeout: 5_000 });
     await expect(page.locator('.kb-tree-name').filter({ hasText: 'existing.md' })).toBeVisible({ timeout: 10_000 });
@@ -299,7 +299,7 @@ test.describe('KB Drag-and-Drop Import', () => {
   // ── Rejection tests ──
 
   test('shows toast when dropping unsupported file format', async ({ page }) => {
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+    await page.goto(`/knowledge?vault=${vault.id}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
     await expect(page.locator('.kb-file-panel')).toBeVisible({ timeout: 5_000 });
     await expect(page.locator('.kb-tree-name').filter({ hasText: 'existing.md' })).toBeVisible({ timeout: 10_000 });
@@ -332,7 +332,7 @@ test.describe('KB Drag-and-Drop Import', () => {
   });
 
   test('handles empty drop gracefully (no files in DataTransfer)', async ({ page }) => {
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+    await page.goto(`/knowledge?vault=${vault.id}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
     await expect(page.locator('.kb-file-panel')).toBeVisible({ timeout: 5_000 });
 
