@@ -98,7 +98,7 @@ test.describe('Graph live refresh', () => {
 
   /** 打开知识库的图谱标签并等引擎就绪。 */
   async function openGraphTab(page: Page, vaultId: string) {
-    await page.goto(`http://localhost:5173/knowledge?vault=${vaultId}`);
+    await page.goto(`/knowledge?vault=${vaultId}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 10_000 });
     await clickNav(page, 'graph');
     await expect(page.locator('[data-testid="kb-graph-pane"] .graph-page')).toBeVisible({ timeout: 10_000 });

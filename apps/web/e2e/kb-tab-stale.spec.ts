@@ -42,7 +42,7 @@ test.describe('KB stale tab cleanup (proactive)', () => {
   test.afterAll(async () => { if (vault) await cleanupTempVault(vault); });
 
   test('renaming an open tab file updates the tab, keeps active', async ({ page }) => {
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+    await page.goto(`/knowledge?vault=${vault.id}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
     await expect(page.locator('.kb-tree-item').filter({ hasText: 'alpha.md' })).toBeVisible({ timeout: 10_000 });
     await openTab(page, 'alpha.md');
@@ -57,7 +57,7 @@ test.describe('KB stale tab cleanup (proactive)', () => {
   });
 
   test('deleting an open tab file closes the tab', async ({ page }) => {
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+    await page.goto(`/knowledge?vault=${vault.id}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
     await openTab(page, 'alpha-renamed.md');
     await expect(page.locator('.kb-wtab')).toHaveCount(1, { timeout: 5_000 });
@@ -72,7 +72,7 @@ test.describe('KB stale tab cleanup (proactive)', () => {
   });
 
   test('deleting a folder closes all tabs under it, leaves others', async ({ page }) => {
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+    await page.goto(`/knowledge?vault=${vault.id}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
     await expandFolder(page, 'sub1');
     await openTab(page, 'a.md');
@@ -113,7 +113,7 @@ test.describe('KB stale tab cleanup (reactive)', () => {
       localStorage.setItem(`molio.kb.activeTabId.${vaultId}`, 'file:ghost.md');
     }, vault.id);
 
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+    await page.goto(`/knowledge?vault=${vault.id}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
     await expect(page.locator('.kb-tree-item').filter({ hasText: 'real.md' })).toBeVisible({ timeout: 10_000 });
     // ghost.md doesn't exist in tree → its tab cleaned; real.md stays
@@ -130,7 +130,7 @@ test.describe('KB stale tab cleanup (reactive)', () => {
       ]));
       localStorage.setItem(`molio.kb.activeTabId.${vaultId}`, 'file:real.md');
     }, vault.id);
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+    await page.goto(`/knowledge?vault=${vault.id}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
     await expect(page.locator('.kb-tree-item').filter({ hasText: 'real.md' })).toBeVisible({ timeout: 10_000 });
     // foreign-vault tab NOT cleaned (still 2 tabs)
@@ -157,7 +157,7 @@ test.describe('KB stale tab cleanup (reactive)', () => {
       if (req.url().includes('墨大夫')) foreignRequests.push(req.url());
     });
 
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+    await page.goto(`/knowledge?vault=${vault.id}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
     await expect(page.locator('.kb-tree-item').filter({ hasText: 'real.md' })).toBeVisible({ timeout: 10_000 });
 
@@ -192,7 +192,7 @@ test.describe('KB legacy global tab keys migration (multi-window P2)', () => {
       localStorage.removeItem(`molio.kb.activeTabId.${vaultId}`);
     }, vault.id);
 
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+    await page.goto(`/knowledge?vault=${vault.id}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
     await expect(page.locator('.kb-tree-item').filter({ hasText: 'alpha.md' })).toBeVisible({ timeout: 10_000 });
 
@@ -233,7 +233,7 @@ test.describe('KB same-name tab disambiguation (#5)', () => {
   test.afterAll(async () => { if (vault) await cleanupTempVault(vault); });
 
   test('two same-name files show parent-dir prefix; unique file stays bare', async ({ page }) => {
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+    await page.goto(`/knowledge?vault=${vault.id}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
     await expandFolder(page, 'notes');
     await page.locator('.kb-tree-item:visible').filter({ hasText: 'index.md' }).first().click();
@@ -251,7 +251,7 @@ test.describe('KB same-name tab disambiguation (#5)', () => {
   });
 
   test('tab tooltip shows the full relative path', async ({ page }) => {
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+    await page.goto(`/knowledge?vault=${vault.id}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
     await page.locator('.kb-tree-item').filter({ hasText: 'readme.md' }).click();
     await expect(page.locator('.kb-wtab.is-active')).toHaveAttribute('title', 'readme.md');
@@ -261,7 +261,7 @@ test.describe('KB same-name tab disambiguation (#5)', () => {
   });
 
   test('deeper same-parent-dir collision falls back to full path', async ({ page }) => {
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+    await page.goto(`/knowledge?vault=${vault.id}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
     // two files both at <dir>/foo/index.md → parent name "foo" collides → full path
     await expandFolder(page, 'x');

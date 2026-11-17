@@ -26,7 +26,7 @@ test.describe('KB file drag (real mouse)', () => {
   });
 
   test('drag moveme.md onto folderB moves it on disk', async ({ page }) => {
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+    await page.goto(`/knowledge?vault=${vault.id}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 10_000 });
     await expect(
       page.locator('.kb-tree-item').filter({ hasText: 'moveme.md' }),

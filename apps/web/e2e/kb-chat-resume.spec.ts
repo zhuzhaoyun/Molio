@@ -63,7 +63,7 @@ test.describe('KB chat resume', () => {
       frameDelay: 100,
       persistedMessages: [{ id: 'um1', role: 'user', content: '请生成一篇长文', timestamp: Date.now() }],
     });
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await page.goto(`/knowledge?vault=${vault.id}&file=doc.md`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
 
     // 发送 → 等 run 进入 running（5 帧 × 100ms，mid-stream 时切走）
@@ -76,9 +76,9 @@ test.describe('KB chat resume', () => {
     await page.waitForTimeout(250); // 只播了 ~2-3 帧，仍在流式
 
     // 切走（卸载 KB 页 → unmount cleanup 调 reset 丢弃 run）→ 再返回 /knowledge
-    await page.goto('http://localhost:5173/history');
+    await page.goto('/history');
     await expect(page.locator('.history-shell')).toBeVisible({ timeout: 5_000 });
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await page.goto(`/knowledge?vault=${vault.id}&file=doc.md`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
 
     // 标签从 localStorage 恢复；重挂载后从 DB 加载（只有 user 消息）→ maybeResume 定位
@@ -92,7 +92,7 @@ test.describe('KB chat resume', () => {
   test('运行中切历史 → 开新标签保留直播，原会话回复完整', async ({ page }) => {
     await mockChatRun(page, { frameDelay: 100 });
     await mockHistoryConv(page);
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await page.goto(`/knowledge?vault=${vault.id}&file=doc.md`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
 
     // 发送 → 等 run 进入 running
