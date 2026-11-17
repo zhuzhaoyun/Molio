@@ -283,6 +283,10 @@ test.describe('Graph local scope', () => {
 
     const pane = graphTab(page);
     await expect(pane.locator('[data-testid="graph-scope-back"]')).toBeVisible({ timeout: 10_000 });
+    // 同暗色用例：scope-back 只表示已进入局部图 tab，不代表首图已返回。芯片的前提是
+    // 「旧图仍在屏上」——必须确认 alpha 数据真的就绪（搜索入口只在有数据时渲染），
+    // 否则下面的「首屏无芯片」恒真，切 scope 时也没有旧图可配芯片，后半段会假红。
+    await expect(pane.locator('[data-testid="graph-search-open"]')).toBeVisible({ timeout: 10_000 });
     await expect(pane.locator('[data-testid="graph-scope-loading"]')).toHaveCount(0);
 
     // ② 把换 scope 的请求窗口放大，让在途态确定可观测
@@ -332,6 +336,10 @@ test.describe('Graph local scope', () => {
 
       const pane = graphTab(page);
       await expect(pane.locator('[data-testid="graph-scope-back"]')).toBeVisible({ timeout: 10_000 });
+      // scope-back 只表示已进入局部 tab，不代表首图已返回。芯片的前提是「旧图仍在屏上」，
+      // 必须等 alpha 数据真的就绪（搜索入口只在 hasData 时渲染），否则第二次切 scope
+      // 合法地走首屏 loading，而不是旧图上的 scope-loading chip。
+      await expect(pane.locator('[data-testid="graph-search-open"]')).toBeVisible({ timeout: 10_000 });
 
       // 放大换 scope 的请求窗口，让芯片在断言期间稳定在屏上
       await page.route('**/api/graph/**/local*', async (route) => {
