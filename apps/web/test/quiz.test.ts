@@ -10,7 +10,6 @@ import assert from 'node:assert';
 const {
   parseQuizBlock,
   gradeQuiz,
-  isQuizComplete,
   computeQuizFingerprint,
   quizStorageKey,
   parseStoredQuizState,
@@ -19,6 +18,7 @@ const {
   isFillAnswerCorrect,
   normalizeFillText,
   isSubjectQuestion,
+  countQuizAnswered,
   MAX_QUIZ_RAW_CHARS,
   MAX_QUIZ_KEY_CHARS,
   MAX_SUBJECT_POINTS,
@@ -183,14 +183,6 @@ describe('gradeQuiz / isQuizComplete', () => {
     assert.deepEqual(g2.map((x) => x.correct), [false, true, false]);
     assert.deepEqual(g2[1].chosen, ['A', 'B']);
   });
-
-  it('is complete only when every question has a valid selection', () => {
-    const quiz = { version: 1 as const, title: 't', questions: [SINGLE] };
-    assert.equal(isQuizComplete(quiz, {}), false);
-    assert.equal(isQuizComplete(quiz, { q1: [] }), false);
-    assert.equal(isQuizComplete(quiz, { q1: ['Z'] }), false);
-    assert.equal(isQuizComplete(quiz, { q1: ['A'] }), true);
-  });
 });
 
 describe('fingerprint / localStorage helpers', () => {
@@ -348,12 +340,12 @@ describe('fill 题型（填空）', () => {
     assert.deepEqual(grades[1]!.chosen, ['二十四']);
   });
 
-  it('requires non-blank text for fill completeness', () => {
+  it('requires non-blank text for fill answeredness', () => {
     const res = expectOk(JSON.stringify({ version: 1, title: '填空', questions: [FILL] }));
     const quiz = res.quiz;
-    assert.equal(isQuizComplete(quiz, {}), false);
-    assert.equal(isQuizComplete(quiz, { f1: ['   '] }), false);
-    assert.equal(isQuizComplete(quiz, { f1: ['25'] }), true);
+    assert.equal(countQuizAnswered(quiz, {}), 0);
+    assert.equal(countQuizAnswered(quiz, { f1: ['   '] }), 0);
+    assert.equal(countQuizAnswered(quiz, { f1: ['25'] }), 1);
   });
 
   it('folds ascii notation on both sides before matching', () => {
@@ -450,14 +442,6 @@ describe('subject 题型（主观题）', () => {
     assert.deepEqual(grades[1]!.chosen, []);
   });
 
-  it('subject never blocks quiz completeness', () => {
-    const res = expectOk(JSON.stringify({ version: 1, title: '混合', questions: [SINGLE, SUBJECT] }));
-    assert.equal(res.quiz.questions.length, 2);
-    assert.equal(res.invalidQuestions.length, 0);
-    // 客观题未答 → 不完整；客观题答完、subject 未答 → 完整（subject 不进本地判分批次）。
-    assert.equal(isQuizComplete(res.quiz, {}), false);
-    assert.equal(isQuizComplete(res.quiz, { q1: ['B'] }), true);
-  });
 });
 
 describe('countQuizAnswered（已答计数：M1 整卷表单口径）', () => {

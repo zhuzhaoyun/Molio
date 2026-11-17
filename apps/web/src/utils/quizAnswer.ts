@@ -1,76 +1,35 @@
 /**
- * 大题（subject）作答的锚数据、消息物化与批改回写解析。
+ * 大题（subject）作答的消息物化与批改回写解析（M1：整卷一张表单）。
  *
  * 物化/批改的输出与解析格式是「唯一真源」：quiz skill 的批改协议按
  * 【大题作答·第N题】标记行确定性触发（不靠模型自觉），web 与 SKILL.md
- * 引用同一格式，任何一侧都不得单独演化。物化块自身以标记行开头；宿主
- * 可能再在消息最前面拼入附件/上下文前缀，所以触发契约是「消息含标记行」
- * 而非「消息以标记开头」。评分点藏在围栏 answer 字段，直到用户发送作答
- * 才随消息展开（修「题卡直接可见答案」的剧透缺陷）。
+ * 引用同一格式，任何一侧都不得单独演化。物化块自身以标记行开头；触发
+ * 契约是「消息含标记行」而非「消息以标记开头」。评分点藏在围栏 answer
+ * 字段，交卷前不离开题卡（草稿只在本地）。
  *
  * 物化 v2：出处行后带「题目指纹」行（quiz fingerprint 前 8 位）——批改
  * 回写题卡的关联键，对模型惰性（skill 注明批改时忽略）。触发标记行字节
  * 不变；指纹缺失时省略该行（退回 v1 形态，仅失去回写配对能力）。
+ * 物化 v3：整卷一条消息（buildQuizSubmissionMessage），每题块与 v2 逐字节
+ * 同形；解析侧（extractSubjectAnswers / parseGradingReplies）对 v2/v3 同样
+ * 兼容——锚时代旧会话的消息序推导不受影响。
  */
 import type { Quiz, QuizSelections } from './quiz';
 
-export interface QuizAnswerAnchor {
-  /** 围栏内题号（1 起），与题卡展示序号一致。 */
-  questionIndex: number;
-  /** i18n 题型名（如「解答题」），仅用于 chip 展示。 */
-  typeLabel: string;
-  stem: string;
-  /** 评分点（围栏 answer 字段）。 */
-  points: string[];
-  /** 出处相对路径列表。 */
-  sources: string[];
-  /** quiz fingerprint 前 8 位（题卡算出后随锚携带）；'' = 指纹未就绪。 */
-  fingerprintKey: string;
-}
-
-export function subjectAnchorLabel(
-  anchor: Pick<QuizAnswerAnchor, 'questionIndex' | 'typeLabel'>,
-): string {
-  return `第${anchor.questionIndex}题 · ${anchor.typeLabel}`;
-}
-
 /**
- * 锚是否属于「某张卡的某道题」（用于「作答」按钮的 .on 态与「再点当前题 =
- * 取消」判定）。
- *
- * 题目 id 只在围栏内唯一——「再来一套」的两张卡几乎必然撞 id（都是 q3）。
- * 仅凭 id 判定会让 A 卡的按钮把 B 卡的锚误判成「当前题」：点第二张卡变成
- * **取消**而不是换锚 → chip 无故消失 → 用户若没察觉直接发送，消息不带
- * 物化块 → 模型不批改、进度不涨，整条作答链路静默失效。
- *
- * 归属按「题号 + 卡片身份」认定：
- * - 题号：卡内唯一（1 起，与展示序号一致）；
- * - 卡片身份：指纹（内容派生、卡级）优先；指纹未就绪时退回内容比对
- *   （题干 + 评分点逐项一致）——与 backfillAnchorFingerprint 的归属规则同源。
- *
- * 已知边界：内容完全相同的两张卡指纹也相同 → 归属判定不可分（两卡互认
- * 对方的锚）。那种卡的物化消息本就等价，属可接受边界。
+ * 单题物化块（v2 格式，v3 整卷消息的每题块复用同一构建器保证逐字节同形）。
+ * 模块私有：v3 起对外只暴露 buildQuizSubmissionMessage。
  */
-export function anchorBelongsToQuestion(
-  anchor: QuizAnswerAnchor | null | undefined,
-  question: { stem: string; answer: string[] },
-  cardFingerprintKey: string,
-  questionIndex: number,
-): boolean {
-  if (!anchor) return false;
-  if (anchor.questionIndex !== questionIndex) return false;
-  if (anchor.fingerprintKey && cardFingerprintKey) {
-    return anchor.fingerprintKey === cardFingerprintKey;
-  }
-  // 指纹未就绪（异步算出前）：退到内容判定（题干 + 评分点逐项一致）。
-  return (
-    anchor.stem === question.stem
-    && anchor.points.length === question.answer.length
-    && anchor.points.every((point, i) => point === question.answer[i])
-  );
-}
-
-export function buildSubjectAnswerMessage(anchor: QuizAnswerAnchor, userText: string): string {
+function buildSubjectAnswerMessage(
+  anchor: {
+    questionIndex: number;
+    stem: string;
+    points: string[];
+    sources: string[];
+    fingerprintKey: string;
+  },
+  userText: string,
+): string {
   const lines = [
     `【大题作答·第${anchor.questionIndex}题】`,
     `题干：${anchor.stem}`,
@@ -80,50 +39,6 @@ export function buildSubjectAnswerMessage(anchor: QuizAnswerAnchor, userText: st
   ];
   if (anchor.fingerprintKey) lines.push(`题目指纹：${anchor.fingerprintKey}`);
   return `${lines.join('\n')}\n\n${userText}`;
-}
-
-/**
- * 指纹晚于点击就绪时，把挂着的锚补上 key。归属认定必须用内容（题干 +
- * 评分点逐项一致）而非题目 id——id 只在围栏内唯一，「再来一套」的两张卡
- * 几乎必然撞 id，仅凭 id 会让 A 卡的补齐 effect 覆写 B 卡挂的锚（互写
- * 成环）。且只碰 key 为空的锚：非空 key 恒为正确值（挂锚时的回调或本卡
- * 的补齐写入），绝不动。不属于本卡的锚返回 null。
- */
-export function backfillAnchorFingerprint(
-  quiz: import('./quiz').Quiz,
-  fingerprint: string,
-  current: { anchor: QuizAnswerAnchor; questionId: string },
-): QuizAnswerAnchor | null {
-  const key = fingerprint.slice(0, 8);
-  if (current.anchor.fingerprintKey === key) return null;
-  if (current.anchor.fingerprintKey !== '') return null;
-  const index = quiz.questions.findIndex((q) => q.id === current.questionId);
-  if (index < 0) return null;
-  const question = quiz.questions[index]!;
-  if (question.type !== 'subject') return null;
-  // 题号也必须一致：撞 id 的两张卡里，题号是卡内定位的第二道闸
-  // （id 只在围栏内唯一，题号 + 内容双重确认才认领这个锚）。题号口径与
-  // 题卡渲染一致（questions 数组下标 + 1）。
-  if (index + 1 !== current.anchor.questionIndex) return null;
-  if (question.stem !== current.anchor.stem) return null;
-  if (
-    question.answer.length !== current.anchor.points.length
-    || question.answer.some((point, i) => point !== current.anchor.points[i])
-  ) {
-    return null;
-  }
-  return { ...current.anchor, fingerprintKey: key };
-}
-
-/** 从用户物化消息里取 题号 + 指纹（v1 消息无指纹行 → null）。 */
-export function extractSubjectAnswerMeta(
-  text: string,
-): { questionIndex: number; key: string } | null {
-  const marker = text.match(/^【大题作答·第(\d+)题】/m);
-  if (!marker) return null;
-  const key = text.match(/^题目指纹：([0-9a-f]{8})$/m);
-  if (!key) return null;
-  return { questionIndex: Number(marker[1]), key: key[1]! };
 }
 
 export type QuizGradingPointStatus = 'hit' | 'partial' | 'miss';
@@ -246,8 +161,10 @@ export function pairQuizGradings(
   const gradings = new Map<string, QuizGrading>();
   for (const message of messages) {
     if (message.role === 'user') {
-      const meta = extractSubjectAnswerMeta(message.content);
-      if (meta) lastAnswerByIndex.set(meta.questionIndex, meta.key);
+      // v3 整卷消息一条带多个作答块：每个题号的归属键都要登记。
+      for (const answer of extractSubjectAnswers(message.content)) {
+        lastAnswerByIndex.set(answer.questionIndex, answer.key);
+      }
       continue;
     }
     if (message.role === 'assistant') {
@@ -263,20 +180,6 @@ export function pairQuizGradings(
 /** 批改在 store/map 里的组合键：卡片按（自身指纹, 题号）取回。 */
 export function gradingMapKey(fingerprintKey: string, questionIndex: number): string {
   return `${fingerprintKey}:${questionIndex}`;
-}
-
-/**
- * 物化消息里「作答正文」的起点：指纹行之后的全部内容。
- *
- * 头块（标记 / 题干 / 评分点 / 出处 / 指纹）与正文之间隔一个空行，但正文
- * 自己也可能含空行，所以不能按第一个 `\n\n` 切 —— 按指纹行定位。
- */
-const ANSWER_FINGERPRINT_LINE_RE = /^题目指纹：[0-9a-f]{8}$/m;
-
-export function subjectAnswerBody(content: string): string {
-  const line = ANSWER_FINGERPRINT_LINE_RE.exec(content);
-  if (!line) return '';
-  return content.slice(line.index + line[0].length).replace(/^\r?\n\r?\n?/, '').trim();
 }
 
 /**
@@ -340,7 +243,6 @@ export function buildQuizSubmissionMessage(
     buildSubjectAnswerMessage(
       {
         questionIndex: entry.questionIndex,
-        typeLabel: '',
         stem: entry.stem,
         points: entry.points,
         sources: entry.sources,

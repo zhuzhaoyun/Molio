@@ -340,20 +340,6 @@ export function gradeQuiz(quiz: Quiz, selections: QuizSelections): QuizGrade[] {
   });
 }
 
-export function isQuizComplete(quiz: Quiz, selections: QuizSelections): boolean {
-  return quiz.questions.every((question) => {
-    if (question.type === 'subject') {
-      // 主观题在问答输入框里作答（发送时物化），不算进本地提交的完成条件。
-      return true;
-    }
-    if (question.type === 'fill') {
-      return (selections[question.id]?.[0] ?? '').trim().length > 0;
-    }
-    const validKeys = new Set(question.options.map((option) => option.key));
-    return (selections[question.id] ?? []).some((key) => validKeys.has(key));
-  });
-}
-
 /**
  * 已作答题数（M1 整卷表单口径）。
  *
