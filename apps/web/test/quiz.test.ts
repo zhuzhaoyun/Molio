@@ -161,7 +161,7 @@ describe('parseQuizBlock', () => {
   });
 });
 
-describe('gradeQuiz / isQuizComplete', () => {
+describe('gradeQuiz', () => {
   it('grades single, multiple (exact only) and judge', () => {
     const judge = {
       id: 'j1', type: 'judge' as const, stem: 'x',
@@ -477,6 +477,12 @@ describe('countQuizAnswered（已答计数：M1 整卷表单口径）', () => {
     assert.equal(countQuizAnswered(quiz, { q1: ['Z'] }), 0);
     // 混合合计
     assert.equal(countQuizAnswered(quiz, { q1: ['A'], q4: ['25'], q5: ['答'] }), 3);
+    // 纯图片解答题草稿也算已答（P4 拍照作答：图片会物化进交卷消息）。
+    assert.equal(countQuizAnswered(quiz, { q5: ['  '] }, { q5: ['raw/paper.png'] }), 1);
+    // 图片不救活别的题型：fill 只有图片没文本仍是未答。
+    assert.equal(countQuizAnswered(quiz, { q4: ['  '] }, { q4: ['raw/x.png'] }), 0);
+    // 文本 + 图片同一题只计一次。
+    assert.equal(countQuizAnswered(quiz, { q5: ['答'] }, { q5: ['raw/paper.png'] }), 1);
   });
 });
 
@@ -493,11 +499,11 @@ describe('parseStoredQuizState（subjectImages 扩展）', () => {
     // 旧存储无字段 → {}
     const legacy = parseStoredQuizState(JSON.stringify({ selections: {}, submitted: false }));
     assert.deepEqual(legacy?.subjectImages, {});
-    // 形状坏（值非 string[]）→ 整个字段 {}
+    // 形状坏（值非 string[]）→ 该条目丢弃
     const bad = parseStoredQuizState(JSON.stringify({ selections: {}, submitted: false, subjectImages: { q3: 'x' } }));
     assert.deepEqual(bad?.subjectImages, {});
-    // 数组里混入非字符串项 → 整个字段 {}
-    const mixed = parseStoredQuizState(JSON.stringify({ selections: {}, submitted: false, subjectImages: { q3: ['a', 1] } }));
-    assert.deepEqual(mixed?.subjectImages, {});
+    // 数组里混入非字符串项 → 该条目丢弃，其余保留（逐条清洗）
+    const mixed = parseStoredQuizState(JSON.stringify({ selections: {}, submitted: false, subjectImages: { q3: ['a', 1], q4: ['ok.png'] } }));
+    assert.deepEqual(mixed?.subjectImages, { q4: ['ok.png'] });
   });
 });
