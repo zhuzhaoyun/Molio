@@ -38,7 +38,8 @@ import { gotoHome, clickNav } from './helpers/navigation';
 
 /** daemon 直连地址：跟随 MOLIO_E2E_DAEMON_PORT 平移（见 playwright.config.ts 头注） */
 const DAEMON_API = `http://localhost:${process.env.MOLIO_E2E_DAEMON_PORT ?? '3100'}/api`;
-const MOCK_OSS = 'http://localhost:3199';
+/** mock OSS 替身地址：跟随 MOLIO_E2E_MOCK_OSS_PORT 平移（见 playwright.config.ts 头注） */
+const MOCK_OSS = `http://localhost:${process.env.MOLIO_E2E_MOCK_OSS_PORT ?? '3199'}`;
 const ACCOUNT_MODAL = '.account-modal';
 
 /** 1×1 PNG —— 效果图经 setInputFiles 以 Buffer 注入（不落盘） */
@@ -164,7 +165,7 @@ test.describe('社区发布 → 展示 → 下载闭环（P1，mock OSS）', () 
     //    页内发布 tab 永远不出现。等 `/my` 的**网络响应**不够贴近：响应到达 ≠ React
     //    已提交（且 goto 前挂的监听可能吃到上一个页面 /me 的响应）。改等按钮上的
     //    data-publish-gate 属性变成 admin，即「状态已渲染到 UI」的可观测信号。
-    await page.goto(`http://localhost:5173/knowledge?vault=${vaultId}`);
+    await page.goto(`/knowledge?vault=${vaultId}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 15_000 }); // vite dev 冷转换可超 5s（Windows 本地）
     await expect(page.locator('[data-testid="kb-btn-publish-vault"]')).toHaveAttribute(
       'data-publish-gate',
@@ -341,7 +342,7 @@ test.describe('社区发布 → 展示 → 下载闭环（P1，mock OSS）', () 
     await loginViaDevCode(page, 'admin2@test.local');
 
     // 同用例 1：等门禁渲染成 admin（而非只等 /my 网络响应）再点，消除竞态
-    await page.goto(`http://localhost:5173/knowledge?vault=${vaultId}`);
+    await page.goto(`/knowledge?vault=${vaultId}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 15_000 }); // vite dev 冷转换可超 5s（Windows 本地）
     await expect(page.locator('[data-testid="kb-btn-publish-vault"]')).toHaveAttribute(
       'data-publish-gate',
@@ -419,7 +420,7 @@ test.describe('社区发布 → 展示 → 下载闭环（P1，mock OSS）', () 
 
     // 同用例 1：等门禁状态落定再点（也顺带等 vault 解析，防 activeVault 未决早退）。
     // 门禁现走 GET /api/market/role（本地缓存即答），不再等 /my 的云端往返。
-    await page.goto(`http://localhost:5173/knowledge?vault=${vaultId}`);
+    await page.goto(`/knowledge?vault=${vaultId}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 15_000 }); // vite dev 冷转换可超 5s（Windows 本地）
     await expect(page.locator('[data-testid="kb-btn-publish-vault"]')).toHaveAttribute(
       'data-publish-gate',
@@ -462,7 +463,7 @@ test.describe('社区发布 → 展示 → 下载闭环（P1，mock OSS）', () 
     const popups: string[] = [];
     page.context().on('page', (p) => popups.push(p.url()));
 
-    await page.goto(`http://localhost:5173/knowledge?vault=${vaultId}`);
+    await page.goto(`/knowledge?vault=${vaultId}`);
     const publishBtn = page.locator('[data-testid="kb-btn-publish-vault"]');
     await expect(publishBtn).toBeVisible({ timeout: 15_000 });
     await expect(publishBtn).toHaveAttribute('data-publish-gate', 'pending', { timeout: 5_000 });

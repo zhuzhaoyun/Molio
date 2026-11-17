@@ -5,6 +5,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { SearchResult } from '@molio/contracts';
 import { api } from '../../api/client';
+import { FileIcon, SearchIcon } from '../icons';
 import { useI18n } from '../../i18n';
 import './SearchPanel.css';
 
@@ -77,7 +78,7 @@ export function SearchPanel({ vaultId, onOpenFile, onClose }: SearchPanelProps) 
     <div className="kb-search-overlay" data-testid="kb-search-panel" role="dialog">
       <div className="kb-search-box">
         <div className="kb-search-input-row">
-          <span className="kb-search-icon">🔍</span>
+          <span className="kb-search-icon"><SearchIcon size={15} /></span>
           <input
             type="text"
             className="kb-search-input"
@@ -106,7 +107,7 @@ export function SearchPanel({ vaultId, onOpenFile, onClose }: SearchPanelProps) 
                 data-testid="kb-search-result"
                 onClick={() => onOpenFile(r.filePath)}
               >
-                <div className="kb-search-result-file">📄 {r.fileName}</div>
+                <div className="kb-search-result-file"><FileIcon size={13} /> {r.fileName}</div>
                 <div className="kb-search-result-snippet">
                   {before}<mark>{match}</mark>{after}
                 </div>

@@ -52,7 +52,7 @@ test.describe('KB tab drag-to-reorder', () => {
   test.afterAll(async () => { if (vault) await cleanupTempVault(vault); });
 
   test('dragging the first tab past the last reorders the strip and persists', async ({ page }) => {
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+    await page.goto(`/knowledge?vault=${vault.id}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
     await openThreeTabs(page);
 
@@ -81,7 +81,7 @@ test.describe('KB tab drag-to-reorder', () => {
   });
 
   test('press + release without real movement keeps order and click semantics', async ({ page }) => {
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+    await page.goto(`/knowledge?vault=${vault.id}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
     await openThreeTabs(page);
 
@@ -105,7 +105,7 @@ test.describe('KB tab drag-to-reorder', () => {
   });
 
   test('a pinned tab reorders like any other (pin ≠ position lock)', async ({ page }) => {
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+    await page.goto(`/knowledge?vault=${vault.id}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
     await openThreeTabs(page);
 

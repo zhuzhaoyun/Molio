@@ -7,6 +7,8 @@ import { SessionWriteKindsProvider } from './SessionWriteKinds';
 import { findLastAssistant } from '../utils/workSteps';
 import { isNearBottom } from './chatScrollPin';
 import { rememberChatScroll, recallChatScroll, findVisibleAnchor, applyAnchorOffset } from '../stores/chatScrollMemory';
+import { MessageRail } from './MessageRail';
+import { buildRailPairs } from '../utils/messageRail';
 import { useSelectMode, messageSelectionStore } from '../stores/messageSelectionStore';
 import { quizSubjectStore } from '../stores/quizSubjectStore';
 import { pairQuizGradings, pairSubjectAnswers } from '../utils/quizAnswer';
@@ -84,6 +86,11 @@ export interface ChatSessionViewProps {
    * 还开着 ⇄ 切回恢复；关标签删记忆 ⇄ 重开贴底。
    */
   active?: boolean;
+  /**
+   * 消息导航 rail（KB 问答会话启用）：日志区外包 wrapper、右缘挂提问刻度条。
+   * 包装只看本 prop 不看阈值——DOM 结构从挂载起稳定，显隐阈值由 MessageRail 自理。
+   */
+  messageRail?: boolean;
 }
 
 /**
@@ -91,7 +98,7 @@ export interface ChatSessionViewProps {
  * 浮标按钮（chat-jump-bottom）不是消息，剔除——保存与恢复两侧用同一过滤，
  * 锚点序号才有意义。
  */
-function measureMessages(el: HTMLElement): { tops: number[]; heights: number[] } {
+export function measureMessages(el: HTMLElement): { tops: number[]; heights: number[] } {
   const logTop = el.getBoundingClientRect().top;
   const tops: number[] = [];
   const heights: number[] = [];
@@ -137,6 +144,7 @@ export function ChatSessionView({
   pruneSelection = true,
   saveHint,
   active = true,
+  messageRail = false,
 }: ChatSessionViewProps) {
   const { t } = useI18n();
   const logRef = useRef<HTMLDivElement>(null);
@@ -167,8 +175,13 @@ export function ChatSessionView({
     if (!el) return;
     // 程序化置底也会走这里：置底后判定为 near bottom，pinned 保持 true（不会自锁）。
     const near = isNearBottom(el.scrollTop, el.scrollHeight, el.clientHeight);
-    pinnedRef.current = near;
-    setShowJumpBottom(!near);
+    // rail 平滑跳转途经底部邻域时不许把贴底翻回来：动画前几帧仍「近底」，
+    // 若在此翻回 true，任何迟到的 DOM 变更（代码高亮等）都会把飞行中的动画
+    // 拽回底部（实测 flake：点击后 2s 停在原地）。
+    if (!railJumpingRef.current) {
+      pinnedRef.current = near;
+      setShowJumpBottom(!near);
+    }
     // 位置持续写入会话记忆（同 useScrollMemory 约束 1：不依赖「切走时保存」，
     // 那一刻 DOM 可能已经换人）。隐藏容器（display:none）读到的 scrollTop 恒 0，
     // 写入会把记忆污染成顶部 —— 必须跳过。
@@ -215,7 +228,10 @@ export function ChatSessionView({
   const settleRafRef = useRef<number[]>([]);
   useEffect(() => {
     const ids = settleRafRef;
-    return () => { ids.current.forEach((id) => cancelAnimationFrame(id)); ids.current = []; };
+    return () => {
+      ids.current.forEach((id) => cancelAnimationFrame(id)); ids.current = [];
+      window.clearTimeout(railJumpTimerRef.current);
+    };
   }, []);
 
   const settlePosition = useCallback(() => {
@@ -311,6 +327,46 @@ export function ChatSessionView({
   const lastAssistant = useMemo(() => findLastAssistant(messages), [messages]);
   const lastAssistantId = lastAssistant?.id ?? null;
 
+  // ── 消息导航 rail ────────────────────────────────────────────────────────
+  // 刻度 = 问答对（user 开对）。重算 O(n) 且只清洗 user 文本；assistant 流式
+  // 更新引起的重算可忽略——真正拦掉无谓重渲的是 MessageRail 的 memo 逐元素比较。
+  const railPairs = useMemo(() => buildRailPairs(messages), [messages]);
+  // rail 平滑跳转进行中（scrollend / 700ms 兜底解除）——期间 handleLogScroll
+  // 不得重算贴底态，见其注释。
+  const railJumpingRef = useRef(false);
+  const railJumpTimerRef = useRef(0);
+  // 点刻度跳转：先脱离贴底（否则流式输出立刻把视口拽回底部），再平滑滚动。
+  // ① 写入推迟两帧：setShowJumpBottom 让回底浮标进流（sticky 占流，~32px），末轮
+  //   刻度的目标常被 clamp——用浮标进流**前**的天花板会永远差一个浮标高（CI 实测
+  //   32px）。双 rAF 保证 clamp 看到的是含浮标的最终布局。
+  // ② smooth 只用于这一次用户动作；流式贴底跟随仍是瞬时写 scrollTop（那条
+  //   「动画被反复打断」的老规则不受影响）。prefers-reduced-motion 退回瞬时。
+  const onJumpScroll = useCallback((target: number, smooth = true) => {
+    const el = logRef.current;
+    if (!el) return;
+    pinnedRef.current = false;
+    setShowJumpBottom(true);
+    // 拖动刷选传 smooth=false（即时跟手，逐帧直写）；单次点击走平滑动画。
+    const behavior: ScrollBehavior = smooth && !window.matchMedia('(prefers-reduced-motion: reduce)').matches
+      ? 'smooth'
+      : 'auto';
+    railJumpingRef.current = true;
+    window.clearTimeout(railJumpTimerRef.current);
+    railJumpTimerRef.current = window.setTimeout(() => {
+      railJumpingRef.current = false;
+    }, 700);
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      if (logRef.current !== el) return;
+      el.scrollTo({ top: target, behavior });
+      const onEnd = () => {
+        railJumpingRef.current = false;
+        window.clearTimeout(railJumpTimerRef.current);
+      };
+      // 用户中途真滚动会取消动画并触发自己的 scrollend——两种结束都走这。
+      el.addEventListener('scrollend', onEnd, { once: true });
+    }));
+  }, []);
+
   // Wire onAnswerToolUse: route tool_result back to the open stream-json child
   const onAnswerToolUse = useCallback(
     async (toolUseId: string, content: string) => {
@@ -372,12 +428,8 @@ export function ChatSessionView({
     ? `${composerBarClassName ?? 'home-composer-bar'} home-composer-bar--card`
     : composerBarClassName ?? 'home-composer-bar';
 
-  return (
-    // 写入的「新建 / 更新」判据要会话级上下文（写之前该路径出现过没有），
-    // 逐消息的产物横幅自己判不出来 —— 这里算一次，供其与产出面板共用。
-    <SessionWriteKindsProvider messages={messages}>
-    <>
-      {/* Chat log */}
+  // 日志区节点：messageRail 启用时外包 wrapper（rail 的定位宿主），否则原样。
+  const logNode = (
       <div
         className={logClassName ?? 'home-chat-log'}
         ref={logRef}
@@ -454,6 +506,23 @@ export function ChatSessionView({
           </button>
         )}
       </div>
+  );
+
+  return (
+    // 写入的「新建 / 更新」判据要会话级上下文（写之前该路径出现过没有），
+    // 逐消息的产物横幅自己判不出来 —— 这里算一次，供其与产出面板共用。
+    <SessionWriteKindsProvider messages={messages}>
+    <>
+      {/* Chat log（rail 启用时包在 wrapper 里，rail 钉其右缘） */}
+      {messageRail ? (
+        <div className="chat-log-wrap">
+          {logNode}
+          {/* 勾选删除态：右侧已有方框，rail 让位 */}
+          {!selectMode && (
+            <MessageRail logRef={logRef} pairs={railPairs} onJumpScroll={onJumpScroll} />
+          )}
+        </div>
+      ) : logNode}
 
       {/* 后台 subagent/workflow 活动树（activity SSE 事件驱动） */}
       <ActivityTree activity={activity ?? null} />

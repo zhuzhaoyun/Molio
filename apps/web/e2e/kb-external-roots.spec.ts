@@ -42,7 +42,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-const DAEMON = 'http://localhost:3100/api';
+/** daemon 直连地址：跟随 MOLIO_E2E_DAEMON_PORT 平移（见 playwright.config.ts 头注）。 */
+const DAEMON = `http://localhost:${process.env.MOLIO_E2E_DAEMON_PORT ?? '3100'}/api`;
 
 let vaultPath = '';
 let vaultId = '';

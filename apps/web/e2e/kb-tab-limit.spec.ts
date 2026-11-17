@@ -55,7 +55,7 @@ test.describe('KB tab limit', () => {
 
   test('at cap, "+" is blocked with a toast', async ({ page }) => {
     await seed(page, makeTabs(20), 'file:f20.md', vault.id);
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+    await page.goto(`/knowledge?vault=${vault.id}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
     await expect(page.locator('.kb-wtab')).toHaveCount(20, { timeout: 5_000 });
 
@@ -66,7 +66,7 @@ test.describe('KB tab limit', () => {
 
   test('at cap, clicking a new doc reuses the current tab (no toast)', async ({ page }) => {
     await seed(page, makeTabs(20), 'file:f20.md', vault.id);
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+    await page.goto(`/knowledge?vault=${vault.id}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
     await expect(page.locator('.kb-wtab')).toHaveCount(20, { timeout: 5_000 });
 
@@ -79,7 +79,7 @@ test.describe('KB tab limit', () => {
 
   test('at cap with a pinned active tab, opening a new doc is blocked', async ({ page }) => {
     await seed(page, makeTabs(20, 20), 'file:f20.md', vault.id);
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+    await page.goto(`/knowledge?vault=${vault.id}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
     await expect(page.locator('.kb-wtab')).toHaveCount(20, { timeout: 5_000 });
     await expect(page.locator('.kb-wtab.is-pinned')).toHaveCount(1, { timeout: 3_000 });
@@ -93,7 +93,7 @@ test.describe('KB tab limit', () => {
 
   test('closing one tab at cap re-enables "+"', async ({ page }) => {
     await seed(page, makeTabs(20), 'file:f20.md', vault.id);
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+    await page.goto(`/knowledge?vault=${vault.id}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
     await expect(page.locator('.kb-wtab')).toHaveCount(20, { timeout: 5_000 });
 
@@ -108,7 +108,7 @@ test.describe('KB tab limit', () => {
   test('persisted tabs beyond MAX_TABS are not silently closed on load', async ({ page }) => {
     // Seed 25 persisted tabs pointing at f01..f25 (paths need exist).
     await seed(page, makeTabs(25), 'file:f01.md', vault.id);
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+    await page.goto(`/knowledge?vault=${vault.id}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
     await expect(page.locator('.kb-wtab')).toHaveCount(25, { timeout: 5_000 });
 
@@ -150,7 +150,7 @@ test.describe('KB tab overflow UI', () => {
   };
 
   test('active tab scrolls into the visible scroll area on open', async ({ page }) => {
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+    await page.goto(`/knowledge?vault=${vault.id}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
     await expect(page.locator('.kb-tree-item').filter({ hasText: 'g01.md' })).toBeVisible({ timeout: 10_000 });
 
@@ -171,7 +171,7 @@ test.describe('KB tab overflow UI', () => {
   });
 
   test('arrows appear when tabs overflow and scroll on click', async ({ page }) => {
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+    await page.goto(`/knowledge?vault=${vault.id}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
     await openMany(page, 8);
     const scroll = page.locator('.kb-wtab-scroll');
@@ -193,7 +193,7 @@ test.describe('KB tab overflow UI', () => {
   });
 
   test('dropdown lists all tabs; selecting one activates + scrolls it into view', async ({ page }) => {
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+    await page.goto(`/knowledge?vault=${vault.id}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
     await openMany(page, 8);
     // g01 is the first-opened, off-screen left after scrolling to g08.
@@ -212,7 +212,7 @@ test.describe('KB tab overflow UI', () => {
   });
 
   test('dropdown item × closes that tab without activating it', async ({ page }) => {
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+    await page.goto(`/knowledge?vault=${vault.id}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
     await openMany(page, 8);
     // Active is g08 before opening dropdown.

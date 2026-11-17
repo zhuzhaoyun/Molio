@@ -173,7 +173,7 @@ test.describe('KB 阅读视窗位置记忆', () => {
   test.afterAll(async () => { if (vault) await cleanupTempVault(vault); });
 
   test.beforeEach(async ({ page }) => {
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+    await page.goto(`/knowledge?vault=${vault.id}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
     await expect(treeItem(page, 'long-a.md')).toBeVisible({ timeout: 10_000 });
     await closeAllTabs(page);

@@ -7,6 +7,7 @@ import {
   MAX_CHAT_SESSIONS,
 } from '../../stores/kbChatSessionsStore';
 import { useCurrentContext } from '../../stores/currentContextStore';
+import { ChatIcon } from '../icons';
 import { useActiveVaultId } from '../../stores/vaultStore';
 import { CHAT_ROUTE, isFullscreenRoute } from '../../routes';
 import { withSurfaceTransitionSync, skipSurfaceTransition } from '../../stores/surfaceTransition';
@@ -922,7 +923,7 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
       <div className="file-chat-session-stack">
         {sessions.length === 0 ? (
           <div className="file-chat-sessions-empty" data-testid="kb-chat-sessions-empty">
-            <div className="file-chat-empty-icon">💬</div>
+            <div className="file-chat-empty-icon"><ChatIcon size={36} /></div>
             <p>还没有会话</p>
             <button type="button" className="kb-btn kb-btn-ghost" onClick={handleNewSession}>
               + 新建会话

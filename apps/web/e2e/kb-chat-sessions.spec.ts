@@ -56,7 +56,7 @@ test.describe('KB chat sessions', () => {
 
   test('QA 首条消息标题取末句，不含 wiki-query 模板前缀', async ({ page }) => {
     await mockChatRun(page);
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await page.goto(`/knowledge?vault=${vault.id}&file=doc.md`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
 
     await page.locator('[data-testid="kb-btn-ask"]').click();
@@ -71,7 +71,7 @@ test.describe('KB chat sessions', () => {
 
   test('多会话：各自独立消息、切换不串台', async ({ page }) => {
     await mockChatRun(page);
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await page.goto(`/knowledge?vault=${vault.id}&file=doc.md`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
 
     // 打开问答 → 出现 1 个会话标签
@@ -99,7 +99,7 @@ test.describe('KB chat sessions', () => {
 
   test('运行中切走后台保活，切回看到结果', async ({ page }) => {
     await mockChatRun(page, { frameDelay: 60 });
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await page.goto(`/knowledge?vault=${vault.id}&file=doc.md`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
 
     // 打开问答面板 → 会话1
@@ -125,7 +125,7 @@ test.describe('KB chat sessions', () => {
     // 避免真实 daemon 对未知 conversation 404 → onLoadError 关掉标签。
     await page.route('**/api/conversations/*/messages', (route) =>
       route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ messages: [] }) }));
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await page.goto(`/knowledge?vault=${vault.id}&file=doc.md`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
 
     await page.locator('[data-testid="kb-btn-ask"]').click();
@@ -147,7 +147,7 @@ test.describe('KB chat sessions', () => {
     page.on('request', (req) => {
       if (req.method() === 'DELETE' && req.url().includes('/api/runs/')) cancelRequests++;
     });
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await page.goto(`/knowledge?vault=${vault.id}&file=doc.md`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
     await page.locator('[data-testid="kb-btn-ask"]').click();
 
@@ -179,7 +179,7 @@ test.describe('KB chat sessions', () => {
     page.on('request', (req) => {
       if (req.method() === 'DELETE' && req.url().includes('/api/runs/')) cancelRequests++;
     });
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+    await page.goto(`/knowledge?vault=${vault.id}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
 
     // 启动构建 → ⚙️ wiki 标签 + 自动发送；等进入 running（header 显示运行状态）
@@ -212,7 +212,7 @@ test.describe('KB chat sessions', () => {
       if (req.method() === 'POST' && new URL(req.url()).pathname.endsWith('/api/runs')) createRunRequests++;
     });
 
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+    await page.goto(`/knowledge?vault=${vault.id}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
 
     // 第一次点构建 → ⚙️ 标签创建 + 自动发送；等 run 进入 running（header 显示运行状态）
@@ -253,7 +253,7 @@ test.describe('KB chat sessions', () => {
       if (req.method() === 'POST' && new URL(req.url()).pathname.endsWith('/api/runs')) createRunRequests++;
     });
 
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+    await page.goto(`/knowledge?vault=${vault.id}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
 
     // 第一次点构建 → ⚙️ 标签 + 自动发送；等 run 进入 running
@@ -278,7 +278,7 @@ test.describe('KB chat sessions', () => {
   test('历史下拉打开会话：就地切换当前会话（不新建标签）、标题从消息回填、同会话去重', async ({ page }) => {
     await mockChatRun(page);
     await mockHistoryConv(page);
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await page.goto(`/knowledge?vault=${vault.id}&file=doc.md`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
 
     // 打开问答面板 → 1 个空会话标签（conversationId null，标题「新会话」）
@@ -325,7 +325,7 @@ test.describe('KB chat sessions', () => {
         body: JSON.stringify({ messages: [{ id: 'm1', role: 'user', content: '新历史会话内容', timestamp: Date.now() }] }),
       }));
 
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await page.goto(`/knowledge?vault=${vault.id}&file=doc.md`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
     await page.locator('[data-testid="kb-btn-ask"]').click();
     await expect(page.locator('[data-testid="kb-chat-session-tab"]')).toHaveCount(1);
@@ -349,11 +349,11 @@ test.describe('KB chat sessions', () => {
     await mockHistoryConv(page);
 
     // 先落 /knowledge 建立活跃 vault（保持与旧测试一致的 setup）
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+    await page.goto(`/knowledge?vault=${vault.id}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
 
     // 历史页列出 conv-h → 点击行打开
-    await page.goto('http://localhost:5173/history');
+    await page.goto('/history');
     await expect(page.locator('.history-shell')).toBeVisible({ timeout: 5_000 });
     const row = page.locator('.history-row', { hasText: '历史问题' }).first();
     await expect(row).toBeVisible({ timeout: 5_000 });
@@ -380,7 +380,7 @@ test.describe('KB chat sessions', () => {
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ pinnedItems: [], items, nextCursor: null }) });
     });
 
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await page.goto(`/knowledge?vault=${vault.id}&file=doc.md`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
     await page.locator('[data-testid="kb-btn-ask"]').click();
 
@@ -409,7 +409,7 @@ test.describe('KB chat sessions', () => {
       }
     });
 
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await page.goto(`/knowledge?vault=${vault.id}&file=doc.md`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
     await page.locator('[data-testid="kb-btn-ask"]').click();
     await page.locator('[data-testid="kb-chat-session-history"]').click();
@@ -455,7 +455,7 @@ test.describe('KB chat sessions', () => {
       });
     });
 
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await page.goto(`/knowledge?vault=${vault.id}&file=doc.md`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
     await page.locator('[data-testid="kb-btn-ask"]').click();
     await page.locator('[data-testid="kb-chat-session-history"]').click();
@@ -476,7 +476,7 @@ test.describe('KB chat sessions', () => {
     // 用户报障：会话里打开历史记录，列表里看不出当前是哪一条。
     await mockChatRun(page);
     await mockHistoryConv(page);
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await page.goto(`/knowledge?vault=${vault.id}&file=doc.md`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
     await page.locator('[data-testid="kb-btn-ask"]').click();
 
@@ -504,7 +504,7 @@ test.describe('KB chat sessions', () => {
 
     const vaultB = await createTempVault('e2e-kb-sessions-b');
     try {
-      await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+      await page.goto(`/knowledge?vault=${vault.id}&file=doc.md`);
       await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
 
       // 库 A 里开一个问答会话
@@ -516,12 +516,12 @@ test.describe('KB chat sessions', () => {
       await expect(activeMessages(page)).toContainText('A 库的问题');
 
       // 切到库 B → A 的会话标签不该再出现（内容也不再串台）
-      await page.goto(`http://localhost:5173/knowledge?vault=${vaultB.id}`);
+      await page.goto(`/knowledge?vault=${vaultB.id}`);
       await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
       await expect(page.locator('[data-testid="kb-chat-session-tab"]')).toHaveCount(0);
 
       // 切回库 A → 标签与内容都回来
-      await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+      await page.goto(`/knowledge?vault=${vault.id}`);
       await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
       await expect(page.locator('[data-testid="kb-chat-session-tab"]')).toHaveCount(1);
       await expect(page.locator('[data-testid="kb-chat-session-tab"] .chat-session-tab-title'))
@@ -545,7 +545,7 @@ test.describe('KB chat sessions', () => {
       { type: 'usage', usage: { input_tokens: 10, output_tokens: 5 }, costUsd: 0.001 },
     ];
     await mockChatRun(page, { frameDelay: 200, script: longStream });
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await page.goto(`/knowledge?vault=${vault.id}&file=doc.md`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
 
     const panel = page.locator('[data-testid="kb-chat-panel"]');

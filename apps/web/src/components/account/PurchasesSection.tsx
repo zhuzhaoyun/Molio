@@ -11,6 +11,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { MarketPurchase } from '@molio/contracts';
 import { useI18n } from '../../i18n';
+import { PackageIcon } from '../icons';
 
 export function PurchasesSection() {
   const { t } = useI18n();
@@ -62,7 +63,7 @@ export function PurchasesSection() {
           <ul className="mylistings-list">
             {purchases.map((p) => (
               <li key={p.id} className="mylistings-item" data-testid="my-purchases-item">
-                <span className="mylistings-icon" aria-hidden="true">{p.listing?.icon ?? '📦'}</span>
+                <span className="mylistings-icon" aria-hidden="true">{p.listing?.icon ?? <PackageIcon size={20} />}</span>
                 <div className="mylistings-titles">
                   <span className="mylistings-name">{p.listing?.name ?? t('myPurchases.removed')}</span>
                   <span className="mylistings-sub">

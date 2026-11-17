@@ -27,7 +27,7 @@ test.describe('知识库术语统一', () => {
   });
 
   test('仓库管理器里不再出现「仓库」', async ({ page }) => {
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+    await page.goto(`/knowledge?vault=${vault.id}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
 
     await page.locator('.kb-vault-bar').first().click();

@@ -16,7 +16,7 @@ test.describe('KB Outline Panel', () => {
   test.afterAll(async () => { if (vault) await cleanupTempVault(vault); });
 
   test('outline lists H2/H3 headings and jumps on click', async ({ page }) => {
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await page.goto(`/knowledge?vault=${vault.id}&file=doc.md`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
 
     // Outline is now a direct toolbar button (not behind a menu)

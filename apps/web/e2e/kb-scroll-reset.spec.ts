@@ -40,7 +40,7 @@ test.describe('KB 阅读视窗滚动重置', () => {
   test.afterAll(async () => { if (vault) await cleanupTempVault(vault); });
 
   test('切换到另一篇文档时视窗回到顶部', async ({ page }) => {
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+    await page.goto(`/knowledge?vault=${vault.id}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
 
     const itemA = page.locator('.kb-tree-item').filter({ hasText: 'long-a.md' });

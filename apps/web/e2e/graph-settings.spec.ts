@@ -77,7 +77,7 @@ test.describe('Graph Settings Panel', () => {
   });
 
   test('pixi canvas renders when graph data loads', async ({ page }) => {
-    await page.goto(`http://localhost:5173/knowledge?vault=${vaultId}`);
+    await page.goto(`/knowledge?vault=${vaultId}`);
     await clickNav(page, 'graph');
     await expect(page.locator('.graph-page')).toBeVisible({ timeout: 5_000 });
 
@@ -88,7 +88,7 @@ test.describe('Graph Settings Panel', () => {
   });
 
   test('settings button opens and closes panel', async ({ page }) => {
-    await page.goto(`http://localhost:5173/knowledge?vault=${vaultId}`);
+    await page.goto(`/knowledge?vault=${vaultId}`);
     await clickNav(page, 'graph');
     await expect(page.locator('.graph-page')).toBeVisible({ timeout: 5_000 });
 
@@ -110,7 +110,7 @@ test.describe('Graph Settings Panel', () => {
   });
 
   test('tab switching works', async ({ page }) => {
-    await page.goto(`http://localhost:5173/knowledge?vault=${vaultId}`);
+    await page.goto(`/knowledge?vault=${vaultId}`);
     await clickNav(page, 'graph');
     await expect(page.locator('.graph-page')).toBeVisible({ timeout: 5_000 });
 
@@ -127,7 +127,7 @@ test.describe('Graph Settings Panel', () => {
   });
 
   test('force sliders exist and are interactive', async ({ page }) => {
-    await page.goto(`http://localhost:5173/knowledge?vault=${vaultId}`);
+    await page.goto(`/knowledge?vault=${vaultId}`);
     await clickNav(page, 'graph');
     await expect(page.locator('.graph-page')).toBeVisible({ timeout: 5_000 });
 
@@ -154,7 +154,7 @@ test.describe('Graph Settings Panel', () => {
    * 断言走 localStorage（设置的唯一真相），同时验 UI 也真的跟着回位了。
    */
   test('restore defaults: resets filter/appearance/forces and persists', async ({ page }) => {
-    await page.goto(`http://localhost:5173/knowledge?vault=${vaultId}`);
+    await page.goto(`/knowledge?vault=${vaultId}`);
     await clickNav(page, 'graph');
     await expect(page.locator('.graph-page')).toBeVisible({ timeout: 5_000 });
 
@@ -209,7 +209,7 @@ test.describe('Graph Settings Panel', () => {
   });
 
   test('old info button is removed', async ({ page }) => {
-    await page.goto(`http://localhost:5173/knowledge?vault=${vaultId}`);
+    await page.goto(`/knowledge?vault=${vaultId}`);
     await clickNav(page, 'graph');
     await expect(page.locator('.graph-page')).toBeVisible({ timeout: 5_000 });
 
@@ -223,7 +223,7 @@ test.describe('Graph Settings Panel', () => {
     await page.addInitScript(() => {
       localStorage.setItem('molio.theme', 'dark');
     });
-    await page.goto(`http://localhost:5173/knowledge?vault=${vaultId}`);
+    await page.goto(`/knowledge?vault=${vaultId}`);
     await clickNav(page, 'graph');
     await expect(page.locator('.graph-page')).toBeVisible({ timeout: 5_000 });
 
@@ -251,7 +251,7 @@ test.describe('Graph Interactions', () => {
   });
 
   async function gotoGraphWithEngine(page: import('@playwright/test').Page) {
-    await page.goto(`http://localhost:5173/knowledge?vault=${vaultId}`);
+    await page.goto(`/knowledge?vault=${vaultId}`);
     await clickNav(page, 'graph');
     await expect(page.locator('.graph-page')).toBeVisible({ timeout: 5_000 });
     // 搜索默认折叠为 🔍 图标——点开展开输入框（引擎就绪 + 数据加载完成）
@@ -329,6 +329,49 @@ test.describe('Graph Interactions', () => {
     const input = page.locator('[data-testid="graph-search-input"]');
     await input.fill('zzz-no-such-node');
     await expect(page.locator('[data-testid="graph-search-empty"]')).toBeVisible();
+  });
+
+  test('setStyle on an idle canvas must repaint (dirty-marking write-source regression)', async ({ page }) => {
+    await gotoGraphWithEngine(page);
+
+    // 图谱静止（空闲帧不渲染）时从设置面板改主题/边宽，setStyle 必须自己把帧标脏
+    // 并触发重画——否则画布冻结在旧外观直到用户交互（2026-11-15 评审发现的回归：
+    // theme/edgeWidth 路径漏接失效协议）。
+    const result = await page.evaluate(async () => {
+      const eng = (window as unknown as {
+        __graphEngine: {
+          app: { renderer: { render: (s: unknown) => void } };
+          setStyle(style: { theme?: unknown; edgeWidth?: number }): void;
+          theme: unknown;
+        };
+      }).__graphEngine;
+      const r = eng.app.renderer;
+      let count = 0;
+      const orig = r.render.bind(r);
+      r.render = (s: unknown) => {
+        count++;
+        orig(s);
+      };
+      // 等一个真正静止的 400ms 零渲染窗口（sim tick / 取景动画全停）确立空闲前提
+      let idle = false;
+      for (let i = 0; i < 40; i++) {
+        const before = count;
+        await new Promise((res) => setTimeout(res, 400));
+        if (count === before) {
+          idle = true;
+          break;
+        }
+      }
+      if (!idle) return { idle, after: -1 };
+      // 同一主题对象仍走 if (style.theme) 分支——测的是「setStyle 必须触发重画」，
+      // 不是配色本身（画布像素断言在 WebGL 下不可靠，渲染计数是行为级可观察量）
+      count = 0;
+      eng.setStyle({ theme: eng.theme, edgeWidth: 3 });
+      await new Promise((res) => setTimeout(res, 400));
+      return { idle, after: count };
+    });
+    expect(result.idle).toBe(true);
+    expect(result.after).toBeGreaterThanOrEqual(1);
   });
 
   test('minimap drag recenters main viewport', async ({ page }) => {

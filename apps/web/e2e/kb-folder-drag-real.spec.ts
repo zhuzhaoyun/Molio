@@ -35,7 +35,7 @@ test.describe('KB folder drag (real mouse)', () => {
 
   // Run nested test FIRST — leaves folderA at root for the simple test to drag.
   test('drag nested subA onto folderB moves only subA (not its parent)', async ({ page }) => {
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+    await page.goto(`/knowledge?vault=${vault.id}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 10_000 });
     // Expand folderA so subA is visible & draggable.
     const folderA = page.locator('.kb-tree-group-label').filter({ hasText: 'folderA' });
@@ -71,7 +71,7 @@ test.describe('KB folder drag (real mouse)', () => {
   });
 
   test('drag folderA onto folderB moves it on disk', async ({ page }) => {
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+    await page.goto(`/knowledge?vault=${vault.id}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 10_000 });
     await expect(
       page.locator('.kb-tree-group-label').filter({ hasText: 'folderA' }),
