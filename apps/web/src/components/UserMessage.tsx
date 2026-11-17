@@ -104,8 +104,22 @@ export function UserMessage({ message, isLast, onEdit, onRequestDelete, disabled
   // ——展示/复制/编辑只应见到用户自己的话；消息体保持原样，不动存储与发送。
   const displayContent = stripWikiQueryTrigger(message.content);
   const [draft, setDraft] = useState(displayContent);
+  // 整卷交卷消息（提交判卷：《…》开头）默认紧凑一行：多题卷的协议墙
+  // （N × 题干+评分点+指纹行）在消息流里是纯噪音，展开态保全文。
+  // 编辑/复制仍用全文（isLast 的编辑入口不折叠）。
+  const isPaperSubmission = displayContent.startsWith('提交判卷：《');
+  const [paperExpanded, setPaperExpanded] = useState(false);
 
   const rendered = renderContent(displayContent, vaultId, t);
+  const paperSummary = isPaperSubmission
+    ? (() => {
+      const firstLine = displayContent.split('\n', 1)[0] ?? displayContent;
+      const subjectCount = (displayContent.match(/【大题作答·第\d+题】/g) ?? []).length;
+      return subjectCount > 0
+        ? `${firstLine} · ${t('quiz.paperSummary', { n: subjectCount })}`
+        : firstLine;
+    })()
+    : '';
 
   const startEdit = useCallback(() => {
     if (selectMode) return;
@@ -178,9 +192,44 @@ export function UserMessage({ message, isLast, onEdit, onRequestDelete, disabled
             </button>
           </div>
         </div>
+      ) : isPaperSubmission && !paperExpanded && !selectMode ? (
+        <>
+          <div className="user-text" data-testid="paper-bubble-summary">
+            <span>{paperSummary}</span>
+            <button
+              type="button"
+              className="bubble-compact-toggle"
+              data-testid="paper-bubble-expand"
+              onClick={() => setPaperExpanded(true)}
+            >
+              {t('quiz.paperExpand')} ▾
+            </button>
+          </div>
+          {!selectMode && (
+            <MessageToolbar
+              actions={actions}
+              overflow={onRequestDelete ? [{
+                key: 'delete', label: '删除', testid: 'overflow-item-delete',
+                text: '', onClick: () => onRequestDelete(message.id),
+              }] : undefined}
+            />
+          )}
+        </>
       ) : (
         <>
-          <div className="user-text">{rendered}</div>
+          <div className="user-text">
+            {rendered}
+            {isPaperSubmission && (
+              <button
+                type="button"
+                className="bubble-compact-toggle"
+                data-testid="paper-bubble-expand"
+                onClick={() => setPaperExpanded(false)}
+              >
+                {t('quiz.paperCollapse')} ▴
+              </button>
+            )}
+          </div>
           {!selectMode && (
             <MessageToolbar
               actions={actions}

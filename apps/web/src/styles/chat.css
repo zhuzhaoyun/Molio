@@ -2808,3 +2808,25 @@
     transition: none;
   }
 }
+
+/* 交卷气泡紧凑态：摘要行 + 展开/收起 toggle（消息流不被协议墙占屏）。 */
+.user-text .bubble-compact-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: 8px;
+  padding: 2px 6px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  vertical-align: middle;
+  /* 高于 hover 工具条（z-20）：紧凑气泡矮，toggle 常落在工具条矩形内——
+   * 悬浮让位原则（同 #319 悬浮按钮让位「发布」），交互元素不得被遮挡。 */
+  position: relative;
+  z-index: 21;
+}
+.user-text .bubble-compact-toggle:hover { background-color: var(--bg-subtle); color: var(--text); }

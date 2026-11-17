@@ -1701,6 +1701,41 @@ test.describe('Quiz interaction block', () => {
     await expect(page.locator('[data-testid="user-message"]')).toHaveCount(1);
   });
 
+  test('submission bubble collapses to a one-line summary with expand for the full text', async ({ page }) => {
+    // 交卷气泡（Q6 拍板 B）：消息流默认紧凑一行「提交判卷：《title》 · 解答 N 题」，
+    // 协议墙（题干/评分点/指纹行）点「展开全文」才出现；「收起」还原。
+    await mockChatRun(page, { runId: 'run-1', conversationId: 'conv-1', script: [
+      { type: 'status', label: 'running' },
+      { type: 'text_delta', delta: MIXED_QUIZ },
+      { type: 'turn_end', stopReason: 'end_turn' },
+    ] });
+    await gotoHome(page);
+    await sendMessage(page, '出混合题');
+
+    const card = page.locator('[data-testid="quiz-card"]');
+    await expect(card).toBeVisible({ timeout: 10_000 });
+    await card.locator('[data-testid="quiz-option"][data-question-id="q1"][data-key="B"]').click();
+    await card.locator('[data-testid="quiz-option"][data-question-id="q2"][data-key="B"]').click();
+    await card.locator('[data-testid="quiz-subject-input"][data-question-id="q3"]').fill('我的解答……');
+    await card.locator('[data-testid="quiz-submit"]').click();
+
+    const bubble = page.locator('[data-testid="user-message"]').last();
+    // 紧凑态：摘要行可见，协议正文不可见。
+    const summary = bubble.locator('[data-testid="paper-bubble-summary"]');
+    await expect(summary).toBeVisible();
+    await expect(summary).toContainText('提交判卷：《混合 · 3 题》');
+    await expect(summary).toContainText('解答 1 题');
+    await expect(bubble).not.toContainText('评分点：');
+
+    // 展开 → 协议全文；收起 → 还原摘要。
+    await bubble.locator('[data-testid="paper-bubble-expand"]').click();
+    await expect(bubble).toContainText('【大题作答·第3题】');
+    await expect(bubble).toContainText('评分点：');
+    await bubble.locator('[data-testid="paper-bubble-expand"]').click();
+    await expect(summary).toBeVisible();
+    await expect(bubble).not.toContainText('评分点：');
+  });
+
   test('appends a sequence number when the quiz filename already exists', async ({ page }) => {
     let savedUrl: string | null = null;
 
