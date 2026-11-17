@@ -12,7 +12,7 @@
  * 回写题卡的关联键，对模型惰性（skill 注明批改时忽略）。触发标记行字节
  * 不变；指纹缺失时省略该行（退回 v1 形态，仅失去回写配对能力）。
  */
-import type { Quiz } from './quiz';
+import type { Quiz, QuizSelections } from './quiz';
 
 export interface QuizAnswerAnchor {
   /** 围栏内题号（1 起），与题卡展示序号一致。 */
@@ -157,6 +157,8 @@ const STATUS_WORDS: ReadonlyArray<readonly [string, QuizGradingPointStatus]> = [
 // （真机事故 2026-10-27：模型给了 1.5/5，旧正则只认整数，整块批改消失）。
 const MARKER_RE =
   /^【批改·第(\d+)题】[ \t]*得分[ \t]*[:：]?[ \t]*(\d+(?:\.\d+)?)[ \t]*分?[ \t]*\/[ \t]*(\d+(?:\.\d+)?)[ \t]*分?[ \t]*[。.]?[ \t]*$/m;
+// matchAll 要求 g 标志（同一正则源的全局变体；lastIndex 由 matchAll 自管）。
+const MARKER_RE_G = new RegExp(MARKER_RE.source, MARKER_RE.flags + 'g');
 
 // 逐点行：列表前缀（编号 1. / 1) / 1、 / 1． 或项目符号 - / * / •）
 // + 判定词 + 分隔符（｜ / |）+ 依据。
@@ -165,24 +167,48 @@ const BULLET_POINT_RE = /^[ \t]*[-*•][ \t]*(\S+?)[ \t]*[｜|][ \t]*(.*)$/;
 
 /** 从助手回复解析批改回写块；无标记/格式坏/total=0 → null（优雅降级，聊天批改兜底）。 */
 export function parseGradingReply(text: string): QuizGrading | null {
-  const marker = text.match(MARKER_RE);
-  if (!marker) return null;
-  const score = Number(marker[2]);
-  const total = Number(marker[3]);
-  if (total <= 0) return null;
+  return parseGradingReplies(text)[0] ?? null;
+}
 
-  // 逐点行从标记行之后连续收集，遇首个不匹配行为止——之后的自由文本
-  // （错因/讲解）照常留在聊天里，不进卡片。
-  //
-  // 两条防误收的判据（讲解段落里常有「- 命中｜…」这种形状的行）：
-  // 1. 风格一致——首条逐点行定下风格（编号式 / 项目符号式），后续必须同风格；
-  // 2. 编号式还须序号连续（1,2,3…）——讲解里另起的编号列表会被判为不连续而终止。
-  // 空行本身不算终止（markdown 松散列表会在逐点行之间空行）。
-  const afterMarker = text.slice(marker.index! + marker[0].length);
+/**
+ * 从一条助手回复解析**全部**批改回写块（v3 整卷：skill 1.7.0 逐题连续输出
+ * 多个批改块）。每个 marker 的逐点行收集到下一个 marker 行（或文末）为止，
+ * 中间的讲解文本由逐点行的风格/连续判据自然终止，不会误收进任何块。
+ * 只返回到达的块——模型漏批的题不补位、不编造。
+ */
+export function parseGradingReplies(text: string): QuizGrading[] {
+  const markers = [...text.matchAll(MARKER_RE_G)];
+  const gradings: QuizGrading[] = [];
+  for (const [i, marker] of markers.entries()) {
+    const score = Number(marker[2]);
+    const total = Number(marker[3]);
+    if (total <= 0) continue;
+    const segmentEnd = i + 1 < markers.length ? markers[i + 1]!.index! : text.length;
+    const segment = text.slice(marker.index! + marker[0].length, segmentEnd);
+    gradings.push({
+      questionIndex: Number(marker[1]),
+      score,
+      total,
+      points: collectGradingPoints(segment),
+    });
+  }
+  return gradings;
+}
+
+/**
+ * 逐点行从标记行之后连续收集，遇首个不匹配行为止——之后的自由文本
+ * （错因/讲解）照常留在聊天里，不进卡片。
+ *
+ * 两条防误收的判据（讲解段落里常有「- 命中｜…」这种形状的行）：
+ * 1. 风格一致——首条逐点行定下风格（编号式 / 项目符号式），后续必须同风格；
+ * 2. 编号式还须序号连续（1,2,3…）——讲解里另起的编号列表会被判为不连续而终止。
+ * 空行本身不算终止（markdown 松散列表会在逐点行之间空行）。
+ */
+function collectGradingPoints(segment: string): QuizGradingPoint[] {
   const points: QuizGradingPoint[] = [];
   let style: 'numbered' | 'bullet' | null = null;
   let expectedNumber: number | null = null;
-  for (const line of afterMarker.split('\n')) {
+  for (const line of segment.split('\n')) {
     if (line.trim() === '') continue;
     const numbered = line.match(NUMBERED_POINT_RE);
     const bullet = numbered ? null : line.match(BULLET_POINT_RE);
@@ -204,8 +230,7 @@ export function parseGradingReply(text: string): QuizGrading | null {
     if (!status) break;
     points.push({ status: status[1], text: detail.trim() });
   }
-
-  return { questionIndex: Number(marker[1]), score, total, points };
+  return points;
 }
 
 /**
@@ -226,10 +251,10 @@ export function pairQuizGradings(
       continue;
     }
     if (message.role === 'assistant') {
-      const grading = parseGradingReply(message.content);
-      if (!grading) continue;
-      const key = lastAnswerByIndex.get(grading.questionIndex);
-      if (key) gradings.set(gradingMapKey(key, grading.questionIndex), grading);
+      for (const grading of parseGradingReplies(message.content)) {
+        const key = lastAnswerByIndex.get(grading.questionIndex);
+        if (key) gradings.set(gradingMapKey(key, grading.questionIndex), grading);
+      }
     }
   }
   return gradings;
@@ -274,10 +299,126 @@ export function pairSubjectAnswers(
   const answers = new Map<string, string>();
   for (const message of messages) {
     if (message.role !== 'user') continue;
-    const meta = extractSubjectAnswerMeta(message.content);
-    if (!meta) continue;
-    const body = subjectAnswerBody(message.content);
-    if (body) answers.set(gradingMapKey(meta.key, meta.questionIndex), body);
+    for (const answer of extractSubjectAnswers(message.content)) {
+      answers.set(gradingMapKey(answer.key, answer.questionIndex), answer.body);
+    }
   }
   return answers;
+}
+
+// ── v3：整卷一条消息（M1）──────────────────────────────────────────────────
+
+/** 整卷交卷消息里一道解答题的物化输入（由 QuizCard 从草稿态构建）。 */
+export interface SubjectAnswerEntry {
+  /** 围栏内题号（1 起），与题卡展示序号一致。 */
+  questionIndex: number;
+  stem: string;
+  /** 评分点（围栏 answer 字段）。 */
+  points: string[];
+  /** 出处相对路径列表。 */
+  sources: string[];
+  /** quiz fingerprint 前 8 位（批改回写关联键）。 */
+  fingerprintKey: string;
+  /** 作答正文（卡内图片的 markdown 行已由调用方拼入）。 */
+  body: string;
+}
+
+/**
+ * 整卷交卷消息（v3）：首行是给人看的一句话（rail 预览/历史摘要/消息流三处
+ * 同源受益——「导航面上可读」是消息格式的验收标准，不做 previewText 协议
+ * 特判），其后每题一个作答块，块格式与 v2 buildSubjectAnswerMessage **逐字节
+ * 同形**（复用同一构建器保证）——skill 的确定性触发、消息序配对、存为题库
+ * 正文回写全部沿用。entries 为空返回 ''，调用方据此不发消息、不建 run
+ * （纯客观卷/解答题全空的交卷只做本地判分）。
+ */
+export function buildQuizSubmissionMessage(
+  quizTitle: string,
+  entries: ReadonlyArray<SubjectAnswerEntry>,
+): string {
+  if (entries.length === 0) return '';
+  const blocks = entries.map((entry) =>
+    buildSubjectAnswerMessage(
+      {
+        questionIndex: entry.questionIndex,
+        typeLabel: '',
+        stem: entry.stem,
+        points: entry.points,
+        sources: entry.sources,
+        fingerprintKey: entry.fingerprintKey,
+      },
+      entry.body,
+    ),
+  );
+  return [`提交判卷：《${quizTitle}》`, '', blocks.join('\n\n')].join('\n');
+}
+
+/** 卡内作答图 → markdown 行（正文的一部分；渲染侧走 preprocessLocalImages）。 */
+export function subjectImageMarkdown(paths: ReadonlyArray<string>): string {
+  return paths.map((path) => `![作答图片](${path})`).join('\n');
+}
+
+/**
+ * 从一条用户消息提取**全部**作答块（v3 整卷一条消息；v2 单题消息天然只有
+ * 一块，解析兼容）。按【大题作答·第N题】标记行分块：每块取「题目指纹」行
+ * 定位正文起点，正文 = 指纹行后到块尾（trim）。无指纹行的块（v1）跳过、
+ * 正文为空的块跳过（点了作答又没写就发送的空锚）。
+ */
+export function extractSubjectAnswers(
+  content: string,
+): Array<{ questionIndex: number; key: string; body: string }> {
+  const answers: Array<{ questionIndex: number; key: string; body: string }> = [];
+  const lines = content.split('\n');
+  let block: { questionIndex: number; startLine: number } | null = null;
+  for (const [i, line] of lines.entries()) {
+    const marker = line.match(/^【大题作答·第(\d+)题】\s*$/);
+    if (marker) {
+      if (block) pushAnswer(answers, lines, block.questionIndex, block.startLine, i);
+      block = { questionIndex: Number(marker[1]), startLine: i };
+    }
+  }
+  if (block) pushAnswer(answers, lines, block.questionIndex, block.startLine, lines.length);
+  return answers;
+}
+
+function pushAnswer(
+  answers: Array<{ questionIndex: number; key: string; body: string }>,
+  lines: ReadonlyArray<string>,
+  questionIndex: number,
+  startLine: number,
+  endLine: number,
+): void {
+  const segment = lines.slice(startLine + 1, endLine).join('\n');
+  const fingerprint = segment.match(/^题目指纹：([0-9a-f]{8})\s*$/m);
+  if (!fingerprint) return; // v1 块：无指纹行，无法归属到卡
+  const after = segment.slice(fingerprint.index! + fingerprint[0].length);
+  const body = after.replace(/^\r?\n\r?\n?/, '').trim();
+  if (!body) return;
+  answers.push({ questionIndex, key: fingerprint[1]!, body });
+}
+
+/**
+ * 草稿 ∪ 消息推导的解答题正文合并（存为题库/回显共用数据源）。
+ *
+ * 草稿（本地 selections + subjectImages）转成 `指纹:题号` 键：文本 trim 后与
+ * 图片 markdown 行用换行拼接（只有图也算作答——拍照作答不强迫打字）；derived
+ * 有而无草稿的键保留（旧会话回显/存题库读消息正文）；同键草稿优先（正在
+ * 编辑的草稿比历史消息新）。
+ */
+export function mergeSubjectDrafts(
+  quiz: Quiz,
+  selections: QuizSelections,
+  subjectImages: Record<string, ReadonlyArray<string>>,
+  derived: Map<string, string>,
+  fingerprintKey: string,
+): Map<string, string> {
+  const merged = new Map(derived);
+  for (const [index, question] of quiz.questions.entries()) {
+    const images = subjectImages[question.id] ?? [];
+    const imageMarkdown = subjectImageMarkdown(images);
+    const text = (selections[question.id]?.[0] ?? '').trim();
+    if (!text && !imageMarkdown) continue;
+    const body = [text, imageMarkdown].filter(Boolean).join('\n');
+    merged.set(gradingMapKey(fingerprintKey, index + 1), body);
+  }
+  return merged;
 }
