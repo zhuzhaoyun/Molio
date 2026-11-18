@@ -97,3 +97,34 @@ test('大库全局视图默认进枝干：indicator + 开关激活 + trunk 对�
   expect(count).toBeGreaterThan(0);
   expect(count).toBeLessThanOrEqual(45);
 });
+
+test('搜索联动（trunk 态）：簇名匹配高亮留 trunk；成员命中按拍板 A 切全量并定位', async ({ page }) => {
+  await gotoGraph(page);
+  await expect(page.locator('[data-testid="graph-trunk-indicator"]')).toBeVisible({ timeout: 20000 });
+
+  // ① 搜簇名（fixture 目录名 = 簇 label）：选项带 data-kind="cluster"，选中后仍 trunk + 高亮该簇
+  await page.click('[data-testid="graph-search-open"]');
+  await page.fill('[data-testid="graph-search-input"]', '主题');
+  const clusterOpt = page.locator('[data-testid="graph-search-option"][data-kind="cluster"]').first();
+  await expect(clusterOpt).toBeVisible({ timeout: 5000 });
+  const clusterId = await clusterOpt.getAttribute('data-key');
+  await clusterOpt.click();
+  await page.waitForTimeout(400);
+  expect(await page.evaluate(() => window.__graphEngine?.getTrunkMode())).toBe(true);
+  expect(await page.evaluate(() => window.__graphEngine?.getSelectedKey())).toBe(clusterId);
+
+  // ② 搜簇成员文件名：选中 → 拍板 A 切全量（开关翻转）+ 定位（选中 + k>1）
+  await page.fill('[data-testid="graph-search-input"]', '笔记00042');
+  const nodeOpt = page.locator('[data-testid="graph-search-option"]').first();
+  await expect(nodeOpt).toBeVisible({ timeout: 5000 });
+  const nodeKey = await nodeOpt.getAttribute('data-key');
+  await nodeOpt.click();
+  // 等待：settings 持久化(300ms debounce) + 数据推送 + focusNode 动画(600ms)
+  await page.waitForTimeout(1600);
+  expect(await page.evaluate(() => window.__graphEngine?.getTrunkMode())).toBe(false);
+  expect(await page.evaluate(() => window.__graphEngine?.getSelectedKey())).toBe(nodeKey);
+  const k = await page.evaluate(() => window.__graphEngine?.getViewport().k ?? 0);
+  expect(k).toBeGreaterThan(1);
+  await expect(page.locator('[data-testid="graph-trunk-indicator"]')).toBeHidden();
+  await expect(page.locator('[data-testid="graph-view-mode-toggle"]')).not.toHaveClass(/is-active/);
+});

@@ -709,8 +709,20 @@ export function GraphPage({
                   <GraphSearchBox
                     autoFocus
                     nodes={engineData.nodes}
+                    clusters={trunkView.active ? trunkScene?.clusters : undefined}
+                    onSelectCluster={(id) => {
+                      // trunk 态命中簇名：就地高亮该簇（聚合边置顶），不切视图
+                      engineRef.current?.highlightTrunkCluster(id);
+                    }}
                     onSelect={(key) => {
-                      engineRef.current?.focusNode(key);
+                      // trunk 态命中节点 = 拍板 A（2026-11-18）：切全量（开关翻转并持久化）
+                      // + 定位该节点（簇邻域自然在屏）；H2 展开机器落地后换成真展开
+                      if (trunkView.active) {
+                        pendingFocusRef.current = key;
+                        updateSettings({ globalView: 'full' });
+                      } else {
+                        engineRef.current?.focusNode(key);
+                      }
                     }}
                   />
                 </div>

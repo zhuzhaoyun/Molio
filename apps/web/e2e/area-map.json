@@ -197,7 +197,8 @@
         "split-view",
         "graph-camera",
         "graph-live-refresh",
-        "graph-resize-flash"
+        "graph-resize-flash",
+        "graph-trunk"
       ]
     },
     "navigation": {
@@ -762,6 +763,10 @@
     "kb-external-roots": {
       "priority": "P1",
       "file": "kb-external-roots.spec.ts"
+    },
+    "graph-trunk": {
+      "priority": "P1",
+      "file": "graph-trunk.spec.ts"
     }
   }
 }
