@@ -728,7 +728,13 @@ export function GraphPage({
     //（终审 Important-3；代拍只豁免「导出所见」的位图行为，不豁免文案失配）
     const trunkActive = trunkView.active && !!trunkScene;
     const metaLine = trunkActive
-      ? trunkExportMeta(trunkScene!, t('graph.trunkClustersLabel'), t('graph.trunkHubsLabel'))
+      ? trunkExportMeta(
+          trunkScene!,
+          t('graph.trunkClustersLabel'),
+          t('graph.trunkHubsLabel'),
+          expandedRef.current.size,
+          t('graph.trunkExpandedLabel'),
+        )
       : `${t('graph.nodes', { count: engineData?.nodes.length ?? 0 })} · ${t(
           'graph.edges',
           { count: engineData?.edges.length ?? 0 },
@@ -914,10 +920,23 @@ export function GraphPage({
             <div className="graph-stats-ctrl">
               {showStats && (
                 <div className="graph-stats-pop">
-                  <span>{t('graph.nodes', { count: nodeCount })}</span>
-                  <span>{t('graph.edges', { count: edgeCount })}</span>
-                  {graphData.deadLinks && graphData.deadLinks.length > 0 && (
-                    <span className="graph-stat--deadlink">{t('graph.deadLinks', { count: graphData.deadLinks.length })}</span>
+                  {trunkView.active && trunkScene ? (
+                    /* trunk 口径（T2 deferred minor 归位）：ℹ 显示画面上的 trunk 对象，不写全库计数 */
+                    <>
+                      <span>{t('graph.trunkClustersLabel')} {trunkScene.clusters.length}</span>
+                      <span>{t('graph.trunkHubsLabel')} {trunkScene.hubs.length}</span>
+                      {trunkScene.crumbCount > 0 && (
+                        <span>{t('graph.trunkCrumbs', { count: trunkScene.crumbCount })}</span>
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      <span>{t('graph.nodes', { count: nodeCount })}</span>
+                      <span>{t('graph.edges', { count: edgeCount })}</span>
+                      {graphData.deadLinks && graphData.deadLinks.length > 0 && (
+                        <span className="graph-stat--deadlink">{t('graph.deadLinks', { count: graphData.deadLinks.length })}</span>
+                      )}
+                    </>
                   )}
                 </div>
               )}
@@ -1039,6 +1058,7 @@ export function GraphPage({
               disabled={trunkView.reason === 'filters'}
               data-tooltip={trunkView.reason === 'filters' ? t('graph.trunkFiltersBlocked') : t('graph.viewModeToggle')}
               aria-label={t('graph.viewModeToggle')}
+              aria-pressed={trunkView.active}
               data-testid="graph-view-mode-toggle"
             >
               {/* 枝干：主干 + 两叉 */}
