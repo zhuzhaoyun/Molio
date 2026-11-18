@@ -16,6 +16,11 @@
  *     搜索 focusNode、设置面板 setForces/setStyle 等公共 API
  *   - hover 高亮节点与连线（焦点模式，hover 优先于搜索选中）；单击节点跳转文档；
  *     点击空白清除搜索选中；双击空白 fit
+ *   - trunk 模式（T2，设计 §4.2）：setTrunkData 把 hub+簇团+聚合边表示成常规
+ *     引擎节点/边——zoom/fit/snapshot/minimap/hover/脏标记协议全复用；簇团只是
+ *     「带 trunkCluster 标记的节点」（blob 半径/簇色/常显标签），聚合边是「带
+ *     trunkWeight 的边」（宽 ∝ log weight）。仿真用固定配方 TRUNK_FORCE（用户
+ *     forces 只作用全量图），几十对象同步 settle 后立即 fit——不跑收敛三段式。
  */
 import { Application, Container, Graphics, Text, Circle, Rectangle } from 'pixi.js';
 import { computeExportRect, resolveExportScale, viewportWorldRect, type Bounds } from './exportImage';
@@ -41,6 +46,12 @@ import { zoom, zoomIdentity, type ZoomBehavior, type ZoomTransform } from 'd3-zo
 import { Group, Tween } from '@tweenjs/tween.js';
 import { NODE_TYPE_COLORS, type ForceParams, type ThemeColors } from '../types';
 import {
+  trunkBlobRadius,
+  trunkEdgeWidth,
+  trunkClusterColor,
+  type TrunkScene,
+} from '../trunkScene';
+import {
   clamp,
   easeCubicOut,
   dedupeEdges,
@@ -61,6 +72,8 @@ export interface EngineNode {
   nodeType?: string | null;
   /** Dead link placeholder node（未解析的 wikilink） */
   dead?: boolean;
+  /** trunk 模式：本节点是簇团（blob 渲染：半径 ∝ √size、簇色、标签常显） */
+  trunkCluster?: { size: number };
 }
 
 export interface EngineEdge {
@@ -73,6 +86,8 @@ export interface EngineCallbacks {
   onNodeClick?: (key: string, node: EngineNode) => void;
   onNodeDoubleClick?: (key: string, node: EngineNode) => void;
   onHoverChange?: (key: string | null) => void;
+  /** trunk 模式：单击簇团（H1 过渡期行为由宿主决定：切全量+框邻域） */
+  onTrunkClusterClick?: (clusterId: string) => void;
 }
 
 export interface EngineOptions {
@@ -98,13 +113,16 @@ interface SimNode extends SimulationNodeDatum {
   linkCount: number;
   nodeType?: string | null;
   dead?: boolean;
+  /** trunk 模式：簇团标记（blob 渲染） */
+  trunkCluster?: { size: number };
   radius: number;
   /** 度数排名（0 = 最高），标签显隐预算用 */
   rank: number;
 }
 
 interface SimLink extends SimulationLinkDatum<SimNode> {
-  // source/target 由 forceLink 解析为 SimNode 对象
+  /** trunk 模式：聚合边真实权重（宽度 ∝ log2）；全量边恒 undefined */
+  trunkWeight?: number;
 }
 
 interface NodeRenderData {
@@ -123,6 +141,8 @@ interface LinkRenderData {
   color: string;
   alpha: number;
   active: boolean;
+  /** 边宽倍率：全量恒 1（=this.edgeWidth）；trunk 聚合边 = 1+log2(weight) */
+  widthMult: number;
 }
 
 type TweenNode = { update: (time: number) => void; stop: () => void };
@@ -190,6 +210,16 @@ const DRAG_LINK_MULT = 0.4;
 const DRAG_ALPHA_TARGET = 0.2;
 /** 拖拽期 velocityDecay：拖拽与松手共用，吸收回弹能量；过高 → 蠕行缓慢，过低 → 弹跳剧烈 */
 const DRAG_VELOCITY_DECAY = 0.6;
+/** trunk 仿真固定配方（设计 §4.2 评审 #6：几十个对象的布局语义与全量图不同，
+ *  用户调的 forces 只为全量图生效）：强排斥撑开 + 中距弹簧 + 同步 settle 到位 */
+const TRUNK_FORCE = {
+  centerStrength: 0.1,
+  repelStrength: -800,
+  linkStrength: 0.4,
+  linkDistance: 140,
+  /** 同步 settle 上限 tick 数（~30 对象实际远小于此，毫秒级） */
+  settleTicks: 400,
+} as const;
 
 export class PixiGraphEngine {
   private container: HTMLElement;
@@ -270,6 +300,10 @@ export class PixiGraphEngine {
   private dragNodeKey: string | null = null;
   /** 移动降质：true 时隐藏标签 + collide→1 + minimap 暂停 */
   private motionMode = false;
+
+  // ── trunk 模式（T2）──
+  /** 当前处于 trunk 场景（setTrunkData 置位 / setData 复位）：渲染分支 + 力参/标签/回调路由 */
+  private trunkMode = false;
 
   private renderListeners = new Set<() => void>();
   /** 上次同步标签 scale 的 k —— 标签恒定屏幕尺寸（scale=1/k），k 变化时才批量更新 */
@@ -398,7 +432,65 @@ export class PixiGraphEngine {
 
   setData(nodes: EngineNode[], edges: EngineEdge[]): void {
     if (this.destroyed) return;
+    this.trunkMode = false;
+    this.buildAndRender(
+      nodes,
+      edges.map((e) => ({ ...e })),
+      null,
+    );
+  }
 
+  /**
+   * 进入/重建 trunk 场景（T2，设计 §4.2）：hub = 常规节点（真实度数 → 大半径），
+   * 簇团 = blob 节点（trunkCluster 标记：半径 4+√size、簇色、标签常显），聚合边带
+   * trunkWeight（宽 1+log2）。固定力参 TRUNK_FORCE + 同步 settle + 立即 fit——
+   * 几十个对象毫秒级到位，不跑「先落位、收敛后再取景」的三段式。
+   */
+  setTrunkData(scene: TrunkScene): void {
+    if (this.destroyed) return;
+    this.trunkMode = true;
+    const nodes: EngineNode[] = [
+      ...scene.hubs.map((h) => ({
+        key: h.key,
+        label: h.label,
+        path: h.path,
+        linkCount: h.linkCount,
+        nodeType: h.nodeType,
+      })),
+      ...scene.clusters.map((c) => ({
+        key: c.id,
+        label: c.label,
+        path: '',
+        linkCount: 0,
+        trunkCluster: { size: c.size },
+      })),
+    ];
+    const edges: EngineEdge[] = scene.links.map((l) => ({ source: l.source, target: l.target }));
+    this.buildAndRender(nodes, edges, scene);
+  }
+
+  /** 退回全量（setData 会隐式调用；显式调用用于宿主在 setData 前清理） */
+  clearTrunk(): void {
+    this.trunkMode = false;
+  }
+
+  getTrunkMode(): boolean {
+    return this.trunkMode;
+  }
+
+  /** 高亮某簇（搜索命中簇名）：语义=选中该 trunk 对象（选中环+邻域高亮+其余压暗）。null 清除。 */
+  highlightTrunkCluster(id: string | null): boolean {
+    if (id === null) {
+      this.selectedId = null;
+      this.selectionDirty = true;
+      this.updateFocusAndRender();
+      return true;
+    }
+    return this.selectNode(id);
+  }
+
+  /** setData/setTrunkData 共用主体：SimNode/SimLink 构建 + rebuild + 首 fit（trunk 另做同步 settle）。 */
+  private buildAndRender(nodes: EngineNode[], edges: EngineEdge[], trunk: TrunkScene | null): void {
     // 上一批节点（此刻 this.nodeById 还是旧的）——用来给同名节点播种坐标。
     // 读的是「用户眼前这份布局」而非某个初始快照：布局被拖过、平移过，都该被继承。
     const prevNodes = this.inheritPositions ? this.nodeById : null;
@@ -415,6 +507,7 @@ export class PixiGraphEngine {
         linkCount: n.linkCount,
         nodeType: n.nodeType ?? null,
         dead: n.dead,
+        trunkCluster: n.trunkCluster,
         radius: this.radiusOf(n),
         rank: 0,
         // 老节点从原位继续仿真（刷新只微调，不重炸）；新节点不给坐标，
@@ -429,9 +522,18 @@ export class PixiGraphEngine {
     this.nodes = simNodes;
     this.nodeById = nodeById;
 
+    const weightByPair = new Map<string, number>();
+    if (trunk) {
+      for (const l of trunk.links) {
+        weightByPair.set(l.source < l.target ? `${l.source} ${l.target}` : `${l.target} ${l.source}`, l.weight);
+      }
+    }
     const simLinks: SimLink[] = dedupeEdges(edges, (k) => nodeById.has(k)).map((e) => ({
       source: nodeById.get(e.source)!,
       target: nodeById.get(e.target)!,
+      trunkWeight: trunk
+        ? weightByPair.get(e.source < e.target ? `${e.source} ${e.target}` : `${e.target} ${e.source}`) ?? 1
+        : undefined,
     }));
     this.links = simLinks;
 
@@ -453,6 +555,22 @@ export class PixiGraphEngine {
 
     this.rebuildRendering();
 
+    if (trunk) {
+      // trunk：几十对象同步 settle（毫秒级）+ 立即 fit——设计 §4.2「秒级收敛 + 单次取景」，
+      // 不走全量的「首 fit + 1.5s refit」三段式（reframeAfterSettle 也不在此路径）
+      const sim = this.sim;
+      if (sim) {
+        let ticks = 0;
+        while (sim.alpha() > sim.alphaMin() && ticks++ < TRUNK_FORCE.settleTicks) sim.tick();
+        sim.alpha(0);
+        sim.stop();
+      }
+      this.fitView({ animate: false });
+      this.hasFitFirstLayout = true;
+      if (this.refitTimer) clearTimeout(this.refitTimer);
+      return;
+    }
+
     if (!this.hasFitFirstLayout) {
       this.fitView();
       this.hasFitFirstLayout = true;
@@ -467,6 +585,7 @@ export class PixiGraphEngine {
     this.selectedId = null;
     this.hoveredNodeId = null;
     this.hasFitFirstLayout = false;
+    this.selectionDirty = true; // #415 deferred minor 归位：清选中也要重画选中环（否则残影留到下一脏帧）
     // 只在紧随其后的那次 setData 生效（setData 读取后立刻复位）。
     // 防御性：当前切库会连图谱页一起卸载（引擎本该新建、无缓存），这行是「resetPositions
     // 的语义 = 上下文已换、别继承」的自洽保证——将来若图谱页改成跨库常驻，它就是唯一防线。
@@ -511,6 +630,9 @@ export class PixiGraphEngine {
 
   setForces(f: ForceParams): void {
     this.forces = { ...f };
+    // trunk 仿真用固定配方（设计 §4.2 评审 #6）：用户力参先存着，退回全量后的
+    // rebuild（setData → rebuildRendering 读 this.forces）自然生效
+    if (this.trunkMode) return;
     const sim = this.sim;
     if (!sim) return;
     sim.force<ForceManyBody<SimNode>>('charge')?.strength(f.repelStrength);
@@ -542,7 +664,7 @@ export class PixiGraphEngine {
 
     if (style.nodeScale !== undefined) {
       for (const n of this.nodeById.values()) {
-        n.radius = this.radiusOf({ linkCount: n.linkCount, dead: n.dead });
+        n.radius = this.radiusOf({ linkCount: n.linkCount, dead: n.dead, trunkCluster: n.trunkCluster });
       }
       this.sim?.force<ForceCollide<SimNode>>('collide')?.radius(collideRadius);
       this.geometryDirty = true; // 标签 y 偏移依赖 radius，几何要重写
@@ -764,8 +886,10 @@ export class PixiGraphEngine {
 
   // ── Internals: 布局 / 渲染 ──
 
-  /** Obsidian 视觉权重：半径 2 倍于 Quartz 式配方，fit 缩放(~0.3)下叶子≈4px、hub≈20px */
-  private radiusOf(n: { linkCount: number; dead?: boolean }): number {
+  /** Obsidian 视觉权重：半径 2 倍于 Quartz 式配方，fit 缩放(~0.3)下叶子≈4px、hub≈20px；
+   *  trunk 簇团走 blob 公式（4+√size，设计 §4.2 半径 ∝ √成员数） */
+  private radiusOf(n: { linkCount: number; dead?: boolean; trunkCluster?: { size: number } }): number {
+    if (n.trunkCluster) return trunkBlobRadius(n.trunkCluster.size) * this.nodeScale;
     if (n.dead) return 3 * this.nodeScale;
     return (2 + Math.sqrt(n.linkCount)) * 2 * this.nodeScale;
   }
@@ -786,17 +910,17 @@ export class PixiGraphEngine {
     this.selectionGfx = new Graphics();
     this.nodesLayer.addChild(this.selectionGfx);
 
+    // trunk 用固定配方（TRUNK_FORCE），全量沿用用户 this.forces——两套语义互不污染
+    const f = this.trunkMode ? TRUNK_FORCE : this.forces;
     const sim = forceSimulation<SimNode>(this.nodes)
-      .force('charge', forceManyBody<SimNode>().strength(this.forces.repelStrength).distanceMin(DISTANCE_MIN))
-      .force('center', forceCenter<SimNode>(0, 0).strength(this.forces.centerStrength))
+      .force('charge', forceManyBody<SimNode>().strength(f.repelStrength).distanceMin(DISTANCE_MIN))
+      .force('center', forceCenter<SimNode>(0, 0).strength(f.centerStrength))
       .force(
         'link',
         forceLink<SimNode, SimLink>(this.links)
           .id((d) => d.id)
-          .distance(this.forces.linkDistance)
-          .strength(
-            this.forces.linkStrength > 0 ? this.forces.linkStrength : defaultLinkStrength(this.adjacency),
-          ),
+          .distance(f.linkDistance)
+          .strength(f.linkStrength > 0 ? f.linkStrength : defaultLinkStrength(this.adjacency)),
       )
       .force('x', forceX<SimNode>(0).strength(CONTAIN_STRENGTH))
       .force('y', forceY<SimNode>(0).strength(CONTAIN_STRENGTH))
@@ -824,8 +948,13 @@ export class PixiGraphEngine {
     const dpr = window.devicePixelRatio;
 
     for (const n of this.nodes) {
-      // 死链节点用虚线感的中性色区分（theme.deadNode）
-      const color = n.dead ? this.theme.deadNode : nodeColorFor(n.nodeType, n.linkCount, this.theme);
+      // trunk 簇团：簇色（id 哈希进调色板）+ theme 感知描边；死链节点用中性色区分
+      const isCluster = !!n.trunkCluster;
+      const color = isCluster
+        ? trunkClusterColor(n.id)
+        : n.dead
+          ? this.theme.deadNode
+          : nodeColorFor(n.nodeType, n.linkCount, this.theme);
       const gfx = new Graphics({
         interactive: true,
         eventMode: 'static',
@@ -834,6 +963,7 @@ export class PixiGraphEngine {
       })
         .circle(0, 0, n.radius)
         .fill({ color });
+      if (isCluster) gfx.stroke({ width: 1.5, color: this.theme.edge });
       gfx.on('pointerover', () => this.onNodePointerOver(n.id));
       gfx.on('pointerleave', () => this.onNodePointerLeave(n.id));
       this.nodesLayer.addChild(gfx);
@@ -867,8 +997,15 @@ export class PixiGraphEngine {
 
     // P0-2：边几何状态留在 linkRenderData，绘制统一收进单个 edgesGfx（redrawEdges）。
     // 旧版每边一个 Graphics：23k 边 = 23k 显示对象每帧各自 clear+重画，实测占帧预算 ~86%。
+    // trunk 聚合边宽 ∝ log2(weight)（trunkEdgeWidth），全量边恒 1×edgeWidth。
     for (const l of this.links) {
-      this.linkRenderData.push({ simulationData: l, color: this.theme.edge, alpha: 1, active: false });
+      this.linkRenderData.push({
+        simulationData: l,
+        color: this.theme.edge,
+        alpha: 1,
+        active: false,
+        widthMult: l.trunkWeight !== undefined ? trunkEdgeWidth(l.trunkWeight) : 1,
+      });
     }
     this.edgesGfx = new Graphics({ interactive: false, eventMode: 'none' });
     this.linkLayer.addChild(this.edgesGfx);
@@ -882,8 +1019,13 @@ export class PixiGraphEngine {
       const d = n.simulationData;
       n.gfx.clear();
       n.gfx.circle(0, 0, d.radius).fill({
-        color: d.dead ? this.theme.deadNode : nodeColorFor(d.nodeType, d.linkCount, this.theme),
+        color: d.trunkCluster
+          ? trunkClusterColor(d.id)
+          : d.dead
+            ? this.theme.deadNode
+            : nodeColorFor(d.nodeType, d.linkCount, this.theme),
       });
+      if (d.trunkCluster) n.gfx.stroke({ width: 1.5, color: this.theme.edge });
     }
     for (const l of this.linkRenderData) {
       l.color = this.theme.edge;
@@ -906,7 +1048,7 @@ export class PixiGraphEngine {
         this.edgesGfx
           .moveTo(s.x + cx, s.y + cy)
           .lineTo(t.x + cx, t.y + cy)
-          .stroke({ alpha: l.alpha, width: this.edgeWidth, color: l.color });
+          .stroke({ alpha: l.alpha, width: l.widthMult * this.edgeWidth, color: l.color });
       }
     }
   }
@@ -1063,7 +1205,9 @@ export class PixiGraphEngine {
         rd.label.visible = false;
         continue;
       }
-      if (focusId !== null && this.focusedNeighbours.has(d.id)) {
+      // trunk：簇名/hub 名常显（~30 个远低于预算，设计 §4.2）——全部按焦点候选处理，
+      // 绕过屏幕半径/度数预算门（贪心碰撞检测仍生效，重叠时会避让）
+      if (this.trunkMode || (focusId !== null && this.focusedNeighbours.has(d.id))) {
         focusedCands.push({ rd, focused: true });
         continue;
       }
@@ -1363,7 +1507,9 @@ export class PixiGraphEngine {
             this.dragNodeKey = null;
             this.unpinAllNodes(); // mousedown 钉过全部，单击也要解除，否则图被钉住
             if (Date.now() - this.dragStartTime < 500 && moved <= CLICK_MOVE_TOLERANCE) {
-              this.callbacks.onNodeClick?.(subj.id, toEngineNode(subj));
+              // trunk 簇团单击走专门回调（H1 过渡期：宿主切全量+框邻域）；hub 仍是打开文件
+              if (subj.trunkCluster) this.callbacks.onTrunkClusterClick?.(subj.id);
+              else this.callbacks.onNodeClick?.(subj.id, toEngineNode(subj));
             }
           }
         }),
@@ -1504,5 +1650,6 @@ function toEngineNode(n: SimNode): EngineNode {
     linkCount: n.linkCount,
     nodeType: n.nodeType ?? null,
     dead: n.dead,
+    trunkCluster: n.trunkCluster,
   };
 }
