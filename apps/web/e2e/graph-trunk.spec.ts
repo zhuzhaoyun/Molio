@@ -48,8 +48,41 @@ function makeTrunkVault(dir: string): void {
   writeFileSync(path.join(dir, '总目录.md'), '# 总目录\n\n索引页。\n');
 }
 
+/** 无结构随机链库（520 文件、纯随机出链 + hub）：LPA 聚出巨团 → quality=degenerate */
+function makeDegenerateVault(dir: string): void {
+  let seed = 20261119;
+  const rnd = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 2 ** 32);
+  const ri = (excl: number) => Math.floor(rnd() * excl);
+  const n = 520;
+  const name = (i: number) => `散${String(i).padStart(5, '0')}`;
+  for (let i = 0; i < n; i++) {
+    const lines = [`# ${name(i)}`, ''];
+    for (let j = 0; j < 3; j++) {
+      const peer = ri(n);
+      if (peer !== i) lines.push(`- 关联 [[${name(peer)}]]`);
+    }
+    lines.push(`- 索引 [[总目录]]`, '', '占位。');
+    writeFileSync(path.join(dir, `${name(i)}.md`), lines.join('\n') + '\n');
+  }
+  writeFileSync(path.join(dir, '总目录.md'), '# 总目录\n\n索引页。\n');
+}
+
 let vaultId: string;
 let vaultDir: string;
+let smallVaultId: string;
+let smallVaultDir: string;
+let degenerateVaultId: string;
+let degenerateVaultDir: string;
+
+async function createVault(name: string, dir: string): Promise<string> {
+  const res = await fetch(`${DAEMON_API}/knowledge/vaults`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, path: dir }),
+  });
+  if (!res.ok) throw new Error(`create vault ${name} failed: ${res.status}`);
+  return (await res.json()).id;
+}
 
 test.beforeAll(async () => {
   // 清理上一次跑挂的残留 vault（graph-settings.spec.ts 同款防御）
@@ -61,26 +94,36 @@ test.beforeAll(async () => {
   }
   vaultDir = mkdtempSync(path.join(tmpdir(), 'molio-graph-trunk-'));
   makeTrunkVault(vaultDir);
-  const res = await fetch(`${DAEMON_API}/knowledge/vaults`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name: 'e2e-graph-trunk', path: vaultDir }),
-  });
-  if (!res.ok) throw new Error(`create vault failed: ${res.status}`);
-  vaultId = (await res.json()).id;
+  vaultId = await createVault('e2e-graph-trunk', vaultDir);
+
+  smallVaultDir = mkdtempSync(path.join(tmpdir(), 'molio-graph-trunk-small-'));
+  writeFileSync(path.join(smallVaultDir, 'a.md'), '# A\n\n[[b]]\n');
+  writeFileSync(path.join(smallVaultDir, 'b.md'), '# B\n');
+  smallVaultId = await createVault('e2e-graph-trunk-small', smallVaultDir);
+
+  degenerateVaultDir = mkdtempSync(path.join(tmpdir(), 'molio-graph-trunk-deg-'));
+  makeDegenerateVault(degenerateVaultDir);
+  degenerateVaultId = await createVault('e2e-graph-trunk-degenerate', degenerateVaultDir);
 });
 
 test.afterAll(async () => {
-  if (vaultId) await fetch(`${DAEMON_API}/knowledge/vaults/${vaultId}`, { method: 'DELETE' });
-  if (vaultDir) rmSync(vaultDir, { recursive: true, force: true });
+  for (const [id, dir] of [
+    [vaultId, vaultDir],
+    [smallVaultId, smallVaultDir],
+    [degenerateVaultId, degenerateVaultDir],
+  ] as Array<[string | undefined, string | undefined]>) {
+    if (id) await fetch(`${DAEMON_API}/knowledge/vaults/${id}`, { method: 'DELETE' });
+    if (dir) rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript((id) => localStorage.setItem('molio.activeVaultId', id), vaultId);
 });
 
-async function gotoGraph(page: Page): Promise<void> {
-  await page.goto(`/knowledge?vault=${vaultId}`);
+async function gotoGraph(page: Page, id: string = vaultId): Promise<void> {
+  await page.addInitScript((vid) => localStorage.setItem('molio.activeVaultId', vid), id);
+  await page.goto(`/knowledge?vault=${id}`);
   await clickNav(page, 'graph');
   await expect(page.locator('.graph-page')).toBeVisible({ timeout: 5000 });
   await expect(page.locator('[data-testid="graph-canvas"] canvas')).toBeVisible({ timeout: 15000 });
@@ -127,4 +170,91 @@ test('搜索联动（trunk 态）：簇名匹配高亮留 trunk；成员命中�
   expect(k).toBeGreaterThan(1);
   await expect(page.locator('[data-testid="graph-trunk-indicator"]')).toBeHidden();
   await expect(page.locator('[data-testid="graph-view-mode-toggle"]')).not.toHaveClass(/is-active/);
+});
+
+test('切换持久化：trunk→full 后 reload 仍是全量；再点回枝干', async ({ page }) => {
+  await gotoGraph(page);
+  await expect(page.locator('[data-testid="graph-trunk-indicator"]')).toBeVisible({ timeout: 20000 });
+
+  await page.click('[data-testid="graph-view-mode-toggle"]');
+  await expect(page.locator('[data-testid="graph-trunk-indicator"]')).toBeHidden({ timeout: 10000 });
+  const fullCount = await page.evaluate(() => window.__graphEngine?.getSnapshot()?.nodes.length ?? -1);
+  expect(fullCount).toBeGreaterThan(100); // 全量 511+ 节点（对照 trunk ≤45）
+
+  // 落盘有 300ms 防抖；reload 后仍应保持全量（显式选择必须尊重——用户偏好规则）
+  await page.waitForTimeout(600);
+  await page.reload();
+  await clickNav(page, 'graph');
+  await expect(page.locator('[data-testid="graph-canvas"] canvas')).toBeVisible({ timeout: 15000 });
+  await expect(page.locator('[data-testid="graph-trunk-indicator"]')).toBeHidden({ timeout: 10000 });
+  const stored = await page.evaluate(() => JSON.parse(localStorage.getItem('molio.graph.settings') ?? '{}'));
+  expect(stored.globalView).toBe('full');
+  expect(stored.version).toBe(7);
+
+  // 点回枝干（还原默认，不污染后续用例——settings 是 localStorage 全局的）
+  await page.click('[data-testid="graph-view-mode-toggle"]');
+  await expect(page.locator('[data-testid="graph-trunk-indicator"]')).toBeVisible({ timeout: 10000 });
+  await page.waitForTimeout(600);
+});
+
+test('小库（无 communities）：开关不渲染，与现状一致', async ({ page }) => {
+  await gotoGraph(page, smallVaultId);
+  await expect(page.locator('[data-testid="graph-canvas"] canvas')).toBeVisible({ timeout: 15000 });
+  await page.waitForTimeout(800);
+  await expect(page.locator('[data-testid="graph-view-mode-toggle"]')).toHaveCount(0);
+  await expect(page.locator('[data-testid="graph-trunk-indicator"]')).toHaveCount(0);
+  // 全量行为照旧：两个节点都在引擎里
+  const count = await page.evaluate(() => window.__graphEngine?.getSnapshot()?.nodes.length ?? -1);
+  expect(count).toBe(2);
+});
+
+test('筛选偏离默认：开关置灰，图走全量（不静默留在 trunk）', async ({ page }) => {
+  await gotoGraph(page);
+  await expect(page.locator('[data-testid="graph-trunk-indicator"]')).toBeVisible({ timeout: 20000 });
+  await page.click('.graph-settings-btn');
+  const panel = page.locator('.graph-settings-panel');
+  await expect(panel).toBeVisible({ timeout: 5000 });
+  // 关掉「孤立节点」→ 三开关偏离默认 → trunk 让位（fail-open 到全量），开关 disabled
+  const orphans = panel.locator('.graph-settings__checkbox').filter({ hasText: '孤立节点' }).locator('input');
+  await orphans.uncheck();
+  await expect(page.locator('[data-testid="graph-trunk-indicator"]')).toBeHidden({ timeout: 10000 });
+  await expect(page.locator('[data-testid="graph-view-mode-toggle"]')).toBeDisabled();
+  const count = await page.evaluate(() => window.__graphEngine?.getSnapshot()?.nodes.length ?? -1);
+  expect(count).toBeGreaterThan(100); // 渲染的是全量
+  // 还原（不污染后续用例）
+  await orphans.check();
+  await expect(page.locator('[data-testid="graph-trunk-indicator"]')).toBeVisible({ timeout: 10000 });
+});
+
+test('degenerate 库：横幅提示但仍渲染 trunk（不白屏不自动退全量）', async ({ page }) => {
+  await gotoGraph(page, degenerateVaultId);
+  await expect(page.locator('[data-testid="graph-trunk-indicator"]')).toBeVisible({ timeout: 30000 });
+  await expect(page.locator('[data-testid="graph-trunk-banner"]')).toBeVisible();
+  // 图仍在渲染：canvas 可见 + 引擎活着（trunk 对象少，巨团+hub）
+  const mode = await page.evaluate(() => window.__graphEngine?.getTrunkMode());
+  expect(mode).toBe(true);
+});
+
+test('单击铁律：trunk 态点 hub 节点 = 打开文件', async ({ page }) => {
+  await gotoGraph(page);
+  await expect(page.locator('[data-testid="graph-trunk-indicator"]')).toBeVisible({ timeout: 20000 });
+  // 从 snapshot 找 hub（key 以 .md 结尾且非簇 id cN）→ 换算屏幕坐标点击
+  const hubScreen = await page.evaluate(() => {
+    const eng = window.__graphEngine;
+    const snap = eng?.getSnapshot();
+    if (!snap) return null;
+    const hub = snap.nodes.find((n) => n.key === '总目录.md') ?? snap.nodes.find((n) => n.key.endsWith('.md'));
+    if (!hub) return null;
+    const rect = eng!.canvas.getBoundingClientRect();
+    const t = eng!.getViewport();
+    return {
+      sx: rect.left + (hub.x + rect.width / 2) * t.k + t.tx,
+      sy: rect.top + (hub.y + rect.height / 2) * t.k + t.ty,
+      key: hub.key,
+    };
+  });
+  expect(hubScreen).toBeTruthy();
+  await page.mouse.click(hubScreen!.sx, hubScreen!.sy);
+  // 打开文件：KB 主内容显示 总目录.md 的内容（正文「索引页。」）
+  await expect(page.getByText('索引页。')).toBeVisible({ timeout: 10000 });
 });
