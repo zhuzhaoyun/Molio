@@ -44,6 +44,7 @@ describe('DEFAULT_SETTINGS', () => {
     assert.strictEqual(DEFAULT_SETTINGS.showOrphans, true);
     assert.strictEqual(DEFAULT_SETTINGS.showDeadLinks, true);
     assert.deepStrictEqual(DEFAULT_SETTINGS.visibleTypes, []);
+    assert.strictEqual(DEFAULT_SETTINGS.globalView, 'trunk', '默认枝干（设计 §4.2）');
   });
 
   it('should have a deep copy of DEFAULT_FORCE_PARAMS', () => {
@@ -149,6 +150,31 @@ describe('migrateSettings', () => {
     });
     assert.strictEqual(s.forces.linkDistance, 66);
     assert.strictEqual(s.forces.repelStrength, DEFAULT_FORCE_PARAMS.repelStrength);
+  });
+
+  it('v6→v7：新增 globalView 补默认 trunk，用户力参原样保留（力参语义未变）', () => {
+    const customForces = { centerStrength: 0.5, repelStrength: -90, linkStrength: 0.2, linkDistance: 180 };
+    const s = migrateSettings({
+      version: 6,
+      theme: 'dark',
+      forces: customForces,
+    } as Partial<GraphSettings>);
+    assert.strictEqual(s.version, 7);
+    assert.strictEqual(s.globalView, 'trunk', 'v6 无此字段 → 默认枝干');
+    assert.deepStrictEqual(s.forces, customForces, 'v6 升级不得重置力参');
+    assert.strictEqual(s.theme, 'dark');
+  });
+
+  it('v5 及更老：力参语义变更仍在射程 → 照旧重置', () => {
+    const customForces = { centerStrength: 0.5, repelStrength: -30, linkStrength: 0.1, linkDistance: 250 };
+    const s5 = migrateSettings({ version: 5, forces: customForces } as Partial<GraphSettings>);
+    assert.deepStrictEqual(s5.forces, DEFAULT_FORCE_PARAMS);
+    assert.strictEqual(s5.globalView, 'trunk');
+  });
+
+  it('v7 globalView=full 原样保留（显式选择必须尊重）', () => {
+    const s = migrateSettings({ version: 7, globalView: 'full' } as Partial<GraphSettings>);
+    assert.strictEqual(s.globalView, 'full');
   });
 });
 
