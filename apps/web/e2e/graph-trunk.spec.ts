@@ -135,9 +135,14 @@ test('大库全局视图默认进枝干：indicator + 开关激活 + trunk 对�
   const toggle = page.locator('[data-testid="graph-view-mode-toggle"]');
   await expect(toggle).toBeVisible();
   await expect(toggle).toHaveClass(/is-active/);
-  // 引擎快照：trunk 对象数（簇+hub）远小于全量 510+
+  // 引擎快照：trunk 对象数（簇+hub）远小于全量 510+。
+  // 必须 poll：indicator 可见只证 graphData 已到 React，__graphEngine 挂载与
+  // setTrunkData 推送在异步引擎创建链后——慢 CI 上采样会落在「指示器已亮、
+  // 引擎还没数据」的窗口（第二次 CI flake 的机制，本地窗口为 0 不可复现）
+  await expect
+    .poll(() => page.evaluate(() => window.__graphEngine?.getSnapshot()?.nodes.length ?? -1))
+    .toBeGreaterThan(0);
   const count = await page.evaluate(() => window.__graphEngine?.getSnapshot()?.nodes.length ?? -1);
-  expect(count).toBeGreaterThan(0);
   expect(count).toBeLessThanOrEqual(45);
 });
 
@@ -213,9 +218,10 @@ test('小库（无 communities）：开关不渲染，与现状一致', async ({
   await page.waitForTimeout(800);
   await expect(page.locator('[data-testid="graph-view-mode-toggle"]')).toHaveCount(0);
   await expect(page.locator('[data-testid="graph-trunk-indicator"]')).toHaveCount(0);
-  // 全量行为照旧：两个节点都在引擎里
-  const count = await page.evaluate(() => window.__graphEngine?.getSnapshot()?.nodes.length ?? -1);
-  expect(count).toBe(2);
+  // 全量行为照旧：两个节点都在引擎里（poll 引擎就绪，同首用例的竞态注）
+  await expect
+    .poll(() => page.evaluate(() => window.__graphEngine?.getSnapshot()?.nodes.length ?? -1))
+    .toBe(2);
 });
 
 test('筛选偏离默认：开关置灰，图走全量（不静默留在 trunk）', async ({ page }) => {
@@ -240,9 +246,10 @@ test('degenerate 库：横幅提示但仍渲染 trunk（不白屏不自动退全
   await gotoGraph(page, degenerateVaultId);
   await expect(page.locator('[data-testid="graph-trunk-indicator"]')).toBeVisible({ timeout: 30000 });
   await expect(page.locator('[data-testid="graph-trunk-banner"]')).toBeVisible();
-  // 图仍在渲染：canvas 可见 + 引擎活着（trunk 对象少，巨团+hub）
-  const mode = await page.evaluate(() => window.__graphEngine?.getTrunkMode());
-  expect(mode).toBe(true);
+  // 图仍在渲染：trunk 模式活着（poll 引擎就绪，同首用例的竞态注）
+  await expect
+    .poll(() => page.evaluate(() => window.__graphEngine?.getTrunkMode() ?? false))
+    .toBe(true);
 });
 
 test('单击铁律：trunk 态点 hub 节点 = 打开文件', async ({ page }) => {
