@@ -15,6 +15,7 @@ import { useActiveVault, useActiveVaultId, vaultStore } from '../../stores/vault
 import { navigationHistoryStore, useNavigationHistory } from '../../stores/navigationHistoryStore';
 import { useGraphSettings } from './useGraphSettings';
 import { graphFingerprint, refreshDebounceMs } from './refreshPolicy';
+import { buildTrunkScene, resolveTrunkView, trunkExportMeta, type TrunkScene } from './trunkScene';
 import { GraphSettingsPanel } from './GraphSettingsPanel';
 import { GraphSearchBox } from './GraphSearchBox';
 import { Minimap } from './Minimap';
@@ -140,6 +141,12 @@ export function GraphPage({
   onNodeOpenRef.current = onNodeOpen;
   const onScopeResetRef = useRef(onScopeReset);
   onScopeResetRef.current = onScopeReset;
+  // trunk（T2）：引擎回调只建一次，经 ref 读最新值
+  const updateSettingsRef = useRef(updateSettings);
+  updateSettingsRef.current = updateSettings;
+  /** 拍板 A（2026-11-18）：搜索命中簇成员/点击簇团 → 切全量 + 定位该簇邻域。
+   *  瞬时意图走 ref（不进 URL——setSearchParams 整体替换会冲掉它），数据推送 effect 尾部消费。 */
+  const pendingFocusRef = useRef<string | null>(null);
   // scope 的稳定标识：换 file / 换 dir 才重新拉数据
   const scopeKey = graphScope ? `${graphScope.type}:${graphScope.path}` : null;
 
@@ -257,6 +264,30 @@ export function GraphPage({
   }, [graphData, settings.showOrphans, settings.showDeadLinks, settings.visibleTypes]);
 
   const hasData = !!engineData && engineData.nodes.length > 0;
+
+  // ── trunk 场景派生与生效判定（T2，纯逻辑在 trunkScene.ts，见该文件注释）──
+  // companion 副视图与局部 scope 永不 trunk（设计 §4.2：它们本就只渲染邻域）。
+  // deps 用 scopeKey 字符串而非 scope 对象（本文件既定防御约定，见 fetch effect 注释）
+  const trunkScene = useMemo<TrunkScene | null>(
+    () => (graphData && !companion && scopeKey === null ? buildTrunkScene(graphData) : null),
+    [graphData, companion, scopeKey],
+  );
+  const trunkView = useMemo(
+    () =>
+      resolveTrunkView({
+        scope: graphScope,
+        scene: trunkScene,
+        globalView: settings.globalView,
+        showOrphans: settings.showOrphans,
+        showDeadLinks: settings.showDeadLinks,
+        visibleTypes: settings.visibleTypes,
+        companion,
+      }),
+    [scopeKey, trunkScene, settings.globalView, settings.showOrphans, settings.showDeadLinks, settings.visibleTypes, companion],
+  );
+  // 引擎回调（创建时一次性注册）经 ref 读最新 trunk 场景
+  const trunkSceneRef = useRef<TrunkScene | null>(null);
+  trunkSceneRef.current = trunkScene;
 
   // ── 出图卡片内容 ──
   // 一律取**筛选后的** engineData：卡片上的统计和核心主题必须跟图面严格对得上，
@@ -378,7 +409,17 @@ export function GraphPage({
       // 单击 / 双击节点都打开文章 —— 三处图谱（全量图 / 局部知识图谱 / 对照）行为完全一致。
       // 「高亮关联」由悬停承担（引擎 hover 两档：非邻居淡化 + 关联边置顶），与 Obsidian 原生图谱同款
       // （悬停高亮、单击打开）；「单击选中」不提供——它与悬停重复，而「看邻域」已由局部知识图谱专门承担。
-      eng.setCallbacks({ onNodeClick: openNode, onNodeDoubleClick: openNode });
+      eng.setCallbacks({
+        onNodeClick: openNode,
+        onNodeDoubleClick: openNode,
+        // trunk 簇团单击（H1 过渡期，拍板 A）：切到全量视图（开关翻转并持久化）+
+        // 定位到该簇首个成员（邻域自然在屏）。H2 展开机器落地后替换为真展开。
+        onTrunkClusterClick: (clusterId) => {
+          const member = trunkSceneRef.current?.clusters.find((c) => c.id === clusterId)?.memberIds[0];
+          pendingFocusRef.current = member ?? null;
+          updateSettingsRef.current({ globalView: 'full' });
+        },
+      });
       engineRef.current = eng;
       // 开发环境调试句柄：像素提取（renderer.extract）与布局检查
       if (import.meta.env.DEV) {
@@ -415,6 +456,8 @@ export function GraphPage({
   const lastVaultRef = useRef<string | null>(null);
   // 上一次的 scope 标识：用于识别「局部图 → 全量图」的返回（需要重新取景）
   const prevScopeKeyRef = useRef<string | null>(null);
+  // 上一次是否处于 trunk（识别 trunk→full 跳变：全量数据规模剧变，需立即重取景）
+  const prevTrunkActiveRef = useRef(false);
   useEffect(() => {
     if (!engine) return;
     const scope = scopeRef.current;
@@ -432,7 +475,23 @@ export function GraphPage({
       lastVaultRef.current = activeVaultId;
       engine.resetPositions();
     }
+
+    // ── trunk 分支（T2）：setTrunkData 内部同步 settle + 立即 fit，
+    // 不走下面的「首落位 + 收敛后动画取景」三段式（几十对象毫秒级到位）──
+    const wasTrunk = prevTrunkActiveRef.current;
+    prevTrunkActiveRef.current = trunkView.active;
+    if (trunkView.active && trunkScene) {
+      engine.setTrunkData(trunkScene);
+      return;
+    }
     engine.setData(engineData.nodes, engineData.edges);
+    if (wasTrunk) engine.fitView({ animate: false }); // trunk→full：旧视口对着几十个对象的布局，无意义
+    // 拍板 A 落位：切到全量后定位到目标簇邻域（消费后即清）
+    const pendingFocus = pendingFocusRef.current;
+    if (pendingFocus) {
+      pendingFocusRef.current = null;
+      engine.focusNode(pendingFocus);
+    }
 
     // ── 取景：对照副格 → 整张子图 fit；file → 圆心居中放大；dir → 子图 fit；全量图 → 整图 fit ──
     // 布局在收敛前一直在动，早取景会落在错误位置（这是「切换后视角不对」的根因），所以：
@@ -474,7 +533,7 @@ export function GraphPage({
     } else if (scope) {
       applyView(activeRef.current);
     }
-  }, [engine, engineData, activeVaultId, graphData, companion]);
+  }, [engine, engineData, activeVaultId, graphData, companion, trunkView, trunkScene]);
 
   // ── 外观/力度参数实时下发（不重建仿真布局）──
   useEffect(() => {
@@ -512,13 +571,20 @@ export function GraphPage({
     setExportNote(null);
     setExporting(true);
 
-    const metaLine = `${t('graph.nodes', { count: engineData?.nodes.length ?? 0 })} · ${t(
-      'graph.edges',
-      { count: engineData?.edges.length ?? 0 },
-    )}`;
-    const topicsLine = coreTopics.length
-      ? `${t('graph.exportCoreTopics')}${coreTopics.join(' · ')}`
-      : '';
+    // 统计行与图面严格对得上（出图红线）：trunk 态截的是 trunk 画布（几个团），
+    // 统计/核心主题/图例必须换成 trunk 口径或省略——写全库计数就是卡片撒谎
+    //（终审 Important-3；代拍只豁免「导出所见」的位图行为，不豁免文案失配）
+    const trunkActive = trunkView.active && !!trunkScene;
+    const metaLine = trunkActive
+      ? trunkExportMeta(trunkScene!, t('graph.trunkClustersLabel'), t('graph.trunkHubsLabel'))
+      : `${t('graph.nodes', { count: engineData?.nodes.length ?? 0 })} · ${t(
+          'graph.edges',
+          { count: engineData?.edges.length ?? 0 },
+        )}`;
+    const topicsLine =
+      !trunkActive && coreTopics.length
+        ? `${t('graph.exportCoreTopics')}${coreTopics.join(' · ')}`
+        : '';
     const title = activeVault?.name ?? '';
     const aspect = exportAspect;
     const includeInfo = exportIncludeInfo;
@@ -542,7 +608,7 @@ export function GraphPage({
         title,
         meta: metaLine,
         topics: topicsLine,
-        legend: exportLegend,
+        legend: trunkActive ? [] : exportLegend,
         watermark: EXPORT_WATERMARK,
         ink: cardInkFor(themeColors.bg),
         bg: themeColors.bg,
@@ -651,8 +717,20 @@ export function GraphPage({
                   <GraphSearchBox
                     autoFocus
                     nodes={engineData.nodes}
+                    clusters={trunkView.active ? trunkScene?.clusters : undefined}
+                    onSelectCluster={(id) => {
+                      // trunk 态命中簇名：就地高亮该簇（聚合边置顶），不切视图
+                      engineRef.current?.highlightTrunkCluster(id);
+                    }}
                     onSelect={(key) => {
-                      engineRef.current?.focusNode(key);
+                      // trunk 态命中节点 = 拍板 A（2026-11-18）：切全量（开关翻转并持久化）
+                      // + 定位该节点（簇邻域自然在屏）；H2 展开机器落地后换成真展开
+                      if (trunkView.active) {
+                        pendingFocusRef.current = key;
+                        updateSettings({ globalView: 'full' });
+                      } else {
+                        engineRef.current?.focusNode(key);
+                      }
                     }}
                   />
                 </div>
@@ -796,6 +874,28 @@ export function GraphPage({
               <circle cx="15" cy="16" r="2.7" />
             </svg>
           </button>
+          {/* 全局视图开关（trunk T2，设计 §4.2 拍板 #5）：大库默认枝干。
+              no-communities（小库/局部 scope/副视图）不渲染；筛选偏离默认态置灰（reason==='filters'）。
+              开关状态 = globalView 持久化设置；点击簇团/搜索命中成员的过渡切换也翻转它（拍板 A）。 */}
+          {trunkView.reason !== 'no-communities' && (
+            <button
+              type="button"
+              className={`graph-icon-btn${trunkView.active ? ' is-active' : ''}`}
+              onClick={() => updateSettings({ globalView: trunkView.active ? 'full' : 'trunk' })}
+              disabled={trunkView.reason === 'filters'}
+              data-tooltip={trunkView.reason === 'filters' ? t('graph.trunkFiltersBlocked') : t('graph.viewModeToggle')}
+              aria-label={t('graph.viewModeToggle')}
+              data-testid="graph-view-mode-toggle"
+            >
+              {/* 枝干：主干 + 两叉 */}
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" width="18" height="18">
+                <circle cx="12" cy="5" r="2.4" />
+                <circle cx="5" cy="19" r="2.4" />
+                <circle cx="19" cy="19" r="2.4" />
+                <path d="M12 7.4v4.2M12 11.6 6.2 16.8M12 11.6l5.8 5.2" />
+              </svg>
+            </button>
+          )}
           {/* 局部图作用域的「回到全量图」：任意非空 scope 都显示（file/dir 均由宿主是否传 onScopeReset 决定）
               —— 与搜索/统计/设置同款磨砂 icon-btn；onClick 走 ref，避免闭包过期 */}
           {graphScope && onScopeReset && (
@@ -849,6 +949,24 @@ export function GraphPage({
           <div className="graph-scope-loading" data-testid="graph-scope-loading" role="status">
             <span className="graph-scope-loading__spinner" />
             <span>{t('graph.loading')}</span>
+          </div>
+        )}
+
+        {/* trunk 模式指示（T2）：确认用户看到的是枝干 + 碎屑不在屏的事实（计数告知）；
+            degenerate 如实提示（仍渲染，不自动退全量——设计 §4.1 退化保护） */}
+        {trunkView.active && (
+          <div className="graph-trunk-indicator" data-testid="graph-trunk-indicator">
+            <span>{t('graph.trunkIndicator')}</span>
+            {trunkScene && trunkScene.crumbCount > 0 && (
+              <span className="graph-trunk-crumbs">
+                {t('graph.trunkCrumbs', { count: trunkScene.crumbCount })}
+              </span>
+            )}
+          </div>
+        )}
+        {trunkView.active && trunkScene?.quality === 'degenerate' && (
+          <div className="graph-trunk-banner" data-testid="graph-trunk-banner">
+            {t('graph.trunkDegenerate')}
           </div>
         )}
 

@@ -184,12 +184,15 @@ export function detectCommunities(graph: GraphData, opts: DetectCommunitiesOptio
     const s = resolveTrunk(e.source);
     const t = resolveTrunk(e.target);
     if (!s || !t || s === t) continue;
-    const pairKey = s < t ? `${s}→${t}` : `${t}→${s}`;
+    // 分隔符用 NUL：trunk 端点（hub=库内相对路径）可含任意文件名字符（含 →），
+    // '→' 做分隔符会把含该字符的端点切碎（T2 修，test 12）
+    const SEP = '\u0000';
+    const pairKey = s < t ? `${s}${SEP}${t}` : `${t}${SEP}${s}`;
     linkTally.set(pairKey, (linkTally.get(pairKey) ?? 0) + 1);
   }
   const links: GraphCommunityLink[] = [...linkTally.entries()]
     .map(([pair, weight]) => {
-      const [source, target] = pair.split('→');
+      const [source, target] = pair.split('\u0000');
       return { source: source!, target: target!, weight };
     })
     .sort((a, b) => (a.source === b.source ? (a.target < b.target ? -1 : 1) : a.source < b.source ? -1 : 1));

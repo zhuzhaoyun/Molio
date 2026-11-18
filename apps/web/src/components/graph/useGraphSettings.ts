@@ -20,8 +20,10 @@ const STORAGE_KEY = 'molio.graph.settings';
  *   v3 → v4：移除 radial 力（圆环布局根源），Obsidian 式有机布局
  *   v4 → v5：对齐 Obsidian graph.json 实测默认（repel -30 / distance 250），节点半径 2x
  *   v5 → v6：密集库放大叠团修复 —— repel -120 + 引擎内置 forceX/Y 约束与 collide 半径×5+4（spacingRatio 1.23 → ~5）
- * forces 四个参数语义随引擎变化，旧值直接套用会产生不可用布局，
- * 因此版本不匹配时重置 forces 为新默认值，其余偏好保留。
+ *   v6 → v7：新增 globalView（全局视图：枝干/全量，trunk 视图 T2）——力参语义未变，
+ *            v6 升级只补字段、保留用户力参
+ * forces 四个参数语义在 v1..v5 间随引擎变化，旧值直接套用会产生不可用布局，
+ * 因此 version < 6 时重置 forces 为新默认值，其余偏好（含 v6+ 的力参）保留。
  */
 export function migrateSettings(parsed: Partial<GraphSettings> | null | undefined): GraphSettings {
   if (!parsed || typeof parsed !== 'object') {
@@ -32,11 +34,14 @@ export function migrateSettings(parsed: Partial<GraphSettings> | null | undefine
   const merged: GraphSettings = {
     ...base,
     ...parsed,
+    globalView: parsed.globalView === 'full' ? 'full' : 'trunk',
     forces: { ...base.forces, ...(parsed.forces ?? {}) },
   };
 
   if (parsed.version !== SETTINGS_VERSION) {
-    merged.forces = { ...DEFAULT_FORCE_PARAMS };
+    if ((parsed.version ?? 0) < 6) {
+      merged.forces = { ...DEFAULT_FORCE_PARAMS };
+    }
     merged.version = SETTINGS_VERSION;
   }
 

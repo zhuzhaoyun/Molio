@@ -648,6 +648,14 @@ const en: Record<string, string> = {
   'graph.searchPlaceholder': 'Search nodes…',
   'graph.searchNoResult': 'No matching nodes',
   'graph.scopeBack': 'Back to full graph',
+  // trunk view (semantic LOD for the global graph, T2)
+  'graph.viewModeToggle': 'Global view: trunk / full',
+  'graph.trunkFiltersBlocked': 'Trunk view is unavailable while filters are active',
+  'graph.trunkIndicator': 'Trunk view',
+  'graph.trunkCrumbs': '{count} scattered nodes not shown',
+  'graph.trunkDegenerate': 'Cluster structure is weak — switch to full view for the original graph',
+  'graph.trunkClustersLabel': 'clusters',
+  'graph.trunkHubsLabel': 'hubs',
   // One-click image export (sharing / acquisition)
   'graph.export': 'Export image',
   'graph.exportDownload': 'Download PNG',

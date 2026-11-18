@@ -21,7 +21,7 @@ export interface ForceParams {
 export type ThemeMode = 'light' | 'dark' | 'system';
 
 /** 持久化结构版本号，语义变更时递增以触发迁移 */
-export const SETTINGS_VERSION = 6;
+export const SETTINGS_VERSION = 7;
 
 export interface GraphSettings {
   version: number;          // 持久化结构版本（SETTINGS_VERSION）
@@ -31,6 +31,8 @@ export interface GraphSettings {
   showOrphans: boolean;     // default true
   showDeadLinks: boolean;   // default true
   visibleTypes: string[];   // node types to show, empty = show all
+  /** 全局视图模式（trunk 视图 T2）：'trunk'=枝干（默认），'full'=全量。全局生效（非按库），显式选择必须尊重并持久化 */
+  globalView: 'trunk' | 'full';
   forces: ForceParams;
 }
 
@@ -70,6 +72,7 @@ export const DEFAULT_SETTINGS: GraphSettings = {
   showOrphans: true,
   showDeadLinks: true,
   visibleTypes: [],  // empty = all visible
+  globalView: 'trunk',
   forces: { ...DEFAULT_FORCE_PARAMS },
 };
 

@@ -234,6 +234,34 @@ describe('detectCommunities', () => {
     assert.equal(c.quality, 'ok');
   });
 
+  it('12. 聚合边 pairKey 分隔符：hub 文件名含 → 不产生歧义 key（#416 deferred minor，T2 消费方）', () => {
+    // hub 文件名带 → 字符；旧分隔符 '→' 下 `${s}→${t}` 再 split('→') 会把含 → 的
+    // 端点切碎 → 聚合边进错误桶/解析出错误端点。双团让 hub 度（10）与成员度（5）拉开，
+    // 阈值 6 只圈中 hub。
+    const hub = 'a→b.md';
+    const keysA = ['a1.md', 'a2.md', 'a3.md', 'a4.md', 'a5.md'];
+    const keysB = ['b1.md', 'b2.md', 'b3.md', 'b4.md', 'b5.md'];
+    const { nodes, edges } = twoCliques('topic-a', keysA, 'topic-b', keysB);
+    nodes.push(md(hub));
+    const full = (dir: string, ks: string[]) => ks.map((k) => `${dir}/${k}`);
+    for (const t of [...full('topic-a', keysA), ...full('topic-b', keysB)]) {
+      edges.push({ source: hub, target: t });
+    }
+    const c = detectCommunities(graph(nodes, edges), { minNodes: 0, hubThreshold: 6 });
+
+    assert.deepEqual(c.hubIds, [hub]);
+    assert.equal(c.clusters.length, 2);
+    // 两条聚合边：c1/c2 ↔ hub 各 5；source/target 必须还原为完整端点字符串。
+    // 端点按字典序规范化：'a→b.md' < 'c1' < 'c2' → hub 在前（test 10 里 hub.md > c1 是反例向）
+    assert.deepEqual(
+      c.links.map((l) => [l.source, l.target, l.weight]),
+      [
+        [hub, 'c1', 5],
+        [hub, 'c2', 5],
+      ],
+    );
+  });
+
   it('11. 簇上限：超过 TRUNK_MAX_CLUSTERS 的最小簇并入碎屑，折叠占比 >20% → quality degenerate', () => {
     // 60 个 6 团 = 360 节点（全部 ≥ clusterMinSize，不触发小簇路径）。
     // cap 保留 40 团、折叠 20 团（120 人 = 33% > 20%）→ 碎屑 + 簇结构不明显信号。
