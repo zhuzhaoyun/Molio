@@ -648,6 +648,12 @@ const zh: Record<string, string> = {
   'graph.searchPlaceholder': '搜索节点…',
   'graph.searchNoResult': '无匹配节点',
   'graph.scopeBack': '回到全量图',
+  // trunk 视图（全局视图语义 LOD，T2）
+  'graph.viewModeToggle': '全局视图：枝干/全量',
+  'graph.trunkFiltersBlocked': '筛选下不适用枝干视图',
+  'graph.trunkIndicator': '枝干视图',
+  'graph.trunkCrumbs': '另有 {count} 个零散节点未显示',
+  'graph.trunkDegenerate': '簇结构不明显，建议切换全量查看原图',
   // 一键出图（对外分享/获客）
   'graph.export': '导出图片',
   'graph.exportDownload': '下载 PNG',

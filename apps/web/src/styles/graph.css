@@ -1140,3 +1140,55 @@
 .graph-settings-btn[data-tooltip]:hover::after {
   opacity: 1;
 }
+
+/* ── trunk 视图（T2）：模式指示 + 碎屑/退化提示（graph-scope-loading 同款 chip 语言）── */
+.graph-trunk-indicator {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.12);
+  font-size: 12px;
+  color: #666;
+  pointer-events: none;
+  z-index: 5;
+}
+
+.graph-trunk-indicator .graph-trunk-crumbs {
+  color: #999;
+}
+
+.graph-trunk-banner {
+  position: absolute;
+  top: 40px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: rgba(245, 158, 11, 0.14);
+  color: #b45309;
+  font-size: 12px;
+  pointer-events: none;
+  z-index: 5;
+}
+
+[data-theme="dark"] .graph-trunk-indicator {
+  background: rgba(40, 40, 44, 0.92);
+  color: #bbb;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.5);
+}
+
+[data-theme="dark"] .graph-trunk-indicator .graph-trunk-crumbs {
+  color: #777;
+}
+
+[data-theme="dark"] .graph-trunk-banner {
+  background: rgba(245, 158, 11, 0.18);
+  color: #fbbf24;
+}
