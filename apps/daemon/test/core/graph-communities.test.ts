@@ -75,17 +75,18 @@ describe('detectCommunities', () => {
     assert.equal(c.quality, 'ok');
   });
 
-  it('3. hub：度数 ≥ hubThreshold 的节点进 hubIds、不进 memberIds，hub-簇聚合边出现', () => {
-    // 星形：hub.md 连 s1..s4（hub 度 4 ≥ 3；簇去 hub 后 4 成员 ≥ clusterMinSize 3）
+  it('3. hub：度数 ≥ hubThreshold 的节点进 hubIds；hub 边不进 LPA（纯 hub 卫星不成簇、计碎屑）', () => {
+    // 星形：hub.md 连 s1..s4。辐条只连 hub——hub 是桥不是社区，hub 边不投票后
+    // 辐条无任何社区结构 → 不成簇（hub 口径 2026-11-18 校准修订；簇间聚合边由
+    // 「簇⇄hub 有真实成员间连边」的 fixture 验证，见 10）
     const nodes = [md('hub.md'), md('s1.md'), md('s2.md'), md('s3.md'), md('s4.md')];
     const edges = ['s1.md', 's2.md', 's3.md', 's4.md'].map((s) => ({ source: 'hub.md', target: s }));
     const c = detectCommunities(graph(nodes, edges), { minNodes: 0, hubThreshold: 3, clusterMinSize: 3 });
 
     assert.deepEqual(c.hubIds, ['hub.md']);
-    assert.equal(c.clusters.length, 1);
-    assert.deepEqual(c.clusters[0]!.memberIds, ['s1.md', 's2.md', 's3.md', 's4.md']);
-    // 'c1' < 'hub.md'（端点按字典序规范化）
-    assert.deepEqual(c.links, [{ source: 'c1', target: 'hub.md', weight: 4 }]);
+    assert.deepEqual(c.clusters, [], '纯 hub 卫星不是社区');
+    assert.deepEqual(c.links, [], '碎屑端点不产生聚合边');
+    assert.equal(c.crumbCount, 4, '4 个卫星计入碎屑');
   });
 
   it('4. 口径：死链幻影与孤立节点不进簇/聚合边，计入 crumbCount', () => {
@@ -136,7 +137,7 @@ describe('detectCommunities', () => {
   });
 
   it('4d. 默认 hub 阈值公式钉死：星形 51 点（hub 度 50）→ max(50, 5×P90)=50 恰好入选', () => {
-    // P90([1×50, 50]) = 1 → 5×1=5 → max(50,5)=50；hub 度 50 ≥ 50 入选——
+    // P90(非 hub 输入度数 [1×50]) = 1 → 5×1=5 → max(50,5)=50；hub 度 50 ≥ 50 入选——
     // 公式任何一处改坏（NaN / 插值错位 / 下限丢失）都会让 hubIds 空。
     const hub = 'hub.md';
     const spokes = Array.from({ length: 50 }, (_, i) => `s${i + 1}.md`);
@@ -145,9 +146,9 @@ describe('detectCommunities', () => {
     const c = detectCommunities(graph(nodes, edges), { minNodes: 0 });
 
     assert.deepEqual(c.hubIds, [hub]);
-    assert.equal(c.clusters.length, 1);
-    assert.equal(c.clusters[0]!.size, 50, '辐条去 hub 后成簇');
-    assert.equal(c.quality, 'degenerate', '最大簇吞掉全部非 hub 节点');
+    assert.deepEqual(c.clusters, [], '辐条只连 hub → 纯卫星，不成簇（口径见 3）');
+    assert.equal(c.crumbCount, 50);
+    assert.equal(c.quality, 'ok');
   });
 
   it('5. 小簇（<clusterMinSize 默认 5）整簇计碎屑，不出 clusters', () => {
@@ -202,5 +203,51 @@ describe('detectCommunities', () => {
     assert.deepEqual(single.clusters, []);
     assert.equal(single.crumbCount, 1);
     assert.equal(single.quality, 'ok');
+  });
+
+  it('10. hub 漏斗回归（校准发现）：hub 桥接三个团不得把社区冲成单一巨团', () => {
+    // 3 个 8 团 + hub.md 与全部 24 成员连边（hub 度 24 ≥ hubThreshold 20）。
+    // hub 边若进 LPA：hub label 最小 + 平票取更小 → 一轮洪水全图塌成 1 簇
+    //（#416 校准在 6.5k 合成库实测：20 目录全塌，quality=degenerate）。
+    const dirs = ['ta', 'tb', 'tc'];
+    const keysByDir = dirs.map((d) => Array.from({ length: 8 }, (_, i) => `${d}${i + 1}.md`));
+    const nodes = [md('hub.md'), ...keysByDir.flatMap((ks, di) => ks.map((k) => md(k, { folder: dirs[di]! })))];
+    // 边引用带 folder 前缀的完整 key（与节点 key 一致）
+    const edges = keysByDir.flatMap((ks, di) => cliqueEdges(ks.map((k) => `${dirs[di]}/${k}`)));
+    for (const [di, ks] of keysByDir.entries()) {
+      for (const k of ks) edges.push({ source: 'hub.md', target: `${dirs[di]}/${k}` });
+    }
+    const c = detectCommunities(graph(nodes, edges), { minNodes: 0, hubThreshold: 20 });
+
+    assert.deepEqual(c.hubIds, ['hub.md']);
+    assert.equal(c.clusters.length, 3, '三个团各自成簇，hub 边不得串票');
+    assert.deepEqual(c.clusters.map((x) => x.size), [8, 8, 8]);
+    // 聚合边：每簇 ↔ hub 各 8 条真实成员边；端点字典序规范化（cN < hub.md）
+    assert.deepEqual(
+      c.links.map((l) => [l.source, l.target, l.weight]),
+      [
+        ['c1', 'hub.md', 8],
+        ['c2', 'hub.md', 8],
+        ['c3', 'hub.md', 8],
+      ],
+    );
+    assert.equal(c.quality, 'ok');
+  });
+
+  it('11. 簇上限：超过 TRUNK_MAX_CLUSTERS 的最小簇并入碎屑，折叠占比 >20% → quality degenerate', () => {
+    // 60 个 6 团 = 360 节点（全部 ≥ clusterMinSize，不触发小簇路径）。
+    // cap 保留 40 团、折叠 20 团（120 人 = 33% > 20%）→ 碎屑 + 簇结构不明显信号。
+    const cliques = Array.from({ length: 60 }, (_, d) =>
+      Array.from({ length: 6 }, (_, i) => `d${String(d).padStart(2, '0')}n${i + 1}.md`),
+    );
+    const nodes = cliques.flatMap((ks, d) => ks.map((k) => md(k, { folder: `dir${String(d).padStart(2, '0')}` })));
+    const edges = cliques.flatMap((ks, d) => cliqueEdges(ks.map((k) => `dir${String(d).padStart(2, '0')}/${k}`)));
+    const c = detectCommunities(graph(nodes, edges), { minNodes: 0 });
+
+    assert.equal(c.clusters.length, 40);
+    assert.equal(c.crumbCount, 120, '被 cap 折叠的 20 团整团计入碎屑');
+    assert.equal(c.quality, 'degenerate', '折叠占比 33% > 20%');
+    // 折叠端点不得产生聚合边（本 fixture 无跨团边，links 恒空）
+    assert.deepEqual(c.links, []);
   });
 });
