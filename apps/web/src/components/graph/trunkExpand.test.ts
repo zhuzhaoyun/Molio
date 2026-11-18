@@ -8,6 +8,7 @@ import {
   computeMiniSim,
   centroidOf,
   translatePositions,
+  radialFillPositions,
   matchExpansionsOnRefresh,
 } from './trunkExpand.ts';
 import { collideRadiusValue } from './engine/graphUtils.ts';
@@ -184,6 +185,26 @@ describe('centroid / translate', () => {
     assert.deepEqual(out.get('a'), { x: 10, y: -10 });
     assert.deepEqual(out.get('b'), { x: 20, y: -6 });
     assert.deepEqual(src.get('a'), { x: 0, y: 0 });
+  });
+});
+
+describe('radialFillPositions（巨簇余批铺位，代拍 F 预算的兑现）', () => {
+  it('全部落位在 baseRadius 之外、距质心有界，且确定性', () => {
+    const keys = Array.from({ length: 500 }, (_, i) => `k${i}`);
+    const c = { x: 10, y: -5 };
+    const a = radialFillPositions(keys, c, 300, 300);
+    const b = radialFillPositions(keys, c, 300, 300);
+    assert.deepEqual([...a.entries()], [...b.entries()]); // 确定性
+    for (const [k, p] of a) {
+      const d = Math.hypot(p.x - c.x, p.y - c.y);
+      assert.ok(d >= 300 * 0.99, `${k} 距质心 ${d} 未越过 baseRadius`);
+      assert.ok(d < 300 + 30 * Math.sqrt(900) + 50, `${k} 距质心 ${d} 越界`);
+    }
+  });
+  it('密度连续：续接起点不与已放置环重叠（首个新点紧贴 baseRadius 外）', () => {
+    const a = radialFillPositions(['x'], { x: 0, y: 0 }, 100, 100);
+    const d = Math.hypot(a.get('x')!.x, a.get('x')!.y);
+    assert.ok(d >= 100 && d < 100 + 30 * Math.sqrt(101) + 1);
   });
 });
 

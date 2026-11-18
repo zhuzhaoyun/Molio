@@ -45,6 +45,9 @@ function makeTrunkVault(dir: string): void {
     lines.push('', `正文段落 ${i}：占位。`);
     writeFileSync(path.join(dir, dirName, `${name(i)}.md`), lines.join('\n') + '\n');
   }
+  // 死链（未解析 wikilink）：真实库标配。LayoutService 喂 worker 的边必须裁掉死链端点
+  //（forceLink "node not found"，H2 探针实测）——本 fixture 恒带一条钉住该回归
+  writeFileSync(path.join(dir, `主题00`, `${name(0)}.md`), `# ${name(0)}\n\n- 关联 [[不存在的那种目标]]\n`);
   writeFileSync(path.join(dir, '总目录.md'), '# 总目录\n\n索引页。\n');
 }
 

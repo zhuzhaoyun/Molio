@@ -21,6 +21,7 @@ import {
   computeMiniSim,
   centroidOf,
   translatePositions,
+  radialFillPositions,
   splitBatches,
   matchExpansionsOnRefresh,
 } from './trunkExpand';
@@ -359,10 +360,16 @@ export function GraphPage({
       if (!engine.getTrunkExpandedClusters().includes(clusterId)) return; // 已收起，停流
       const batch = batches[bi++];
       if (!batch) return;
-      const allSoFar = [...new Set([...cache.positions.keys(), ...batch])];
-      const sim = computeMiniSim(allSoFar, payload.edges, centroid, cache.positions);
+      // 余批 radial 续接铺位（O(n)）：巨簇 3997 的 ≤2s 流式预算兑现——mini-sim 只跑首批
+      // 出结构骨干（度数降序 = 高连接成员），余批围绕已落位外缘 golden 螺旋续铺；
+      // worker 就绪路径（展开前已算完）不受影响，给的是真布局
+      let maxR = 0;
+      for (const p of cache.positions.values()) {
+        maxR = Math.max(maxR, Math.hypot(p.x - centroid.x, p.y - centroid.y));
+      }
+      const filled = radialFillPositions(batch, centroid, maxR, cache.positions.size);
       const merged = new Map(cache.positions);
-      for (const k of batch) merged.set(k, sim.get(k)!);
+      for (const k of batch) merged.set(k, filled.get(k)!);
       cache.positions = merged;
       engine.appendTrunkMembers(clusterId, payload, merged, batch);
       setTimeout(step, 0); // 块间让出主线程
@@ -673,7 +680,12 @@ export function GraphPage({
   useEffect(() => {
     if (!trunkView.active || !trunkScene || companion || !activeVaultId || !graphData) return;
     const nodeKeys = graphData.nodes.filter((n) => !n.deadLink).map((n) => n.key);
-    const links = graphData.edges.map((e) => ({ source: e.source, target: e.target }));
+    // 边必须裁到节点集内：死链占位端点不在 nodeKeys 里，原样喂给 worker 的 forceLink
+    // 会抛 "node not found"（layout 永不就绪 + 控制台报错——合成 10k 库探针实测抓到）
+    const keySet = new Set(nodeKeys);
+    const links = graphData.edges
+      .filter((e) => keySet.has(e.source) && keySet.has(e.target))
+      .map((e) => ({ source: e.source, target: e.target }));
     const key = `${activeVaultId}|global`;
     const idle: (cb: () => void) => number =
       typeof window.requestIdleCallback === 'function'

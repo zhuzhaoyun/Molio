@@ -151,14 +151,20 @@ interface MiniNode extends SimulationNodeDatum {
  * 局部力布局兜底（worker 未就绪 / 刷新补位）：质心锚 radial 初始化 + DEFAULT_FORCE_PARAMS
  * 配方（与全量图同配方——代拍 P）跑 ticks 步。init 里已放置的成员 **钉住**（fx/fy，评审 #3：
  * 已落位不迁移），新成员围绕生长。返回 sim 坐标（调用方负责质心对齐平移）。
+ *
+ * ticks 缺省按规模自适应：radial 起点已是合理布局，兜底只要「不叠不散」；巨簇尾批
+ * （数千节点）按 300 步跑会爆代拍 F 的 ≤2s 流式预算（Mac 10k 合成库实测 507 成员尾批
+ * ~1.8s，3997 外推 ~14s），钳到 [60, 300]。
  */
 export function computeMiniSim(
   members: string[],
   edges: ExpansionEdge[],
   centroid: { x: number; y: number },
   init?: ReadonlyMap<string, { x: number; y: number }>,
-  ticks = 300,
+  ticks?: number,
 ): Map<string, { x: number; y: number }> {
+  const tickBudget =
+    ticks ?? Math.max(60, Math.min(300, Math.floor(150_000 / Math.max(members.length, 1))));
   const memberSet = new Set(members);
   // 度数 → 绘制半径（引擎 radiusOf 口径 nodeScale=1：(2+√deg)×2），collide 用
   const deg = new Map<string, number>();
@@ -200,12 +206,32 @@ export function computeMiniSim(
     )
     .force('collide', forceCollide<MiniNode>().radius((d) => collideRadiusValue(d.radius)).iterations(3));
 
-  let remaining = ticks;
+  let remaining = tickBudget;
   while (sim.alpha() > sim.alphaMin() && remaining-- > 0) sim.tick();
   sim.stop();
 
   const out = new Map<string, { x: number; y: number }>();
   for (const n of nodes) out.set(n.id, { x: n.x ?? centroid.x, y: n.y ?? centroid.y });
+  return out;
+}
+
+/** 余批 radial 续接铺位（巨簇流式兜底）：已放置外缘之外按 golden 螺旋续铺，密度与首批
+ *  radial 初始化连续（r = base + RING·(√(j+1) − √start)）。O(n)——3997 级巨簇的 ≤2s
+ *  流式预算靠它兑现（mini-sim 只跑首批出结构骨干，worker 就绪路径给真布局）。 */
+export function radialFillPositions(
+  keys: string[],
+  centroid: { x: number; y: number },
+  baseRadius: number,
+  startIndex = 0,
+): Map<string, { x: number; y: number }> {
+  const out = new Map<string, { x: number; y: number }>();
+  const baseSqrt = Math.sqrt(startIndex);
+  keys.forEach((key, i) => {
+    const j = startIndex + i;
+    const r = baseRadius + MINI_SIM_RING * (Math.sqrt(j + 1) - baseSqrt);
+    const ang = GOLDEN_ANGLE * j;
+    out.set(key, { x: centroid.x + r * Math.cos(ang), y: centroid.y + r * Math.sin(ang) });
+  });
   return out;
 }
 
