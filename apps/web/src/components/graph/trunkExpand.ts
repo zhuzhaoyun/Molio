@@ -98,7 +98,9 @@ export function buildExpansion(
       internal.push({ source: e.source, target: e.target });
       continue;
     }
-    const memberEnd = sMember ? e.source : tMember ? e.target : null;
+    let memberEnd: string | null = null;
+    if (sMember) memberEnd = e.source;
+    else if (tMember) memberEnd = e.target;
     if (memberEnd == null) continue; // 两端都不是本簇成员
     const otherEnd = sMember ? e.target : e.source;
     const otherCluster = clusterOf.get(otherEnd);
