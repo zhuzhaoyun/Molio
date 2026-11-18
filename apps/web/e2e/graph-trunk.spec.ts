@@ -276,6 +276,24 @@ test('单击铁律：trunk 态点 hub 节点 = 打开文件', async ({ page }) =
   await expect(page.getByText('索引页。')).toBeVisible({ timeout: 10000 });
 });
 
+test('全量图标签 LOD：同屏可见标签 ≤60（统一规则防汤，H2）', async ({ page }) => {
+  await gotoGraph(page);
+  await expect(page.locator('[data-testid="graph-trunk-indicator"]')).toBeVisible({ timeout: 20000 });
+  // 切到全量（511+ 节点）——远焦全局视角下可见标签必须被 cap 住（旧规则 150 预算 + 焦点全显会远超）
+  await page.click('[data-testid="graph-view-mode-toggle"]');
+  await expect(page.locator('[data-testid="graph-trunk-indicator"]')).toBeHidden({ timeout: 10000 });
+  await expect
+    .poll(() => page.evaluate(() => window.__graphEngine?.getSnapshot()?.nodes.length ?? -1))
+    .toBeGreaterThan(100);
+  await expect
+    .poll(() => page.evaluate(() => window.__graphEngine?.getVisibleLabelCount() ?? -1))
+    .toBeLessThanOrEqual(60);
+  // 还原（不污染后续用例——settings 是 localStorage 全局的；落盘 300ms 防抖）
+  await page.click('[data-testid="graph-view-mode-toggle"]');
+  await expect(page.locator('[data-testid="graph-trunk-indicator"]')).toBeVisible({ timeout: 10000 });
+  await page.waitForTimeout(600);
+});
+
 test('选择残留回归（终审 Important-2）：trunk 选中簇后切全量，簇 id 选择清除不压暗', async ({ page }) => {
   await gotoGraph(page);
   await expect(page.locator('[data-testid="graph-trunk-indicator"]')).toBeVisible({ timeout: 20000 });

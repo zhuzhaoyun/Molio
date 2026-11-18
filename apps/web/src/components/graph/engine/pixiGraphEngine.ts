@@ -61,6 +61,7 @@ import {
   SUPER_HUB_DEGREE,
   type GraphDegreeNode,
 } from './graphUtils';
+import { selectLabels, type LabelLodNode } from '../labelLod';
 
 // ── Public types ──
 
@@ -179,11 +180,11 @@ const CLICK_MOVE_TOLERANCE = 4;
 const DRAG_THRESHOLD = 4;
 /** collide 迭代：静止时 3（质量优先），位移场期降到 1（拖拽降质） */
 const COLLIDE_ITERATIONS = 3;
-/** 标签显隐：屏幕半径阈值（太小不显示）+ 度数预算（候选池上限，实际可见数由碰撞检测决定） */
-const LABEL_MIN_SCREEN_RADIUS = 3;
+/** 标签 LOD（H2 统一规则 labelLod.ts）：屏幕直径阈值 + 同屏可见总数上限（防汤，代拍 B） */
+const LABEL_MIN_SCREEN_DIAMETER = 8;
+const LABEL_MAX_ONSCREEN = 60;
 /** 标签与节点顶部的屏幕间距（px，不随缩放变化） */
 const LABEL_GAP_SCREEN = 4;
-const LABEL_BUDGET = 150;
 /** 标签碰撞检测的四周留白（stage-local 单位） */
 const LABEL_PAD = 2;
 const K_MIN = 0.1;
@@ -223,6 +224,8 @@ const TRUNK_FORCE = {
 /** 聚合边权重查表的 pairKey 分隔符（与 daemon graph-communities 同款 NUL 转义写法——
  *  别用裸 \x00 字节：源码会被工具判成二进制，grep 静默零命中） */
 const TRUNK_PAIR_SEP = '\u0000';
+/** 无焦点时的空邻居集（labelLod 入参，免每帧分配） */
+const NO_NEIGHBOURS: ReadonlySet<string> = new Set();
 
 export class PixiGraphEngine {
   private container: HTMLElement;
@@ -766,6 +769,15 @@ export class PixiGraphEngine {
     };
   }
 
+  /** e2e/探针观测口：当前可见标签数（统一 LOD 规则的防汤断言用） */
+  getVisibleLabelCount(): number {
+    let count = 0;
+    for (const rd of this.nodeRenderData) {
+      if (rd.label.visible) count++;
+    }
+    return count;
+  }
+
   /** Minimap / e2e 快照：节点位置 + 视口（simulation 坐标） */
   getSnapshot(): GraphSnapshot | null {
     if (this.nodes.length === 0) return null;
@@ -967,7 +979,7 @@ export class PixiGraphEngine {
       const gfx = new Graphics({
         interactive: true,
         eventMode: 'static',
-        hitArea: new Circle(0, 0, n.radius + 3),
+        hitArea: new Circle(0, 0, n.radius + 6),
         cursor: 'pointer',
       })
         .circle(0, 0, n.radius)
@@ -1183,9 +1195,10 @@ export class PixiGraphEngine {
    * 放大时盒变小 → 更多标签放得下 → 渐进显示；缩小时反之。这正是 Obsidian
    * 「远看只有 hub 有文字、放大后文字逐个浮现」的行为。
    *
-   * 1. 候选：焦点邻域（总是显示）∪（屏幕半径达标 且 度数排名在候选池内）
-   * 2. 贪心碰撞检测：焦点标签先放置且总是显示；普通标签按度数排名放置，
-   *    与已放置标签重叠则隐藏——「文字永不叠在一起」。
+   * H2 统一 LOD 规则（labelLod.ts，设计 §4.3）：候选 = 屏内 ∩ 屏幕直径 ≥ 8px
+   * （hovered 无条件、trunk blob 豁免），同屏上限 60、cap 内 1-hop 关联享优先——
+   * 替代旧的「焦点邻域全显 + 度数预算池」双轨（hover 时邻居无条件显名正是大库
+   * 「文字干扰」的根）。贪心碰撞检测照旧：焦点/blob 钉住必放，普通标签避让。
    */
   private syncLabels(): void {
     const focusId = this.focusId;
@@ -1201,36 +1214,42 @@ export class PixiGraphEngine {
       for (const rd of this.nodeRenderData) rd.label.scale.set(s, s);
     }
 
-    interface Candidate {
-      rd: NodeRenderData;
-      focused: boolean;
-    }
-    const focusedCands: Candidate[] = [];
-    const normalCands: Candidate[] = [];
-
+    const t = this.currentTransform;
+    const view = {
+      x: (0 - t.x) / t.k - this.width / 2,
+      y: (0 - t.y) / t.k - this.height / 2,
+      w: this.width / t.k,
+      h: this.height / t.k,
+    };
+    const lodNodes: LabelLodNode[] = [];
+    const rdByKey = new Map<string, NodeRenderData>();
     for (const rd of this.nodeRenderData) {
       const d = rd.simulationData;
-      if (d.x == null || d.y == null) {
-        rd.label.visible = false;
-        continue;
-      }
-      // trunk：簇名/hub 名常显（~30 个远低于预算，设计 §4.2）——全部按焦点候选处理，
-      // 绕过屏幕半径/度数预算门（贪心碰撞检测仍生效，重叠时会避让）
-      if (this.trunkMode || (focusId !== null && this.focusedNeighbours.has(d.id))) {
-        focusedCands.push({ rd, focused: true });
-        continue;
-      }
-      rd.label.visible = false; // 先隐藏非焦点标签，碰撞检测后再点亮
-      if (d.radius * k >= LABEL_MIN_SCREEN_RADIUS && d.rank < LABEL_BUDGET) {
-        normalCands.push({ rd, focused: false });
-      }
+      rd.label.visible = false; // 先灭后亮：候选经贪心碰撞检测再点亮
+      if (d.x == null || d.y == null) continue;
+      lodNodes.push({
+        key: d.id,
+        x: d.x,
+        y: d.y,
+        radius: d.radius,
+        degree: this.adjacency.get(d.id)?.size ?? 0,
+        forceShow: !!d.trunkCluster, // trunk 簇名常显（T2 承诺，直径豁免）
+      });
+      rdByKey.set(d.id, rd);
     }
-    // 度数高的标签优先显示
-    normalCands.sort((a, b) => a.rd.simulationData.rank - b.rd.simulationData.rank);
+    const orderedKeys = selectLabels({
+      nodes: lodNodes,
+      view,
+      k,
+      hoveredKey: this.hoveredNodeId,
+      neighbourKeys: focusId ? this.focusedNeighbours : NO_NEIGHBOURS,
+      minScreenDiameter: LABEL_MIN_SCREEN_DIAMETER,
+      maxOnScreen: LABEL_MAX_ONSCREEN,
+    });
 
-    const ordered = focusedCands.concat(normalCands);
     // 包围盒（stage-local）= 屏幕尺寸 / k；标签底边位于节点上方 LABEL_GAP_SCREEN 屏幕像素
-    const boxes = ordered.map(({ rd }) => {
+    const boxes = orderedKeys.map((key) => {
+      const rd = rdByKey.get(key)!;
       const d = rd.simulationData;
       const lx = d.x! + cx;
       const top = d.y! + cy - d.radius - LABEL_GAP_SCREEN / k;
@@ -1244,13 +1263,15 @@ export class PixiGraphEngine {
         y1: top + pad,
       };
     });
-    const visible = greedyLabelLayout(
-      boxes,
-      ordered.map((c) => c.focused),
+    // 钉住必放：1-hop 焦点标签（hover/选中语境下的关键信息）+ trunk blob（簇名）
+    const pinned = orderedKeys.map(
+      (key) => this.focusedNeighbours.has(key) || !!rdByKey.get(key)!.simulationData.trunkCluster,
     );
+    const visible = greedyLabelLayout(boxes, pinned);
 
-    for (let i = 0; i < ordered.length; i++) {
-      const { rd, focused } = ordered[i]!;
+    for (let i = 0; i < orderedKeys.length; i++) {
+      const rd = rdByKey.get(orderedKeys[i]!)!;
+      const focused = this.focusedNeighbours.has(orderedKeys[i]!);
       rd.label.visible = visible[i]!;
       rd.label.alpha = focusId !== null && !focused ? dim : 1;
     }
