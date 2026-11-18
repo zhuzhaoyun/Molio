@@ -413,6 +413,32 @@ test('巨簇分批展开（H2 代拍 F）：degenerate 库主簇流式注入，�
   expect(Math.abs(vp2.ty - vp.ty)).toBeLessThan(1);
 });
 
+test('展开后空闲红线（H2）：动画与批次停息后状态稳定，#415 不回退', async ({ page }) => {
+  await gotoGraph(page);
+  await expect(page.locator('[data-testid="graph-trunk-indicator"]')).toBeVisible({ timeout: 20000 });
+  const blob = await findBlobScreen(page);
+  expect(blob).toBeTruthy();
+  await page.mouse.click(blob!.sx, blob!.sy);
+  await expect
+    .poll(() => expandedContains(page, blob!.key), { timeout: 5000 })
+    .toBe(true);
+  // 过渡动画（350ms+stagger）与批次流息止后，快照与标签计数不再变化（空闲期无持续重绘的 proxy；
+  // render=0 的直接测量由 scripts/graph-perf-probe.mjs 承担）
+  await page.waitForTimeout(1200);
+  const sample = () =>
+    page.evaluate(() =>
+      JSON.stringify({
+        n: window.__graphEngine?.getSnapshot()?.nodes.length ?? -1,
+        labels: window.__graphEngine?.getVisibleLabelCount() ?? -1,
+        vp: window.__graphEngine?.getViewport(),
+      }),
+    );
+  const s1 = await sample();
+  await page.waitForTimeout(600);
+  const s2 = await sample();
+  expect(s2).toBe(s1);
+});
+
 test('选择残留回归（终审 Important-2）：trunk 选中簇后切全量，簇 id 选择清除不压暗', async ({ page }) => {
   await gotoGraph(page);
   await expect(page.locator('[data-testid="graph-trunk-indicator"]')).toBeVisible({ timeout: 20000 });
