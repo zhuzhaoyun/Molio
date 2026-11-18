@@ -1190,6 +1190,11 @@ export class PixiGraphEngine {
     return count;
   }
 
+  /** e2e 观测口：当前边总数（跨簇 spoke/真实边在场性的回归断言用，终审 #3） */
+  getLinkCount(): number {
+    return this.links.length;
+  }
+
   /** Minimap / e2e 快照：节点位置 + 视口（simulation 坐标） */
   getSnapshot(): GraphSnapshot | null {
     if (this.nodes.length === 0) return null;

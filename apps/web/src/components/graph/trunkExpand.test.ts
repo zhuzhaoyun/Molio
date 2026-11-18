@@ -98,7 +98,7 @@ describe('buildExpansion（载荷与 spoke，代拍 L）', () => {
     assert.ok(payload.memberNodes.every((n) => n.key.startsWith('topic-a/')));
   });
 
-  it('对端是收起簇 → spoke 按 (成员,团) 对去重一条、weight=真实边数；无逐边', () => {
+  it('对端是收起簇 → spoke 按 (成员,团) 去重带权；真实成员边也一并产出（端点在场性由引擎挑选）', () => {
     const payload = buildExpansion(scene, graph, 'c1', new Set())!;
     const spokes = payload.edges.filter((e) => e.weight !== undefined);
     assert.equal(spokes.length, 2);
@@ -108,20 +108,24 @@ describe('buildExpansion（载荷与 spoke，代拍 L）', () => {
     const s2 = spokes.find((e) => e.source === 'topic-a/a2.md')!;
     assert.equal(s2.target, 'c2');
     assert.equal(s2.weight, 1);
+    // 真实边同样在（对端簇若展开则引擎按端点在场选它，收起则选 spoke——单一真相在画布上）
+    assert.ok(edgeSet(payload.edges).has('topic-a/a1.md|topic-b/b1.md'));
+    assert.ok(edgeSet(payload.edges).has('topic-a/a1.md|topic-b/b2.md'));
+    assert.ok(edgeSet(payload.edges).has('topic-a/a2.md|topic-b/b1.md'));
   });
 
   it('簇内真实边 + 成员↔hub 真实边（无 weight）', () => {
     const payload = buildExpansion(scene, graph, 'c1', new Set())!;
     const real = payload.edges.filter((e) => e.weight === undefined);
-    // 5 簇内 + 2 到 hub
-    assert.equal(real.length, 7);
+    // 5 簇内 + 2 到 hub + 3 跨簇真实边（spoke 之外恒产出）
+    assert.equal(real.length, 10);
     assert.ok(edgeSet(real).has('topic-a/a1.md|总目录.md'));
     assert.ok(edgeSet(real).has('topic-a/a5.md|topic-a/a6.md'));
   });
 
-  it('对端簇已展开 → 还原为真实成员边（不再 spoke）', () => {
+  it('对端簇已展开 → 仍是 spoke+真实边双产出（选择权在引擎端点判定，payload 与展开态解耦）', () => {
     const payload = buildExpansion(scene, graph, 'c1', new Set(['c2']))!;
-    assert.equal(payload.edges.filter((e) => e.weight !== undefined).length, 0);
+    assert.equal(payload.edges.filter((e) => e.weight !== undefined).length, 2);
     assert.ok(edgeSet(payload.edges).has('topic-a/a1.md|topic-b/b1.md'));
     assert.ok(edgeSet(payload.edges).has('topic-a/a2.md|topic-b/b1.md'));
   });

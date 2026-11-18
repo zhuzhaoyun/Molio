@@ -156,10 +156,11 @@ export function GraphPage({
   updateSettingsRef.current = updateSettings;
 
   // ── trunk 展开编排（H2，设计 §4.1 + 代拍 F/G + 评审 #3）──
-  /** 展开缓存：clusterId → 位置（sim 坐标）+ 全量成员序（收起后再展开瞬时复用，代拍 G） */
-  const expandedRef = useRef<Map<string, { positions: Map<string, { x: number; y: number }>; members: string[] }>>(
-    new Map(),
-  );
+  /** 展开缓存：clusterId → 位置（sim 坐标）+ 全量成员序 + 活性（收起翻假——刷新只匹配
+   *  live 条目，代拍 G 的位置缓存保留但不得被后台刷新复活，终审 #2） */
+  const expandedRef = useRef<
+    Map<string, { positions: Map<string, { x: number; y: number }>; members: string[]; live: boolean }>
+  >(new Map());
   /** 上一份 trunk 场景（后台刷新的身份重匹配用，代拍 O） */
   const prevTrunkSceneRef = useRef<TrunkScene | null>(null);
   // scope 的稳定标识：换 file / 换 dir 才重新拉数据
@@ -314,18 +315,27 @@ export function GraphPage({
     const graph = graphDataRef.current;
     if (!engine || !scene || !graph || !trunkViewRef.current.active) return;
 
+    // 已在展开态：只定位（终审 #1：重复搜索/点击已展开簇不得走展开路径——那会拿不到 blob、
+    // 以原点为锚 mini-sim 覆写位置缓存，收起再展开时整簇跳到原点）
+    if (engine.getTrunkExpandedClusters().includes(clusterId)) {
+      if (opts?.focus) engine.focusNode(opts.focus);
+      return;
+    }
+
     // 代拍 G：曾展开过又收起 → 缓存位置瞬时重展开（不重算）
     const cached = expandedRef.current.get(clusterId);
-    if (cached && !engine.getTrunkExpandedClusters().includes(clusterId)) {
-      const again = buildExpansion(scene, graph, clusterId, new Set(expandedRef.current.keys()));
+    if (cached) {
+      const again = buildExpansion(scene, graph, clusterId, new Set(engine.getTrunkExpandedClusters()));
       if (again) {
+        cached.live = true;
         engine.expandTrunkCluster(clusterId, again, cached.positions, [...cached.positions.keys()], { animate: false });
         if (opts?.focus) engine.focusNode(opts.focus);
         return;
       }
     }
 
-    const payload = buildExpansion(scene, graph, clusterId, new Set(expandedRef.current.keys()));
+    // expandedIds 一律取引擎真相（终审 #3a：页面缓存含已收起条目，拿它裁边会让跨簇边凭空消失）
+    const payload = buildExpansion(scene, graph, clusterId, new Set(engine.getTrunkExpandedClusters()));
     if (!payload || payload.memberNodes.length === 0) return;
     const batches = splitBatches(payload.memberOrder);
     const first = batches[0];
@@ -342,7 +352,7 @@ export function GraphPage({
       const clusterPos = new Map<string, { x: number; y: number }>();
       for (const k of payload.memberOrder) clusterPos.set(k, workerPos.get(k)!);
       const translated = translatePositions(clusterPos, centroidOf(clusterPos), centroid);
-      expandedRef.current.set(clusterId, { positions: translated, members: payload.memberOrder });
+      expandedRef.current.set(clusterId, { positions: translated, members: payload.memberOrder, live: true });
       engine.expandTrunkCluster(clusterId, payload, translated, first);
       for (const b of batches.slice(1)) engine.appendTrunkMembers(clusterId, payload, translated, b);
       if (opts?.focus) engine.focusNode(opts.focus);
@@ -350,7 +360,7 @@ export function GraphPage({
     }
 
     const placed = computeMiniSim(first, payload.edges, centroid);
-    expandedRef.current.set(clusterId, { positions: placed, members: payload.memberOrder });
+    expandedRef.current.set(clusterId, { positions: placed, members: payload.memberOrder, live: true });
     engine.expandTrunkCluster(clusterId, payload, placed, first);
     if (opts?.focus) engine.focusNode(opts.focus);
     let bi = 1;
@@ -380,7 +390,10 @@ export function GraphPage({
   expandClusterRef.current = expandCluster;
 
   const collapseCluster = (clusterId: string) => {
-    // 位置缓存保留在 expandedRef（代拍 G：再展开瞬时）；引擎侧自己管 blob 回位
+    // 位置缓存保留（代拍 G：再展开瞬时）但活性翻假——后台刷新只匹配 live 条目，
+    // 用户收起的簇不得被文件变更复活（终审 #2）
+    const cache = expandedRef.current.get(clusterId);
+    if (cache) cache.live = false;
     engineRef.current?.collapseTrunkCluster(clusterId);
   };
   const collapseClusterRef = useRef(collapseCluster);
@@ -582,11 +595,15 @@ export function GraphPage({
       // 重匹配（≥80% 成员重合才保，新增成员 mini-sim 补位）；首次/换库/换 scope = 全新场景
       const refresh = wasTrunk && !vaultChanged && prevScopeKey === currentScopeKey && !!prevTrunkSceneRef.current;
       if (refresh) {
-        const match = matchExpansionsOnRefresh(prevTrunkSceneRef.current!, trunkScene, [...expandedRef.current.keys()]);
+        // 只匹配 live 条目（终审 #2：已收起的簇有位置缓存但不得被刷新复活）
+        const liveIds = [...expandedRef.current.entries()]
+          .filter(([, v]) => v.live)
+          .map(([k]) => k);
+        const match = matchExpansionsOnRefresh(prevTrunkSceneRef.current!, trunkScene, liveIds);
         for (const d of match.drop) expandedRef.current.delete(d);
         const keepCaches = new Map<
           string,
-          { positions: Map<string, { x: number; y: number }>; members: string[] }
+          { positions: Map<string, { x: number; y: number }>; members: string[]; live: boolean }
         >();
         for (const { oldId, newId } of match.keep) {
           const cache = expandedRef.current.get(oldId);
@@ -614,9 +631,9 @@ export function GraphPage({
             const merged = new Map(cache.positions);
             for (const k of added) merged.set(k, sim.get(k)!);
             engine.appendTrunkMembers(newId, payload, merged, added);
-            expandedRef.current.set(newId, { positions: merged, members: newMembers });
+            expandedRef.current.set(newId, { positions: merged, members: newMembers, live: true });
           } else {
-            expandedRef.current.set(newId, { positions: cache.positions, members: newMembers });
+            expandedRef.current.set(newId, { positions: cache.positions, members: newMembers, live: true });
           }
         }
         prevTrunkSceneRef.current = trunkScene;

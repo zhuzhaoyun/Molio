@@ -51,10 +51,12 @@ export interface ExpansionPayload {
 const SPOKE_SEP = '\u0000';
 
 /**
- * 展开载荷。对端分类（按优先级）：
- *   同簇成员 → 簇内真实边；hub / 已展开簇成员 → 真实边；
- *   收起簇成员 → spoke（按 (成员, 团) 去重，weight=真实边数）；其余（碎屑/孤立）→ 丢弃（trunk 层不可见）。
- * 簇不存在 → null（调用方防御）。
+ * 展开载荷。对端分类：
+ *   同簇成员 → 簇内真实边；hub → 真实边；
+ *   其他簇成员 → **spoke 与真实成员边双产出**（引擎按端点在场性挑选：blob 在场挂 spoke、
+ *     对方成员在场挂真实边，pair 去重幂等——payload 与展开态解耦，终审 #3）；
+ *   其余（碎屑/孤立）→ 丢弃（trunk 层不可见）。
+ * 簇不存在 → null（调用方防御）。expandedIds 参数仅为签名兼容保留，不参与裁边。
  */
 export function buildExpansion(
   scene: TrunkScene,
@@ -100,14 +102,18 @@ export function buildExpansion(
     if (memberEnd == null) continue; // 两端都不是本簇成员
     const otherEnd = sMember ? e.target : e.source;
     const otherCluster = clusterOf.get(otherEnd);
-    if (hubKeys.has(otherEnd) || (otherCluster != null && expandedIds.has(otherCluster))) {
-      crossReal.push({ source: e.source, target: e.target }); // 对端是渲染对象（hub/已展开成员）
-    } else if (otherCluster != null && otherCluster !== clusterId) {
-      const pairKey = `${memberEnd}${SPOKE_SEP}${otherCluster}`; // 对端在收起簇里 → spoke
+    if (otherCluster != null && otherCluster !== clusterId) {
+      // 跨簇：spoke 与真实成员边**双产出**（终审 #3：payload 与展开态解耦——引擎按端点在场性
+      // 挑选，blob 在场挂 spoke、成员在场挂真实边，pair 去重保证幂等；expandedIds 仅作参考不再裁边）
+      const pairKey = `${memberEnd}${SPOKE_SEP}${otherCluster}`;
       spokeCount.set(pairKey, (spokeCount.get(pairKey) ?? 0) + 1);
+      crossReal.push({ source: e.source, target: e.target });
+    } else if (hubKeys.has(otherEnd)) {
+      crossReal.push({ source: e.source, target: e.target }); // hub 恒为渲染对象 → 真实边
     }
     // 其余：对端是碎屑/孤立（不在任何簇）→ trunk 层不可见，丢弃
   }
+  void expandedIds; // 兼容签名保留（终审后不再参与裁边）；调用方传引擎真相即可
 
   const spokes: ExpansionEdge[] = Array.from(spokeCount, ([pairKey, weight]) => {
     const sep = pairKey.indexOf(SPOKE_SEP);
