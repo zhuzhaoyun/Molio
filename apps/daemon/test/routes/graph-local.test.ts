@@ -137,6 +137,33 @@ describe('buildLocalGraph — dir scope（文件夹子图）', () => {
       assert.deepStrictEqual(g.focusNodes, []);
     }
   });
+
+  // T1（trunk 视图）：communities 是全量图的派生数据，局部图 = 对全量图做过滤的
+  // 自建响应对象——绝不能把几百 KB 的簇数据漏进局部响应体。
+  it('局部响应不含 communities 键（即使全量图带它）', async () => {
+    const { openDatabase, closeDatabase, createVault } = await import('../../src/core/db.js');
+    const dataDir = mkdtempSync(join(tmpdir(), 'molio-graph-local-comm-'));
+    const vaultDir = makeVault(['a.md', '# A\n\n[[b]]\n'], ['b.md', '# B\n']);
+    const db = openDatabase(dataDir);
+    const vault = createVault(db, 'graph-local-comm', vaultDir);
+
+    const prev = process.env.MOLIO_GRAPH_TRUNK_MIN_NODES;
+    process.env.MOLIO_GRAPH_TRUNK_MIN_NODES = '0'; // 让全量图真的带上 communities
+    try {
+      const root = new Hono();
+      root.route('/api/graph', graphRoutes(db));
+      const res = await root.request(`/api/graph/${vault.id}/local?scope=file&path=a.md`);
+      assert.strictEqual(res.status, 200);
+      const body = (await res.json()) as Record<string, unknown>;
+      assert.ok(!('communities' in body), '局部响应体不得携带 communities');
+    } finally {
+      if (prev === undefined) delete process.env.MOLIO_GRAPH_TRUNK_MIN_NODES;
+      else process.env.MOLIO_GRAPH_TRUNK_MIN_NODES = prev;
+      closeDatabase();
+      rmSync(dataDir, { recursive: true, force: true });
+      rmSync(vaultDir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe('buildGraph 全量图不受 focusNodes 污染', () => {

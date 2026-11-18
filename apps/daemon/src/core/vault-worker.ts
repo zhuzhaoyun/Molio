@@ -29,9 +29,17 @@ import { existsSync } from 'node:fs';
 import type { GraphData, TreeNode } from '@molio/contracts';
 import type { ExternalRootRef } from './external-roots.js';
 import type { VaultJobMessage } from './vault-worker-entry.js';
+import { DEFAULT_TRUNK_MIN_NODES } from './graph-communities.js';
 
 export type VaultJob =
-  | { kind: 'graph'; vaultPath: string; externalRoots?: ExternalRootRef[]; __testBlockMs?: number }
+  | {
+      kind: 'graph';
+      vaultPath: string;
+      externalRoots?: ExternalRootRef[];
+      /** trunk 视图小库门（T1）：client 侧从 MOLIO_GRAPH_TRUNK_MIN_NODES 现读随消息传入 */
+      trunkMinNodes?: number;
+      __testBlockMs?: number;
+    }
   | { kind: 'tree'; vaultPath: string; externalRoots?: ExternalRootRef[]; __testBlockMs?: number }
   | { kind: '__test-crash' }
   | { kind: '__test-hang' };
@@ -159,12 +167,30 @@ export class VaultWorkerClient {
 const graphClient = new VaultWorkerClient();
 const treeClient = new VaultWorkerClient();
 
+/**
+ * trunk 视图小库门阈值（T1）：MOLIO_GRAPH_TRUNK_MIN_NODES，未设/非法 →
+ * DEFAULT_TRUNK_MIN_NODES；解析为数字，≤0 视为 0（强制启用，E2E 造 trunk fixture 用）。
+ * 每次调用现读：测试可在请求间隙改 env。
+ */
+export function readTrunkMinNodesEnv(): number {
+  const raw = process.env.MOLIO_GRAPH_TRUNK_MIN_NODES;
+  if (raw === undefined || raw.trim() === '') return DEFAULT_TRUNK_MIN_NODES;
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return DEFAULT_TRUNK_MIN_NODES;
+  return n <= 0 ? 0 : n;
+}
+
 /** 全量图谱构建（整库扫描）——路由与 worker 的接缝。 */
 export function buildGraphInWorker(
   vaultPath: string,
   externalRoots: ExternalRootRef[] = [],
 ): Promise<GraphData> {
-  return graphClient.request<GraphData>({ kind: 'graph', vaultPath, externalRoots });
+  return graphClient.request<GraphData>({
+    kind: 'graph',
+    vaultPath,
+    externalRoots,
+    trunkMinNodes: readTrunkMinNodesEnv(),
+  });
 }
 
 /** 文件树构建（scanTree + wiki 状态标注）——路由与 worker 的接缝。 */

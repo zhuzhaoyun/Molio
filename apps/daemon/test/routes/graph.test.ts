@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync, chmodSync } from 'node:fs';
 import { buildGraph, isGraphExcludedFile } from '../../src/routes/graph.js';
+import type { GraphData } from '@molio/contracts';
 
 /**
  * Unit tests for the graph wikilink parser (buildGraph).
@@ -168,6 +169,57 @@ describe('graphRoutes — external source roots', () => {
       rmSync(dataDir, { recursive: true, force: true });
       rmSync(vaultDir, { recursive: true, force: true });
       rmSync(extDir, { recursive: true, force: true });
+    }
+  });
+});
+
+// T1（trunk 视图）：communities 随全量图走同一条 VaultCache 生命周期——一起缓存、一起失效。
+// MOLIO_GRAPH_TRUNK_MIN_NODES='0' 旁路小库门（与 E2E 造 trunk fixture 同一机制）。
+describe('graphRoutes — communities (T1 trunk)', () => {
+  it('全量响应带 communities；二次请求走缓存且与首次逐字段一致', async () => {
+    const { graphRoutes } = await import('../../src/routes/graph.js');
+    const { openDatabase, closeDatabase, createVault } = await import('../../src/core/db.js');
+    const { Hono } = await import('hono');
+
+    const cliqueFiles = (dir: string, names: string[]): Array<[string, string]> =>
+      names.map((n) => [
+        `${dir}/${n}.md`,
+        `# ${n}\n\n${names.filter((m) => m !== n).map((m) => `[[${m}]]`).join(' ')}\n`,
+      ]);
+    const files: Array<[string, string]> = [
+      ...cliqueFiles('topic-a', ['a1', 'a2', 'a3', 'a4', 'a5']),
+      ...cliqueFiles('topic-b', ['b1', 'b2', 'b3', 'b4', 'b5']),
+      ['solo.md', '# solo\n'],
+    ];
+    const a3 = files.find(([rel]) => rel === 'topic-a/a3.md')!;
+    a3[1] = a3[1].replace('\n', ' [[b3]]\n');
+
+    const dataDir = mkdtempSync(join(tmpdir(), 'molio-graph-comm-'));
+    const vaultDir = makeVault(...files);
+    const db = openDatabase(dataDir);
+    const vault = createVault(db, 'graph-comm', vaultDir);
+
+    const prev = process.env.MOLIO_GRAPH_TRUNK_MIN_NODES;
+    process.env.MOLIO_GRAPH_TRUNK_MIN_NODES = '0';
+    try {
+      const root = new Hono();
+      root.route('/api/graph', graphRoutes(db));
+      const res1 = await root.request(`/api/graph/${vault.id}`);
+      assert.strictEqual(res1.status, 200);
+      const body1 = (await res1.json()) as GraphData;
+      assert.ok(body1.communities, '全量响应带 communities');
+      assert.strictEqual(body1.communities!.clusters.length, 2);
+      assert.strictEqual(body1.communities!.links.length, 1);
+
+      const res2 = await root.request(`/api/graph/${vault.id}`);
+      const body2 = (await res2.json()) as GraphData;
+      assert.deepEqual(body2, body1, '缓存命中：communities 随图同生命周期、一起失效');
+    } finally {
+      if (prev === undefined) delete process.env.MOLIO_GRAPH_TRUNK_MIN_NODES;
+      else process.env.MOLIO_GRAPH_TRUNK_MIN_NODES = prev;
+      closeDatabase();
+      rmSync(dataDir, { recursive: true, force: true });
+      rmSync(vaultDir, { recursive: true, force: true });
     }
   });
 });
