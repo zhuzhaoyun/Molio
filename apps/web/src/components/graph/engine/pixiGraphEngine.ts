@@ -326,6 +326,10 @@ export class PixiGraphEngine {
   private trunkExpanded = new Map<string, { centroid: { x: number; y: number } }>();
   /** 已展开簇的成员 key 集（收起移除用；重复注入幂等） */
   private trunkExpandedMembers = new Map<string, Set<string>>();
+  /** 收起动画进行中的簇（applyCollapse 落地前阻止再次展开/追加） */
+  private trunkCollapsing = new Set<string>();
+  /** 收起动画完成定时器（destroy 清理） */
+  private trunkCollapseTimers = new Set<ReturnType<typeof setTimeout>>();
   /** 各簇展开载荷（收起后给其他已展开簇重挂 spoke 用——pair 去重保证幂等） */
   private trunkPayloads = new Map<string, ExpansionPayload>();
   /** 收起 chip 显示对象（挂 nodesLayer；pointertap → onTrunkCollapseClick） */
@@ -518,8 +522,8 @@ export class PixiGraphEngine {
     batchKeys: string[],
     opts?: { animate?: boolean },
   ): boolean {
-    void opts;
     if (this.destroyed || !this.trunkMode) return false;
+    if (this.trunkCollapsing.has(clusterId)) return false; // 收起动画进行中
     const blob = this.nodeById.get(clusterId);
     if (!blob || !blob.trunkCluster) return false; // 不存在或已展开
     const centroid = { x: blob.x ?? 0, y: blob.y ?? 0 };
@@ -530,11 +534,15 @@ export class PixiGraphEngine {
     this.addExpansionMembers(clusterId, payload, positions, batchKeys, centroid);
     this.addExpansionEdges(payload);
     this.addTrunkChip(clusterId, centroid);
+    // 过渡动画（设计 §4.1：300-400ms 成员从质心 stagger 外扩）；motionMode 降质 = 直接落位
+    if (opts?.animate !== false && !this.motionMode) {
+      this.animateExpansionFrom(clusterId, batchKeys, positions, centroid);
+    }
     this.afterTrunkMutation();
     return true;
   }
 
-  /** 后续批次流式注入（巨簇分批，代拍 F）：只加节点 + 新变完整的边。 */
+  /** 后续批次流式注入（巨簇分批，代拍 F）：只加节点 + 新变完整的边；落位后 150ms 淡入。 */
   appendTrunkMembers(
     clusterId: string,
     payload: ExpansionPayload,
@@ -542,17 +550,20 @@ export class PixiGraphEngine {
     batchKeys: string[],
   ): boolean {
     if (this.destroyed || !this.trunkMode) return false;
+    if (this.trunkCollapsing.has(clusterId)) return false;
     const state = this.trunkExpanded.get(clusterId);
     if (!state) return false; // 未展开（可能已被收起/场景重建）
     this.trunkPayloads.set(clusterId, payload);
     this.addExpansionMembers(clusterId, payload, positions, batchKeys, state.centroid);
     this.addExpansionEdges(payload);
+    if (!this.motionMode) this.animateBatchFadeIn(clusterId, batchKeys);
     this.afterTrunkMutation();
     return true;
   }
 
   /**
-   * 收起一簇：成员撤、blob 回展开时缓存的坐标（不跳位）、聚合边按 scene.links 重建（对端
+   * 收起一簇：成员 250ms tween 回质心淡出、blob 于质心淡入（motionMode 直接落位）；
+   * 动画完成后 applyCollapse 真正撤成员/重建聚合边。聚合边按 scene.links 重建（对端
    * 不在场的跳过——对方簇仍展开时其真实边/spoke 语义自洽），其他已展开簇的 spoke 借载荷
    * 重挂（pair 去重幂等）。
    */
@@ -560,48 +571,65 @@ export class PixiGraphEngine {
     if (this.destroyed || !this.trunkMode) return false;
     const members = this.trunkExpandedMembers.get(clusterId);
     const blobPos = this.trunkBlobPos.get(clusterId);
-    const cluster = this.trunkSceneRef?.clusters.find((c) => c.id === clusterId);
-    if (!members || !blobPos || !cluster) return false;
-    for (const key of members) this.removeSimNode(key);
-    this.pruneEdgesBy((id) => members.has(id));
-    this.trunkExpandedMembers.delete(clusterId);
-    this.trunkBlobPos.delete(clusterId);
-    this.trunkExpanded.delete(clusterId);
-    this.removeTrunkChip(clusterId);
-    // blob 回缓存位
-    const blob: SimNode = {
-      id: clusterId,
-      text: cluster.label,
-      path: '',
-      linkCount: 0,
-      trunkCluster: { size: cluster.size },
-      radius: this.radiusOf({ linkCount: 0, trunkCluster: { size: cluster.size } }),
-      rank: 0,
-      x: blobPos.x,
-      y: blobPos.y,
-    };
-    this.nodes.push(blob);
-    this.nodeById.set(clusterId, blob);
-    this.nodeRenderData.push(this.makeNodeRenderData(blob));
-    // 本簇聚合边重建（hub/其他 blob 在场的）
-    for (const l of this.trunkSceneRef?.links ?? []) {
-      if (l.source !== clusterId && l.target !== clusterId) continue;
-      const other = l.source === clusterId ? l.target : l.source;
-      if (!this.nodeById.has(other) || other === clusterId) continue;
-      const link: SimLink = {
-        source: this.nodeById.get(clusterId)!,
-        target: this.nodeById.get(other)!,
-        trunkWeight: l.weight,
-      };
-      this.links.push(link);
-      this.linkRenderData.push(this.makeLinkRenderData(link));
+    if (!members || !blobPos || !this.trunkSceneRef?.clusters.some((c) => c.id === clusterId)) return false;
+    if (this.motionMode) {
+      this.applyCollapse(clusterId, members);
+      return true;
     }
-    // 其他已展开簇的 spoke 现在能落回本 blob（幂等去重，真实边优先）
-    for (const [otherId, otherPayload] of this.trunkPayloads) {
-      if (otherId === clusterId) continue;
-      this.addExpansionEdges(otherPayload);
+    // blob 立即回位（alpha 0 淡入），成员向质心收拢淡出
+    const blobRd = this.restoreBlobNode(clusterId);
+    if (blobRd) blobRd.gfx.alpha = 0;
+    this.trunkCollapsing.add(clusterId);
+    const tweenKey = `collapse:${clusterId}`;
+    this.tweens.get(tweenKey)?.stop();
+    const group = new Group();
+    const chip = this.trunkChips.get(clusterId);
+    for (const key of members) {
+      const node = this.nodeById.get(key);
+      const rd = this.nodeRenderData.find((r) => r.simulationData.id === key);
+      if (!node || !rd || node.x == null || node.y == null) continue;
+      const from = { x: node.x, y: node.y };
+      const holder = { t: 0 };
+      group.add(
+        new Tween(holder)
+          .to({ t: 1 }, 250)
+          .onUpdate(() => {
+            const e = easeCubicOut(holder.t);
+            node.x = from.x + (blobPos.x - from.x) * e;
+            node.y = from.y + (blobPos.y - from.y) * e;
+            rd.gfx.alpha = 1 - holder.t;
+            this.geometryDirty = true;
+          }),
+      );
     }
-    this.afterTrunkMutation();
+    if (blobRd) {
+      const holder = { t: 0 };
+      group.add(
+        new Tween(holder)
+          .to({ t: 1 }, 250)
+          .onUpdate(() => {
+            blobRd.gfx.alpha = holder.t;
+          }),
+      );
+    }
+    if (chip) {
+      const holder = { t: 0 };
+      group.add(
+        new Tween(holder)
+          .to({ t: 1 }, 150)
+          .onUpdate(() => {
+            chip.root.alpha = 1 - holder.t;
+          }),
+      );
+    }
+    group.getAll().forEach((tw) => tw.start());
+    this.tweens.set(tweenKey, makeTweenNode(group));
+    this.tweenUntil = Math.max(this.tweenUntil, performance.now() + 350);
+    const timer = setTimeout(() => {
+      this.trunkCollapseTimers.delete(timer);
+      this.applyCollapse(clusterId, members);
+    }, 280);
+    this.trunkCollapseTimers.add(timer);
     return true;
   }
 
@@ -738,6 +766,125 @@ export class PixiGraphEngine {
     if (!chip) return;
     this.trunkChips.delete(clusterId);
     chip.root.destroy({ children: true });
+  }
+
+  /** 展开过渡（设计 §4.1）：成员从质心 350ms easeCubicOut 外扩 + 淡入，stagger 3ms/人封顶 150ms。 */
+  private animateExpansionFrom(
+    clusterId: string,
+    batchKeys: string[],
+    finalPos: ReadonlyMap<string, { x: number; y: number }>,
+    centroid: { x: number; y: number },
+  ): void {
+    const tweenKey = `expand:${clusterId}`;
+    this.tweens.get(tweenKey)?.stop();
+    const byId = new Map(this.nodeRenderData.map((rd) => [rd.simulationData.id, rd] as const));
+    const group = new Group();
+    let maxEnd = 0;
+    batchKeys.forEach((key, i) => {
+      const node = this.nodeById.get(key);
+      const rd = byId.get(key);
+      const to = finalPos.get(key);
+      if (!node || !rd || !to) return;
+      const delay = Math.min(i * 3, 150);
+      node.x = centroid.x; // 起点钉质心，tween 拉向落位
+      node.y = centroid.y;
+      rd.gfx.alpha = 0;
+      const holder = { t: 0 };
+      group.add(
+        new Tween(holder)
+          .to({ t: 1 }, 350)
+          .delay(delay)
+          .onUpdate(() => {
+            const e = easeCubicOut(holder.t);
+            node.x = centroid.x + (to.x - centroid.x) * e;
+            node.y = centroid.y + (to.y - centroid.y) * e;
+            rd.gfx.alpha = holder.t;
+            this.geometryDirty = true;
+          }),
+      );
+      maxEnd = Math.max(maxEnd, delay + 350);
+    });
+    group.getAll().forEach((tw) => tw.start());
+    this.tweens.set(tweenKey, makeTweenNode(group));
+    this.tweenUntil = Math.max(this.tweenUntil, performance.now() + maxEnd + 100);
+  }
+
+  /** 后续批次淡入（150ms，位置已在落位——只动 alpha，不占几何重画）。 */
+  private animateBatchFadeIn(clusterId: string, batchKeys: string[]): void {
+    const byId = new Map(this.nodeRenderData.map((rd) => [rd.simulationData.id, rd] as const));
+    const group = new Group();
+    for (const key of batchKeys) {
+      const rd = byId.get(key);
+      if (!rd) continue;
+      rd.gfx.alpha = 0;
+      const holder = { t: 0 };
+      group.add(
+        new Tween(holder)
+          .to({ t: 1 }, 150)
+          .onUpdate(() => {
+            rd.gfx.alpha = holder.t;
+          }),
+      );
+    }
+    if (group.getAll().length === 0) return;
+    group.getAll().forEach((tw) => tw.start());
+    this.tweens.set(`expand:${clusterId}`, makeTweenNode(group)); // 覆写已完结的首批组
+    this.tweenUntil = Math.max(this.tweenUntil, performance.now() + 250);
+  }
+
+  /** 收起的实际落地（动画完结后）：撤成员/重建聚合边/重挂他簇 spoke。 */
+  private applyCollapse(clusterId: string, members: Set<string>): void {
+    this.trunkCollapsing.delete(clusterId);
+    for (const key of members) this.removeSimNode(key);
+    this.pruneEdgesBy((id) => members.has(id));
+    this.trunkExpandedMembers.delete(clusterId);
+    this.trunkBlobPos.delete(clusterId);
+    this.trunkExpanded.delete(clusterId);
+    this.removeTrunkChip(clusterId);
+    this.restoreBlobNode(clusterId); // 幂等：动画路径已提前恢复则跳过
+    // 本簇聚合边重建（hub/其他 blob 在场的）
+    for (const l of this.trunkSceneRef?.links ?? []) {
+      if (l.source !== clusterId && l.target !== clusterId) continue;
+      const other = l.source === clusterId ? l.target : l.source;
+      if (!this.nodeById.has(other) || other === clusterId) continue;
+      const link: SimLink = {
+        source: this.nodeById.get(clusterId)!,
+        target: this.nodeById.get(other)!,
+        trunkWeight: l.weight,
+      };
+      this.links.push(link);
+      this.linkRenderData.push(this.makeLinkRenderData(link));
+    }
+    // 其他已展开簇的 spoke 现在能落回本 blob（幂等去重，真实边优先）
+    for (const [otherId, otherPayload] of this.trunkPayloads) {
+      if (otherId === clusterId) continue;
+      this.addExpansionEdges(otherPayload);
+    }
+    this.afterTrunkMutation();
+  }
+
+  /** blob 回 trunkBlobPos 缓存位（不跳位）。已存在（动画路径提前恢复）→ null。 */
+  private restoreBlobNode(clusterId: string): NodeRenderData | null {
+    if (this.nodeById.has(clusterId)) return null;
+    const blobPos = this.trunkBlobPos.get(clusterId);
+    const cluster = this.trunkSceneRef?.clusters.find((c) => c.id === clusterId);
+    if (!blobPos || !cluster) return null;
+    const blob: SimNode = {
+      id: clusterId,
+      text: cluster.label,
+      path: '',
+      linkCount: 0,
+      trunkCluster: { size: cluster.size },
+      radius: this.radiusOf({ linkCount: 0, trunkCluster: { size: cluster.size } }),
+      rank: 0,
+      x: blobPos.x,
+      y: blobPos.y,
+    };
+    this.nodes.push(blob);
+    this.nodeById.set(clusterId, blob);
+    const rd = this.makeNodeRenderData(blob);
+    this.nodeRenderData.push(rd);
+    return rd;
   }
 
   /** 展开/收起/批次注入的公共收尾：选择残留守卫 + 邻域/度数重算 + 脏标记 + 全量重绘。 */
@@ -1142,6 +1289,8 @@ export class PixiGraphEngine {
     if (this.refitTimer) clearTimeout(this.refitTimer);
     if (this.hoverLingerTimer) clearTimeout(this.hoverLingerTimer);
     if (this.trunkClickDefer) clearTimeout(this.trunkClickDefer);
+    for (const timer of this.trunkCollapseTimers) clearTimeout(timer);
+    this.trunkCollapseTimers.clear();
     this.pendingReframe = null;
     this.viewportAnim = null;
     this.tweens.forEach((t) => t.stop());
