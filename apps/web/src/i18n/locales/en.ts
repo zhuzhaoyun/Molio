@@ -654,6 +654,8 @@ const en: Record<string, string> = {
   'graph.trunkIndicator': 'Trunk view',
   'graph.trunkCrumbs': '{count} scattered nodes not shown',
   'graph.trunkDegenerate': 'Cluster structure is weak — switch to full view for the original graph',
+  'graph.trunkClustersLabel': 'clusters',
+  'graph.trunkHubsLabel': 'hubs',
   // One-click image export (sharing / acquisition)
   'graph.export': 'Export image',
   'graph.exportDownload': 'Download PNG',

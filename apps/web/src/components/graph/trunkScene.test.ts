@@ -7,6 +7,7 @@ import {
   trunkBlobRadius,
   trunkEdgeWidth,
   trunkClusterColor,
+  trunkExportMeta,
 } from './trunkScene.ts';
 import { NODE_TYPE_COLORS } from './types.ts';
 
@@ -161,5 +162,14 @@ describe('渲染公式', () => {
       assert.equal(c1, c2, `${id} 两次同色`);
       assert.ok(palette.includes(c1), `${id} 色 ${c1} ∈ 调色板`);
     }
+  });
+
+  it('⑥ trunkExportMeta：trunk 态出图统计描述画面上的 trunk 对象（终审 Important-3）', () => {
+    const s = buildTrunkScene(graphFixture())!; // 2 簇 1 hub
+    assert.equal(trunkExportMeta(s, '簇', '枢纽'), '簇 2 · 枢纽 1');
+    const noHub = { ...s, hubs: [] };
+    assert.equal(trunkExportMeta(noHub, '簇', '枢纽'), '簇 2');
+    const noCluster = { ...s, clusters: [] };
+    assert.equal(trunkExportMeta(noCluster, '簇', '枢纽'), '枢纽 1');
   });
 });

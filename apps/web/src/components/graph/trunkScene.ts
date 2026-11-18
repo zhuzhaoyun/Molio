@@ -79,7 +79,7 @@ export function buildTrunkScene(graph: GraphData): TrunkScene | null {
   };
 }
 
-export type TrunkViewReason = 'ok' | 'off' | 'no-communities' | 'filters' | 'scope';
+export type TrunkViewReason = 'ok' | 'off' | 'no-communities' | 'filters';
 
 export interface TrunkViewInput {
   scope: GraphScope | null;
@@ -124,4 +124,17 @@ export function trunkClusterColor(id: string): string {
   let hash = 0;
   for (let i = 0; i < id.length; i++) hash = (hash + id.charCodeAt(i)) % 997;
   return palette[hash % palette.length]!;
+}
+
+/**
+ * trunk 态出图卡片的统计行：描述**画面上的 trunk 对象**（簇/枢纽数），不是全库计数——
+ * 截图是 trunk 画布（几个团），统计写「511 篇」就是卡片对图面撒谎（GraphPage 出图红线：
+ * 「图里 300 个点、标题写 1284 篇——比不写更糟」；终审 Important-3）。
+ * label 由调用方传 i18n 文案。
+ */
+export function trunkExportMeta(scene: TrunkScene, clusterLabel: string, hubLabel: string): string {
+  const parts: string[] = [];
+  if (scene.clusters.length > 0) parts.push(`${clusterLabel} ${scene.clusters.length}`);
+  if (scene.hubs.length > 0) parts.push(`${hubLabel} ${scene.hubs.length}`);
+  return parts.join(' · ');
 }

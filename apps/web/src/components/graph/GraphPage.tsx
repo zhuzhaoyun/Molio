@@ -15,7 +15,7 @@ import { useActiveVault, useActiveVaultId, vaultStore } from '../../stores/vault
 import { navigationHistoryStore, useNavigationHistory } from '../../stores/navigationHistoryStore';
 import { useGraphSettings } from './useGraphSettings';
 import { graphFingerprint, refreshDebounceMs } from './refreshPolicy';
-import { buildTrunkScene, resolveTrunkView, type TrunkScene } from './trunkScene';
+import { buildTrunkScene, resolveTrunkView, trunkExportMeta, type TrunkScene } from './trunkScene';
 import { GraphSettingsPanel } from './GraphSettingsPanel';
 import { GraphSearchBox } from './GraphSearchBox';
 import { Minimap } from './Minimap';
@@ -266,10 +266,11 @@ export function GraphPage({
   const hasData = !!engineData && engineData.nodes.length > 0;
 
   // ── trunk 场景派生与生效判定（T2，纯逻辑在 trunkScene.ts，见该文件注释）──
-  // companion 副视图与局部 scope 永不 trunk（设计 §4.2：它们本就只渲染邻域）
+  // companion 副视图与局部 scope 永不 trunk（设计 §4.2：它们本就只渲染邻域）。
+  // deps 用 scopeKey 字符串而非 scope 对象（本文件既定防御约定，见 fetch effect 注释）
   const trunkScene = useMemo<TrunkScene | null>(
-    () => (graphData && !companion && !graphScope ? buildTrunkScene(graphData) : null),
-    [graphData, companion, graphScope],
+    () => (graphData && !companion && scopeKey === null ? buildTrunkScene(graphData) : null),
+    [graphData, companion, scopeKey],
   );
   const trunkView = useMemo(
     () =>
@@ -282,7 +283,7 @@ export function GraphPage({
         visibleTypes: settings.visibleTypes,
         companion,
       }),
-    [graphScope, trunkScene, settings.globalView, settings.showOrphans, settings.showDeadLinks, settings.visibleTypes, companion],
+    [scopeKey, trunkScene, settings.globalView, settings.showOrphans, settings.showDeadLinks, settings.visibleTypes, companion],
   );
   // 引擎回调（创建时一次性注册）经 ref 读最新 trunk 场景
   const trunkSceneRef = useRef<TrunkScene | null>(null);
@@ -570,13 +571,20 @@ export function GraphPage({
     setExportNote(null);
     setExporting(true);
 
-    const metaLine = `${t('graph.nodes', { count: engineData?.nodes.length ?? 0 })} · ${t(
-      'graph.edges',
-      { count: engineData?.edges.length ?? 0 },
-    )}`;
-    const topicsLine = coreTopics.length
-      ? `${t('graph.exportCoreTopics')}${coreTopics.join(' · ')}`
-      : '';
+    // 统计行与图面严格对得上（出图红线）：trunk 态截的是 trunk 画布（几个团），
+    // 统计/核心主题/图例必须换成 trunk 口径或省略——写全库计数就是卡片撒谎
+    //（终审 Important-3；代拍只豁免「导出所见」的位图行为，不豁免文案失配）
+    const trunkActive = trunkView.active && !!trunkScene;
+    const metaLine = trunkActive
+      ? trunkExportMeta(trunkScene!, t('graph.trunkClustersLabel'), t('graph.trunkHubsLabel'))
+      : `${t('graph.nodes', { count: engineData?.nodes.length ?? 0 })} · ${t(
+          'graph.edges',
+          { count: engineData?.edges.length ?? 0 },
+        )}`;
+    const topicsLine =
+      !trunkActive && coreTopics.length
+        ? `${t('graph.exportCoreTopics')}${coreTopics.join(' · ')}`
+        : '';
     const title = activeVault?.name ?? '';
     const aspect = exportAspect;
     const includeInfo = exportIncludeInfo;
@@ -600,7 +608,7 @@ export function GraphPage({
         title,
         meta: metaLine,
         topics: topicsLine,
-        legend: exportLegend,
+        legend: trunkActive ? [] : exportLegend,
         watermark: EXPORT_WATERMARK,
         ink: cardInkFor(themeColors.bg),
         bg: themeColors.bg,

@@ -654,6 +654,8 @@ const zh: Record<string, string> = {
   'graph.trunkIndicator': '枝干视图',
   'graph.trunkCrumbs': '另有 {count} 个零散节点未显示',
   'graph.trunkDegenerate': '簇结构不明显，建议切换全量查看原图',
+  'graph.trunkClustersLabel': '簇',
+  'graph.trunkHubsLabel': '枢纽',
   // 一键出图（对外分享/获客）
   'graph.export': '导出图片',
   'graph.exportDownload': '下载 PNG',

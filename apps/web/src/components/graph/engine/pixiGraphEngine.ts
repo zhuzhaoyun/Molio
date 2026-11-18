@@ -220,6 +220,9 @@ const TRUNK_FORCE = {
   /** 同步 settle 上限 tick 数（~30 对象实际远小于此，毫秒级） */
   settleTicks: 400,
 } as const;
+/** 聚合边权重查表的 pairKey 分隔符（与 daemon graph-communities 同款 NUL 转义写法——
+ *  别用裸 \x00 字节：源码会被工具判成二进制，grep 静默零命中） */
+const TRUNK_PAIR_SEP = '\u0000';
 
 export class PixiGraphEngine {
   private container: HTMLElement;
@@ -522,17 +525,23 @@ export class PixiGraphEngine {
     this.nodes = simNodes;
     this.nodeById = nodeById;
 
+    // 数据集更换后，指向已不存在 key 的选择/悬停必须清除——否则 focusId 永不命中，
+    // updateFocus 会把全图压进焦点淡出档（trunk 选中簇 c1 → 切全量后全图压暗的串味，
+    // 终审 Important-2；同一防线也覆盖「筛选滤掉已选节点」的既有残留路径）
+    if (this.selectedId !== null && !nodeById.has(this.selectedId)) this.selectedId = null;
+    if (this.hoveredNodeId !== null && !nodeById.has(this.hoveredNodeId)) this.hoveredNodeId = null;
+
     const weightByPair = new Map<string, number>();
     if (trunk) {
       for (const l of trunk.links) {
-        weightByPair.set(l.source < l.target ? `${l.source} ${l.target}` : `${l.target} ${l.source}`, l.weight);
+        weightByPair.set(l.source < l.target ? `${l.source}${TRUNK_PAIR_SEP}${l.target}` : `${l.target}${TRUNK_PAIR_SEP}${l.source}`, l.weight);
       }
     }
     const simLinks: SimLink[] = dedupeEdges(edges, (k) => nodeById.has(k)).map((e) => ({
       source: nodeById.get(e.source)!,
       target: nodeById.get(e.target)!,
       trunkWeight: trunk
-        ? weightByPair.get(e.source < e.target ? `${e.source} ${e.target}` : `${e.target} ${e.source}`) ?? 1
+        ? weightByPair.get(e.source < e.target ? `${e.source}${TRUNK_PAIR_SEP}${e.target}` : `${e.target}${TRUNK_PAIR_SEP}${e.source}`) ?? 1
         : undefined,
     }));
     this.links = simLinks;
