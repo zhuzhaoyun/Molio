@@ -94,7 +94,17 @@ export function reconcileVault(db: Database.Database, vault: Vault, opts?: Skill
       ...RETIRED_BUNDLED_SKILLS,
     ]);
     const effectiveBundled = new Set(effective.filter((s) => s.kind === 'bundled').map((s) => s.id));
-    reconcileBundledSync(effectiveBundled, managedBundled, vault.path);
+    // slug → overlay for every effective bundled skill carrying one; drives
+    // compose + guarded mirroring inside reconcileBundledSync.
+    const customBySlug = new Map<string, string>();
+    for (const s of effective) {
+      if (s.kind === 'bundled' && s.customInstructions) customBySlug.set(s.id, s.customInstructions);
+    }
+    reconcileBundledSync(effectiveBundled, managedBundled, vault.path, {
+      db,
+      customBySlug,
+      ...(opts?.molioHome ? { molioHome: opts.molioHome } : {}),
+    });
   } catch (err) {
     console.warn(
       `[skills] Failed to reconcile skills into vault "${vault.name}" (${vault.path}) — ` +
