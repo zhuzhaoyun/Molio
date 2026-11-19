@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html,body { width:672px; height:346px; overflow:hidden; }
+  body {
+    font-family:"Microsoft YaHei","PingFang SC",sans-serif;
+    background:#FAF8F5; color:#1A1917; position:relative;
+  }
+  .glow {
+    position:absolute; right:-140px; top:-160px; width:520px; height:520px;
+    background:radial-gradient(circle,rgba(201,100,66,.16),rgba(201,100,66,0) 62%);
+  }
+  .stroke {
+    position:absolute; left:-60px; bottom:-90px; width:300px; height:300px;
+    border:34px solid rgba(201,100,66,.07); border-radius:50%;
+  }
+  .wrap { position:absolute; inset:0; padding:32px 30px 30px 34px; display:flex; align-items:center; gap:26px; }
+  .left { width:302px; flex:none; }
+  .brand { display:flex; align-items:center; gap:9px; margin-bottom:18px; }
+  .brand img { width:26px; height:26px; border-radius:7px; }
+  .brand .en { font-size:10px; letter-spacing:2.6px; color:#8A867F; font-weight:600; padding-top:1px; }
+  h1 { font-size:26px; line-height:1.42; font-weight:700; letter-spacing:.3px; }
+  h1 em { font-style:normal; color:#C96442; }
+  .sub { margin-top:12px; font-size:11.5px; line-height:1.72; color:#6B6964; letter-spacing:.2px; }
+  .chips { margin-top:17px; display:flex; gap:7px; flex-wrap:wrap; }
+  .chip {
+    font-size:10.5px; color:#B45A3B; background:#FBEEE5;
+    border:1px solid #F0D9CC; border-radius:999px; padding:4px 9px; letter-spacing:.3px;
+  }
+  .shot {
+    position:relative; flex:1; height:100%; border-radius:12px;
+    background:#fff; border:1px solid #E4E2DE; overflow:hidden;
+    box-shadow:0 18px 40px rgba(26,25,23,.13), 0 3px 8px rgba(26,25,23,.05);
+  }
+  .shot img { width:100%; height:100%; object-fit:cover; object-position:52% 50%; display:block; }
+  .tag {
+    position:absolute; left:10px; bottom:10px; font-size:9.5px; color:#fff;
+    background:rgba(26,25,23,.62); backdrop-filter:blur(4px);
+    padding:4px 9px; border-radius:999px; letter-spacing:.6px;
+  }
+</style>
+</head>
+<body>
+  <div class="glow"></div><div class="stroke"></div>
+  <div class="wrap">
+    <div class="left">
+      <div class="brand">
+        <img src="../icon-256.png" alt="">
+        <span class="en">MOLIO · 墨流</span>
+      </div>
+      <h1>让你的积累<br>在 AI 时代<em>持续产生价值</em></h1>
+      <div class="sub">笔记、整本书、PDF 与 Office 文档，<br>统一加工成 AI 可读写知识库。</div>
+      <div class="chips">
+        <span class="chip">本地优先</span>
+        <span class="chip">知识图谱</span>
+        <span class="chip">Claude Code / Codex</span>
+      </div>
+    </div>
+    <div class="shot">
+      <img src="../screenshots/02-knowledge-graph.png" alt="">
+      <div class="tag">知识图谱 · 自动双向链接</div>
+    </div>
+  </div>
+</body>
+</html>

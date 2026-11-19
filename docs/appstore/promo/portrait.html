@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html,body { width:636px; height:826px; overflow:hidden; }
+  body {
+    font-family:"Microsoft YaHei","PingFang SC",sans-serif;
+    background:#FAF8F5; color:#1A1917; position:relative;
+  }
+  .glow {
+    position:absolute; right:-180px; top:-200px; width:620px; height:620px;
+    background:radial-gradient(circle,rgba(201,100,66,.15),rgba(201,100,66,0) 62%);
+  }
+  .arc {
+    position:absolute; left:-120px; bottom:-150px; width:420px; height:420px;
+    border:42px solid rgba(201,100,66,.06); border-radius:50%;
+  }
+  .wrap { position:absolute; inset:0; padding:40px 40px 30px; display:flex; flex-direction:column; }
+  .brand { display:flex; align-items:center; gap:11px; }
+  .brand img { width:38px; height:38px; border-radius:10px; box-shadow:0 4px 12px rgba(201,100,66,.22); }
+  .brand .name { font-size:17px; font-weight:700; letter-spacing:1px; }
+  .brand .en { font-size:10px; letter-spacing:2.4px; color:#8A867F; font-weight:600; margin-top:2px; }
+  h1 { margin-top:24px; font-size:36px; line-height:1.42; font-weight:700; letter-spacing:.5px; }
+  h1 em { font-style:normal; color:#C96442; }
+  .sub { margin-top:12px; font-size:12.5px; line-height:1.75; color:#6B6964; }
+  .shot {
+    margin-top:24px; height:340px; border-radius:14px; background:#fff;
+    border:1px solid #E4E2DE; overflow:hidden;
+    box-shadow:0 20px 44px rgba(26,25,23,.14), 0 3px 8px rgba(26,25,23,.05);
+  }
+  .shot img { width:100%; height:100%; object-fit:cover; object-position:50% 46%; display:block; }
+  .feats { margin-top:24px; display:flex; flex-direction:column; gap:13px; }
+  .feat { display:flex; gap:12px; align-items:flex-start; }
+  .dot {
+    flex:none; width:22px; height:22px; border-radius:50%; background:#FBEEE5;
+    border:1px solid #F0D9CC; color:#B45A3B; font-size:11px; font-weight:700;
+    display:flex; align-items:center; justify-content:center; margin-top:1px;
+  }
+  .feat b { display:block; font-size:12.5px; font-weight:700; letter-spacing:.2px; }
+  .feat span { display:block; font-size:11px; color:#6B6964; margin-top:2px; }
+  .foot {
+    margin-top:auto; display:flex; align-items:center; justify-content:space-between;
+    border-top:1px solid #E8E5E0; padding-top:12px;
+  }
+  .foot .slogan { font-size:10.5px; color:#9A9894; letter-spacing:.4px; }
+  .foot .url { font-size:11px; color:#B45A3B; font-weight:700; letter-spacing:.6px; }
+</style>
+</head>
+<body>
+  <div class="glow"></div><div class="arc"></div>
+  <div class="wrap">
+    <div class="brand">
+      <img src="../icon-256.png" alt="">
+      <div>
+        <div class="name">墨流</div>
+        <div class="en">MOLIO</div>
+      </div>
+    </div>
+    <h1>把你的积累<br>变成 AI 的<em>知识底座</em></h1>
+    <div class="sub">笔记、整本书、带图 PDF、Office 文档，统一加工成 AI 可读写的 Markdown 知识库。</div>
+    <div class="shot">
+      <img src="../screenshots/03-resources.png" alt="">
+    </div>
+    <div class="feats">
+      <div class="feat"><div class="dot">1</div><div><b>本地优先，数据不出电脑</b><span>知识库完整保存在你自己的磁盘上</span></div></div>
+      <div class="feat"><div class="dot">2</div><div><b>知识图谱与双向链接</b><span>概念自动关联，看见思想之间的关系</span></div></div>
+      <div class="feat"><div class="dot">3</div><div><b>接入 Claude Code / Codex</b><span>AI 基于你的全部积累研究、写作、问答</span></div></div>
+    </div>
+    <div class="foot">
+      <div class="slogan">让你的积累，在 AI 时代持续产生价值</div>
+      <div class="url">molio.cn</div>
+    </div>
+  </div>
+</body>
+</html>
