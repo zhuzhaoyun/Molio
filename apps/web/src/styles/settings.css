@@ -716,6 +716,32 @@
   line-height: 1.6;
 }
 
+/* ── Built-in skills section (below the user library list) ── */
+.sk-bundled {
+  margin-top: 28px;
+}
+
+.sk-bundled__head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.sk-bundled__title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.sk-bundled__hint {
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
 /* ── Form Fields (used inside the reused .kb-modal chrome) ── */
 .sk-form-hint {
   margin: 0 0 12px;

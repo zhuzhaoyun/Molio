@@ -5,6 +5,7 @@ import { useSkills } from '../../hooks/useSkills';
 import { useI18n } from '../../i18n';
 import { api } from '../../api/client';
 import { SkillEditor, type SkillFormMode, type SkillFormValues } from './SkillEditor';
+import { SkillCustomInstructionsModal } from './SkillCustomInstructionsModal';
 import { SkillHubPanel } from './SkillHubPanel';
 
 interface ModalState {
@@ -101,12 +102,65 @@ function SkillRow({
   );
 }
 
+/**
+ * One bundled-skill row: read-only card + 「自定义指令」 entry (the ONLY edit
+ * channel for bundled skills — base content is app-owned and always-on).
+ */
+function BundledSkillRow({
+  skill,
+  onCustom,
+}: {
+  skill: SkillManifestEntry;
+  onCustom: () => void;
+}) {
+  const { t } = useI18n();
+  return (
+    <div className="sk-row" data-testid={`bundled-skill-row-${skill.id}`}>
+      <div className="sk-row__body">
+        <div className="sk-row__header">
+          <span className="sk-row__name">{skill.name}</span>
+          {skill.customInstructions && (
+            <span className="rt-badge" data-testid={`bundled-skill-badge-${skill.id}`}>{t('skills.customBadge')}</span>
+          )}
+        </div>
+        {skill.description && <div className="sk-row__desc">{skill.description}</div>}
+      </div>
+      <div className="sk-row__actions">
+        <button
+          className="rt-btn rt-btn--sm rt-btn--ghost"
+          data-testid={`bundled-skill-edit-${skill.id}`}
+          onClick={onCustom}
+        >
+          {t('skills.customEdit')}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function SkillsPanel() {
   const { t } = useI18n();
   const {
     skills, loading, error,
     refresh, createSkill, updateSkill, toggleSkill, deleteSkill, importSkill,
   } = useSkills();
+
+  // Bundled (app-shipped) skills: separate section under the library list.
+  // Loaded independently of useSkills (which is library-only by design);
+  // reloaded after every overlay save so badges stay in sync.
+  const [bundledSkills, setBundledSkills] = useState<SkillManifestEntry[]>([]);
+  const refreshBundled = useCallback(() => {
+    api
+      .listSkills({ includeBundled: true })
+      .then((list) => setBundledSkills(list.filter((s) => s.kind === 'bundled')))
+      .catch(() => setBundledSkills([])); // section simply stays empty on failure
+  }, []);
+  useEffect(() => {
+    refreshBundled();
+  }, [refreshBundled]);
+
+  // Overlay editor target (bundled OR library skill).
+  const [customTarget, setCustomTarget] = useState<SkillManifestEntry | null>(null);
 
   // Segmented view: '我的技能' (library) vs '技能商店' (skillhub.cn catalog).
   // Kept local to the panel — no route/NavRail change, and switching back to
@@ -340,6 +394,27 @@ export function SkillsPanel() {
             </div>
           )}
 
+          {/* Built-in skills: app-owned, always-on; customization rides on the
+              overlay (自定义指令) — the only sanctioned edit channel, survives
+              every app update. */}
+          {bundledSkills.length > 0 && (
+            <div data-testid="skills-pane-bundled" className="sk-bundled">
+              <div className="sk-bundled__head">
+                <span className="sk-bundled__title">{t('skills.bundledTitle')}</span>
+                <span className="sk-bundled__hint">{t('skills.bundledHint')}</span>
+              </div>
+              <div className="sk-list">
+                {bundledSkills.map((skill) => (
+                  <BundledSkillRow
+                    key={skill.id}
+                    skill={skill}
+                    onCustom={() => setCustomTarget(skill)}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+
           <p className="sk-note">{t('skills.runtimeNote')}</p>
       </div>
 
@@ -360,6 +435,13 @@ export function SkillsPanel() {
         onClose={closeModal}
         onSave={handleSave}
         onImport={handleImport}
+      />
+
+      <SkillCustomInstructionsModal
+        show={customTarget !== null}
+        skill={customTarget}
+        onClose={() => setCustomTarget(null)}
+        onSaved={refreshBundled}
       />
     </div>
   );

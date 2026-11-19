@@ -9,6 +9,7 @@ import type {
   AuthStatus, SendCodeResponse, User, MeResponse,
   MarketRoleResponse,
   SkillManifestEntry, SkillDetailResponse, CreateSkillRequest, UpdateSkillRequest,
+  SkillQuarantineListResponse,
   ImportSkillRequest, PrefillResult, SkillImportPreviewResponse,
   HubSkillsQuery, HubSkillsListResponse, HubCategoriesResponse,
   InstallHubSkillRequest, InstallHubSkillResponse,
@@ -1073,6 +1074,38 @@ export const api = {
       const err = await res.json().catch(() => ({}));
       throw new Error(err.error?.message ?? `Failed to delete skill: ${res.status}`);
     }
+  },
+
+  /**
+   * Set/clear a skill's custom-instruction overlay (自定义指令). Works for
+   * bundled skills too — their ONLY sanctioned edit channel. Empty string
+   * clears. Survives app updates and hub refreshes by construction.
+   */
+  async updateSkillCustomInstructions(id: string, customInstructions: string): Promise<SkillManifestEntry> {
+    const res = await fetch(`${BASE}/skills/${id}/custom-instructions`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ customInstructions }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error?.message ?? `Failed to update custom instructions: ${res.status}`);
+    }
+    const data = await res.json();
+    return data.skill;
+  },
+
+  /** Unacked quarantine events (safety-net banner in the skills settings). */
+  async listSkillQuarantine(): Promise<SkillQuarantineListResponse> {
+    const res = await fetch(`${BASE}/skills/quarantine`);
+    if (!res.ok) throw new Error(`Failed to fetch quarantine events: ${res.status}`);
+    return res.json();
+  },
+
+  /** Dismiss one quarantine banner entry. */
+  async ackSkillQuarantine(id: number): Promise<void> {
+    const res = await fetch(`${BASE}/skills/quarantine/${id}/ack`, { method: 'POST' });
+    if (!res.ok) throw new Error(`Failed to acknowledge quarantine event: ${res.status}`);
   },
 
   /** Stateless pre-import inspection (POST /api/skills/preview-import). */

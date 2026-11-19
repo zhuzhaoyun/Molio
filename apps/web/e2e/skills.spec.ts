@@ -55,15 +55,20 @@ async function pasteIntoInstructions(page: import('@playwright/test').Page, text
 }
 
 test.describe('Skills library', () => {
-  test('bundled skills are hidden from the library; runtime note shown', async ({ page }) => {
+  test('bundled skills stay out of the LIBRARY list; built-in section + runtime note shown', async ({ page }) => {
     await gotoSkillsTab(page);
 
-    // Bundled skills are app-owned + always effective → hidden by the API, no
-    // rows or badges for them (a docling row here would mean a regression to
-    // the toggleable design that silently breaks KB panel / channel features).
+    // Bundled skills are app-owned + always effective → they never appear as
+    // toggleable LIBRARY rows (a docling `skill-row-` here would mean a
+    // regression to the toggleable design that silently breaks KB panel /
+    // channel features). They DO appear in the separate read-only built-in
+    // section (`bundled-skill-row-*`) introduced with custom instructions.
     await expect(page.locator('.sk-badge--bundled')).toHaveCount(0);
-    await expect(page.locator('.sk-row', { hasText: 'docling' })).toHaveCount(0);
-    await expect(page.locator('.sk-row', { hasText: 'wiki-query' })).toHaveCount(0);
+    await expect(page.locator('[data-testid^="skill-row-"]', { hasText: 'docling' })).toHaveCount(0);
+    await expect(page.locator('[data-testid^="skill-row-"]', { hasText: 'wiki-query' })).toHaveCount(0);
+    // …and the built-in section exists with the expected read-only shape.
+    await expect(page.getByTestId('skills-pane-bundled')).toBeVisible();
+    await expect(page.getByTestId('bundled-skill-row-wiki-query')).toBeVisible();
     // All-runtimes footnote. Scoped to the mine pane: both panes stay mounted
     // now (keep-alive for hub search state), so the hub pane's source note is
     // also in the DOM and an unscoped `.sk-note` matches two elements.
@@ -497,5 +502,47 @@ test.describe('Skills library', () => {
       fs.rmSync(dir, { recursive: true, force: true });
       await page.getByTestId('skill-form-cancel').click();
     }
+  });
+});
+
+test.describe('Skills custom instructions (overlay)', () => {
+  // The overlay is the ONLY sanctioned edit channel for bundled skills and the
+  // update-proof customization slot for library/hub skills. These cases pin
+  // the full loop: edit → save → persist across reload → clear.
+
+  test('bundled skill: edit, save, persist across reload, clear', async ({ page }) => {
+    await gotoSkillsTab(page);
+
+    // No badge before any overlay exists (wiki-query ships clean).
+    await expect(page.getByTestId('bundled-skill-badge-wiki-query')).toHaveCount(0);
+
+    await page.getByTestId('bundled-skill-edit-wiki-query').click();
+    const editor = page.getByTestId('custom-instructions-overlay');
+    await expect(editor).toBeVisible();
+    // Read-only base body of the real shipped skill is shown.
+    await expect(page.getByTestId('custom-instructions-base')).not.toBeEmpty();
+
+    const textarea = page.getByTestId('custom-instructions-textarea');
+    await textarea.fill('E2E 自定义指令：输出一律简体中文');
+    await page.getByTestId('custom-instructions-save').click();
+    await expect(page.getByTestId('custom-instructions-saved')).toBeVisible({ timeout: 10_000 });
+    await page.keyboard.press('Escape');
+
+    // Badge appears on the row once an overlay exists.
+    await expect(page.getByTestId('bundled-skill-badge-wiki-query')).toBeVisible();
+
+    // Persist across a full reload (proves daemon-side storage, not UI state).
+    await page.reload();
+    await gotoSkillsTab(page);
+    await page.getByTestId('bundled-skill-edit-wiki-query').click();
+    await expect(page.getByTestId('custom-instructions-textarea')).toHaveValue(
+      'E2E 自定义指令：输出一律简体中文',
+    );
+
+    // Clear → empty value, badge gone.
+    await page.getByTestId('custom-instructions-clear').click();
+    await expect(page.getByTestId('custom-instructions-textarea')).toHaveValue('');
+    await page.keyboard.press('Escape');
+    await expect(page.getByTestId('bundled-skill-badge-wiki-query')).toHaveCount(0);
   });
 });
