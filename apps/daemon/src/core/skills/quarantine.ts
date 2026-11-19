@@ -100,6 +100,18 @@ export function quarantineDir(srcDir: string, label: string, opts?: SkillPathsOp
   }
 }
 
+/**
+ * True when an UNACKED event with this dedupe key already exists — the exact
+ * same drift was already preserved + reported, so callers skip re-copying and
+ * re-reporting (the NAS-EPERM loop breaker; an acked key may fire again).
+ */
+export function hasUnackedQuarantineEvent(db: Database.Database, dedupeKey: string): boolean {
+  const row = db
+    .prepare('SELECT 1 FROM skill_quarantine_events WHERE dedupe_key = ? AND acked = 0 LIMIT 1')
+    .get(dedupeKey);
+  return row !== undefined;
+}
+
 /** Append a ledger row; returns its rowid. */
 export function recordQuarantineEvent(
   db: Database.Database,
@@ -109,15 +121,25 @@ export function recordQuarantineEvent(
     mirrorName: string;
     description: string;
     quarantinedPath: string;
+    /** Loop-breaker key (guarded callers: vault|mirror|content-hash). */
+    dedupeKey?: string;
   },
 ): number {
   const info = db
     .prepare(
       `INSERT INTO skill_quarantine_events
-         (source, skill_id, mirror_name, description, quarantined_path, created_at, acked)
-       VALUES (?, ?, ?, ?, ?, ?, 0)`,
+         (source, skill_id, mirror_name, description, quarantined_path, created_at, acked, dedupe_key)
+       VALUES (?, ?, ?, ?, ?, ?, 0, ?)`,
     )
-    .run(ev.source, ev.skillId ?? null, ev.mirrorName, ev.description, ev.quarantinedPath, Date.now());
+    .run(
+      ev.source,
+      ev.skillId ?? null,
+      ev.mirrorName,
+      ev.description,
+      ev.quarantinedPath,
+      Date.now(),
+      ev.dedupeKey ?? null,
+    );
   return Number(info.lastInsertRowid);
 }
 

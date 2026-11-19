@@ -228,8 +228,16 @@ function migrate(db: SqliteDb): void {
       description      TEXT NOT NULL DEFAULT '',
       quarantined_path TEXT NOT NULL,
       created_at       INTEGER NOT NULL,
-      acked            INTEGER NOT NULL DEFAULT 0
+      acked            INTEGER NOT NULL DEFAULT 0,
+      -- Loop breaker for persistently failing mirrors (NAS EPERM): an unacked
+      -- event with the same dedupe key means this exact drift was already
+      -- preserved+reported — skip re-copying and re-reporting it.
+      dedupe_key       TEXT
     );
+
+    CREATE INDEX IF NOT EXISTS idx_skill_quarantine_dedupe
+      ON skill_quarantine_events(dedupe_key)
+      WHERE dedupe_key IS NOT NULL AND acked = 0;
 
     -- Community market (Task 8): local publish mapping + offline listings cache.
     CREATE TABLE IF NOT EXISTS market_local (
@@ -311,6 +319,8 @@ function migrate(db: SqliteDb): void {
   // hub refresh safety-net baseline (rows installed pre-feature keep NULL —
   // the first refresh after upgrade treats NULL as "back it up").
   addColumnIfMissing(db, 'hub_skill_installs', 'installed_content_hash', 'TEXT');
+  // quarantine event loop breaker (see table comment).
+  addColumnIfMissing(db, 'skill_quarantine_events', 'dedupe_key', 'TEXT');
 
   // Full-text search over message content. trigram tokenizer: CJK substring
   // friendly, case-insensitive, no external jieba dependency (SQLite >= 3.34).

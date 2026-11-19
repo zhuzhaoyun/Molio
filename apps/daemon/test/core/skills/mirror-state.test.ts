@@ -9,9 +9,10 @@ import {
   getMirrorHash,
   setMirrorHash,
   guardedMirror,
+  guardedOrphanRemove,
   __setMirrorStateDepsForTest,
 } from '../../../src/core/skills/mirror-state.js';
-import { listQuarantineEvents } from '../../../src/core/skills/quarantine.js';
+import { listQuarantineEvents, quarantineRoot } from '../../../src/core/skills/quarantine.js';
 import type { SkillPathsOpts } from '../../../src/core/skills/paths.js';
 
 let molioHome: string;
@@ -154,5 +155,62 @@ describe('skills/mirror-state guardedMirror', () => {
     assert.equal(evs.length, 1);
     assert.ok(evs[0]!.description.includes('隔离备份失败'), `description must note the failure: ${evs[0]!.description}`);
     assert.equal(fs.readFileSync(path.join(destDir, 'SKILL.md'), 'utf8'), 'v2', 'mirror proceeds');
+  });
+});
+
+describe('skills/mirror-state dedupe on repeated failure', () => {
+  it('a persistently failing mirror does not pile up quarantine copies or events', () => {
+    const countQDirs = (): number => {
+      try {
+        return fs.readdirSync(quarantineRoot(opts)).length;
+      } catch {
+        return 0;
+      }
+    };
+
+    writeSrc('v1');
+    guardedMirror(db, { srcDir, destDir, vaultPath: vaultA, mirrorDir: 's', label: 'bundled-s' }, opts); // baseline
+    writeDest('v1-user');
+    writeSrc('v2');
+    const eperm = Object.assign(new Error('EPERM: rename'), { code: 'EPERM' });
+    __setMirrorStateDepsForTest({
+      mirrorDirIfChanged: () => { throw eperm; }, // NAS-grade persistent failure
+    });
+    try {
+      for (let i = 0; i < 3; i += 1) {
+        try { guardedMirror(db, { srcDir, destDir, vaultPath: vaultA, mirrorDir: 's', label: 'bundled-s' }, opts); } catch { /* expected */ }
+      }
+    } finally {
+      __setMirrorStateDepsForTest(null);
+    }
+    assert.equal(events().length, 1, 'one drift event, not three');
+    assert.equal(countQDirs(), 1, 'one quarantine copy, not three');
+    // And once the mirror recovers, the rebuild proceeds and re-baselines.
+    writeSrc('v2');
+    guardedMirror(db, { srcDir, destDir, vaultPath: vaultA, mirrorDir: 's', label: 'bundled-s' }, opts);
+    assert.equal(fs.readFileSync(path.join(destDir, 'SKILL.md'), 'utf8'), 'v2');
+    assert.equal(events().length, 1, 'recovery adds no event');
+  });
+
+  it('orphan removal failure also dedupes across reconciles', () => {
+    const destOrphan = path.join(path.dirname(destDir), 'molio--orph');
+    fs.mkdirSync(destOrphan, { recursive: true });
+    fs.writeFileSync(path.join(destOrphan, 'SKILL.md'), '孤儿用户内容', 'utf8');
+    __setMirrorStateDepsForTest({ quarantineDir: () => null }); // backup keeps failing
+    try {
+      for (let i = 0; i < 2; i += 1) {
+        const ok = guardedOrphanRemove(db, {
+          destDir: destOrphan,
+          mirrorDir: 'molio--orph',
+          vaultPath: vaultA,
+          label: 'lib-orph',
+          description: '测试',
+        }, opts);
+        assert.equal(ok, false, 'refuses to destroy without backup');
+      }
+    } finally {
+      __setMirrorStateDepsForTest(null);
+    }
+    assert.equal(events().length, 0, 'backup failed ⇒ no event was ever recorded (nothing to dedupe)');
   });
 });

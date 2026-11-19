@@ -26,7 +26,7 @@
 import fs from 'node:fs';
 import type Database from 'better-sqlite3';
 import { hashDir, mirrorDirIfChanged } from './dirsync.js';
-import { quarantineDir, recordQuarantineEvent } from './quarantine.js';
+import { quarantineDir, recordQuarantineEvent, hasUnackedQuarantineEvent } from './quarantine.js';
 import type { SkillPathsOpts } from './paths.js';
 
 export function getMirrorHash(db: Database.Database, vaultPath: string, mirrorDir: string): string | null {
@@ -115,23 +115,30 @@ export function guardedMirror(
   // Dest exists but differs: someone changed it vs. what we last wrote —
   // unless it merely predates the baseline table (cold start). Both cases
   // quarantine first; the event source tells the UI which banner to show.
+  // Dedupe: an unacked event for the SAME (vault, mirror, content) means this
+  // exact drift was already preserved — a persistently failing mirror (NAS
+  // EPERM) then skips re-copying + re-reporting on every reconcile.
   if (destExists) {
     const baseline = getMirrorHash(db, vaultPath, mirrorDir);
     const drifted = destHash === null || destHash !== baseline;
     if (drifted) {
-      const quarantinedPath = deps.quarantineDir(destDir, label, opts);
-      const source = baseline === null ? 'vault-cold-start' : 'vault-drift';
-      const description =
-        quarantinedPath === null
-          ? `技能镜像「${mirrorDir}」与官方版本不一致，隔离备份失败（原内容被更新覆盖；若你改过它，请从该镜像路径找回）。`
-          : `技能镜像「${mirrorDir}」${baseline === null ? '升级后首次同步存在差异' : '检测到本地修改'}，原内容已备份，可整理进「自定义指令」。`;
-      recordQuarantineEvent(db, {
-        source,
-        ...(skillId ? { skillId } : {}),
-        mirrorName: mirrorDir,
-        description,
-        quarantinedPath: quarantinedPath ?? destDir,
-      });
+      const dedupeKey = `mirror|${vaultPath}|${mirrorDir}|${destHash ?? 'unreadable'}`;
+      if (!hasUnackedQuarantineEvent(db, dedupeKey)) {
+        const quarantinedPath = deps.quarantineDir(destDir, label, opts);
+        const source = baseline === null ? 'vault-cold-start' : 'vault-drift';
+        const description =
+          quarantinedPath === null
+            ? `技能镜像「${mirrorDir}」与官方版本不一致，隔离备份失败（原内容被更新覆盖；若你改过它，请从该镜像路径找回）。`
+            : `技能镜像「${mirrorDir}」${baseline === null ? '升级后首次同步存在差异' : '检测到本地修改'}，原内容已备份，可整理进「自定义指令」。`;
+        recordQuarantineEvent(db, {
+          source,
+          ...(skillId ? { skillId } : {}),
+          mirrorName: mirrorDir,
+          description,
+          quarantinedPath: quarantinedPath ?? destDir,
+          dedupeKey,
+        });
+      }
     }
   }
 
@@ -173,6 +180,12 @@ export function guardedOrphanRemove(
   const destHash = tryHashDir(params.destDir);
   if (baseline !== null && destHash !== null && destHash === baseline) return true;
 
+  // Same dedupe rule as guardedMirror: an unacked event for this exact orphan
+  // content means it is already preserved — don't re-copy/re-report on every
+  // reconcile while removal keeps failing.
+  const dedupeKey = `orphan|${params.vaultPath}|${params.mirrorDir}|${destHash ?? 'unreadable'}`;
+  if (hasUnackedQuarantineEvent(db, dedupeKey)) return false;
+
   const quarantinedPath = deps.quarantineDir(params.destDir, params.label, opts);
   if (quarantinedPath === null) {
     console.warn(
@@ -186,6 +199,7 @@ export function guardedOrphanRemove(
     mirrorName: params.mirrorDir,
     description: params.description,
     quarantinedPath,
+    dedupeKey,
   });
   return true;
 }
