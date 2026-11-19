@@ -140,3 +140,52 @@ export function guardedMirror(
   deps.mirrorDirIfChanged(srcDir, destDir);
   setMirrorHash(db, vaultPath, mirrorDir, hashDir(destDir));
 }
+
+/** Parameters for the guarded removal of an orphaned mirror dir. */
+export interface GuardedOrphanParams {
+  /** The orphan dir on disk (e.g. `<vault>/.claude/skills/molio--old-name`). */
+  destDir: string;
+  /** Baseline key: the full mirror dir name (`molio--<dirName>`). */
+  mirrorDir: string;
+  vaultPath: string;
+  /** Quarantine label: `lib-<dirName>`. */
+  label: string;
+  /** Event description (rename/disable context is caller-specific). */
+  description: string;
+  skillId?: string;
+}
+
+/**
+ * Decide whether an orphaned mirror dir may be removed, with the same
+ * never-silently-destroy rule as guardedMirror:
+ *  - dest hash == last-synced baseline → provably Molio's own pristine copy →
+ *    removable WITHOUT backup or event (renames stay noise-free);
+ *  - anything else (hand-edited, or no baseline to prove provenance) →
+ *    quarantine copy + `orphan-sweep` event first; if the backup fails the
+ *    dir is KEPT (return false) — garbage beats destruction.
+ */
+export function guardedOrphanRemove(
+  db: Database.Database,
+  params: GuardedOrphanParams,
+  opts?: SkillPathsOpts,
+): boolean {
+  const baseline = getMirrorHash(db, params.vaultPath, params.mirrorDir);
+  const destHash = tryHashDir(params.destDir);
+  if (baseline !== null && destHash !== null && destHash === baseline) return true;
+
+  const quarantinedPath = deps.quarantineDir(params.destDir, params.label, opts);
+  if (quarantinedPath === null) {
+    console.warn(
+      `[skills] Orphan dir "${params.destDir}" kept: quarantine backup failed (refusing to destroy without backup)`,
+    );
+    return false;
+  }
+  recordQuarantineEvent(db, {
+    source: 'orphan-sweep',
+    ...(params.skillId ? { skillId: params.skillId } : {}),
+    mirrorName: params.mirrorDir,
+    description: params.description,
+    quarantinedPath,
+  });
+  return true;
+}

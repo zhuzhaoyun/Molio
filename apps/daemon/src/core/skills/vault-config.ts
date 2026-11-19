@@ -79,8 +79,14 @@ export function reconcileVault(db: Database.Database, vault: Vault, opts?: Skill
     // library → molio-- single-file sync (orphan cleanup included).
     // Dir names are planned from display names (readable in runtime skill
     // lists); same-name collisions get deterministic id-derived suffixes.
+    // Entries carry customInstructions; db enables the guarded (baseline +
+    // quarantine) path for both mirroring and orphan removal.
     const singleFile = effective.filter((s) => s.kind !== 'bundled');
-    reconcileSync(planSyncTargets(singleFile), { ...opts, claudeHome: path.join(vault.path, '.claude') });
+    reconcileSync(planSyncTargets(singleFile), {
+      ...opts,
+      claudeHome: path.join(vault.path, '.claude'),
+      db,
+    });
 
     // bundled → whole-dir sync. Managed = every bundled row the DB knows about
     // PLUS the retired bundled slugs: their DB rows are deleted on startup
