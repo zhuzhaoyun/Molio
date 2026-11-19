@@ -742,6 +742,38 @@
   color: var(--text-faint);
 }
 
+/* ── Quarantine (safety-net) banner ── */
+.sk-quarantine {
+  margin: 12px 0 4px;
+  padding: 10px 14px;
+  background: var(--accent-soft);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.sk-quarantine__row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.6;
+}
+
+.sk-quarantine__row + .sk-quarantine__row {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--border);
+}
+
+.sk-quarantine__row span {
+  flex: 1 1 auto;
+}
+
+.sk-quarantine__row code {
+  font-size: 11px;
+}
+
 /* ── Form Fields (used inside the reused .kb-modal chrome) ── */
 .sk-form-hint {
   margin: 0 0 12px;

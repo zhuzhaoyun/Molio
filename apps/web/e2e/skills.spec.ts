@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { gotoHome, clickNav } from './helpers/navigation';
+import { createTempVault, cleanupTempVault } from './helpers/cleanup';
 
 /**
  * @area settings
@@ -544,5 +545,42 @@ test.describe('Skills custom instructions (overlay)', () => {
     await expect(page.getByTestId('custom-instructions-textarea')).toHaveValue('');
     await page.keyboard.press('Escape');
     await expect(page.getByTestId('bundled-skill-badge-wiki-query')).toHaveCount(0);
+  });
+});
+
+test.describe('Skills quarantine banner (safety net)', () => {
+  test('a hand-edited bundled mirror surfaces a drift banner; ack dismisses it', async ({ page }) => {
+    // Trigger a REAL drift end-to-end: create a temp vault (creation fans out
+    // bundled skills + establishes baselines), hand-edit its wiki-query mirror
+    // behind Molio's back, then fire a reconcile via any skill mutation (PATCH
+    // custom-instructions awaits afterGlobalSkillMutation). The guarded mirror
+    // must quarantine the edited bytes and ledger a vault-drift event.
+    const DAEMON = `http://localhost:${process.env.MOLIO_E2E_DAEMON_PORT ?? '3100'}`;
+    const vault = await createTempVault('e2e-skill-quarantine');
+    try {
+      const mirrorMd = `${vault.path}/.claude/skills/wiki-query/SKILL.md`;
+      fs.writeFileSync(mirrorMd, fs.readFileSync(mirrorMd, 'utf8') + '\n<!-- E2E 手改痕迹 -->', 'utf8');
+      // docling overlay patch is just the reconcile trigger; wiki-query's overlay stays clean.
+      const trigger = await page.request.patch(`${DAEMON}/api/skills/docling/custom-instructions`, {
+        data: { customInstructions: 'E2E reconcile 触发器' },
+      });
+      expect(trigger.ok()).toBeTruthy();
+
+      await gotoSkillsTab(page);
+      const banner = page.getByTestId('skill-quarantine-banner');
+      await expect(banner).toBeVisible({ timeout: 10_000 });
+      await expect(banner).toContainText('wiki-query');
+
+      // Ack the drift row → banner disappears (this run's only event).
+      await page.getByTestId(/^skill-quarantine-ack-/).filter({ hasNotText: 'coldstart' }).first().click();
+      await expect(banner).toHaveCount(0, { timeout: 10_000 });
+
+      // Cleanup: clear the trigger overlay so later runs start clean.
+      await page.request.patch(`${DAEMON}/api/skills/docling/custom-instructions`, {
+        data: { customInstructions: '' },
+      });
+    } finally {
+      await cleanupTempVault(vault);
+    }
   });
 });

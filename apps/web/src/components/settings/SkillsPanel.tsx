@@ -1,12 +1,13 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { PuzzleIcon } from '../icons';
-import type { SkillManifestEntry, ImportSkillRequest } from '@molio/contracts';
+import type { SkillManifestEntry, ImportSkillRequest, SkillQuarantineEvent } from '@molio/contracts';
 import { useSkills } from '../../hooks/useSkills';
 import { useI18n } from '../../i18n';
 import { api } from '../../api/client';
 import { SkillEditor, type SkillFormMode, type SkillFormValues } from './SkillEditor';
 import { SkillCustomInstructionsModal } from './SkillCustomInstructionsModal';
 import { SkillHubPanel } from './SkillHubPanel';
+import { groupQuarantineEvents } from './quarantineGrouping';
 
 interface ModalState {
   mode: SkillFormMode;
@@ -161,6 +162,33 @@ export function SkillsPanel() {
 
   // Overlay editor target (bundled OR library skill).
   const [customTarget, setCustomTarget] = useState<SkillManifestEntry | null>(null);
+
+  // Safety-net banner: unacked quarantine events (loaded with the panel; every
+  // mutation fans out vault reconciles which is exactly when new events land).
+  const [quarantine, setQuarantine] = useState<SkillQuarantineEvent[]>([]);
+  const refreshQuarantine = useCallback(() => {
+    api.listSkillQuarantine().then((r) => setQuarantine(r.events)).catch(() => setQuarantine([]));
+  }, []);
+  useEffect(() => {
+    refreshQuarantine();
+  }, [refreshQuarantine]);
+  const ackQuarantine = useCallback(
+    async (id: number) => {
+      setQuarantine((prev) => prev.filter((e) => e.id !== id));
+      try {
+        await api.ackSkillQuarantine(id);
+      } catch {
+        refreshQuarantine(); // restore on failure — the event is still unacked
+      }
+    },
+    [refreshQuarantine],
+  );
+  const ackColdStartAll = useCallback(() => {
+    for (const ev of quarantine.filter((e) => e.source === 'vault-cold-start')) {
+      void api.ackSkillQuarantine(ev.id).catch(() => {});
+    }
+    setQuarantine((prev) => prev.filter((e) => e.source !== 'vault-cold-start'));
+  }, [quarantine]);
 
   // Segmented view: '我的技能' (library) vs '技能商店' (skillhub.cn catalog).
   // Kept local to the panel — no route/NavRail change, and switching back to
@@ -349,6 +377,48 @@ export function SkillsPanel() {
           {t('skills.viewHub')}
         </button>
       </div>
+
+      {/* Safety-net banner: cold-start events collapse into ONE aggregated
+          entry (they can fire per-skill on the first sync after an upgrade);
+          every other source is a specific occurrence with its own ack. */}
+      {quarantine.length > 0 && (
+        <div className="sk-quarantine" data-testid="skill-quarantine-banner">
+          {(() => {
+            const { coldStart, individual } = groupQuarantineEvents(quarantine);
+            return (
+              <>
+                {coldStart.length > 0 && (
+                  <div className="sk-quarantine__row" data-testid="skill-quarantine-coldstart">
+                    <span>
+                      升级后首次同步：{coldStart.length} 个技能的本地副本与官方版本有差异，差异备份已存于{' '}
+                      <code>~/.molio/skill-quarantine/</code>。差异也可能来自版本更新本身；若你改过它们，可从备份找回并整理进「自定义指令」。
+                    </span>
+                    <button
+                      className="rt-btn rt-btn--sm rt-btn--ghost"
+                      data-testid="skill-quarantine-ack-coldstart"
+                      onClick={ackColdStartAll}
+                    >
+                     知道了
+                    </button>
+                  </div>
+                )}
+                {individual.map((ev) => (
+                  <div className="sk-quarantine__row" key={ev.id}>
+                    <span>{ev.description}</span>
+                    <button
+                      className="rt-btn rt-btn--sm rt-btn--ghost"
+                      data-testid={`skill-quarantine-ack-${ev.id}`}
+                      onClick={() => ackQuarantine(ev.id)}
+                    >
+                     知道了
+                    </button>
+                  </div>
+                ))}
+              </>
+            );
+          })()}
+        </div>
+      )}
 
       {/* Once visited, the hub pane stays mounted; the inactive pane is hidden
           with CSS. Unmounting SkillHubPanel on every tab flip would lose its
