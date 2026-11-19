@@ -33,6 +33,13 @@ export interface SkillManifestEntry {
   builtIn: boolean;
   /** 'bundled' (multi-file, shipped) or 'library' (single-file, user-managed). Defaults to 'library'. */
   kind?: SkillKind;
+  /**
+   * User's custom-instruction overlay (自定义指令): appended to the synced
+   * SKILL.md inside a sentinel block at sync time. Stored in the skills table,
+   * so it survives app updates and hub refreshes — for bundled skills this is
+   * the ONLY sanctioned edit channel. Absent = no overlay.
+   */
+  customInstructions?: string;
   createdAt: number; // epoch ms
   updatedAt: number; // epoch ms
 }

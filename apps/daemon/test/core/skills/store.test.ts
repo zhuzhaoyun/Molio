@@ -3,7 +3,7 @@ import assert from 'node:assert';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import type Database from 'better-sqlite3';
+import Database from 'better-sqlite3';
 import { openDatabase, closeDatabase } from '../../../src/core/db.js';
 import {
   listSkills,
@@ -13,6 +13,7 @@ import {
   deleteSkill,
   readInstructions,
   getSkill,
+  updateCustomInstructions,
   SkillNotFoundError,
 } from '../../../src/core/skills/store.js';
 import type { SkillPathsOpts } from '../../../src/core/skills/paths.js';
@@ -180,5 +181,75 @@ describe('skills/store', () => {
     assert.equal(readInstructions('..\\skills', opts), '');
     assert.equal(readInstructions('', opts), '');
     assert.equal(readInstructions('a/b', opts), '');
+  });
+});
+
+describe('skills/store customInstructions (overlay)', () => {
+  it('updateCustomInstructions persists the overlay and getSkill returns it', () => {
+    const entry = createSkill(
+      db,
+      { name: '写文章', description: '写一篇文章', enabled: true, builtIn: false },
+      '先列大纲再展开。',
+      opts,
+    );
+    const overlay = '输出一律用简体中文。\n题干末尾附答题卡。';
+    const updated = updateCustomInstructions(db, entry.id, overlay);
+    assert.equal(updated.customInstructions, overlay);
+    assert.equal(getSkill(db, entry.id)?.customInstructions, overlay);
+  });
+
+  it('updateCustomInstructions(null) clears the overlay', () => {
+    const entry = createSkill(
+      db,
+      { name: '总结', description: 'd', enabled: true, builtIn: false },
+      'body',
+      opts,
+    );
+    updateCustomInstructions(db, entry.id, '临时要求');
+    const cleared = updateCustomInstructions(db, entry.id, null);
+    assert.equal(cleared.customInstructions, undefined);
+    assert.equal(getSkill(db, entry.id)?.customInstructions, undefined);
+  });
+
+  it('updateCustomInstructions throws SkillNotFoundError for an unknown id', () => {
+    assert.throws(() => updateCustomInstructions(db, 'no-such-skill', 'x'), SkillNotFoundError);
+  });
+
+  it('a legacy skills table without custom_instructions is migrated on open and old rows stay readable', () => {
+    closeDatabase();
+    const legacyDir = fs.mkdtempSync(path.join(os.tmpdir(), 'molio-skills-store-legacy-'));
+    const raw = new Database(path.join(legacyDir, 'app.sqlite'));
+    // Pre-overlay schema: exactly the columns shipped before this feature.
+    raw.exec(`
+      CREATE TABLE skills (
+        id          TEXT PRIMARY KEY,
+        name        TEXT NOT NULL,
+        description TEXT NOT NULL DEFAULT '',
+        kind        TEXT NOT NULL DEFAULT 'library',
+        core        INTEGER NOT NULL DEFAULT 0,
+        built_in    INTEGER NOT NULL DEFAULT 0,
+        enabled     INTEGER NOT NULL DEFAULT 1,
+        created_at  INTEGER NOT NULL,
+        updated_at  INTEGER NOT NULL
+      );
+    `);
+    const now = Date.now();
+    raw.prepare(
+      `INSERT INTO skills (id, name, description, kind, core, built_in, enabled, created_at, updated_at)
+       VALUES ('legacy-1', '旧技能', 'd', 'library', 0, 0, 1, ?, ?)`,
+    ).run(now, now);
+    raw.close();
+
+    // openDatabase runs migrate() → addColumnIfMissing must add the column.
+    db = openDatabase(legacyDir);
+    const rows = db.prepare('PRAGMA table_info(skills)').all() as Array<{ name: string }>;
+    assert.ok(rows.some((r) => r.name === 'custom_instructions'), 'migration must add custom_instructions');
+    assert.equal(listSkills(db).length, 1);
+    assert.equal(getSkill(db, 'legacy-1')?.customInstructions, undefined);
+    // And the migrated row accepts an overlay write.
+    const updated = updateCustomInstructions(db, 'legacy-1', '迁移后可写');
+    assert.equal(updated.customInstructions, '迁移后可写');
+    db = openDatabase(dbDir); // restore the beforeEach db for afterEach cleanup shape
+    fs.rmSync(legacyDir, { recursive: true, force: true });
   });
 });

@@ -168,6 +168,9 @@ function migrate(db: SqliteDb): void {
       core        INTEGER NOT NULL DEFAULT 0,
       built_in    INTEGER NOT NULL DEFAULT 0,
       enabled     INTEGER NOT NULL DEFAULT 1,
+      -- User custom-instruction overlay (自定义指令): NULL = none. Applied at
+      -- sync time as a sentinel-wrapped tail block, never edited in place.
+      custom_instructions TEXT,
       created_at  INTEGER NOT NULL,
       updated_at  INTEGER NOT NULL
     );
@@ -267,6 +270,10 @@ function migrate(db: SqliteDb): void {
   addColumnIfMissing(db, 'conversations', 'pinned_at', 'INTEGER');
   db.exec(`CREATE INDEX IF NOT EXISTS idx_conversations_pinned_at
            ON conversations(pinned_at) WHERE pinned_at IS NOT NULL`);
+
+  // skills.custom_instructions — user custom-instruction overlay (skill
+  // custom-instructions feature). Legacy rows keep NULL = no overlay.
+  addColumnIfMissing(db, 'skills', 'custom_instructions', 'TEXT');
 
   // Full-text search over message content. trigram tokenizer: CJK substring
   // friendly, case-insensitive, no external jieba dependency (SQLite >= 3.34).
