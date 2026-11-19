@@ -9,6 +9,7 @@
  *  - defaultModel：ANTHROPIC_MODEL / 顶层 model（「跟随默认」的副行素材）
  *  - 槽位映射行：ANTHROPIC_DEFAULT_{OPUS,SONNET,HAIKU,FABLE}_MODEL → 发送别名
  *    id（opus…），CLI 再按映射解析；label 显示解析后的真实模型
+ *  - 多个槽位映射同一个模型时合并为一行（detail 列出所有槽位），避免重复选项
  *  - 解析出任何内容即整体替换静态 fallback（第三方端点上官方模型 ID 不可用）
  *  - 无任何模型相关配置 → null（调用方回退 fallbackModels）
  *
@@ -62,18 +63,31 @@ export function resolveClaudeModels(opts: {
   const env = { ...fileEnv, ...(opts.env ?? {}) };
 
   const explicit = env.ANTHROPIC_MODEL ?? fileModel;
-  const mappings = TIERS
-    .map(({ tier, id, role }): RuntimeModelOption | null => {
-      const mapped = env[`ANTHROPIC_DEFAULT_${tier}_MODEL`];
-      if (!mapped) return null;
-      const name = env[`ANTHROPIC_DEFAULT_${tier}_MODEL_NAME`] ?? mapped;
-      return {
-        id,
-        label: name,
-        detail: `${role} 映射 · ${mapped}`,
-      };
-    })
-    .filter((m) => m !== null);
+
+  // 多个槽位映射到同一个模型时合并成一行（如 SiliconFlow 免费模型三档同值），
+  // 否则模型 pill 会出现三条一模一样的选项。保留 TIERS 里最靠前的槽位 id
+  // （opus → sonnet → haiku → fable），发送该别名即可解析到同一模型。
+  const grouped = new Map<string, { id: string; label: string; roles: string[]; mapped: string }>();
+  for (const { tier, id, role } of TIERS) {
+    const mapped = env[`ANTHROPIC_DEFAULT_${tier}_MODEL`];
+    if (!mapped) continue;
+    const existing = grouped.get(mapped);
+    if (existing) {
+      existing.roles.push(role);
+      continue;
+    }
+    grouped.set(mapped, {
+      id,
+      label: env[`ANTHROPIC_DEFAULT_${tier}_MODEL_NAME`] ?? mapped,
+      roles: [role],
+      mapped,
+    });
+  }
+  const mappings: RuntimeModelOption[] = [...grouped.values()].map((g) => ({
+    id: g.id,
+    label: g.label,
+    detail: `${g.roles.join('/')} 映射 · ${g.mapped}`,
+  }));
 
   if (!explicit && mappings.length === 0) return null;
 

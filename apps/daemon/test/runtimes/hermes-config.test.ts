@@ -356,6 +356,71 @@ describe('applyHermesProvider — custom provider', () => {
   });
 });
 
+/* ─── applyHermesProvider — siliconflow (shares the 'custom' profile) ─── */
+
+describe('applyHermesProvider — siliconflow preset', () => {
+  it('writes hermes generic custom profile + preset endpoint into config.yaml only', () => {
+    applyHermesProvider(
+      { presetId: 'siliconflow', apiKey: 'sk-sf', model: 'Qwen/Qwen3-8B' },
+      hermesHome, backupDir,
+    );
+
+    const doc = parseDocument(fs.readFileSync(cfgPath(), 'utf8'));
+    // hermes has no native siliconflow provider plugin → generic custom profile.
+    assert.equal(doc.getIn(['model', 'provider']), 'custom');
+    assert.equal(doc.getIn(['model', 'base_url']), 'https://api.siliconflow.cn/v1');
+    assert.equal(doc.getIn(['model', 'api_key']), 'sk-sf');
+    assert.equal(doc.getIn(['model', 'default']), 'Qwen/Qwen3-8B');
+    assert.ok(!fs.existsSync(dotEnvPath()), 'custom profile has no envKey — .env must not be created');
+  });
+
+  it('falls back to the preset endpoint when baseUrl is blank', () => {
+    applyHermesProvider({ presetId: 'siliconflow', apiKey: 'sk-sf' }, hermesHome, backupDir);
+    const doc = parseDocument(fs.readFileSync(cfgPath(), 'utf8'));
+    assert.equal(doc.getIn(['model', 'base_url']), 'https://api.siliconflow.cn/v1');
+  });
+
+  it('an explicit baseUrl (e.g. a relay) overrides the preset endpoint', () => {
+    applyHermesProvider(
+      { presetId: 'siliconflow', apiKey: 'sk-sf', baseUrl: 'https://relay.example/v1' },
+      hermesHome, backupDir,
+    );
+    const doc = parseDocument(fs.readFileSync(cfgPath(), 'utf8'));
+    assert.equal(doc.getIn(['model', 'base_url']), 'https://relay.example/v1');
+  });
+
+  it('round-trips as the siliconflow preset, not the generic custom one', () => {
+    applyHermesProvider(
+      { presetId: 'siliconflow', apiKey: 'sk-sf', model: 'Qwen/Qwen3-8B' },
+      hermesHome, backupDir,
+    );
+    const s = getHermesProviderState(hermesHome);
+    assert.equal(s.presetHint, 'siliconflow');
+    assert.equal(s.provider, 'custom');
+    assert.equal(s.baseUrl, 'https://api.siliconflow.cn/v1');
+    assert.equal(s.model, 'Qwen/Qwen3-8B');
+    assert.equal(s.hasKey, true);
+    assert.ok(!JSON.stringify(s).includes('sk-sf'), 'the key itself must never surface');
+  });
+
+  it('recognizes the endpoint despite a trailing slash', () => {
+    fs.writeFileSync(cfgPath(), `model:
+  provider: custom
+  base_url: https://api.siliconflow.cn/v1/
+  api_key: sk
+`);
+    assert.equal(getHermesProviderState(hermesHome).presetHint, 'siliconflow');
+  });
+
+  it('a non-siliconflow custom endpoint still reports custom', () => {
+    applyHermesProvider(
+      { presetId: 'custom', baseUrl: 'https://relay.example/v1', apiKey: 'sk' },
+      hermesHome, backupDir,
+    );
+    assert.equal(getHermesProviderState(hermesHome).presetHint, 'custom');
+  });
+});
+
 /* ─── backup / rollback ─── */
 
 describe('applyHermesProvider — backup and rollback', () => {
