@@ -17,8 +17,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type Database from 'better-sqlite3';
 import { listVaults } from '../db.js';
-import { RETIRED_BUNDLED_SKILLS } from '../skill-installer.js';
+import { RETIRED_BUNDLED_SKILLS, resolveSkillsSourceDir } from '../skill-installer.js';
 import { quarantineDir, recordQuarantineEvent } from './quarantine.js';
+import { materializeComposedSource } from './compose.js';
 import type { SkillPathsOpts } from './paths.js';
 
 export function quarantineRetiredWithOverlay(db: Database.Database, opts?: SkillPathsOpts): void {
@@ -28,6 +29,7 @@ export function quarantineRetiredWithOverlay(db: Database.Database, opts?: Skill
       .get(slug, 'bundled') as { custom_instructions: string | null } | undefined;
     if (!row?.custom_instructions) continue; // no overlay ⇒ normal step-3 machinery owns it
 
+    let preservedAnyCopy = false;
     for (const vault of listVaults(db)) {
       const copy = path.join(vault.path, '.claude', 'skills', slug);
       if (!fs.existsSync(copy)) continue;
@@ -53,6 +55,35 @@ export function quarantineRetiredWithOverlay(db: Database.Database, opts?: Skill
           `[retire-guard] Failed to remove quarantined copy "${copy}":`,
           err instanceof Error ? err.message : err,
         );
+      }
+      preservedAnyCopy = true;
+    }
+
+    // No vault carried a copy (zero vaults / offline disks), but the overlay
+    // itself is user-authored text and must not die with the row the seed is
+    // about to delete. The retired skill's source dir is deliberately KEPT in
+    // the app resources (see RETIRED_BUNDLED_SKILLS) — compose it with the
+    // overlay and preserve THAT.
+    if (!preservedAnyCopy) {
+      const src = path.join(resolveSkillsSourceDir(), slug);
+      if (fs.existsSync(src)) {
+        const composed = materializeComposedSource(src, row.custom_instructions);
+        try {
+          const quarantinedPath = quarantineDir(composed.dir, `retired-${slug}`, opts);
+          if (quarantinedPath !== null) {
+            recordQuarantineEvent(db, {
+              source: 'retired',
+              skillId: slug,
+              mirrorName: slug,
+              description: `内置技能「${slug}」已在当前版本退役；你的自定义指令已随其内容一并备份。`,
+              quarantinedPath,
+            });
+          } else {
+            console.warn(`[retire-guard] Synthetic preservation failed for "${slug}"`);
+          }
+        } finally {
+          composed.dispose();
+        }
       }
     }
   }

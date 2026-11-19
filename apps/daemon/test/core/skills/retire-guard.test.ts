@@ -90,3 +90,22 @@ describe('skills/retire-guard quarantineRetiredWithOverlay', () => {
 
 /** A slug from the real RETIRED_BUNDLED_SKILLS list ('remotion'). */
 const RETIRED_SAMPLE = 'remotion';
+
+describe('skills/retire-guard overlay preservation without vault copies', () => {
+  it('overlay content is preserved even when no vault carries a copy (composed from the kept retired source)', () => {
+    const slug = RETIRED_SAMPLE;
+    createSkill(db, { id: slug, name: slug, description: '', enabled: true, builtIn: true, kind: 'bundled' }, '');
+    updateCustomInstructions(db, slug, '我的退役定制要求');
+    // NOTE: no vault / no copy on disk.
+
+    quarantineRetiredWithOverlay(db, opts);
+
+    const evs = listQuarantineEvents(db, { unackedOnly: true });
+    assert.equal(evs.length, 1, 'the overlay itself gets a preservation event');
+    assert.equal(evs[0]!.source, 'retired');
+    const qPath = listQuarantineEvents(db)[0]!.quarantinedPath;
+    const md = fs.readFileSync(path.join(qPath, 'SKILL.md'), 'utf8');
+    assert.ok(md.includes('我的退役定制要求'), 'overlay text preserved');
+    assert.ok(md.length > md.indexOf('我的退役定制要求'), 'composed onto the real retired source body');
+  });
+});
