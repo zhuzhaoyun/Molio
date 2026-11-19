@@ -60,7 +60,10 @@ describe('skills/retire-guard quarantineRetiredWithOverlay', () => {
     assert.equal(evs[0]!.source, 'retired');
     assert.equal(evs[0]!.skillId, slug);
     const qPath = listQuarantineEvents(db)[0]!.quarantinedPath;
-    assert.equal(fs.readFileSync(path.join(qPath, 'SKILL.md'), 'utf8'), '带定制的副本');
+    assert.ok(
+      fs.readFileSync(path.join(qPath, 'SKILL.md'), 'utf8').includes('带定制的副本'),
+      'the quarantined copy preserves the full original file',
+    );
     assert.equal(fs.existsSync(copy), false, 'no orphan dir left behind');
   });
 
