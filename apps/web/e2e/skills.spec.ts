@@ -584,3 +584,41 @@ test.describe('Skills quarantine banner (safety net)', () => {
     }
   });
 });
+
+test.describe('Skills custom instructions on LIBRARY rows', () => {
+  test('library (incl. hub-installed) skills expose the overlay entry; badge reflects state', async ({ page }) => {
+    await gotoSkillsTab(page);
+
+    // A library skill stands in for hub-installed ones (same row component,
+    // same kind) — created via the daemon API to keep the case focused.
+    const DAEMON = `http://localhost:${process.env.MOLIO_E2E_DAEMON_PORT ?? '3100'}`;
+    const create = await page.request.post(`${DAEMON}/api/skills`, {
+      data: { name: `E2E库技能${Date.now()}`, description: 'd', instructions: '正文' },
+    });
+    expect(create.ok()).toBeTruthy();
+    const { skill } = (await create.json()) as { skill: { id: string } };
+
+    // The panel's list was loaded BEFORE this out-of-band create — reload so
+    // the new row (and its custom-instructions entry) exists in the DOM.
+    await page.reload();
+    await gotoSkillsTab(page);
+
+    try {
+      await page.getByTestId(`skill-custom-${skill.id}`).click();
+      await expect(page.getByTestId('custom-instructions-overlay')).toBeVisible();
+      await page.getByTestId('custom-instructions-textarea').fill('库技能的自定义要求');
+      await page.getByTestId('custom-instructions-save').click();
+      await expect(page.getByTestId('custom-instructions-saved')).toBeVisible({ timeout: 10_000 });
+      await page.keyboard.press('Escape');
+      // Overlay badge appears on the library row (mirrors bundled rows).
+      await expect(page.getByTestId(`skill-custom-badge-${skill.id}`)).toBeVisible();
+
+      // Reopen → persisted.
+      await page.getByTestId(`skill-custom-${skill.id}`).click();
+      await expect(page.getByTestId('custom-instructions-textarea')).toHaveValue('库技能的自定义要求');
+      await page.keyboard.press('Escape');
+    } finally {
+      await page.request.delete(`${DAEMON}/api/skills/${skill.id}`);
+    }
+  });
+});

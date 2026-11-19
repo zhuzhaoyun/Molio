@@ -31,6 +31,7 @@ function SkillRow({
   onToggle,
   onEdit,
   onDuplicate,
+  onCustom,
   onDeleteRequest,
   onDeleteConfirm,
   onDeleteCancel,
@@ -44,6 +45,8 @@ function SkillRow({
   onToggle: (enabled: boolean) => void;
   onEdit: () => void;
   onDuplicate: () => void;
+  /** Open the custom-instructions (overlay) editor — update-proof customization. */
+  onCustom: () => void;
   onDeleteRequest: () => void;
   onDeleteConfirm: () => void;
   onDeleteCancel: () => void;
@@ -69,11 +72,17 @@ function SkillRow({
       <div className="sk-row__body" onClick={() => { if (!fetching) onEdit(); }}>
         <div className="sk-row__header">
           <span className="sk-row__name">{skill.name}</span>
+          {skill.customInstructions && (
+            <span className="rt-badge" data-testid={`skill-custom-badge-${skill.id}`}>{t('skills.customBadge')}</span>
+          )}
         </div>
         {skill.description && <div className="sk-row__desc">{skill.description}</div>}
       </div>
 
       <div className="sk-row__actions">
+        <button className="rt-btn rt-btn--sm rt-btn--ghost" data-testid={`skill-custom-${skill.id}`} onClick={onCustom} disabled={fetching}>
+          {t('skills.customEdit')}
+        </button>
         <button className="rt-btn rt-btn--sm rt-btn--ghost" data-testid={`skill-duplicate-${skill.id}`} onClick={onDuplicate} disabled={fetching}>
           {t('skills.duplicate')}
         </button>
@@ -456,6 +465,7 @@ export function SkillsPanel() {
                   onToggle={(enabled) => handleToggle(skill.id, enabled)}
                   onEdit={() => openEdit(skill)}
                   onDuplicate={() => openDuplicate(skill)}
+                  onCustom={() => setCustomTarget(skill)}
                   onDeleteRequest={() => setConfirmDeleteId(skill.id)}
                   onDeleteConfirm={() => handleDeleteConfirm(skill.id)}
                   onDeleteCancel={() => setConfirmDeleteId(null)}
@@ -511,7 +521,10 @@ export function SkillsPanel() {
         show={customTarget !== null}
         skill={customTarget}
         onClose={() => setCustomTarget(null)}
-        onSaved={refreshBundled}
+        onSaved={() => {
+          refreshBundled();
+          refresh(); // library rows' badges + hub-installed entries
+        }}
       />
     </div>
   );
