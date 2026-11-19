@@ -42,9 +42,10 @@ import type {
   SkillManifestEntry,
 } from '@molio/contracts';
 import { MAX_IMPORT_FILES, MAX_IMPORT_BYTES, importFromFolder } from './importer.js';
-import { mirrorDirIfChanged } from './dirsync.js';
+import { mirrorDirIfChanged, hashDir } from './dirsync.js';
 import { skillContentDir, type SkillPathsOpts } from './paths.js';
 import { getSkill } from './store.js';
+import { quarantineDir, recordQuarantineEvent } from './quarantine.js';
 
 export class HubError extends Error {
   code: 'HUB_UNAVAILABLE' | 'NOT_FOUND' | 'BAD_REQUEST';
@@ -571,6 +572,8 @@ export interface HubInstallRecord {
   namespace: string;
   installed_at: number;
   updated_at: number;
+  /** Content hash of the library dir as last installed/refreshed (safety-net baseline). */
+  installed_content_hash?: string | null;
 }
 
 /** Map key shared by the in-memory annotation map and the in-flight guard. */
@@ -682,6 +685,34 @@ async function runInstallHubSkill(
       // mid-copy can never wipe the previously installed content (the old
       // rm-then-copy left the skill dir gone on any copy/parse error).
       const contentDir = skillContentDir(existing.skill_id, opts);
+
+      // Safety net (design §5.6 trigger B): a library dir that no longer
+      // matches what we installed (or has no baseline to prove provenance —
+      // rows installed before this feature) carries user edits. Back it up +
+      // ledger BEFORE the refresh overwrites it; the custom_instructions
+      // overlay column is orthogonal and never touched here.
+      if (fs.existsSync(contentDir)) {
+        let currentHash: string | null = null;
+        try {
+          currentHash = hashDir(contentDir);
+        } catch {
+          currentHash = null; // unreadable → cannot prove clean → treat as drifted
+        }
+        if (currentHash === null || existing.installed_content_hash !== currentHash) {
+          const quarantinedPath = quarantineDir(contentDir, `hub-${slug}`, opts);
+          recordQuarantineEvent(db, {
+            source: 'hub-update',
+            skillId: existing.skill_id,
+            mirrorName: `${namespace}/${slug}`,
+            description:
+              quarantinedPath === null
+                ? `技能「${namespace ? `${namespace}/` : ''}${slug}」更新前检测到本地修改，隔离备份失败（原内容被更新覆盖）。`
+                : `技能「${namespace ? `${namespace}/` : ''}${slug}」更新前检测到本地修改，原内容已备份，可整理进「自定义指令」。`,
+            quarantinedPath: quarantinedPath ?? contentDir,
+          });
+        }
+      }
+
       mirrorDirIfChanged(extractDir, contentDir);
       const parsed = parseSkillMd(fs.readFileSync(path.join(contentDir, 'SKILL.md'), 'utf8'));
       db.prepare('UPDATE skills SET name = ?, description = ?, updated_at = ? WHERE id = ?').run(
@@ -691,8 +722,8 @@ async function runInstallHubSkill(
         existing.skill_id,
       );
       db.prepare(
-        'UPDATE hub_skill_installs SET version = ?, updated_at = ? WHERE namespace = ? AND slug = ?',
-      ).run(pkgVersion, now, namespace, slug);
+        'UPDATE hub_skill_installs SET version = ?, updated_at = ?, installed_content_hash = ? WHERE namespace = ? AND slug = ?',
+      ).run(pkgVersion, now, hashDir(contentDir), namespace, slug);
       const skill = getSkill(db, existing.skill_id);
       if (!skill) throw new HubError('HUB_UNAVAILABLE', '技能记录更新失败，请重试');
       return { skill, updated: true, version: pkgVersion };
@@ -701,9 +732,10 @@ async function runInstallHubSkill(
     // Fresh install through the shared folder-import pipeline (limits + parse).
     const skill = importFromFolder(db, extractDir, opts);
     db.prepare(
-      `INSERT OR REPLACE INTO hub_skill_installs (slug, skill_id, version, namespace, installed_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-    ).run(slug, skill.id, pkgVersion, namespace, now, now);
+      `INSERT OR REPLACE INTO hub_skill_installs
+         (slug, skill_id, version, namespace, installed_at, updated_at, installed_content_hash)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    ).run(slug, skill.id, pkgVersion, namespace, now, now, hashDir(skillContentDir(skill.id, opts)));
     return { skill, updated: false, version: pkgVersion };
   } finally {
     fs.rmSync(extractDir, { recursive: true, force: true });

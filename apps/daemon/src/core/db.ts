@@ -195,6 +195,10 @@ function migrate(db: SqliteDb): void {
       namespace    TEXT NOT NULL DEFAULT '',
       installed_at INTEGER NOT NULL,
       updated_at   INTEGER NOT NULL,
+      -- Content hash of the library dir as installed/refreshed (safety-net
+      -- baseline: a refresh over drifted content quarantines first). NULL on
+      -- rows installed before this feature existed.
+      installed_content_hash TEXT,
       PRIMARY KEY (namespace, slug)
     );
     -- Per-vault mirror baselines: the content hash of what Molio LAST synced
@@ -304,6 +308,9 @@ function migrate(db: SqliteDb): void {
   // skills.custom_instructions — user custom-instruction overlay (skill
   // custom-instructions feature). Legacy rows keep NULL = no overlay.
   addColumnIfMissing(db, 'skills', 'custom_instructions', 'TEXT');
+  // hub refresh safety-net baseline (rows installed pre-feature keep NULL —
+  // the first refresh after upgrade treats NULL as "back it up").
+  addColumnIfMissing(db, 'hub_skill_installs', 'installed_content_hash', 'TEXT');
 
   // Full-text search over message content. trigram tokenizer: CJK substring
   // friendly, case-insensitive, no external jieba dependency (SQLite >= 3.34).
