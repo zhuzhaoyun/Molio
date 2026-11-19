@@ -197,6 +197,22 @@ function migrate(db: SqliteDb): void {
       updated_at   INTEGER NOT NULL,
       PRIMARY KEY (namespace, slug)
     );
+    -- Quarantine ledger: every time Molio would otherwise overwrite/destroy
+    -- user-touched skill content (mirror drift, cold-start diff, hub refresh,
+    -- retirement, orphan sweep) the content is first copied to
+    -- ~/.molio/skill-quarantine/ and a row lands here. The web settings page
+    -- surfaces unacked rows; ack hides them.
+    CREATE TABLE IF NOT EXISTS skill_quarantine_events (
+      id               INTEGER PRIMARY KEY AUTOINCREMENT,
+      source           TEXT NOT NULL,
+      skill_id         TEXT,
+      mirror_name      TEXT NOT NULL DEFAULT '',
+      description      TEXT NOT NULL DEFAULT '',
+      quarantined_path TEXT NOT NULL,
+      created_at       INTEGER NOT NULL,
+      acked            INTEGER NOT NULL DEFAULT 0
+    );
+
     -- Community market (Task 8): local publish mapping + offline listings cache.
     CREATE TABLE IF NOT EXISTS market_local (
       listing_id TEXT PRIMARY KEY,
