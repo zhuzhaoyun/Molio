@@ -197,6 +197,20 @@ function migrate(db: SqliteDb): void {
       updated_at   INTEGER NOT NULL,
       PRIMARY KEY (namespace, slug)
     );
+    -- Per-vault mirror baselines: the content hash of what Molio LAST synced
+    -- into a vault's mirror dir. On reconcile, dest-hash != recorded baseline
+    -- means someone other than Molio changed the mirror (user patch) →
+    -- quarantine before rebuild; dest == baseline + source changed → silent
+    -- normal update. Keyed (vault_path, mirror_dir); stale rows after a vault
+    -- is deleted are harmless.
+    CREATE TABLE IF NOT EXISTS skill_mirror_state (
+      vault_path   TEXT NOT NULL,
+      mirror_dir   TEXT NOT NULL,
+      content_hash TEXT NOT NULL,
+      updated_at   INTEGER NOT NULL,
+      PRIMARY KEY (vault_path, mirror_dir)
+    );
+
     -- Quarantine ledger: every time Molio would otherwise overwrite/destroy
     -- user-touched skill content (mirror drift, cold-start diff, hub refresh,
     -- retirement, orphan sweep) the content is first copied to
