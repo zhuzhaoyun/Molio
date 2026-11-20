@@ -660,6 +660,7 @@ const zh: Record<string, string> = {
   'graph.trunkDegenerate': '簇结构不明显，建议切换全量查看原图',
   'graph.trunkClustersLabel': '簇',
   'graph.trunkHubsLabel': '枢纽',
+  'graph.trunkExpandedLabel': '已展开',
   // 一键出图（对外分享/获客）
   'graph.export': '导出图片',
   'graph.exportDownload': '下载 PNG',

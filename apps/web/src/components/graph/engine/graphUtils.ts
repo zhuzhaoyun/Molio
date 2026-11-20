@@ -216,3 +216,15 @@ export function tileIsolatedNodes(
   }
   return out;
 }
+
+// ── collide 半径公式（单一来源；引擎 collideRadius 与 mini-sim（trunkExpand.ts）共用）──
+
+/** collide 半径 = 绘制半径 × MULT + PAD（远看均布、放大后彼此分离），封顶 COLLIDE_MAX。 */
+export const COLLIDE_RADIUS_MULT = 5;
+export const COLLIDE_PAD = 4;
+export const COLLIDE_MAX = 100;
+
+/** 纯函数形式（引擎侧按 SimNode 取 d.radius 后调用；trunkExpand 的 mini-sim 直接用）。 */
+export function collideRadiusValue(radius: number): number {
+  return Math.min(radius * COLLIDE_RADIUS_MULT + COLLIDE_PAD, COLLIDE_MAX);
+}

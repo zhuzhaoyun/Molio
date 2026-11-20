@@ -25,6 +25,9 @@ const get = (k, d) => {
 const web = get('--web', 'http://localhost:5173');
 const daemon = get('--daemon', 'http://localhost:3100');
 const needle = get('--vault');
+/** --expand [clusterId]：H2 展开测量（缺省取 communities 最大簇；传 true 走自动） */
+const expandArg = args.indexOf('--expand');
+const expand = expandArg >= 0 ? (args[expandArg + 1] && !args[expandArg + 1].startsWith('--') ? args[expandArg + 1] : true) : null;
 if (!needle) {
   console.error('用法: node scripts/graph-perf-probe.mjs --vault <名称或路径子串> [--web ...] [--daemon ...]');
   process.exit(1);
@@ -66,7 +69,9 @@ await page.waitForFunction(
   { timeout: 360000, polling: 400 },
 );
 const convergeMs = Date.now() - t0;
-await page.waitForTimeout(1500);
+// 静息等待：收敛判据放行时 alpha 可能仍 ~0.0012（d3 停摆坑），动画尾巴会落进采样窗
+// 造成「空闲 renders≠0」误读——多等让余帧彻底息止（稳态 0 已被专项验证）
+await page.waitForTimeout(4500);
 
 // 包一层 renderer.render 计数
 await page.evaluate(() => {
@@ -125,8 +130,6 @@ const zoom = await zoomPromise;
 await wheelLoop;
 const zoomRendersTotal = await page.evaluate(() => window.__renderCount);
 
-await browser.close();
-
 const report = {
   vault: vault.name,
   engineReadyMs: engineMs,
@@ -140,4 +143,118 @@ console.log('=== graph-perf-probe ===');
 console.log(`engineReady: ${(engineMs / 1000).toFixed(1)}s | converge: ${(convergeMs / 1000).toFixed(1)}s`);
 console.log(`idle 3s: renders=${idleRenders} (目标 0) | fps=${idle.fps} p50=${idle.p50}ms`);
 console.log(`zoom 6s: fps=${zoom.fps} p50=${zoom.p50}ms p95=${zoom.p95}ms (renders=${zoomRendersTotal})`);
+
+// ── H2 展开测量（--expand [clusterId]，缺省取 communities 最大簇）──
+if (expand) {
+  // trunk 态就位（大库默认 trunk；等引擎推完数据）
+  await page.reload();
+  await page.waitForFunction(() => window.__graphEngine?.getTrunkMode() === true, null, { timeout: 60000 });
+  await page.waitForFunction(() => (window.__graphEngine?.getSnapshot()?.nodes.length ?? 0) > 0, null, { timeout: 60000 });
+
+  // 选簇：--expand 给 id；否则查 daemon communities 拿最大簇
+  let clusterId = typeof expand === 'string' ? expand : null;
+  let clusterSize = null;
+  const g = await (await fetch(`${daemon}/api/graph/${vault.id}`)).json();
+  const clusters = g?.communities?.clusters ?? [];
+  if (!clusterId && clusters.length > 0) {
+    const biggest = clusters.reduce((a, b) => (b.size > a.size ? b : a));
+    clusterId = biggest.id;
+    clusterSize = biggest.size;
+  }
+  if (!clusterId) {
+    console.error('--expand: 找不到簇（communities 为空？）');
+  } else {
+    clusterSize = clusterSize ?? clusters.find((c) => c.id === clusterId)?.size ?? null;
+    console.log(`expand: cluster=${clusterId} size=${clusterSize}`);
+
+    const blobScreen = await page.evaluate((cid) => {
+      const eng = window.__graphEngine;
+      const snap = eng?.getSnapshot();
+      const blob = snap?.nodes.find((n) => n.key === cid);
+      if (!blob || !eng) return null;
+      const rect = eng.canvas.getBoundingClientRect();
+      const t = eng.getViewport();
+      return { sx: rect.left + (blob.x + rect.width / 2) * t.k + t.tx, sy: rect.top + (blob.y + rect.height / 2) * t.k + t.ty };
+    }, clusterId);
+    if (!blobScreen) {
+      console.error('--expand: 画布上找不到该簇 blob');
+    } else {
+      await page.evaluate(() => {
+        const r = window.__graphEngine.app.renderer;
+        window.__renderCount2 = 0;
+        const orig = r.render.bind(r);
+        r.render = (...a) => {
+          window.__renderCount2++;
+          return orig(...a);
+        };
+      });
+      const tClick = Date.now();
+      // 空闲计数基线：点击前清零——展开动画的 render 不许混进「展开后空闲」读数
+      //（首版读累计值把过渡 tween 的 62 帧误报成空闲渲染，稳态实测为 0）
+      await page.evaluate(() => { window.__renderCount2 = 0; });
+      await page.mouse.click(blobScreen.sx, blobScreen.sy);
+      // 首批可见（250ms 点击 defer + 首批落位）
+      await page.waitForFunction(
+        (cid) => window.__graphEngine?.getTrunkExpandedClusters().includes(cid),
+        clusterId,
+        { timeout: 10000 },
+      );
+      const firstBatchMs = Date.now() - tClick;
+      // 流式补齐：快照长度稳定（2×600ms 采样一致）
+      const streamDone = await page.waitForFunction(
+        () => {
+          const w = window;
+          const n = w.__graphEngine?.getSnapshot()?.nodes.length ?? -1;
+          if (w.__snapN === n) w.__stable++;
+          else w.__stable = 0;
+          w.__snapN = n;
+          return w.__stable >= 2;
+        },
+        null,
+        { timeout: 20000, polling: 600 },
+      ).then(() => true, () => false);
+      const streamMs = Date.now() - tClick;
+      const nodes = await page.evaluate(() => window.__graphEngine?.getSnapshot()?.nodes.length ?? -1);
+      const transitionRenders = await page.evaluate(() => window.__renderCount2);
+      await page.waitForTimeout(4500); // 过渡动画+批次流息止（余帧不落进空闲采样窗）
+      await page.evaluate(() => { window.__renderCount2 = 0; }); // 空闲窗口重新计
+      const idle2 = await startSampler('__idle2Stats', 3000);
+      const idle2Renders = await page.evaluate(() => window.__renderCount2);
+      // 展开态缩放 6s
+      await page.mouse.move(800, 500);
+      const zoom2Promise = startSampler('__zoom2Stats', 6000);
+      const wheel2 = (async () => {
+        for (let i = 0; i < 100; i++) {
+          await page.mouse.wheel(0, -120);
+          await page.waitForTimeout(60);
+        }
+      })();
+      const zoom2 = await zoom2Promise;
+      await wheel2;
+      // hover 质心附近的成员 → 标签数（统一 LOD 规则 ≤60）
+      const hoverLabels = await page.evaluate((cid) => {
+        const eng = window.__graphEngine;
+        const chip = eng?.getTrunkCollapseChipPos(cid);
+        return chip ? { sx: chip.sx, sy: chip.sy } : null;
+      }, clusterId).then(async (chip) => {
+        if (!chip) return -1;
+        const rect = await page.evaluate(() => {
+          const r = window.__graphEngine.canvas.getBoundingClientRect();
+          return { left: r.left, top: r.top };
+        });
+        // 从 chip 附近偏移一点，落在成员密集区
+        await page.mouse.move(rect.left + chip.sx + 40, rect.top + chip.sy + 30);
+        await page.waitForTimeout(500); // hover tween + linger
+        return page.evaluate(() => window.__graphEngine?.getVisibleLabelCount() ?? -1);
+      });
+
+      console.log(`expand: firstBatch=${(firstBatchMs / 1000).toFixed(2)}s | streamDone=${streamDone} streamTotal=${(streamMs / 1000).toFixed(2)}s | nodes=${nodes} | transitionRenders=${transitionRenders}`);
+      console.log(`expanded idle 3s: renders=${idle2Renders} (目标 0) | fps=${idle2.fps} p50=${idle2.p50}ms`);
+      console.log(`expanded zoom 6s: fps=${zoom2.fps} p50=${zoom2.p50}ms p95=${zoom2.p95}ms`);
+      console.log(`hover labels: ${hoverLabels} (红线 ≤60)`);
+      report.expand = { clusterId, clusterSize, firstBatchMs, streamDone, streamMs, nodes, transitionRenders, idle2Renders, idle2, zoom2, hoverLabels };
+    }
+  }
+}
 console.log(`JSON: ${JSON.stringify(report)}`);
+await browser.close();
