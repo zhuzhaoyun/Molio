@@ -41,6 +41,7 @@ import { useI18n } from '../../i18n';
 import { api } from '../../api/client';
 import { BookIcon, ChatIcon, ScanSearchIcon } from '../icons';
 import { openInNewWindow } from '../../utils/openWindow';
+import { shouldReuseWindowOnVaultSwitch } from '../../utils/vaultSwitchWindow';
 
 /** 非管理员 / 未登录点「发布到资源库」的落地页：官网联系方式（顾问个人微信二维码）。 */
 const PUBLISH_CONTACT_URL = 'https://molio.cn/enterprise.html#contact';
@@ -734,15 +735,22 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
    * new window would drop the user into a bare tree, forcing them to reopen
    * the manager they just used. The flag is stripped after the first open, so
    * reloads and cloned URLs don't re-pop the modal.
+   *
+   * 设置「切换知识库时」=「复用当前窗口」（molio.vaultSwitchWindow='reuse'，
+   * 见 utils/vaultSwitchWindow）时，跨库 pick 也走就地分支：不弹新窗、面板不
+   * 收起、URL 镜像 effect 照常写回 ?vault=。显式开窗入口（tab 右键 / 新建下拉 /
+   * Dock 最近菜单）不读此设置，恒新窗。
    */
   const handleVaultPick = useCallback((id: string) => {
     const pinnedVaultId = new URLSearchParams(window.location.search).get('vault');
-    if (pinnedVaultId && pinnedVaultId !== id) {
+    const crossVault = pinnedVaultId !== null && pinnedVaultId !== id;
+    if (crossVault && !shouldReuseWindowOnVaultSwitch()) {
       kb.setShowVaultSwitcher(false);
       openInNewWindow(`/knowledge?vault=${encodeURIComponent(id)}&manage=1`);
-    } else {
-      kb.selectVault(id);
+      return;
     }
+    // 同库选中，以及 reuse 模式下的跨库选中：就地切换（面板不收起）。
+    kb.selectVault(id);
   }, [kb.selectVault, kb.setShowVaultSwitcher]);
 
   // When URL navigation resolves, open in tab. The path from external

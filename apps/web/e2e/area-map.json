@@ -103,6 +103,7 @@
       "paths": [
         "apps/web/src/components/kb/*",
         "apps/web/src/components/ConversationHistoryMenu*",
+        "apps/web/src/utils/vaultSwitchWindow*",
         "apps/web/src/components/kb/docExport/*",
         "apps/web/src/utils/exportFileName*",
         "apps/web/src/hooks/useKnowledge*",

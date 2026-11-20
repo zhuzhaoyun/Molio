@@ -331,3 +331,28 @@ test.describe('Star CTA on a dark OS', () => {
     expect(contrastRatio(color, background)).toBeGreaterThanOrEqual(4.5);
   });
 });
+
+/**
+ * 「切换知识库时」窗口行为开关（设计：docs/2026-11-20-kb-switch-window-setting-design.md §4.1）。
+ * 纯 localStorage 偏好（key: molio.vaultSwitchWindow），不进 daemon config——
+ * 每用例独立 context，localStorage 互不串扰，无需恢复默认值。
+ */
+test.describe('Vault-switch window setting', () => {
+  test('vault-switch window control renders with new-window default', async ({ page }) => {
+    await gotoHome(page);
+    await clickNav(page, 'settings');
+    const select = page.locator('[data-testid="setting-vault-switch-window"]');
+    await expect(select).toBeVisible({ timeout: 5_000 });
+    await expect(select).toHaveValue('new-window');
+  });
+
+  test('choosing reuse persists to localStorage and survives reload', async ({ page }) => {
+    await gotoHome(page);
+    await clickNav(page, 'settings');
+    const select = page.locator('[data-testid="setting-vault-switch-window"]');
+    await select.selectOption('reuse');
+    await expect.poll(() => page.evaluate(() => localStorage.getItem('molio.vaultSwitchWindow'))).toBe('reuse');
+    await page.reload();
+    await expect(page.locator('[data-testid="setting-vault-switch-window"]')).toHaveValue('reuse');
+  });
+});

@@ -296,4 +296,29 @@ test.describe('multi-window vault isolation', () => {
     expect(popup.url()).not.toContain('vault=');
     await ctx.close();
   });
+
+  test('reuse mode: cross-vault pick switches IN PLACE, no popup, manager stays open', async ({ browser }) => {
+    const ctx = await browser.newContext();
+    const page = await ctx.newPage();
+    // 开关是 localStorage 偏好：addInitScript 在应用代码跑之前种值。
+    await page.addInitScript(() => localStorage.setItem('molio.vaultSwitchWindow', 'reuse'));
+    await page.goto(`${WEB}/knowledge?vault=${vaultAId}`);
+    await expect(page.locator('.kb-vault-bar__name')).toHaveText('mw-a');
+
+    let popups = 0;
+    page.on('popup', () => { popups += 1; });
+    await page.locator('.kb-vault-bar').click();
+    await page.locator('.vm-vault-item', { hasText: 'mw-b' }).click();
+
+    // 就地切换：vault bar 与 URL 都指向 B（此时若会弹窗，早已弹出，计数确定）。
+    await expect(page.locator('.kb-vault-bar__name')).toHaveText('mw-b');
+    await expect.poll(() => new URL(page.url()).searchParams.get('vault')).toBe(vaultBId);
+    expect(popups).toBe(0);
+
+    // 管理器不收起（selectVault 不隐式关面板——picker 交互不许砍）。
+    await expect(page.locator('.vm-overlay')).toBeVisible();
+    // 右栏作用域跟随新库。
+    await expect(page.locator('[data-testid="external-root-scope"]')).toHaveText('mw-b');
+    await ctx.close();
+  });
 });

@@ -6,6 +6,7 @@ import { SkillsPanel } from './SkillsPanel';
 import { useI18n } from '../../i18n';
 import { LanguageSettings } from './LanguageSettings';
 import { ThemeSettings } from './ThemeSettings';
+import { VaultSwitchWindowSettings } from './VaultSwitchWindowSettings';
 import { UpdateSettings } from './UpdateSettings';
 
 type Tab = 'general' | 'runtimes' | 'skills' | 'channels';
@@ -63,6 +64,7 @@ export function SettingsPage() {
           <>
             <LanguageSettings />
             <ThemeSettings />
+            <VaultSwitchWindowSettings />
             <UpdateSettings />
           </>
         )}
