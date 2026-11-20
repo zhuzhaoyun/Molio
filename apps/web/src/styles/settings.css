@@ -83,20 +83,6 @@
   background: var(--accent-tint);
 }
 
-/* <select> 背景必须 background-color 长写（web CLAUDE.md 强制）：base.css 用
-   background-image/-repeat/-position/-size 四个长写属性画自定义箭头，
-   shorthand 会把它们全部复位，箭头就没了。 */
-.settings-select {
-  padding: 6px 28px 6px 10px;
-  font-size: 14px;
-  font-family: inherit;
-  color: var(--text);
-  background-color: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-}
-
 .settings-choice-hint {
   margin: 8px 0 0;
   font-size: 12px;

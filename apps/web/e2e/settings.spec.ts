@@ -341,18 +341,19 @@ test.describe('Vault-switch window setting', () => {
   test('vault-switch window control renders with new-window default', async ({ page }) => {
     await gotoHome(page);
     await clickNav(page, 'settings');
-    const select = page.locator('[data-testid="setting-vault-switch-window"]');
-    await expect(select).toBeVisible({ timeout: 5_000 });
-    await expect(select).toHaveValue('new-window');
+    const group = page.locator('[data-testid="setting-vault-switch-window"]');
+    await expect(group).toBeVisible({ timeout: 5_000 });
+    await expect(group.locator('[data-testid="setting-vault-switch-new-window"]')).toHaveClass(/is-active/);
+    await expect(group.locator('.settings-choice-pill.is-active')).toHaveCount(1);
   });
 
   test('choosing reuse persists to localStorage and survives reload', async ({ page }) => {
     await gotoHome(page);
     await clickNav(page, 'settings');
-    const select = page.locator('[data-testid="setting-vault-switch-window"]');
-    await select.selectOption('reuse');
+    const group = page.locator('[data-testid="setting-vault-switch-window"]');
+    await group.locator('[data-testid="setting-vault-switch-reuse"]').click();
     await expect.poll(() => page.evaluate(() => localStorage.getItem('molio.vaultSwitchWindow'))).toBe('reuse');
     await page.reload();
-    await expect(page.locator('[data-testid="setting-vault-switch-window"]')).toHaveValue('reuse');
+    await expect(page.locator('[data-testid="setting-vault-switch-reuse"]')).toHaveClass(/is-active/);
   });
 });
