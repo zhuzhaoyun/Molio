@@ -674,6 +674,7 @@ const en: Record<string, string> = {
   'graph.trunkDegenerate': 'Cluster structure is weak — switch to full view for the original graph',
   'graph.trunkClustersLabel': 'clusters',
   'graph.trunkHubsLabel': 'hubs',
+  'graph.trunkExpandedLabel': 'expanded',
   // One-click image export (sharing / acquisition)
   'graph.export': 'Export image',
   'graph.exportDownload': 'Download PNG',

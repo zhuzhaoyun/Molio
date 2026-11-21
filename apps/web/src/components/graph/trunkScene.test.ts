@@ -172,4 +172,13 @@ describe('渲染公式', () => {
     const noCluster = { ...s, clusters: [] };
     assert.equal(trunkExportMeta(noCluster, '簇', '枢纽'), '枢纽 1');
   });
+
+  it('⑦ trunkExportMeta 混合场景（H2 代拍 Q）：expandedCount>0 加「（已展开 K）」括注；=0 逐字节兼容', () => {
+    const s = buildTrunkScene(graphFixture())!; // 2 簇 1 hub
+    assert.equal(trunkExportMeta(s, '主题', '枢纽', 2), '主题 2（已展开 2） · 枢纽 1');
+    assert.equal(trunkExportMeta(s, '主题', '枢纽', 0), '主题 2 · 枢纽 1');
+    assert.equal(trunkExportMeta(s, '主题', '枢纽'), '主题 2 · 枢纽 1');
+    assert.equal(trunkExportMeta(s, '主题', '枢纽', 1, '展開中'), '主题 2（展開中 1） · 枢纽 1');
+    assert.equal(trunkExportMeta({ ...s, clusters: [] }, '主题', '枢纽', 1), '枢纽 1'); // 无簇段无括注
+  });
 });
