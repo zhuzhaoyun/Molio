@@ -15,6 +15,8 @@ import { createProject, createConversation, addMessage, deleteProject, createTem
  * 判为 hidden 而整体不出现（这正是本次改动的行为）。
  */
 const OUTSIDE_MEMORY_PATH = '/tmp/molio-e2e-outside/memory/MEMORY.md';
+/** Windows 绝对路径含反斜杠；写进 CSS 属性选择器的引号字符串前必须转义，否则 \T 被吃掉、永不命中。 */
+const cssAttr = (value: string) => value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
 test('从历史打开会话 → 产出面板恢复写入列表 + 溯源定位', async ({ page }) => {
   const vault = await createTempVault('e2e-histout');
   const project = await createProject(`e2e-histout-${Date.now()}`);
@@ -59,11 +61,11 @@ test('从历史打开会话 → 产出面板恢复写入列表 + 溯源定位', 
     const panel = page.locator('[data-testid="session-output-panel"]');
     // 主列表只余产出文档：hot.md（登记元文件）落折叠区、库外写入（hw3）不恢复
     await expect(panel.locator('[data-testid="session-output-write"]')).toHaveCount(1);
-    await expect(panel.locator(`[data-path="${newsAbs}"]`)).toHaveAttribute('data-kind', 'create');
+    await expect(panel.locator(`[data-path="${cssAttr(newsAbs)}"]`)).toHaveAttribute('data-kind', 'create');
     await expect(panel.locator('[data-testid="session-output-stats"]')).toContainText('写入 1 · 1 轮');
     await expect(panel.locator('[data-testid="session-output-others-toggle"]')).toContainText('其他写入 1 项');
     await expect(panel.locator('[data-testid="session-output-write"]').filter({ hasText: 'hot.md' })).toHaveCount(0);
-    await expect(panel.locator(`[data-path="${OUTSIDE_MEMORY_PATH}"]`)).toHaveCount(0);
+    await expect(panel.locator(`[data-path="${cssAttr(OUTSIDE_MEMORY_PATH)}"]`)).toHaveCount(0);
     await expect(panel).not.toContainText('MEMORY.md');
 
     // 溯源定位：展开历史消息的工作块并闪烁目标工具步

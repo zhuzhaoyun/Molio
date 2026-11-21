@@ -3,6 +3,7 @@ import { api } from '../api/client';
 import { useActiveVault, useActiveVaultId } from '../stores/vaultStore';
 import { onboardingStore } from '../stores/onboardingStore';
 import { isRevealAvailable, revealInFolder } from '../utils/reveal';
+import { slugifyTitle } from '../utils/exportFileName';
 import { BookPlusIcon, CheckIcon, FolderIcon } from './icons';
 
 interface Props {
@@ -27,8 +28,9 @@ function deriveTitle(content: string): string {
     .replace(/[*_`~]/g, '')
     .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
     .trim();
-  const truncated = cleaned.length > 40 ? cleaned.slice(0, 40).trim() : cleaned;
-  return truncated || 'AI 回答';
+  // 首行常带 `?` 等标点（如 "How can I help?"）；Windows 禁止这些文件名字符。
+  // 复用导出文件的同一套清洗规则，避免同一条回复在 Linux 能保存、在 Windows 却失败。
+  return slugifyTitle(cleaned) || 'AI 回答';
 }
 
 function timestampStamp(): string {

@@ -407,13 +407,25 @@ test.describe('社区发布 → 展示 → 下载闭环（P1，mock OSS）', () 
 
     // 「上架」Tab 对非管理员隐藏（等 /my 落定再断言，防未决态假通过）。
     // loginViaDevCode 登录后已在 /me（首次 /my 预取可能早于监听挂载）——先离开再经
-    // nav 按钮回来，确保监听器捕获本次挂载触发的 /my 请求
+    // nav 按钮回来，确保监听器捕获本次挂载触发的 /my 请求。
+    // 拦住整页加载后的 auth/status，稳定覆盖「快照未决时点账号入口」的竞态：
+    // 已登录快照到达后必须尊重本次点击意图去 /me，而非误用登录成功的 /resources 落地页。
+    let releaseAuthStatus!: () => void;
+    const authStatusGate = new Promise<void>((resolve) => { releaseAuthStatus = resolve; });
+    await page.route('**/api/auth/status', async (route) => {
+      await authStatusGate;
+      await route.continue();
+    });
     await gotoHome(page);
     const myListingsSettled = page
       .waitForResponse((r) => r.url().includes('/api/market/my'), { timeout: 10_000 })
       .catch(() => null);
     // 已登录点账号入口 → 导航 /me（authStore 未决时弹窗一闪、由 NavRail 竞态兜底导航）
     await page.locator('[data-testid="nav-account-btn"]').click();
+    // 证明「点击时快照确实未决」——未决态弹窗渲染 account-loading；若 gate 失效（缓存命中/
+    // URL 形态变化），快照会提前落定、走普通已登录路径，这里会红而不是静默退化成假绿。
+    await expect(page.locator('[data-testid="account-loading"]')).toBeVisible({ timeout: 5_000 });
+    releaseAuthStatus();
     await expect(page).toHaveURL(/\/me$/, { timeout: 10_000 });
     await myListingsSettled;
     await expect(page.locator('[data-testid="me-tab-listings"]')).toHaveCount(0);
