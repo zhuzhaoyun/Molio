@@ -767,6 +767,10 @@
     "graph-trunk": {
       "priority": "P1",
       "file": "graph-trunk.spec.ts"
+    },
+    "skill-hub-real-install": {
+      "priority": "P2",
+      "file": "skill-hub-real-install.spec.ts"
     }
   }
 }
