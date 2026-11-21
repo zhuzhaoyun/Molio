@@ -156,6 +156,25 @@ async function expandedContains(page: Page, key: string): Promise<boolean> {
   return page.evaluate((k) => window.__graphEngine?.getTrunkExpandedClusters().includes(k) ?? false, key);
 }
 
+/** 等相机动画息止（视口签名连续 3 次采样不变）。坐标依赖的点击（如 chip）必须先过这道闸：
+ *  focusNode 的 600ms 动画飞行途中采样屏幕坐标，慢机上点击会落在旧位置（CI 实抓）。 */
+async function waitForViewportStable(page: Page): Promise<void> {
+  await page.waitForFunction(
+    () => {
+      const w = window;
+      const v = w.__graphEngine?.getViewport();
+      if (!v) return false;
+      const sig = `${v.tx.toFixed(2)}|${v.ty.toFixed(2)}|${v.k.toFixed(3)}`;
+      if (w.__vpSig === sig) w.__vpStable = (w.__vpStable ?? 0) + 1;
+      else w.__vpStable = 0;
+      w.__vpSig = sig;
+      return w.__vpStable >= 3;
+    },
+    null,
+    { timeout: 8000, polling: 150 },
+  );
+}
+
 test('大库全局视图默认进枝干：indicator + 开关激活 + trunk 对象 ≤45', async ({ page }) => {
   await gotoGraph(page);
   await expect(page.locator('[data-testid="graph-trunk-indicator"]')).toBeVisible({ timeout: 20000 });
@@ -475,6 +494,9 @@ test('终审 #1：已展开簇的成员搜索只定位——收起再展开仍�
   await expect
     .poll(() => page.evaluate(() => window.__graphEngine?.getSelectedKey()))
     .toBe(member);
+  // 相机动画（focusNode 600ms）飞行途中采样 chip 屏幕坐标会打在旧位置——慢机 CI 实抓；
+  // 先等视口稳定再取坐标点击（与流式完成的稳定性判据同款纪律，不赌固定 sleep）
+  await waitForViewportStable(page);
   // 收起（chip）→ 再搜索（缓存重展开）：成员质心必须回到 blob 原位附近，而非原点
   const chip = await page.evaluate(
     (k) => {
