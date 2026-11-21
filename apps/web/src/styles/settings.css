@@ -83,6 +83,12 @@
   background: var(--accent-tint);
 }
 
+.settings-choice-hint {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
 /* ── Update Card ── */
 .settings-update-card {
   /* 卡片内边距提成变量：页脚 band 要靠负外边距抵掉它才能铺到卡片内缘 */
