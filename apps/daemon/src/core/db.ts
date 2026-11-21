@@ -168,6 +168,9 @@ function migrate(db: SqliteDb): void {
       core        INTEGER NOT NULL DEFAULT 0,
       built_in    INTEGER NOT NULL DEFAULT 0,
       enabled     INTEGER NOT NULL DEFAULT 1,
+      -- User custom-instruction overlay (自定义指令): NULL = none. Applied at
+      -- sync time as a sentinel-wrapped tail block, never edited in place.
+      custom_instructions TEXT,
       created_at  INTEGER NOT NULL,
       updated_at  INTEGER NOT NULL
     );
@@ -192,8 +195,50 @@ function migrate(db: SqliteDb): void {
       namespace    TEXT NOT NULL DEFAULT '',
       installed_at INTEGER NOT NULL,
       updated_at   INTEGER NOT NULL,
+      -- Content hash of the library dir as installed/refreshed (safety-net
+      -- baseline: a refresh over drifted content quarantines first). NULL on
+      -- rows installed before this feature existed.
+      installed_content_hash TEXT,
       PRIMARY KEY (namespace, slug)
     );
+    -- Per-vault mirror baselines: the content hash of what Molio LAST synced
+    -- into a vault's mirror dir. On reconcile, dest-hash != recorded baseline
+    -- means someone other than Molio changed the mirror (user patch) →
+    -- quarantine before rebuild; dest == baseline + source changed → silent
+    -- normal update. Keyed (vault_path, mirror_dir); stale rows after a vault
+    -- is deleted are harmless.
+    CREATE TABLE IF NOT EXISTS skill_mirror_state (
+      vault_path   TEXT NOT NULL,
+      mirror_dir   TEXT NOT NULL,
+      content_hash TEXT NOT NULL,
+      updated_at   INTEGER NOT NULL,
+      PRIMARY KEY (vault_path, mirror_dir)
+    );
+
+    -- Quarantine ledger: every time Molio would otherwise overwrite/destroy
+    -- user-touched skill content (mirror drift, cold-start diff, hub refresh,
+    -- retirement, orphan sweep) the content is first copied to
+    -- ~/.molio/skill-quarantine/ and a row lands here. The web settings page
+    -- surfaces unacked rows; ack hides them.
+    CREATE TABLE IF NOT EXISTS skill_quarantine_events (
+      id               INTEGER PRIMARY KEY AUTOINCREMENT,
+      source           TEXT NOT NULL,
+      skill_id         TEXT,
+      mirror_name      TEXT NOT NULL DEFAULT '',
+      description      TEXT NOT NULL DEFAULT '',
+      quarantined_path TEXT NOT NULL,
+      created_at       INTEGER NOT NULL,
+      acked            INTEGER NOT NULL DEFAULT 0,
+      -- Loop breaker for persistently failing mirrors (NAS EPERM): an unacked
+      -- event with the same dedupe key means this exact drift was already
+      -- preserved+reported — skip re-copying and re-reporting it.
+      dedupe_key       TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_skill_quarantine_dedupe
+      ON skill_quarantine_events(dedupe_key)
+      WHERE dedupe_key IS NOT NULL AND acked = 0;
+
     -- Community market (Task 8): local publish mapping + offline listings cache.
     CREATE TABLE IF NOT EXISTS market_local (
       listing_id TEXT PRIMARY KEY,
@@ -267,6 +312,15 @@ function migrate(db: SqliteDb): void {
   addColumnIfMissing(db, 'conversations', 'pinned_at', 'INTEGER');
   db.exec(`CREATE INDEX IF NOT EXISTS idx_conversations_pinned_at
            ON conversations(pinned_at) WHERE pinned_at IS NOT NULL`);
+
+  // skills.custom_instructions — user custom-instruction overlay (skill
+  // custom-instructions feature). Legacy rows keep NULL = no overlay.
+  addColumnIfMissing(db, 'skills', 'custom_instructions', 'TEXT');
+  // hub refresh safety-net baseline (rows installed pre-feature keep NULL —
+  // the first refresh after upgrade treats NULL as "back it up").
+  addColumnIfMissing(db, 'hub_skill_installs', 'installed_content_hash', 'TEXT');
+  // quarantine event loop breaker (see table comment).
+  addColumnIfMissing(db, 'skill_quarantine_events', 'dedupe_key', 'TEXT');
 
   // Full-text search over message content. trigram tokenizer: CJK substring
   // friendly, case-insensitive, no external jieba dependency (SQLite >= 3.34).

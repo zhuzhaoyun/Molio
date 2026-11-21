@@ -83,6 +83,12 @@
   background: var(--accent-tint);
 }
 
+.settings-choice-hint {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
 /* ── Update Card ── */
 .settings-update-card {
   /* 卡片内边距提成变量：页脚 band 要靠负外边距抵掉它才能铺到卡片内缘 */
@@ -714,6 +720,157 @@
   font-size: 12px;
   color: var(--text-faint);
   line-height: 1.6;
+}
+
+/* ── Built-in skills section (below the user library list) ──
+   Collapsed by default: bundled skills are system facts, not a management
+   surface. The toggle row carries a summary (count + customized count) so
+   overlays stay visible without expanding; the edit entry inside is a quiet
+   text action, not a per-row button. */
+.sk-bundled {
+  margin-top: 28px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.sk-bundled__toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 6px;
+  background: none;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.sk-bundled__toggle:hover {
+  background: var(--bg-subtle);
+}
+
+.sk-bundled__toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.sk-bundled__chevron {
+  flex: none;
+  color: var(--text-faint);
+  /* Collapsed points right (▸, direction of reveal), expanded points down (▾). */
+  transform: rotate(-90deg);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .sk-bundled__chevron {
+    transition: transform 0.15s ease;
+  }
+}
+
+.sk-bundled.is-open .sk-bundled__chevron {
+  transform: rotate(0deg);
+}
+
+.sk-bundled__title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.sk-bundled__summary {
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+.sk-bundled__body {
+  padding-top: 4px;
+}
+
+.sk-bundled__hint {
+  margin: 0 6px 10px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-faint);
+}
+
+/* Compact bundled rows + the quiet text entry (deliberately not a button —
+   the channel is for "I truly need to tailor this", not an invitation).
+   Rows drop the library card chrome: hairline-separated lines, secondary
+   density — this section is reference material, not a work surface. */
+.sk-bundled__body .sk-list {
+  gap: 0;
+}
+
+.sk-bundled__row {
+  padding: 8px 6px;
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+}
+
+.sk-bundled__row:last-child {
+  border-bottom: none;
+}
+
+.sk-bundled__row .sk-row__desc {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.sk-bundled__edit {
+  background: none;
+  border: none;
+  padding: 2px 4px;
+  border-radius: 4px;
+  font-size: 12px;
+  color: var(--text-faint);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.sk-bundled__edit:hover {
+  color: var(--text);
+}
+
+.sk-bundled__edit:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ── Quarantine (safety-net) banner ── */
+.sk-quarantine {
+  margin: 12px 0 4px;
+  padding: 10px 14px;
+  background: var(--accent-soft);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.sk-quarantine__row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.6;
+}
+
+.sk-quarantine__row + .sk-quarantine__row {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--border);
+}
+
+.sk-quarantine__row span {
+  flex: 1 1 auto;
+}
+
+.sk-quarantine__row code {
+  font-size: 11px;
 }
 
 /* ── Form Fields (used inside the reused .kb-modal chrome) ── */

@@ -103,6 +103,7 @@
       "paths": [
         "apps/web/src/components/kb/*",
         "apps/web/src/components/ConversationHistoryMenu*",
+        "apps/web/src/utils/vaultSwitchWindow*",
         "apps/web/src/components/kb/docExport/*",
         "apps/web/src/utils/exportFileName*",
         "apps/web/src/hooks/useKnowledge*",
@@ -767,6 +768,10 @@
     "graph-trunk": {
       "priority": "P1",
       "file": "graph-trunk.spec.ts"
+    },
+    "skill-hub-real-install": {
+      "priority": "P2",
+      "file": "skill-hub-real-install.spec.ts"
     }
   }
 }

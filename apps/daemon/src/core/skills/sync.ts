@@ -22,21 +22,37 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
+import type Database from 'better-sqlite3';
 import {
   MOLIO_PREFIX,
   claudeSkillsDir,
+  defaultClaudeHome,
   molioSkillDir,
   skillContentDir,
   slugifySkillName,
   type SkillPathsOpts,
 } from './paths.js';
 import { mirrorDirIfChanged, sweepStaleMirrorArtifacts, isMirrorArtifactName } from './dirsync.js';
+import { materializeComposedSource } from './compose.js';
+import { guardedMirror, guardedOrphanRemove } from './mirror-state.js';
 
 /** Fields planSyncTargets needs from a skill entry. */
 export interface SkillSyncInput {
   id: string;
   name: string;
   createdAt: number;
+  /** Custom-instruction overlay (composed into the mirrored SKILL.md). */
+  customInstructions?: string;
+}
+
+/** Sync opts: SkillPathsOpts plus the daemon db enabling the guarded path. */
+export interface SyncOpts extends SkillPathsOpts {
+  /**
+   * When present, mirroring goes through guardedMirror (baseline + drift
+   * quarantine) and orphan removal through guardedOrphanRemove. Absent ⇒
+   * legacy plain behavior (tests, cleanupLegacyGlobalSync).
+   */
+  db?: Database.Database;
 }
 
 /** One planned mirror: library content keyed by id, vault dir by dirName. */
@@ -45,6 +61,8 @@ export interface SyncTarget {
   id: string;
   /** Dir segment after the `molio--` prefix in the synced skills dir. */
   dirName: string;
+  /** Overlay carried from the skills table (composition happens at sync). */
+  customInstructions?: string;
 }
 
 /**
@@ -81,7 +99,11 @@ export function planSyncTargets(entries: SkillSyncInput[]): SyncTarget[] {
       }
     }
     taken.add(dirName);
-    targets.push({ id: entry.id, dirName });
+    targets.push({
+      id: entry.id,
+      dirName,
+      ...(entry.customInstructions ? { customInstructions: entry.customInstructions } : {}),
+    });
   }
   return targets;
 }
@@ -94,7 +116,12 @@ export function planSyncTargets(entries: SkillSyncInput[]): SyncTarget[] {
  * references/scripts the SKILL.md points at actually reach the runtime.
  * Staleness detection + atomic rebuild live in dirsync.mirrorDirIfChanged.
  */
-export function syncSkill(id: string, dirName: string, opts?: SkillPathsOpts): void {
+export function syncSkill(
+  id: string,
+  dirName: string,
+  opts?: SyncOpts,
+  customInstructions?: string | null,
+): void {
   const srcDir = skillContentDir(id, opts);
   try {
     fs.lstatSync(srcDir);
@@ -118,7 +145,31 @@ export function syncSkill(id: string, dirName: string, opts?: SkillPathsOpts): v
     );
     return;
   }
-  mirrorDirIfChanged(srcDir, molioSkillDir(dirName, opts));
+  const destDir = molioSkillDir(dirName, opts);
+  if (opts?.db) {
+    // Guarded path: compose the overlay into the view, mirror with baseline
+    // tracking — a hand-edited dest is quarantined + ledgered, not healed away.
+    const composed = materializeComposedSource(srcDir, customInstructions);
+    try {
+      const claudeHome = opts.claudeHome ?? defaultClaudeHome();
+      guardedMirror(
+        opts.db,
+        {
+          srcDir: composed.dir,
+          destDir,
+          vaultPath: path.dirname(claudeHome),
+          mirrorDir: `${MOLIO_PREFIX}${dirName}`,
+          label: `lib-${dirName}`,
+          skillId: id,
+        },
+        opts,
+      );
+    } finally {
+      composed.dispose();
+    }
+  } else {
+    mirrorDirIfChanged(srcDir, destDir);
+  }
 }
 
 /**
@@ -141,11 +192,11 @@ export function syncSkill(id: string, dirName: string, opts?: SkillPathsOpts): v
  * content stays", never "skill gone". Convergence resumes on the next clean
  * pass.
  */
-export function reconcileSync(targets: SyncTarget[], opts?: SkillPathsOpts): void {
+export function reconcileSync(targets: SyncTarget[], opts?: SyncOpts): void {
   let failedSyncs = 0;
   for (const target of targets) {
     try {
-      syncSkill(target.id, target.dirName, opts);
+      syncSkill(target.id, target.dirName, opts, target.customInstructions);
     } catch (err) {
       failedSyncs += 1;
       console.error(`[skills] Failed to sync skill "${target.id}":`, err instanceof Error ? err.message : err);
@@ -188,8 +239,27 @@ export function reconcileSync(targets: SyncTarget[], opts?: SkillPathsOpts): voi
     if (isMirrorArtifactName(entry.name)) continue;
     const dirName = entry.name.slice(MOLIO_PREFIX.length);
     if (!planned.has(dirName)) {
+      const destPath = path.join(dir, entry.name);
+      // Guarded mode: an orphan whose bytes differ from what we last synced
+      // (or with no baseline to prove provenance) is backed up before removal;
+      // a failed backup keeps the dir. Pristine copies go without ceremony.
+      if (opts?.db) {
+        const claudeHome = opts.claudeHome ?? defaultClaudeHome();
+        const removable = guardedOrphanRemove(
+          opts.db,
+          {
+            destDir: destPath,
+            mirrorDir: entry.name,
+            vaultPath: path.dirname(claudeHome),
+            label: `lib-${dirName}`,
+            description: `技能镜像「${entry.name}」已不在同步计划（技能改名/停用/删除），清理前已备份原内容。`,
+          },
+          opts,
+        );
+        if (!removable) continue;
+      }
       try {
-        fs.rmSync(path.join(dir, entry.name), { recursive: true, force: true });
+        fs.rmSync(destPath, { recursive: true, force: true });
       } catch (err) {
         console.warn(
           `[skills] Failed to remove orphan skill dir "${entry.name}":`,
