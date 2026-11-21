@@ -8,8 +8,8 @@
  * download 也装成功，这里是同一事实的全链路版）。
  *
  * 用法（端口被占时按 e2e 惯例整体平移）：
- *   node e2e/fixtures/mock-hub.mjs                  # 默认 :4310
- *   MOLIO_SKILLHUB_API=http://localhost:4310 \
+ *   node e2e/fixtures/mock-hub.mjs                  # 默认端口 4310
+ *   MOLIO_SKILLHUB_API=http://localhost:<mock-hub 端口> \
  *     pnpm --filter @molio/web exec playwright test e2e/skill-hub-real-install.spec.ts
  */
 import http from 'node:http';

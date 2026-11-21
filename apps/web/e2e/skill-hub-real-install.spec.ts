@@ -11,9 +11,10 @@
  *（test/core/skills/hub-drift.test.ts，注入 fetch）。本 spec 补的是两者
  * 之间没人盖住的缝：真实 HTTP 下载 + zip 解码 + 隔离/横幅整链。
  *
- * 运行（无 MOLIO_SKILLHUB_API 时整条 skip，CI 零成本）：
- *   node e2e/fixtures/mock-hub.mjs                  # 默认 :4310
- *   MOLIO_SKILLHUB_API=http://localhost:4310 \
+ * 运行（无 MOLIO_SKILLHUB_API 时整条 skip，CI 零成本；e2e 端口被占时按惯例
+ * 用 MOLIO_E2E_*_PORT 平移）：
+ *   node e2e/fixtures/mock-hub.mjs                  # 起假源（默认端口 4310）
+ *   MOLIO_SKILLHUB_API=http://localhost:<mock-hub 端口> \
  *     pnpm --filter @molio/web exec playwright test e2e/skill-hub-real-install.spec.ts
  */
 import { test, expect } from '@playwright/test';
