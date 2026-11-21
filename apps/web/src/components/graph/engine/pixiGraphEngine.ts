@@ -239,6 +239,8 @@ export class PixiGraphEngine {
   private canvas!: HTMLCanvasElement;
   private stage!: Container;
   private labelsLayer!: Container<Text>;
+  /** 收起 chip 顶层（在成员/标签之上——chip 是展开态的主出口，被盖住等于没有） */
+  private chipsLayer!: Container<ContainerChild>;
   private nodesLayer!: Container<ContainerChild>;
   private linkLayer!: Container<Graphics>;
   /** P0-2：全部边共用这一个 Graphics（替代 per-link Graphics，23k 边 23k→1 显示对象） */
@@ -332,8 +334,8 @@ export class PixiGraphEngine {
   private trunkCollapseTimers = new Set<ReturnType<typeof setTimeout>>();
   /** 各簇展开载荷（收起后给其他已展开簇重挂 spoke 用——pair 去重保证幂等） */
   private trunkPayloads = new Map<string, ExpansionPayload>();
-  /** 收起 chip 显示对象（挂 nodesLayer；pointertap → onTrunkCollapseClick） */
-  private trunkChips = new Map<string, { root: Container }>();
+  /** 收起 chip 显示对象（挂 chipsLayer 顶层；pointertap → onTrunkCollapseClick）+ 团心 sim 坐标（resize 重定位） */
+  private trunkChips = new Map<string, { root: Container; centroid: { x: number; y: number } }>();
   /** 簇团单击的延迟派发定时器（双击取消窗） */
   private trunkClickDefer: ReturnType<typeof setTimeout> | null = null;
 
@@ -403,7 +405,9 @@ export class PixiGraphEngine {
     this.linkLayer = new Container<Graphics>({ zIndex: 1, isRenderGroup: true, sortableChildren: true });
     this.nodesLayer = new Container<Graphics>({ zIndex: 2, isRenderGroup: true });
     this.labelsLayer = new Container<Text>({ zIndex: 3, isRenderGroup: true });
-    this.stage.addChild(this.linkLayer, this.nodesLayer, this.labelsLayer);
+    // 收起 chip 独立顶层（H2 验收反馈：与成员同层时，后续批次的成员会盖住团心的 chip）
+    this.chipsLayer = new Container<ContainerChild>({ zIndex: 4, isRenderGroup: true });
+    this.stage.addChild(this.linkLayer, this.nodesLayer, this.labelsLayer, this.chipsLayer);
 
     this.selectionGfx = new Graphics();
     this.nodesLayer.addChild(this.selectionGfx);
@@ -569,6 +573,7 @@ export class PixiGraphEngine {
    */
   collapseTrunkCluster(clusterId: string): boolean {
     if (this.destroyed || !this.trunkMode) return false;
+    if (this.trunkCollapsing.has(clusterId)) return false; // 收起动画进行中：重入会双份重建聚合边
     const members = this.trunkExpandedMembers.get(clusterId);
     const blobPos = this.trunkBlobPos.get(clusterId);
     if (!members || !blobPos || !this.trunkSceneRef?.clusters.some((c) => c.id === clusterId)) return false;
@@ -738,18 +743,18 @@ export class PixiGraphEngine {
   private addTrunkChip(clusterId: string, centroid: { x: number; y: number }): void {
     const cluster = this.trunkSceneRef?.clusters.find((c) => c.id === clusterId);
     const root = new Container({ interactive: true, eventMode: 'static' });
-    root.hitArea = new Circle(0, 0, 16);
+    root.hitArea = new Circle(0, 0, 18);
     root.cursor = 'pointer';
     const circle = new Graphics()
-      .circle(0, 0, 11)
-      .fill({ color: this.theme.bg, alpha: 0.92 })
-      .stroke({ width: 1.5, color: trunkClusterColor(clusterId) });
+      .circle(0, 0, 13)
+      .fill({ color: this.theme.bg, alpha: 0.95 })
+      .stroke({ width: 2, color: trunkClusterColor(clusterId) });
     const label = new Text({
       interactive: false,
       eventMode: 'none',
       text: `✕ ${cluster?.label ?? clusterId}`,
       anchor: { x: 0.5, y: 0.5 },
-      style: { fontSize: 11, fill: this.theme.label, fontFamily: LABEL_FONT },
+      style: { fontSize: 12, fill: this.theme.label, fontFamily: LABEL_FONT },
       resolution: window.devicePixelRatio * 4,
     });
     root.addChild(circle, label);
@@ -757,8 +762,8 @@ export class PixiGraphEngine {
     root.on('pointertap', () => {
       if (!this.dragging) this.callbacks.onTrunkCollapseClick?.(clusterId);
     });
-    this.nodesLayer.addChild(root);
-    this.trunkChips.set(clusterId, { root });
+    this.chipsLayer.addChild(root);
+    this.trunkChips.set(clusterId, { root, centroid: { x: centroid.x, y: centroid.y } });
   }
 
   private removeTrunkChip(clusterId: string): void {
@@ -842,11 +847,20 @@ export class PixiGraphEngine {
     this.trunkExpanded.delete(clusterId);
     this.removeTrunkChip(clusterId);
     this.restoreBlobNode(clusterId); // 幂等：动画路径已提前恢复则跳过
-    // 本簇聚合边重建（hub/其他 blob 在场的）
+    // 本簇聚合边重建（hub/其他 blob 在场的）；按 pair 去重——重入/他簇 spoke 重挂路径
+    // 可能与 scene.links 撞对（终审 minor：双击 chip 曾双份重建）
+    const seenPairs = new Set(this.links.map((l) => {
+      const s = (l.source as SimNode).id;
+      const t = (l.target as SimNode).id;
+      return s < t ? `${s}${TRUNK_PAIR_SEP}${t}` : `${t}${TRUNK_PAIR_SEP}${s}`;
+    }));
     for (const l of this.trunkSceneRef?.links ?? []) {
       if (l.source !== clusterId && l.target !== clusterId) continue;
       const other = l.source === clusterId ? l.target : l.source;
       if (!this.nodeById.has(other) || other === clusterId) continue;
+      const pair = clusterId < other ? `${clusterId}${TRUNK_PAIR_SEP}${other}` : `${other}${TRUNK_PAIR_SEP}${clusterId}`;
+      if (seenPairs.has(pair)) continue;
+      seenPairs.add(pair);
       const link: SimLink = {
         source: this.nodeById.get(clusterId)!,
         target: this.nodeById.get(other)!,
@@ -1313,6 +1327,7 @@ export class PixiGraphEngine {
       // 这里只把标签从舞台摘除（Container 级），纹理交给管道自己的销毁清扫。
       try {
         this.labelsLayer.removeChildren().forEach((c) => c.destroy({ children: true }));
+        this.chipsLayer.removeChildren().forEach((c) => c.destroy({ children: true }));
         this.nodeRenderData = [];
       } catch (err) {
         console.warn('[graph] engine destroy: label cleanup failed', err);
@@ -1359,11 +1374,13 @@ export class PixiGraphEngine {
       interactive: true,
       eventMode: 'static',
       hitArea: new Circle(0, 0, n.radius + 6),
-      cursor: 'pointer',
+      // 簇团 = 可展开（zoom-in 光标提示），成员/hub = 可打开（pointer）——H2 验收 A1：
+      // 区分度不够时容易误点成员跳走文档
+      cursor: isCluster ? 'zoom-in' : 'pointer',
     })
       .circle(0, 0, n.radius)
       .fill({ color });
-    if (isCluster) gfx.stroke({ width: 1.5, color: this.theme.edge });
+    if (isCluster) gfx.stroke({ width: 2.5, color: this.theme.edge });
     gfx.on('pointerover', () => this.onNodePointerOver(n.id));
     gfx.on('pointerleave', () => this.onNodePointerLeave(n.id));
     this.nodesLayer.addChild(gfx);
@@ -1427,6 +1444,7 @@ export class PixiGraphEngine {
     this.nodesLayer.removeChildren().forEach((c) => c.destroy());
     this.labelsLayer.removeChildren().forEach((c) => c.destroy());
     this.linkLayer.removeChildren().forEach((c) => c.destroy());
+    this.chipsLayer.removeChildren().forEach((c) => c.destroy());
     this.selectionGfx = new Graphics();
     this.nodesLayer.addChild(this.selectionGfx);
 
@@ -1493,7 +1511,7 @@ export class PixiGraphEngine {
             ? this.theme.deadNode
             : nodeColorFor(d.nodeType, d.linkCount, this.theme),
       });
-      if (d.trunkCluster) n.gfx.stroke({ width: 1.5, color: this.theme.edge });
+      if (d.trunkCluster) n.gfx.stroke({ width: 2.5, color: this.theme.edge });
     }
     for (const l of this.linkRenderData) {
       l.color = this.theme.edge;
@@ -2027,10 +2045,27 @@ export class PixiGraphEngine {
       }
       // 死链节点也触发双击（由 GraphPage 决定：新建空白页并打开）
       this.callbacks.onNodeDoubleClick?.(node.id, toEngineNode(node));
+    } else if (this.hitTrunkChip(e)) {
+      // 双击落在收起 chip 上：不触发空白 fit（chip 是收起出口，误触相机跳转很伤）
+      return;
     } else {
       this.fitView({ animate: true });
     }
   };
+
+  /** 双击命中检测（chip 版）：事件点到某 chip 屏幕位置 ≤ 20 CSS px。 */
+  private hitTrunkChip(e: MouseEvent): boolean {
+    const rect = this.canvas.getBoundingClientRect();
+    const ex = e.clientX - rect.left;
+    const ey = e.clientY - rect.top;
+    const t = this.currentTransform;
+    for (const chip of this.trunkChips.values()) {
+      const sx = chip.root.x * t.k + t.x;
+      const sy = chip.root.y * t.k + t.y;
+      if (Math.hypot(ex - sx, ey - sy) <= 20) return true;
+    }
+    return false;
+  }
 
   /** 簇团单击延迟派发（TRUNK_CLUSTER_CLICK_DEFER_MS）：双击第二击的 dblclick 事件会取消。 */
   private scheduleTrunkClusterClick(clusterId: string): void {
@@ -2083,6 +2118,10 @@ export class PixiGraphEngine {
         const y = d.y + cy;
         n.gfx.position.set(x, y);
         n.label.position.set(x, y - d.radius - LABEL_GAP_SCREEN / this.currentTransform.k);
+      }
+      // chip 跟随团心（resize 后 cx/cy 变化也能钉在簇上——deferred minor 归位）
+      for (const chip of this.trunkChips.values()) {
+        chip.root.position.set(chip.centroid.x + cx, chip.centroid.y + cy);
       }
       this.redrawEdges();
       this.edgesDirty = false;

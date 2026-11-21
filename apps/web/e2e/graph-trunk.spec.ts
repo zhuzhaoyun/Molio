@@ -599,6 +599,43 @@ test('终审 #3：expand B → collapse B → expand A，A↔B 连接仍在（sp
   expect(scenarioLinks).toBe(controlLinks);
 });
 
+test('chip 双击：一次收起、无重复边、不触发空白 fit（验收反馈修复钉）', async ({ page }) => {
+  await gotoGraph(page);
+  await expect(page.locator('[data-testid="graph-trunk-indicator"]')).toBeVisible({ timeout: 20000 });
+  const blob = await findBlobScreen(page);
+  expect(blob).toBeTruthy();
+  const baseLinks = await page.evaluate(() => window.__graphEngine?.getLinkCount() ?? -1);
+  const baseVp = await page.evaluate(() => window.__graphEngine?.getViewport());
+  await page.mouse.click(blob!.sx, blob!.sy);
+  await expect
+    .poll(() => expandedContains(page, blob!.key), { timeout: 5000 })
+    .toBe(true);
+  const chip = await page.evaluate(
+    (k) => {
+      const eng = window.__graphEngine;
+      const pos = eng?.getTrunkCollapseChipPos(k) ?? null;
+      if (!pos || !eng) return null;
+      const rect = eng.canvas.getBoundingClientRect();
+      return { sx: rect.left + pos.sx, sy: rect.top + pos.sy };
+    },
+    blob!.key,
+  );
+  expect(chip).toBeTruthy();
+  // 双击 chip：第一次触发收起，第二次被重入守卫吃掉——不得双份重建聚合边
+  await page.mouse.dblclick(chip!.sx, chip!.sy);
+  await expect
+    .poll(() => expandedContains(page, blob!.key), { timeout: 5000 })
+    .toBe(false);
+  await page.waitForTimeout(600);
+  const links = await page.evaluate(() => window.__graphEngine?.getLinkCount() ?? -1);
+  expect(links).toBe(baseLinks); // 回到 trunk 基线边数（重复边会让它 > base）
+  // 双击落在 chip 上不触发空白 fit：视口不被程序改写
+  const vp = await page.evaluate(() => window.__graphEngine?.getViewport());
+  expect(Math.abs(vp.k - baseVp.k)).toBeLessThan(0.01);
+  expect(Math.abs(vp.tx - baseVp.tx)).toBeLessThan(1);
+  expect(Math.abs(vp.ty - baseVp.ty)).toBeLessThan(1);
+});
+
 test('选择残留回归（终审 Important-2）：trunk 选中簇后切全量，簇 id 选择清除不压暗', async ({ page }) => {
   await gotoGraph(page);
   await expect(page.locator('[data-testid="graph-trunk-indicator"]')).toBeVisible({ timeout: 20000 });
