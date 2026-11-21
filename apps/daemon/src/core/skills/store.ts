@@ -42,6 +42,7 @@ interface SkillRow {
   kind: string;
   built_in: number;
   enabled: number;
+  custom_instructions: string | null;
   created_at: number;
   updated_at: number;
 }
@@ -54,6 +55,8 @@ function rowToEntry(row: SkillRow): SkillManifestEntry {
     kind: (row.kind === 'bundled' ? 'bundled' : 'library') satisfies SkillKind,
     builtIn: row.built_in !== 0,
     enabled: row.enabled !== 0,
+    // NULL (or '' defensively) = no overlay → omit the field entirely.
+    ...(row.custom_instructions ? { customInstructions: row.custom_instructions } : {}),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -259,6 +262,33 @@ export function updateSkill(
     'UPDATE skills SET name = ?, description = ?, updated_at = ? WHERE id = ?',
   ).run(entry.name, entry.description, entry.updatedAt, id);
   return entry;
+}
+
+/**
+ * Set / clear a skill's custom-instruction overlay (自定义指令). Works for EVERY
+ * kind — for bundled skills this is the ONLY sanctioned edit channel (the base
+ * content stays app-owned). `null` clears. The overlay takes effect at sync
+ * time (compose), so no immediate file write happens here; routes trigger the
+ * per-vault fan-out after mutation.
+ */
+export function updateCustomInstructions(
+  db: Database.Database,
+  id: string,
+  custom: string | null,
+): SkillManifestEntry {
+  const entry = getSkill(db, id);
+  if (!entry) throw new SkillNotFoundError(id);
+
+  const now = Date.now();
+  db.prepare('UPDATE skills SET custom_instructions = ?, updated_at = ? WHERE id = ?').run(
+    custom,
+    now,
+    id,
+  );
+  // Drop the stale overlay field when clearing — spreading `entry` alone would
+  // keep the pre-update customInstructions in the return value.
+  const { customInstructions: _stale, ...rest } = entry;
+  return { ...rest, ...(custom ? { customInstructions: custom } : {}), updatedAt: now };
 }
 
 /** Flip the global master switch for a skill. */

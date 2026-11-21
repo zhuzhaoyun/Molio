@@ -4,6 +4,8 @@ import { promisify } from 'node:util';
 import { app, db, runManager, weixinService, feishuService, vaultWatcher, preloadManager, authClient } from './server.js';
 import { initSkillLibrary } from './core/skills/builtin.js';
 import { reconcileAllVaultsAsync, cleanupLegacyGlobalSync } from './core/skills/vault-config.js';
+import { quarantineRetiredWithOverlay } from './core/skills/retire-guard.js';
+import { cleanupExpiredQuarantine } from './core/skills/quarantine.js';
 import { isKillablePortOccupant } from './core/port-check.js';
 import { startMemoryMonitor } from './core/memory-monitor.js';
 import { pruneRunLogsAsync } from './core/runs-log-prune.js';
@@ -121,6 +123,10 @@ async function checkAndKillPortOccupant(port_: number): Promise<void> {
 // (bundled: docling/wiki-*/wechat) and retire the removed core writing trio.
 // Must run before any vault reconcile reads the table. Fast (SQLite upserts)
 // and kept before listen so API requests never observe an unseeded library.
+//
+// ⚠️ Retirement guard FIRST: it needs the retiring rows (and their overlays)
+// to still exist — the seed below deletes them (design §5.6 ordering).
+quarantineRetiredWithOverlay(db);
 const skillsSeeded = initSkillLibrary(db);
 
 // ⚠️ The port-occupant check is NO LONGER done preemptively here. It used to
@@ -201,6 +207,13 @@ async function runDeferredStartupChores(): Promise<void> {
       cleanupLegacyGlobalSync();
     } catch (err) {
       console.error('[startup] legacy skill cleanup failed:', err instanceof Error ? err.message : err);
+    }
+
+    // Prune quarantine copies past the 30-day retention window (best-effort).
+    try {
+      cleanupExpiredQuarantine();
+    } catch (err) {
+      console.error('[startup] quarantine cleanup failed:', err instanceof Error ? err.message : err);
     }
   } else {
     console.warn(

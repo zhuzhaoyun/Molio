@@ -32,10 +32,13 @@ import {
   listSkillFiles,
   createSkill,
   updateSkill,
+  updateCustomInstructions,
   toggleSkill,
   deleteSkill,
   SkillNotFoundError,
 } from '../core/skills/store.js';
+import { readBundledInstructions } from '../core/skills/builtin.js';
+import { listQuarantineEvents, ackQuarantineEvent } from '../core/skills/quarantine.js';
 import { afterGlobalSkillMutation } from '../core/skills/vault-config.js';
 import {
   inspectSkillSource,
@@ -71,6 +74,9 @@ async function readJsonObject(c: Context): Promise<Record<string, unknown> | nul
     return null;
   }
 }
+
+/** Hard cap for one skill's custom-instruction overlay (design §5.1: 32KB). */
+const MAX_CUSTOM_INSTRUCTIONS_BYTES = 32 * 1024;
 
 export function skillsRoutes(db: Database.Database, runManager: RunManager): Hono {
   const app = new Hono();
@@ -183,6 +189,24 @@ export function skillsRoutes(db: Database.Database, runManager: RunManager): Hon
     }
   });
 
+  // ─── Quarantine ledger (safety-net banner data) ───
+  // Registered BEFORE the by-id routes: '/quarantine' is a fixed path and
+  // would otherwise be eaten by GET '/:id' as a skill-id lookup.
+
+  // GET /api/skills/quarantine — unacked events for the settings banner.
+  app.get('/quarantine', (c) => {
+    return c.json({ events: listQuarantineEvents(db, { unackedOnly: true }) });
+  });
+
+  // POST /api/skills/quarantine/:id/ack — dismiss one banner entry.
+  app.post('/quarantine/:id/ack', (c) => {
+    const id = Number(c.req.param('id'));
+    if (!Number.isInteger(id) || id <= 0) {
+      return c.json({ error: { code: 'BAD_REQUEST', message: '无效的事件 id' } }, 400);
+    }
+    return ackQuarantineEvent(db, id) ? c.body(null, 204) : c.body(null, 404);
+  });
+
   // GET /api/skills/:id/files — the library skill's content-dir listing (the
   // "查看目录结构" view, mirroring the import preview's file list). Bundled
   // skills are treated as not found, like every other by-id route.
@@ -195,14 +219,19 @@ export function skillsRoutes(db: Database.Database, runManager: RunManager): Hon
   });
 
   // GET /api/skills/:id — one skill + its instructions (for the edit/duplicate
-  // form). Bundled skills are treated as not found (hidden app functionality,
-  // never shown/editable).
+  // form AND the bundled-skill overlay editor). Library skills read their
+  // library SKILL.md; bundled skills are now SERVED (base instructions from
+  // the shipped app-resources SKILL.md, read-only) — the custom-instructions
+  // overlay editor needs the base body, and GET is harmless. Mutating routes
+  // below still 404 bundled skills except the overlay endpoint.
   app.get('/:id', (c) => {
     const skill = getSkill(db, c.req.param('id'));
-    if (!skill || skill.kind === 'bundled') {
+    if (!skill) {
       return c.json({ error: { code: 'NOT_FOUND', message: 'Skill not found' } }, 404);
     }
-    return c.json({ skill, instructions: readInstructions(skill.id) });
+    const instructions =
+      skill.kind === 'bundled' ? readBundledInstructions(skill.id) : readInstructions(skill.id);
+    return c.json({ skill, instructions });
   });
 
   // POST /api/skills — create a user (library) skill, enabled by default
@@ -261,6 +290,35 @@ export function skillsRoutes(db: Database.Database, runManager: RunManager): Hon
     }
     try {
       const skill = updateSkill(db, c.req.param('id'), body);
+      await afterGlobalSkillMutation(db);
+      return c.json({ skill });
+    } catch (err) {
+      return mapStoreError(c, err);
+    }
+  });
+
+  // PATCH /api/skills/:id/custom-instructions — set/clear the custom-instruction
+  // overlay. Open to EVERY kind: for bundled skills this is the ONLY sanctioned
+  // edit channel (base content stays app-owned; the overlay rides along at sync
+  // time and survives app updates + hub refreshes). Empty string clears.
+  // Cap: 32KB utf-8 bytes.
+  app.patch('/:id/custom-instructions', async (c) => {
+    const body = (await readJsonObject(c)) as { customInstructions?: unknown } | null;
+    if (!body || typeof body.customInstructions !== 'string') {
+      return c.json({ error: { code: 'BAD_REQUEST', message: 'customInstructions 必须是字符串' } }, 400);
+    }
+    if (Buffer.byteLength(body.customInstructions, 'utf8') > MAX_CUSTOM_INSTRUCTIONS_BYTES) {
+      return c.json(
+        { error: { code: 'BAD_REQUEST', message: `自定义指令过长（上限 ${MAX_CUSTOM_INSTRUCTIONS_BYTES / 1024}KB）` } },
+        400,
+      );
+    }
+    try {
+      const skill = updateCustomInstructions(
+        db,
+        c.req.param('id'),
+        body.customInstructions === '' ? null : body.customInstructions,
+      );
       await afterGlobalSkillMutation(db);
       return c.json({ skill });
     } catch (err) {

@@ -1,11 +1,13 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { PuzzleIcon } from '../icons';
-import type { SkillManifestEntry, ImportSkillRequest } from '@molio/contracts';
+import { PuzzleIcon, ChevronIcon } from '../icons';
+import type { SkillManifestEntry, ImportSkillRequest, SkillQuarantineEvent } from '@molio/contracts';
 import { useSkills } from '../../hooks/useSkills';
 import { useI18n } from '../../i18n';
 import { api } from '../../api/client';
 import { SkillEditor, type SkillFormMode, type SkillFormValues } from './SkillEditor';
+import { SkillCustomInstructionsModal } from './SkillCustomInstructionsModal';
 import { SkillHubPanel } from './SkillHubPanel';
+import { groupQuarantineEvents } from './quarantineGrouping';
 
 interface ModalState {
   mode: SkillFormMode;
@@ -29,6 +31,7 @@ function SkillRow({
   onToggle,
   onEdit,
   onDuplicate,
+  onCustom,
   onDeleteRequest,
   onDeleteConfirm,
   onDeleteCancel,
@@ -42,6 +45,8 @@ function SkillRow({
   onToggle: (enabled: boolean) => void;
   onEdit: () => void;
   onDuplicate: () => void;
+  /** Open the custom-instructions (overlay) editor — update-proof customization. */
+  onCustom: () => void;
   onDeleteRequest: () => void;
   onDeleteConfirm: () => void;
   onDeleteCancel: () => void;
@@ -67,11 +72,17 @@ function SkillRow({
       <div className="sk-row__body" onClick={() => { if (!fetching) onEdit(); }}>
         <div className="sk-row__header">
           <span className="sk-row__name">{skill.name}</span>
+          {skill.customInstructions && (
+            <span className="rt-badge" data-testid={`skill-custom-badge-${skill.id}`}>{t('skills.customBadge')}</span>
+          )}
         </div>
         {skill.description && <div className="sk-row__desc">{skill.description}</div>}
       </div>
 
       <div className="sk-row__actions">
+        <button className="rt-btn rt-btn--sm rt-btn--ghost" data-testid={`skill-custom-${skill.id}`} onClick={onCustom} disabled={fetching}>
+          {t('skills.customEdit')}
+        </button>
         <button className="rt-btn rt-btn--sm rt-btn--ghost" data-testid={`skill-duplicate-${skill.id}`} onClick={onDuplicate} disabled={fetching}>
           {t('skills.duplicate')}
         </button>
@@ -101,12 +112,123 @@ function SkillRow({
   );
 }
 
+/**
+ * One bundled-skill row: compact read-only line + a QUIET 「自定义指令」 text
+ * entry. Bundled skills are app-owned and just work; the overlay channel is
+ * deliberately demoted (collapsed section, text-level entry) — it exists for
+ * the "I truly need to tailor this" moment, not as an invitation to tinker
+ * with skills on the KB hot path.
+ */
+function BundledSkillRow({
+  skill,
+  onCustom,
+}: {
+  skill: SkillManifestEntry;
+  onCustom: () => void;
+}) {
+  const { t } = useI18n();
+  return (
+    <div className="sk-row sk-bundled__row" data-testid={`bundled-skill-row-${skill.id}`}>
+      <div className="sk-row__body">
+        <div className="sk-row__header">
+          <span className="sk-row__name">{skill.name}</span>
+          {skill.customInstructions && (
+            <span className="rt-badge" data-testid={`bundled-skill-badge-${skill.id}`}>{t('skills.customBadge')}</span>
+          )}
+        </div>
+        {skill.description && <div className="sk-row__desc">{skill.description}</div>}
+      </div>
+      <div className="sk-row__actions">
+        <button
+          className="sk-bundled__edit"
+          data-testid={`bundled-skill-edit-${skill.id}`}
+          onClick={onCustom}
+        >
+          {t('skills.customEdit')}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function SkillsPanel() {
   const { t } = useI18n();
   const {
     skills, loading, error,
     refresh, createSkill, updateSkill, toggleSkill, deleteSkill, importSkill,
   } = useSkills();
+
+  // Bundled (app-shipped) skills: separate section under the library list.
+  // Loaded independently of useSkills (which is library-only by design);
+  // reloaded after every overlay save so badges stay in sync.
+  const [bundledSkills, setBundledSkills] = useState<SkillManifestEntry[]>([]);
+  const refreshBundled = useCallback(() => {
+    api
+      .listSkills({ includeBundled: true })
+      .then((list) => setBundledSkills(list.filter((s) => s.kind === 'bundled')))
+      .catch(() => setBundledSkills([])); // section simply stays empty on failure
+  }, []);
+  useEffect(() => {
+    refreshBundled();
+  }, [refreshBundled]);
+
+  // Bundled skills are system facts, not something users manage — the section
+  // stays COLLAPSED by default so the page doesn't advertise tinkering with
+  // skills on the KB hot path. Expanded state persists: a user who opened it
+  // is mid-task and shouldn't have to re-expand after a tab switch.
+  const [bundledOpen, setBundledOpen] = useState(() => {
+    try {
+      return localStorage.getItem('molio.skillsBundledOpen') === '1';
+    } catch {
+      return false; // storage unavailable (private mode) → collapsed default
+    }
+  });
+  const toggleBundled = useCallback(() => {
+    setBundledOpen((open) => {
+      const next = !open;
+      try {
+        localStorage.setItem('molio.skillsBundledOpen', next ? '1' : '0');
+      } catch {
+        /* persistence is best-effort; the toggle still works this session */
+      }
+      return next;
+    });
+  }, []);
+  // The customized count is the one state worth surfacing while collapsed:
+  // it tells the user their overlays are still there without expanding.
+  const customizedCount = bundledSkills.filter((s) => s.customInstructions).length;
+
+  // Overlay editor target (bundled OR library skill).
+  const [customTarget, setCustomTarget] = useState<SkillManifestEntry | null>(null);
+
+  // Safety-net banner: unacked quarantine events. Loaded on mount AND after
+  // every panel mutation — each mutation's endpoint awaits the vault
+  // reconcile, so by the time it returns any new events are already in the
+  // ledger and a re-fetch surfaces them in place (no remount needed).
+  const [quarantine, setQuarantine] = useState<SkillQuarantineEvent[]>([]);
+  const refreshQuarantine = useCallback(() => {
+    api.listSkillQuarantine().then((r) => setQuarantine(r.events)).catch(() => setQuarantine([]));
+  }, []);
+  useEffect(() => {
+    refreshQuarantine();
+  }, [refreshQuarantine]);
+  const ackQuarantine = useCallback(
+    async (id: number) => {
+      setQuarantine((prev) => prev.filter((e) => e.id !== id));
+      try {
+        await api.ackSkillQuarantine(id);
+      } catch {
+        refreshQuarantine(); // restore on failure — the event is still unacked
+      }
+    },
+    [refreshQuarantine],
+  );
+  const ackColdStartAll = useCallback(() => {
+    for (const ev of quarantine.filter((e) => e.source === 'vault-cold-start')) {
+      void api.ackSkillQuarantine(ev.id).catch(() => {});
+    }
+    setQuarantine((prev) => prev.filter((e) => e.source !== 'vault-cold-start'));
+  }, [quarantine]);
 
   // Segmented view: '我的技能' (library) vs '技能商店' (skillhub.cn catalog).
   // Kept local to the panel — no route/NavRail change, and switching back to
@@ -222,13 +344,14 @@ export function SkillsPanel() {
         const skill = await createSkill(values);
         flashRecentlyAdded(skill.id);
       }
+      refreshQuarantine(); // the mutation's reconcile may have ledgered events
       closeModal();
     } catch (err) {
       setFormError((err as Error).message);
     } finally {
       setBusy(false);
     }
-  }, [modal, createSkill, updateSkill, flashRecentlyAdded, closeModal]);
+  }, [modal, createSkill, updateSkill, flashRecentlyAdded, closeModal, refreshQuarantine]);
 
   const handleImport = useCallback(async (req: ImportSkillRequest) => {
     setBusy(true);
@@ -236,30 +359,33 @@ export function SkillsPanel() {
     try {
       const skill = await importSkill(req);
       flashRecentlyAdded(skill.id);
+      refreshQuarantine(); // the import's reconcile may have ledgered events
       closeModal();
     } catch (err) {
       setFormError((err as Error).message);
     } finally {
       setBusy(false);
     }
-  }, [importSkill, flashRecentlyAdded, closeModal]);
+  }, [importSkill, flashRecentlyAdded, closeModal, refreshQuarantine]);
 
   const handleToggle = useCallback(async (id: string, enabled: boolean) => {
     try {
       await toggleSkill(id, enabled);
+      refreshQuarantine(); // disable/enable re-syncs vaults (orphan sweeps)
     } catch (err) {
       setFormError((err as Error).message);
     }
-  }, [toggleSkill]);
+  }, [toggleSkill, refreshQuarantine]);
 
   const handleDeleteConfirm = useCallback(async (id: string) => {
     setConfirmDeleteId(null);
     try {
       await deleteSkill(id);
+      refreshQuarantine(); // removal re-syncs vaults (orphan sweeps)
     } catch (err) {
       setFormError((err as Error).message);
     }
-  }, [deleteSkill]);
+  }, [deleteSkill, refreshQuarantine]);
 
   return (
     <div className="sk-shell">
@@ -295,6 +421,48 @@ export function SkillsPanel() {
           {t('skills.viewHub')}
         </button>
       </div>
+
+      {/* Safety-net banner: cold-start events collapse into ONE aggregated
+          entry (they can fire per-skill on the first sync after an upgrade);
+          every other source is a specific occurrence with its own ack. */}
+      {quarantine.length > 0 && (
+        <div className="sk-quarantine" data-testid="skill-quarantine-banner">
+          {(() => {
+            const { coldStart, individual } = groupQuarantineEvents(quarantine);
+            return (
+              <>
+                {coldStart.length > 0 && (
+                  <div className="sk-quarantine__row" data-testid="skill-quarantine-coldstart">
+                    <span>
+                      升级后首次同步：{coldStart.length} 个技能的本地副本与官方版本有差异，差异备份已存于{' '}
+                      <code>~/.molio/skill-quarantine/</code>。差异也可能来自版本更新本身；若你改过它们，可从备份找回并整理进「自定义指令」。
+                    </span>
+                    <button
+                      className="rt-btn rt-btn--sm rt-btn--ghost"
+                      data-testid="skill-quarantine-ack-coldstart"
+                      onClick={ackColdStartAll}
+                    >
+                     知道了
+                    </button>
+                  </div>
+                )}
+                {individual.map((ev) => (
+                  <div className="sk-quarantine__row" key={ev.id}>
+                    <span>{ev.description}</span>
+                    <button
+                      className="rt-btn rt-btn--sm rt-btn--ghost"
+                      data-testid={`skill-quarantine-ack-${ev.id}`}
+                      onClick={() => ackQuarantine(ev.id)}
+                    >
+                     知道了
+                    </button>
+                  </div>
+                ))}
+              </>
+            );
+          })()}
+        </div>
+      )}
 
       {/* Once visited, the hub pane stays mounted; the inactive pane is hidden
           with CSS. Unmounting SkillHubPanel on every tab flip would lose its
@@ -332,11 +500,52 @@ export function SkillsPanel() {
                   onToggle={(enabled) => handleToggle(skill.id, enabled)}
                   onEdit={() => openEdit(skill)}
                   onDuplicate={() => openDuplicate(skill)}
+                  onCustom={() => setCustomTarget(skill)}
                   onDeleteRequest={() => setConfirmDeleteId(skill.id)}
                   onDeleteConfirm={() => handleDeleteConfirm(skill.id)}
                   onDeleteCancel={() => setConfirmDeleteId(null)}
                 />
               ))}
+            </div>
+          )}
+
+          {/* Built-in skills: app-owned, always-on; customization rides on the
+              overlay (自定义指令) — the only sanctioned edit channel, survives
+              every app update. Collapsed by default; the summary keeps the
+              customized count visible so overlays stay discoverable without
+              advertising the edit channel. */}
+          {bundledSkills.length > 0 && (
+            <div data-testid="skills-pane-bundled" className={`sk-bundled${bundledOpen ? ' is-open' : ''}`}>
+              <button
+                type="button"
+                className="sk-bundled__toggle"
+                data-testid="skills-bundled-toggle"
+                aria-expanded={bundledOpen}
+                aria-controls="skills-bundled-list"
+                onClick={toggleBundled}
+              >
+                <ChevronIcon size={14} className="sk-bundled__chevron" />
+                <span className="sk-bundled__title">{t('skills.bundledTitle')}</span>
+                <span className="sk-bundled__summary">
+                  {t('skills.bundledCount', { count: bundledSkills.length })}
+                  {customizedCount > 0 &&
+                    t('skills.bundledCustomized', { count: customizedCount })}
+                </span>
+              </button>
+              {bundledOpen && (
+                <div id="skills-bundled-list" className="sk-bundled__body">
+                  <p className="sk-bundled__hint">{t('skills.bundledHint')}</p>
+                  <div className="sk-list">
+                    {bundledSkills.map((skill) => (
+                      <BundledSkillRow
+                        key={skill.id}
+                        skill={skill}
+                        onCustom={() => setCustomTarget(skill)}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -360,6 +569,17 @@ export function SkillsPanel() {
         onClose={closeModal}
         onSave={handleSave}
         onImport={handleImport}
+      />
+
+      <SkillCustomInstructionsModal
+        show={customTarget !== null}
+        skill={customTarget}
+        onClose={() => setCustomTarget(null)}
+        onSaved={() => {
+          refreshBundled();
+          refresh(); // library rows' badges + hub-installed entries
+          refreshQuarantine(); // the PATCH's reconcile may have ledgered drift events
+        }}
       />
     </div>
   );

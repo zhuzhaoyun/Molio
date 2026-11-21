@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { gotoHome, clickNav } from './helpers/navigation';
+import { createTempVault, cleanupTempVault } from './helpers/cleanup';
 
 /**
  * @area settings
@@ -45,6 +46,20 @@ async function gotoSkillsTab(page: import('@playwright/test').Page) {
   await expect(page.locator('.sk-list, .rt-empty').first()).toBeVisible({ timeout: 10_000 });
 }
 
+/**
+ * The built-in skills section is COLLAPSED by default (system facts, not a
+ * management surface — opening it must be a deliberate act). Idempotently
+ * expand it and wait for its rows before touching `bundled-skill-*` targets.
+ */
+async function expandBundled(page: import('@playwright/test').Page) {
+  const toggle = page.getByTestId('skills-bundled-toggle');
+  await expect(toggle).toBeVisible();
+  if ((await toggle.getAttribute('aria-expanded')) !== 'true') {
+    await toggle.click();
+  }
+  await expect(page.getByTestId('bundled-skill-row-wiki-query')).toBeVisible();
+}
+
 /** Dispatch a synthetic paste of `text` into the instructions textarea. */
 async function pasteIntoInstructions(page: import('@playwright/test').Page, text: string) {
   await page.getByTestId('skill-instructions-input').evaluate((el, value) => {
@@ -55,15 +70,29 @@ async function pasteIntoInstructions(page: import('@playwright/test').Page, text
 }
 
 test.describe('Skills library', () => {
-  test('bundled skills are hidden from the library; runtime note shown', async ({ page }) => {
+  test('bundled skills stay out of the LIBRARY list; built-in section + runtime note shown', async ({ page }) => {
     await gotoSkillsTab(page);
 
-    // Bundled skills are app-owned + always effective → hidden by the API, no
-    // rows or badges for them (a docling row here would mean a regression to
-    // the toggleable design that silently breaks KB panel / channel features).
+    // Bundled skills are app-owned + always effective → they never appear as
+    // toggleable LIBRARY rows (a docling `skill-row-` here would mean a
+    // regression to the toggleable design that silently breaks KB panel /
+    // channel features). They DO appear in the separate read-only built-in
+    // section (`bundled-skill-row-*`) introduced with custom instructions.
     await expect(page.locator('.sk-badge--bundled')).toHaveCount(0);
-    await expect(page.locator('.sk-row', { hasText: 'docling' })).toHaveCount(0);
-    await expect(page.locator('.sk-row', { hasText: 'wiki-query' })).toHaveCount(0);
+    await expect(page.locator('[data-testid^="skill-row-"]', { hasText: 'docling' })).toHaveCount(0);
+    await expect(page.locator('[data-testid^="skill-row-"]', { hasText: 'wiki-query' })).toHaveCount(0);
+    // …and the built-in section exists — COLLAPSED by default (system facts,
+    // not a management surface; the summary keeps the customized count
+    // visible), expanding is a deliberate act.
+    const bundled = page.getByTestId('skills-pane-bundled');
+    await expect(bundled).toBeVisible();
+    const toggle = page.getByTestId('skills-bundled-toggle');
+    await expect(toggle).toBeVisible();
+    await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    await expect(bundled.getByTestId('skills-bundled-toggle')).toContainText('项');
+    await expect(page.getByTestId('bundled-skill-row-wiki-query')).toHaveCount(0);
+    await expandBundled(page);
+    await expect(page.getByTestId('bundled-skill-row-wiki-query')).toBeVisible();
     // All-runtimes footnote. Scoped to the mine pane: both panes stay mounted
     // now (keep-alive for hub search state), so the hub pane's source note is
     // also in the DOM and an unscoped `.sk-note` matches two elements.
@@ -496,6 +525,170 @@ test.describe('Skills library', () => {
       await page.unroute('**/api/skills/import');
       fs.rmSync(dir, { recursive: true, force: true });
       await page.getByTestId('skill-form-cancel').click();
+    }
+  });
+});
+
+test.describe('Skills custom instructions (overlay)', () => {
+  // The overlay is the ONLY sanctioned edit channel for bundled skills and the
+  // update-proof customization slot for library/hub skills. These cases pin
+  // the full loop: edit → save → persist across reload → clear.
+
+  test('bundled skill: edit, save, persist across reload, clear', async ({ page }) => {
+    await gotoSkillsTab(page);
+    await expandBundled(page);
+
+    // No badge before any overlay exists (wiki-query ships clean).
+    await expect(page.getByTestId('bundled-skill-badge-wiki-query')).toHaveCount(0);
+
+    await page.getByTestId('bundled-skill-edit-wiki-query').click();
+    const editor = page.getByTestId('custom-instructions-overlay');
+    await expect(editor).toBeVisible();
+    // Read-only base body of the real shipped skill is shown.
+    await expect(page.getByTestId('custom-instructions-base')).not.toBeEmpty();
+
+    const textarea = page.getByTestId('custom-instructions-textarea');
+    await textarea.fill('E2E 自定义指令：输出一律简体中文');
+    await page.getByTestId('custom-instructions-save').click();
+    await expect(page.getByTestId('custom-instructions-saved')).toBeVisible({ timeout: 10_000 });
+    await page.keyboard.press('Escape');
+
+    // Badge appears on the row once an overlay exists — and the COLLAPSED
+    // summary now counts it (state visible without expanding).
+    await expect(page.getByTestId('bundled-skill-badge-wiki-query')).toBeVisible();
+    await expect(page.getByTestId('skills-bundled-toggle')).toContainText('1 个已自定义');
+
+    // Persist across a full reload (proves daemon-side storage, not UI state;
+    // the expanded preference also survives via localStorage).
+    await page.reload();
+    await gotoSkillsTab(page);
+    await expandBundled(page);
+    await page.getByTestId('bundled-skill-edit-wiki-query').click();
+    await expect(page.getByTestId('custom-instructions-textarea')).toHaveValue(
+      'E2E 自定义指令：输出一律简体中文',
+    );
+
+    // Clear → empty value, badge gone.
+    await page.getByTestId('custom-instructions-clear').click();
+    await expect(page.getByTestId('custom-instructions-textarea')).toHaveValue('');
+    await page.keyboard.press('Escape');
+    await expect(page.getByTestId('bundled-skill-badge-wiki-query')).toHaveCount(0);
+  });
+});
+
+test.describe('Skills quarantine banner (safety net)', () => {
+  test('a hand-edited bundled mirror surfaces a drift banner; ack dismisses it', async ({ page }) => {
+    // Trigger a REAL drift end-to-end: create a temp vault (creation fans out
+    // bundled skills + establishes baselines), hand-edit its wiki-query mirror
+    // behind Molio's back, then fire a reconcile via any skill mutation (PATCH
+    // custom-instructions awaits afterGlobalSkillMutation). The guarded mirror
+    // must quarantine the edited bytes and ledger a vault-drift event.
+    const DAEMON = `http://localhost:${process.env.MOLIO_E2E_DAEMON_PORT ?? '3100'}`;
+    const vault = await createTempVault('e2e-skill-quarantine');
+    try {
+      const mirrorMd = `${vault.path}/.claude/skills/wiki-query/SKILL.md`;
+      fs.writeFileSync(mirrorMd, fs.readFileSync(mirrorMd, 'utf8') + '\n<!-- E2E 手改痕迹 -->', 'utf8');
+      // docling overlay patch is just the reconcile trigger; wiki-query's overlay stays clean.
+      const trigger = await page.request.patch(`${DAEMON}/api/skills/docling/custom-instructions`, {
+        data: { customInstructions: 'E2E reconcile 触发器' },
+      });
+      expect(trigger.ok()).toBeTruthy();
+
+      await gotoSkillsTab(page);
+      const banner = page.getByTestId('skill-quarantine-banner');
+      await expect(banner).toBeVisible({ timeout: 10_000 });
+      await expect(banner).toContainText('wiki-query');
+
+      // Ack the drift row → banner disappears (this run's only event).
+      await page.getByTestId(/^skill-quarantine-ack-/).filter({ hasNotText: 'coldstart' }).first().click();
+      await expect(banner).toHaveCount(0, { timeout: 10_000 });
+
+      // Cleanup: clear the trigger overlay so later runs start clean.
+      await page.request.patch(`${DAEMON}/api/skills/docling/custom-instructions`, {
+        data: { customInstructions: '' },
+      });
+    } finally {
+      await cleanupTempVault(vault);
+    }
+  });
+
+  test('drift created while the panel is ALREADY open surfaces without remount', async ({ page }) => {
+    // The real user flow: settings open, a mirror is hand-edited behind
+    // Molio's back, then the user saves an overlay THROUGH THE UI — the PATCH
+    // awaits the full-vault reconcile that records the drift event. The panel
+    // must re-fetch quarantine events after its own mutations: the banner has
+    // to appear WITHOUT a remount/reload (regression: it only loaded on mount,
+    // so the event sat invisible until the next page navigation).
+    const DAEMON = `http://localhost:${process.env.MOLIO_E2E_DAEMON_PORT ?? '3100'}`;
+    const vault = await createTempVault('e2e-skill-quarantine-live');
+    try {
+      await gotoSkillsTab(page);
+      await expect(page.getByTestId('skills-pane-bundled')).toBeVisible();
+      await expect(page.getByTestId('skill-quarantine-banner')).toHaveCount(0);
+      await expandBundled(page); // the docling edit entry lives inside the collapsed section
+
+      const mirrorMd = `${vault.path}/.claude/skills/wiki-query/SKILL.md`;
+      fs.writeFileSync(mirrorMd, fs.readFileSync(mirrorMd, 'utf8') + '\n<!-- E2E 手改痕迹·面板已开 -->', 'utf8');
+
+      // Save an overlay on docling via the modal — its PATCH awaits the
+      // reconcile that quarantines wiki-query's drifted mirror.
+      await page.getByTestId('bundled-skill-edit-docling').click();
+      await page.getByTestId('custom-instructions-textarea').fill('E2E live-banner 触发器');
+      await page.getByTestId('custom-instructions-save').click();
+      await expect(page.getByTestId('custom-instructions-saved')).toBeVisible(); // PATCH settled
+      await page.keyboard.press('Escape'); // close the modal; the page is NOT reloaded
+
+      const banner = page.getByTestId('skill-quarantine-banner');
+      await expect(banner).toBeVisible({ timeout: 10_000 });
+      await expect(banner).toContainText('wiki-query');
+
+      await page.getByTestId(/^skill-quarantine-ack-/).filter({ hasNotText: 'coldstart' }).first().click();
+      await expect(banner).toHaveCount(0, { timeout: 10_000 });
+
+      // Cleanup: clear the trigger overlay so later runs start clean.
+      await page.request.patch(`${DAEMON}/api/skills/docling/custom-instructions`, {
+        data: { customInstructions: '' },
+      });
+    } finally {
+      await cleanupTempVault(vault);
+    }
+  });
+});
+
+test.describe('Skills custom instructions on LIBRARY rows', () => {
+  test('library (incl. hub-installed) skills expose the overlay entry; badge reflects state', async ({ page }) => {
+    await gotoSkillsTab(page);
+
+    // A library skill stands in for hub-installed ones (same row component,
+    // same kind) — created via the daemon API to keep the case focused.
+    const DAEMON = `http://localhost:${process.env.MOLIO_E2E_DAEMON_PORT ?? '3100'}`;
+    const create = await page.request.post(`${DAEMON}/api/skills`, {
+      data: { name: `E2E库技能${Date.now()}`, description: 'd', instructions: '正文' },
+    });
+    expect(create.ok()).toBeTruthy();
+    const { skill } = (await create.json()) as { skill: { id: string } };
+
+    // The panel's list was loaded BEFORE this out-of-band create — reload so
+    // the new row (and its custom-instructions entry) exists in the DOM.
+    await page.reload();
+    await gotoSkillsTab(page);
+
+    try {
+      await page.getByTestId(`skill-custom-${skill.id}`).click();
+      await expect(page.getByTestId('custom-instructions-overlay')).toBeVisible();
+      await page.getByTestId('custom-instructions-textarea').fill('库技能的自定义要求');
+      await page.getByTestId('custom-instructions-save').click();
+      await expect(page.getByTestId('custom-instructions-saved')).toBeVisible({ timeout: 10_000 });
+      await page.keyboard.press('Escape');
+      // Overlay badge appears on the library row (mirrors bundled rows).
+      await expect(page.getByTestId(`skill-custom-badge-${skill.id}`)).toBeVisible();
+
+      // Reopen → persisted.
+      await page.getByTestId(`skill-custom-${skill.id}`).click();
+      await expect(page.getByTestId('custom-instructions-textarea')).toHaveValue('库技能的自定义要求');
+      await page.keyboard.press('Escape');
+    } finally {
+      await page.request.delete(`${DAEMON}/api/skills/${skill.id}`);
     }
   });
 });

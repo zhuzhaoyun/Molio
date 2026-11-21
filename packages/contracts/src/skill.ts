@@ -33,6 +33,13 @@ export interface SkillManifestEntry {
   builtIn: boolean;
   /** 'bundled' (multi-file, shipped) or 'library' (single-file, user-managed). Defaults to 'library'. */
   kind?: SkillKind;
+  /**
+   * User's custom-instruction overlay (自定义指令): appended to the synced
+   * SKILL.md inside a sentinel block at sync time. Stored in the skills table,
+   * so it survives app updates and hub refreshes — for bundled skills this is
+   * the ONLY sanctioned edit channel. Absent = no overlay.
+   */
+  customInstructions?: string;
   createdAt: number; // epoch ms
   updatedAt: number; // epoch ms
 }
@@ -49,6 +56,16 @@ export interface UpdateSkillRequest {
   name?: string;
   description?: string;
   instructions?: string;
+}
+
+/**
+ * Set / clear a skill's custom-instruction overlay (PATCH
+ * /api/skills/:id/custom-instructions). Empty string clears (stored as NULL).
+ * Allowed for EVERY kind — for bundled skills this is the only edit channel.
+ * Hard cap: 32KB (Buffer.byteLength, utf8).
+ */
+export interface UpdateSkillCustomInstructionsRequest {
+  customInstructions: string;
 }
 
 /**
@@ -149,6 +166,35 @@ export interface SkillDetailResponse {
 
 export interface PrefillResponse {
   prefill: PrefillResult;
+}
+
+// ─── Quarantine (safety-net ledger) types ───
+
+/** What kind of would-be destruction a quarantine prevented. */
+export type QuarantineSource =
+  | 'vault-drift' // user hand-edited a vault mirror → quarantined before rebuild
+  | 'vault-cold-start' // first sync after upgrade, no baseline — diff backed up
+  | 'hub-update' // hub refresh over a locally edited library source
+  | 'retired' // bundled skill retired while carrying an overlay
+  | 'orphan-sweep'; // renamed/disabled skill's mirror swept as an orphan
+
+/** One `skill_quarantine_events` row (GET /api/skills/quarantine). */
+export interface SkillQuarantineEvent {
+  id: number;
+  source: QuarantineSource;
+  skillId?: string;
+  /** Mirror dir name the event concerns (slug or molio--<dirName>). */
+  mirrorName: string;
+  /** Human-facing Chinese explanation shown in the settings banner. */
+  description: string;
+  /** Where the preserved copy lives (~/.molio/skill-quarantine/...). */
+  quarantinedPath: string;
+  createdAt: number; // epoch ms
+  acked: boolean;
+}
+
+export interface SkillQuarantineListResponse {
+  events: SkillQuarantineEvent[];
 }
 
 // ─── Skill hub (marketplace) types ───
