@@ -54,6 +54,15 @@ export function GraphSearchBox({ nodes, onSelect, clusters, onSelectCluster, aut
   const [open, setOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  // 延迟关闭定时器：onFocus 必须取消它——select() 触发 blur 后 120ms 内重新聚焦/输入时，
+  // 残留定时器会把刚打开的下拉再关掉（慢机上「搜索→再搜」必现，CI 实抓）
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cancelCloseTimer = () => {
+    if (closeTimerRef.current) {
+      clearTimeout(closeTimerRef.current);
+      closeTimerRef.current = null;
+    }
+  };
 
   const results = useMemo<SearchOption[]>(() => {
     const q = query.trim().toLowerCase();
@@ -151,10 +160,14 @@ export function GraphSearchBox({ nodes, onSelect, clusters, onSelectCluster, aut
           setOpen(true);
           setActiveIndex(0);
         }}
-        onFocus={() => setOpen(true)}
+        onFocus={() => {
+          cancelCloseTimer();
+          setOpen(true);
+        }}
         onBlur={() => {
           // 延迟关闭：让选项的 click 先触发（选项已用 mousedown preventDefault 保焦）
-          setTimeout(() => setOpen(false), 120);
+          cancelCloseTimer();
+          closeTimerRef.current = setTimeout(() => setOpen(false), 120);
         }}
         onKeyDown={onKeyDown}
       />
