@@ -46,6 +46,20 @@ async function gotoSkillsTab(page: import('@playwright/test').Page) {
   await expect(page.locator('.sk-list, .rt-empty').first()).toBeVisible({ timeout: 10_000 });
 }
 
+/**
+ * The built-in skills section is COLLAPSED by default (system facts, not a
+ * management surface — opening it must be a deliberate act). Idempotently
+ * expand it and wait for its rows before touching `bundled-skill-*` targets.
+ */
+async function expandBundled(page: import('@playwright/test').Page) {
+  const toggle = page.getByTestId('skills-bundled-toggle');
+  await expect(toggle).toBeVisible();
+  if ((await toggle.getAttribute('aria-expanded')) !== 'true') {
+    await toggle.click();
+  }
+  await expect(page.getByTestId('bundled-skill-row-wiki-query')).toBeVisible();
+}
+
 /** Dispatch a synthetic paste of `text` into the instructions textarea. */
 async function pasteIntoInstructions(page: import('@playwright/test').Page, text: string) {
   await page.getByTestId('skill-instructions-input').evaluate((el, value) => {
@@ -67,8 +81,17 @@ test.describe('Skills library', () => {
     await expect(page.locator('.sk-badge--bundled')).toHaveCount(0);
     await expect(page.locator('[data-testid^="skill-row-"]', { hasText: 'docling' })).toHaveCount(0);
     await expect(page.locator('[data-testid^="skill-row-"]', { hasText: 'wiki-query' })).toHaveCount(0);
-    // …and the built-in section exists with the expected read-only shape.
-    await expect(page.getByTestId('skills-pane-bundled')).toBeVisible();
+    // …and the built-in section exists — COLLAPSED by default (system facts,
+    // not a management surface; the summary keeps the customized count
+    // visible), expanding is a deliberate act.
+    const bundled = page.getByTestId('skills-pane-bundled');
+    await expect(bundled).toBeVisible();
+    const toggle = page.getByTestId('skills-bundled-toggle');
+    await expect(toggle).toBeVisible();
+    await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    await expect(bundled.getByTestId('skills-bundled-toggle')).toContainText('项');
+    await expect(page.getByTestId('bundled-skill-row-wiki-query')).toHaveCount(0);
+    await expandBundled(page);
     await expect(page.getByTestId('bundled-skill-row-wiki-query')).toBeVisible();
     // All-runtimes footnote. Scoped to the mine pane: both panes stay mounted
     // now (keep-alive for hub search state), so the hub pane's source note is
@@ -513,6 +536,7 @@ test.describe('Skills custom instructions (overlay)', () => {
 
   test('bundled skill: edit, save, persist across reload, clear', async ({ page }) => {
     await gotoSkillsTab(page);
+    await expandBundled(page);
 
     // No badge before any overlay exists (wiki-query ships clean).
     await expect(page.getByTestId('bundled-skill-badge-wiki-query')).toHaveCount(0);
@@ -529,12 +553,16 @@ test.describe('Skills custom instructions (overlay)', () => {
     await expect(page.getByTestId('custom-instructions-saved')).toBeVisible({ timeout: 10_000 });
     await page.keyboard.press('Escape');
 
-    // Badge appears on the row once an overlay exists.
+    // Badge appears on the row once an overlay exists — and the COLLAPSED
+    // summary now counts it (state visible without expanding).
     await expect(page.getByTestId('bundled-skill-badge-wiki-query')).toBeVisible();
+    await expect(page.getByTestId('skills-bundled-toggle')).toContainText('1 个已自定义');
 
-    // Persist across a full reload (proves daemon-side storage, not UI state).
+    // Persist across a full reload (proves daemon-side storage, not UI state;
+    // the expanded preference also survives via localStorage).
     await page.reload();
     await gotoSkillsTab(page);
+    await expandBundled(page);
     await page.getByTestId('bundled-skill-edit-wiki-query').click();
     await expect(page.getByTestId('custom-instructions-textarea')).toHaveValue(
       'E2E 自定义指令：输出一律简体中文',
@@ -597,6 +625,7 @@ test.describe('Skills quarantine banner (safety net)', () => {
       await gotoSkillsTab(page);
       await expect(page.getByTestId('skills-pane-bundled')).toBeVisible();
       await expect(page.getByTestId('skill-quarantine-banner')).toHaveCount(0);
+      await expandBundled(page); // the docling edit entry lives inside the collapsed section
 
       const mirrorMd = `${vault.path}/.claude/skills/wiki-query/SKILL.md`;
       fs.writeFileSync(mirrorMd, fs.readFileSync(mirrorMd, 'utf8') + '\n<!-- E2E 手改痕迹·面板已开 -->', 'utf8');

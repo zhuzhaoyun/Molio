@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { PuzzleIcon } from '../icons';
+import { PuzzleIcon, ChevronIcon } from '../icons';
 import type { SkillManifestEntry, ImportSkillRequest, SkillQuarantineEvent } from '@molio/contracts';
 import { useSkills } from '../../hooks/useSkills';
 import { useI18n } from '../../i18n';
@@ -113,8 +113,11 @@ function SkillRow({
 }
 
 /**
- * One bundled-skill row: read-only card + 「自定义指令」 entry (the ONLY edit
- * channel for bundled skills — base content is app-owned and always-on).
+ * One bundled-skill row: compact read-only line + a QUIET 「自定义指令」 text
+ * entry. Bundled skills are app-owned and just work; the overlay channel is
+ * deliberately demoted (collapsed section, text-level entry) — it exists for
+ * the "I truly need to tailor this" moment, not as an invitation to tinker
+ * with skills on the KB hot path.
  */
 function BundledSkillRow({
   skill,
@@ -125,7 +128,7 @@ function BundledSkillRow({
 }) {
   const { t } = useI18n();
   return (
-    <div className="sk-row" data-testid={`bundled-skill-row-${skill.id}`}>
+    <div className="sk-row sk-bundled__row" data-testid={`bundled-skill-row-${skill.id}`}>
       <div className="sk-row__body">
         <div className="sk-row__header">
           <span className="sk-row__name">{skill.name}</span>
@@ -137,7 +140,7 @@ function BundledSkillRow({
       </div>
       <div className="sk-row__actions">
         <button
-          className="rt-btn rt-btn--sm rt-btn--ghost"
+          className="sk-bundled__edit"
           data-testid={`bundled-skill-edit-${skill.id}`}
           onClick={onCustom}
         >
@@ -168,6 +171,32 @@ export function SkillsPanel() {
   useEffect(() => {
     refreshBundled();
   }, [refreshBundled]);
+
+  // Bundled skills are system facts, not something users manage — the section
+  // stays COLLAPSED by default so the page doesn't advertise tinkering with
+  // skills on the KB hot path. Expanded state persists: a user who opened it
+  // is mid-task and shouldn't have to re-expand after a tab switch.
+  const [bundledOpen, setBundledOpen] = useState(() => {
+    try {
+      return localStorage.getItem('molio.skillsBundledOpen') === '1';
+    } catch {
+      return false; // storage unavailable (private mode) → collapsed default
+    }
+  });
+  const toggleBundled = useCallback(() => {
+    setBundledOpen((open) => {
+      const next = !open;
+      try {
+        localStorage.setItem('molio.skillsBundledOpen', next ? '1' : '0');
+      } catch {
+        /* persistence is best-effort; the toggle still works this session */
+      }
+      return next;
+    });
+  }, []);
+  // The customized count is the one state worth surfacing while collapsed:
+  // it tells the user their overlays are still there without expanding.
+  const customizedCount = bundledSkills.filter((s) => s.customInstructions).length;
 
   // Overlay editor target (bundled OR library skill).
   const [customTarget, setCustomTarget] = useState<SkillManifestEntry | null>(null);
@@ -482,22 +511,41 @@ export function SkillsPanel() {
 
           {/* Built-in skills: app-owned, always-on; customization rides on the
               overlay (自定义指令) — the only sanctioned edit channel, survives
-              every app update. */}
+              every app update. Collapsed by default; the summary keeps the
+              customized count visible so overlays stay discoverable without
+              advertising the edit channel. */}
           {bundledSkills.length > 0 && (
-            <div data-testid="skills-pane-bundled" className="sk-bundled">
-              <div className="sk-bundled__head">
+            <div data-testid="skills-pane-bundled" className={`sk-bundled${bundledOpen ? ' is-open' : ''}`}>
+              <button
+                type="button"
+                className="sk-bundled__toggle"
+                data-testid="skills-bundled-toggle"
+                aria-expanded={bundledOpen}
+                aria-controls="skills-bundled-list"
+                onClick={toggleBundled}
+              >
+                <ChevronIcon size={14} className="sk-bundled__chevron" />
                 <span className="sk-bundled__title">{t('skills.bundledTitle')}</span>
-                <span className="sk-bundled__hint">{t('skills.bundledHint')}</span>
-              </div>
-              <div className="sk-list">
-                {bundledSkills.map((skill) => (
-                  <BundledSkillRow
-                    key={skill.id}
-                    skill={skill}
-                    onCustom={() => setCustomTarget(skill)}
-                  />
-                ))}
-              </div>
+                <span className="sk-bundled__summary">
+                  {t('skills.bundledCount', { count: bundledSkills.length })}
+                  {customizedCount > 0 &&
+                    t('skills.bundledCustomized', { count: customizedCount })}
+                </span>
+              </button>
+              {bundledOpen && (
+                <div id="skills-bundled-list" className="sk-bundled__body">
+                  <p className="sk-bundled__hint">{t('skills.bundledHint')}</p>
+                  <div className="sk-list">
+                    {bundledSkills.map((skill) => (
+                      <BundledSkillRow
+                        key={skill.id}
+                        skill={skill}
+                        onCustom={() => setCustomTarget(skill)}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
