@@ -172,8 +172,10 @@ export function SkillsPanel() {
   // Overlay editor target (bundled OR library skill).
   const [customTarget, setCustomTarget] = useState<SkillManifestEntry | null>(null);
 
-  // Safety-net banner: unacked quarantine events (loaded with the panel; every
-  // mutation fans out vault reconciles which is exactly when new events land).
+  // Safety-net banner: unacked quarantine events. Loaded on mount AND after
+  // every panel mutation — each mutation's endpoint awaits the vault
+  // reconcile, so by the time it returns any new events are already in the
+  // ledger and a re-fetch surfaces them in place (no remount needed).
   const [quarantine, setQuarantine] = useState<SkillQuarantineEvent[]>([]);
   const refreshQuarantine = useCallback(() => {
     api.listSkillQuarantine().then((r) => setQuarantine(r.events)).catch(() => setQuarantine([]));
@@ -313,13 +315,14 @@ export function SkillsPanel() {
         const skill = await createSkill(values);
         flashRecentlyAdded(skill.id);
       }
+      refreshQuarantine(); // the mutation's reconcile may have ledgered events
       closeModal();
     } catch (err) {
       setFormError((err as Error).message);
     } finally {
       setBusy(false);
     }
-  }, [modal, createSkill, updateSkill, flashRecentlyAdded, closeModal]);
+  }, [modal, createSkill, updateSkill, flashRecentlyAdded, closeModal, refreshQuarantine]);
 
   const handleImport = useCallback(async (req: ImportSkillRequest) => {
     setBusy(true);
@@ -327,30 +330,33 @@ export function SkillsPanel() {
     try {
       const skill = await importSkill(req);
       flashRecentlyAdded(skill.id);
+      refreshQuarantine(); // the import's reconcile may have ledgered events
       closeModal();
     } catch (err) {
       setFormError((err as Error).message);
     } finally {
       setBusy(false);
     }
-  }, [importSkill, flashRecentlyAdded, closeModal]);
+  }, [importSkill, flashRecentlyAdded, closeModal, refreshQuarantine]);
 
   const handleToggle = useCallback(async (id: string, enabled: boolean) => {
     try {
       await toggleSkill(id, enabled);
+      refreshQuarantine(); // disable/enable re-syncs vaults (orphan sweeps)
     } catch (err) {
       setFormError((err as Error).message);
     }
-  }, [toggleSkill]);
+  }, [toggleSkill, refreshQuarantine]);
 
   const handleDeleteConfirm = useCallback(async (id: string) => {
     setConfirmDeleteId(null);
     try {
       await deleteSkill(id);
+      refreshQuarantine(); // removal re-syncs vaults (orphan sweeps)
     } catch (err) {
       setFormError((err as Error).message);
     }
-  }, [deleteSkill]);
+  }, [deleteSkill, refreshQuarantine]);
 
   return (
     <div className="sk-shell">
@@ -524,6 +530,7 @@ export function SkillsPanel() {
         onSaved={() => {
           refreshBundled();
           refresh(); // library rows' badges + hub-installed entries
+          refreshQuarantine(); // the PATCH's reconcile may have ledgered drift events
         }}
       />
     </div>

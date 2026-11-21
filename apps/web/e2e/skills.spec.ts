@@ -583,6 +583,47 @@ test.describe('Skills quarantine banner (safety net)', () => {
       await cleanupTempVault(vault);
     }
   });
+
+  test('drift created while the panel is ALREADY open surfaces without remount', async ({ page }) => {
+    // The real user flow: settings open, a mirror is hand-edited behind
+    // Molio's back, then the user saves an overlay THROUGH THE UI — the PATCH
+    // awaits the full-vault reconcile that records the drift event. The panel
+    // must re-fetch quarantine events after its own mutations: the banner has
+    // to appear WITHOUT a remount/reload (regression: it only loaded on mount,
+    // so the event sat invisible until the next page navigation).
+    const DAEMON = `http://localhost:${process.env.MOLIO_E2E_DAEMON_PORT ?? '3100'}`;
+    const vault = await createTempVault('e2e-skill-quarantine-live');
+    try {
+      await gotoSkillsTab(page);
+      await expect(page.getByTestId('skills-pane-bundled')).toBeVisible();
+      await expect(page.getByTestId('skill-quarantine-banner')).toHaveCount(0);
+
+      const mirrorMd = `${vault.path}/.claude/skills/wiki-query/SKILL.md`;
+      fs.writeFileSync(mirrorMd, fs.readFileSync(mirrorMd, 'utf8') + '\n<!-- E2E 手改痕迹·面板已开 -->', 'utf8');
+
+      // Save an overlay on docling via the modal — its PATCH awaits the
+      // reconcile that quarantines wiki-query's drifted mirror.
+      await page.getByTestId('bundled-skill-edit-docling').click();
+      await page.getByTestId('custom-instructions-textarea').fill('E2E live-banner 触发器');
+      await page.getByTestId('custom-instructions-save').click();
+      await expect(page.getByTestId('custom-instructions-saved')).toBeVisible(); // PATCH settled
+      await page.keyboard.press('Escape'); // close the modal; the page is NOT reloaded
+
+      const banner = page.getByTestId('skill-quarantine-banner');
+      await expect(banner).toBeVisible({ timeout: 10_000 });
+      await expect(banner).toContainText('wiki-query');
+
+      await page.getByTestId(/^skill-quarantine-ack-/).filter({ hasNotText: 'coldstart' }).first().click();
+      await expect(banner).toHaveCount(0, { timeout: 10_000 });
+
+      // Cleanup: clear the trigger overlay so later runs start clean.
+      await page.request.patch(`${DAEMON}/api/skills/docling/custom-instructions`, {
+        data: { customInstructions: '' },
+      });
+    } finally {
+      await cleanupTempVault(vault);
+    }
+  });
 });
 
 test.describe('Skills custom instructions on LIBRARY rows', () => {
