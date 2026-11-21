@@ -231,7 +231,6 @@ describe('Skills routes', () => {
       assert.ok(!list.some((s) => s.id === bundled.id), 'bundled skill must not be listed');
 
       for (const [method, suffix, body] of [
-        ['GET', '', undefined],
         ['GET', '/files', undefined],
         ['PATCH', '', JSON.stringify({ name: 'x' })],
         ['PATCH', '/toggle', JSON.stringify({ enabled: false })],
@@ -243,6 +242,11 @@ describe('Skills routes', () => {
         });
         assert.equal(res.status, 404, `${method} ${suffix} on bundled should be 404`);
       }
+
+      // GET /:id on bundled is RELAXED (serves the overlay editor's read-only
+      // base view) — only the MUTATING routes above stay 404 for base edits.
+      const get = await app.request(`/api/skills/${bundled.id}`);
+      assert.equal(get.status, 200, 'GET /:id on bundled serves the overlay editor');
 
       const del = await app.request(`/api/skills/${bundled.id}`, { method: 'DELETE' });
       assert.equal(del.status, 404, 'DELETE on bundled should be 404');

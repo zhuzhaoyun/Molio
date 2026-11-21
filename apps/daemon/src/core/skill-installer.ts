@@ -7,8 +7,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import type Database from 'better-sqlite3';
 import { ThrottledWarn } from './throttled-warn.js';
 import { isAlreadySynced, mirrorDirIfChanged } from './skills/dirsync.js';
+import { materializeComposedSource } from './skills/compose.js';
+import { guardedMirror } from './skills/mirror-state.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -561,6 +564,16 @@ export function ensureMolioRules(claudeDir: string, effectiveBundledSlugs?: Set<
 export interface BundledSyncOpts {
   /** Injectable source dir for tests; defaults to resolveSkillsSourceDir(). */
   sourceDir?: string;
+  /**
+   * Daemon db. When present (together with customBySlug) mirroring goes through
+   * guardedMirror: drift vs. baseline detection + quarantine before rebuild.
+   * Absent ⇒ legacy plain mirror — old callers/tests keep the old behavior.
+   */
+  db?: Database.Database;
+  /** slug → custom-instruction overlay (skills.custom_instructions). */
+  customBySlug?: Map<string, string>;
+  /** Passed through as the quarantine root's molioHome (tests). */
+  molioHome?: string;
 }
 
 /**
@@ -637,11 +650,35 @@ export function reconcileBundledSync(
       }
 
       try {
-        // Content-hash mirror (dirsync): installs when missing, updates on any
-        // drift (version bump, edited/corrupted dest), no-op when already in
-        // sync — same convergence guarantees as library skill sync.
-        if (mirrorDirIfChanged(skillSrc, skillDest)) {
-          console.log(`[skill-installer] Installed/updated skill "${skillName}" → ${skillDest}`);
+        // Guarded mode (db + customBySlug both present): compose the overlay and
+        // mirror from the COMPOSED view through guardedMirror — the same view
+        // the ownership proof in step 3 compares against (one comparison
+        // basis, never two). Either opt missing ⇒ legacy plain raw mirror.
+        const guarded = !!opts?.db;
+        const composed = guarded
+          ? materializeComposedSource(skillSrc, opts?.customBySlug?.get(skillName))
+          : { dir: skillSrc, dispose: () => {} };
+        try {
+          if (guarded && opts?.db) {
+            // Baseline-tracked mirror; a user-patched dest is quarantined +
+            // ledgered instead of silently healed away.
+            guardedMirror(
+              opts.db,
+              {
+                srcDir: composed.dir,
+                destDir: skillDest,
+                vaultPath,
+                mirrorDir: skillName,
+                label: `bundled-${skillName}`,
+                skillId: skillName,
+              },
+              opts.molioHome ? { molioHome: opts.molioHome } : undefined,
+            );
+          } else if (mirrorDirIfChanged(composed.dir, skillDest)) {
+            console.log(`[skill-installer] Installed/updated skill "${skillName}" → ${skillDest}`);
+          }
+        } finally {
+          composed.dispose();
         }
       } catch (err) {
         console.error(
@@ -660,13 +697,26 @@ export function reconcileBundledSync(
     // Ownership PROOF, not guesswork: the old "has a SKILL.md" guard was
     // inverted — a user's own same-named skill ALWAYS has a SKILL.md, so it
     // would be rm -rf'd the moment the bundled skill toggled off. Only delete
-    // when the dir byte-for-byte mirrors Molio's source for this slug (which a
-    // user-authored skill cannot). Without a readable source we cannot prove
-    // ownership → skip deletion and let the dir stay.
+    // when the dir byte-for-byte mirrors Molio's COMPOSED source for this slug
+    // (which a user-authored or overlay-carrying copy cannot). Without a
+    // readable source we cannot prove ownership → skip deletion and let the
+    // dir stay.
     const skillSrc = path.join(sourceDir, skillName);
-    if (!sourceExists || !fs.existsSync(skillSrc) || !isAlreadySynced(skillSrc, skillDest)) {
-      continue;
+    if (!sourceExists || !fs.existsSync(skillSrc)) continue;
+    let provable = false;
+    if (opts?.db) {
+      // Guarded mode proves ownership against the COMPOSED view (an
+      // overlay-carrying dest must NOT match — it is user content).
+      const proofView = materializeComposedSource(skillSrc, opts?.customBySlug?.get(skillName));
+      try {
+        provable = isAlreadySynced(proofView.dir, skillDest);
+      } finally {
+        proofView.dispose();
+      }
+    } else {
+      provable = isAlreadySynced(skillSrc, skillDest);
     }
+    if (!provable) continue;
     try {
       fs.rmSync(skillDest, { recursive: true, force: true });
       console.log(`[skill-installer] Removed disabled skill "${skillName}"`);
