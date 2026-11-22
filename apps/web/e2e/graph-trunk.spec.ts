@@ -45,6 +45,9 @@ function makeTrunkVault(dir: string): void {
     lines.push('', `正文段落 ${i}：占位。`);
     writeFileSync(path.join(dir, dirName, `${name(i)}.md`), lines.join('\n') + '\n');
   }
+  // 死链（未解析 wikilink）：真实库标配。LayoutService 喂 worker 的边必须裁掉死链端点
+  //（forceLink "node not found"，H2 探针实测）——本 fixture 恒带一条钉住该回归
+  writeFileSync(path.join(dir, `主题00`, `${name(0)}.md`), `# ${name(0)}\n\n- 关联 [[不存在的那种目标]]\n`);
   writeFileSync(path.join(dir, '总目录.md'), '# 总目录\n\n索引页。\n');
 }
 
@@ -129,6 +132,49 @@ async function gotoGraph(page: Page, id: string = vaultId): Promise<void> {
   await expect(page.locator('[data-testid="graph-canvas"] canvas')).toBeVisible({ timeout: 15000 });
 }
 
+/** 从引擎快照找一个簇 blob（key 形如 cN）→ 屏幕坐标 + sim 坐标（收起回位断言用） */
+async function findBlobScreen(page: Page): Promise<{ sx: number; sy: number; key: string; bx: number; by: number } | null> {
+  return page.evaluate(() => {
+    const eng = window.__graphEngine;
+    const snap = eng?.getSnapshot();
+    if (!snap) return null;
+    const blob = snap.nodes.find((n) => /^c\d+$/.test(n.key));
+    if (!blob) return null;
+    const rect = eng!.canvas.getBoundingClientRect();
+    const t = eng!.getViewport();
+    return {
+      sx: rect.left + (blob.x + rect.width / 2) * t.k + t.tx,
+      sy: rect.top + (blob.y + rect.height / 2) * t.k + t.ty,
+      key: blob.key,
+      bx: blob.x,
+      by: blob.y,
+    };
+  });
+}
+
+async function expandedContains(page: Page, key: string): Promise<boolean> {
+  return page.evaluate((k) => window.__graphEngine?.getTrunkExpandedClusters().includes(k) ?? false, key);
+}
+
+/** 等相机动画息止（视口签名连续 3 次采样不变）。坐标依赖的点击（如 chip）必须先过这道闸：
+ *  focusNode 的 600ms 动画飞行途中采样屏幕坐标，慢机上点击会落在旧位置（CI 实抓）。 */
+async function waitForViewportStable(page: Page): Promise<void> {
+  await page.waitForFunction(
+    () => {
+      const w = window;
+      const v = w.__graphEngine?.getViewport();
+      if (!v) return false;
+      const sig = `${v.tx.toFixed(2)}|${v.ty.toFixed(2)}|${v.k.toFixed(3)}`;
+      if (w.__vpSig === sig) w.__vpStable = (w.__vpStable ?? 0) + 1;
+      else w.__vpStable = 0;
+      w.__vpSig = sig;
+      return w.__vpStable >= 3;
+    },
+    null,
+    { timeout: 8000, polling: 150 },
+  );
+}
+
 test('大库全局视图默认进枝干：indicator + 开关激活 + trunk 对象 ≤45', async ({ page }) => {
   await gotoGraph(page);
   await expect(page.locator('[data-testid="graph-trunk-indicator"]')).toBeVisible({ timeout: 20000 });
@@ -166,25 +212,27 @@ test('搜索联动（trunk 态）：簇名匹配高亮留 trunk；成员命中�
     .poll(() => page.evaluate(() => window.__graphEngine?.getSelectedKey()))
     .toBe(clusterId);
 
-  // ② 搜簇成员文件名：选中 → 拍板 A 切全量（开关翻转）+ 定位（选中 + k>1）。
-  // select() 会 blur + 关下拉，但输入框不卸载——直接重新 fill 即可
+  // ② 搜簇成员文件名：H2 真展开（替换拍板 A）——仍 trunk、该簇展开、成员选中定位（k>1）、开关不翻转
   await page.fill('[data-testid="graph-search-input"]', '笔记00042');
   const nodeOpt = page.locator('[data-testid="graph-search-option"]').first();
   await expect(nodeOpt).toBeVisible({ timeout: 5000 });
   const nodeKey = await nodeOpt.getAttribute('data-key');
   await page.press('[data-testid="graph-search-input"]', 'Enter');
-  // 轮询真实状态翻转（settings debounce → 推送 → focusNode 动画），不赌固定 sleep
+  // 轮询真实状态（引擎推送 + focusNode 动画），不赌固定 sleep
   await expect
     .poll(() => page.evaluate(() => window.__graphEngine?.getTrunkMode()))
-    .toBe(false);
+    .toBe(true);
   await expect
     .poll(() => page.evaluate(() => window.__graphEngine?.getSelectedKey()))
     .toBe(nodeKey);
   await expect
+    .poll(() => page.evaluate(() => window.__graphEngine?.getTrunkExpandedClusters().length))
+    .toBeGreaterThan(0);
+  await expect
     .poll(() => page.evaluate(() => window.__graphEngine?.getViewport().k ?? 0))
     .toBeGreaterThan(1);
-  await expect(page.locator('[data-testid="graph-trunk-indicator"]')).toBeHidden();
-  await expect(page.locator('[data-testid="graph-view-mode-toggle"]')).not.toHaveClass(/is-active/);
+  await expect(page.locator('[data-testid="graph-trunk-indicator"]')).toBeVisible();
+  await expect(page.locator('[data-testid="graph-view-mode-toggle"]')).toHaveClass(/is-active/);
 });
 
 test('切换持久化：trunk→full 后 reload 仍是全量；再点回枝干', async ({ page }) => {
@@ -274,6 +322,340 @@ test('单击铁律：trunk 态点 hub 节点 = 打开文件', async ({ page }) =
   await page.mouse.click(hubScreen!.sx, hubScreen!.sy);
   // 打开文件：KB 主内容显示 总目录.md 的内容（正文「索引页。」）
   await expect(page.getByText('索引页。')).toBeVisible({ timeout: 10000 });
+});
+
+test('全量图标签 LOD：同屏可见标签 ≤60（统一规则防汤，H2）', async ({ page }) => {
+  await gotoGraph(page);
+  await expect(page.locator('[data-testid="graph-trunk-indicator"]')).toBeVisible({ timeout: 20000 });
+  // 切到全量（511+ 节点）——远焦全局视角下可见标签必须被 cap 住（旧规则 150 预算 + 焦点全显会远超）
+  await page.click('[data-testid="graph-view-mode-toggle"]');
+  await expect(page.locator('[data-testid="graph-trunk-indicator"]')).toBeHidden({ timeout: 10000 });
+  await expect
+    .poll(() => page.evaluate(() => window.__graphEngine?.getSnapshot()?.nodes.length ?? -1))
+    .toBeGreaterThan(100);
+  await expect
+    .poll(() => page.evaluate(() => window.__graphEngine?.getVisibleLabelCount() ?? -1))
+    .toBeLessThanOrEqual(60);
+  // 还原（不污染后续用例——settings 是 localStorage 全局的；落盘 300ms 防抖）
+  await page.click('[data-testid="graph-view-mode-toggle"]');
+  await expect(page.locator('[data-testid="graph-trunk-indicator"]')).toBeVisible({ timeout: 10000 });
+  await page.waitForTimeout(600);
+});
+
+test('点击簇团展开/收起（H2）：成员注入 + chip 收回 + blob 回原位不跳', async ({ page }) => {
+  await gotoGraph(page);
+  await expect(page.locator('[data-testid="graph-trunk-indicator"]')).toBeVisible({ timeout: 20000 });
+  const blob = await findBlobScreen(page);
+  expect(blob).toBeTruthy();
+  const before = await page.evaluate(() => window.__graphEngine?.getSnapshot()?.nodes.length ?? -1);
+  await page.mouse.click(blob!.sx, blob!.sy);
+  // 250ms 点击 defer 窗后展开（双击抑制），poll 兑现
+  await expect
+    .poll(() => expandedContains(page, blob!.key), { timeout: 5000 })
+    .toBe(true);
+  // 成员注入：快照显著增长（簇大小由 LPA 决定，不精确等于目录的 85——首个用例的 ≤45 即此意）
+  const expandedCount = await page.evaluate(() => window.__graphEngine?.getSnapshot()?.nodes.length ?? -1);
+  expect(expandedCount).toBeGreaterThan(before + 15);
+  // chip 收回：点 chip 屏幕坐标（canvas CSS px + boundingRect 偏移）→ 回 trunk 全 blob
+  const chip = await page.evaluate(
+    (k) => {
+      const eng = window.__graphEngine;
+      const pos = eng?.getTrunkCollapseChipPos(k) ?? null;
+      if (!pos || !eng) return null;
+      const rect = eng.canvas.getBoundingClientRect();
+      return { sx: rect.left + pos.sx, sy: rect.top + pos.sy };
+    },
+    blob!.key,
+  );
+  expect(chip).toBeTruthy();
+  await page.mouse.click(chip!.sx, chip!.sy);
+  await expect
+    .poll(() => expandedContains(page, blob!.key), { timeout: 5000 })
+    .toBe(false);
+  const after = await page.evaluate(() => window.__graphEngine?.getSnapshot()?.nodes.length ?? -1);
+  expect(after).toBeLessThanOrEqual(45);
+  // blob 回展开前坐标（缓存回位，不跳位）
+  const back = await page.evaluate(
+    (k) => window.__graphEngine?.getSnapshot()?.nodes.find((n) => n.key === k) ?? null,
+    blob!.key,
+  );
+  expect(back).toBeTruthy();
+  expect(Math.abs(back!.x - blob!.bx)).toBeLessThan(0.5);
+  expect(Math.abs(back!.y - blob!.by)).toBeLessThan(0.5);
+});
+
+test('双击簇团 no-op（T2 deferred minor，H2 兑现）', async ({ page }) => {
+  await gotoGraph(page);
+  await expect(page.locator('[data-testid="graph-trunk-indicator"]')).toBeVisible({ timeout: 20000 });
+  const blob = await findBlobScreen(page);
+  expect(blob).toBeTruthy();
+  await page.mouse.dblclick(blob!.sx, blob!.sy);
+  await page.waitForTimeout(600); // 250ms defer 窗 + 余量
+  expect(await page.evaluate(() => window.__graphEngine?.getTrunkExpandedClusters().length)).toBe(0);
+  expect(await page.evaluate(() => window.__graphEngine?.getTrunkMode())).toBe(true);
+});
+
+test('刷新保态（H2 代拍 O）：后台刷新不重置视口、展开态按身份保住', async ({ page }) => {
+  await gotoGraph(page);
+  await expect(page.locator('[data-testid="graph-trunk-indicator"]')).toBeVisible({ timeout: 20000 });
+  const blob = await findBlobScreen(page);
+  expect(blob).toBeTruthy();
+  await page.mouse.click(blob!.sx, blob!.sy);
+  await expect
+    .poll(() => expandedContains(page, blob!.key), { timeout: 5000 })
+    .toBe(true);
+  const vp = await page.evaluate(() => window.__graphEngine?.getViewport());
+  // 直接写盘新增一个孤立 md → tree-changed → 防抖刷新（crumb +1：trunk-crumbs 徽标从无到有 = 刷新落地）
+  writeFileSync(path.join(vaultDir, '刷新观察.md'), '# 刷新观察\n\n无链接孤立节点。\n');
+  await expect(page.locator('.graph-trunk-crumbs')).toBeVisible({ timeout: 30000 });
+  // 视口未被程序重置（preserveViewport），展开态保住（同簇身份 ≥80% 重合）
+  const vp2 = await page.evaluate(() => window.__graphEngine?.getViewport());
+  expect(Math.abs(vp2.k - vp.k)).toBeLessThan(0.01);
+  expect(Math.abs(vp2.tx - vp.tx)).toBeLessThan(0.01);
+  expect(Math.abs(vp2.ty - vp.ty)).toBeLessThan(0.01);
+  expect(await expandedContains(page, blob!.key)).toBe(true);
+});
+
+test('巨簇分批展开（H2 代拍 F）：degenerate 库主簇流式注入，全程不 refit', async ({ page }) => {
+  await gotoGraph(page, degenerateVaultId);
+  await expect(page.locator('[data-testid="graph-trunk-indicator"]')).toBeVisible({ timeout: 30000 });
+  const blob = await findBlobScreen(page);
+  expect(blob).toBeTruthy();
+  const before = await page.evaluate(() => window.__graphEngine?.getSnapshot()?.nodes.length ?? -1);
+  const vp = await page.evaluate(() => window.__graphEngine?.getViewport());
+  await page.mouse.click(blob!.sx, blob!.sy);
+  // 流式注入：快照节点数最终显著增长（degenerate 主簇数百成员，首批 300 + 余批流式）
+  await expect
+    .poll(() => page.evaluate(() => window.__graphEngine?.getSnapshot()?.nodes.length ?? -1), { timeout: 20000 })
+    .toBeGreaterThan(before + 100);
+  // 视口全程不被程序改写（展开不 refit）
+  const vp2 = await page.evaluate(() => window.__graphEngine?.getViewport());
+  expect(Math.abs(vp2.k - vp.k)).toBeLessThan(0.01);
+  expect(Math.abs(vp2.tx - vp.tx)).toBeLessThan(1);
+  expect(Math.abs(vp2.ty - vp.ty)).toBeLessThan(1);
+});
+
+test('展开后空闲红线（H2）：动画与批次停息后状态稳定，#415 不回退', async ({ page }) => {
+  await gotoGraph(page);
+  await expect(page.locator('[data-testid="graph-trunk-indicator"]')).toBeVisible({ timeout: 20000 });
+  const blob = await findBlobScreen(page);
+  expect(blob).toBeTruthy();
+  await page.mouse.click(blob!.sx, blob!.sy);
+  await expect
+    .poll(() => expandedContains(page, blob!.key), { timeout: 5000 })
+    .toBe(true);
+  // 过渡动画（350ms+stagger）与批次流息止后，快照与标签计数不再变化（空闲期无持续重绘的 proxy；
+  // render=0 的直接测量由 scripts/graph-perf-probe.mjs 承担）
+  await page.waitForTimeout(1200);
+  const sample = () =>
+    page.evaluate(() =>
+      JSON.stringify({
+        n: window.__graphEngine?.getSnapshot()?.nodes.length ?? -1,
+        labels: window.__graphEngine?.getVisibleLabelCount() ?? -1,
+        vp: window.__graphEngine?.getViewport(),
+      }),
+    );
+  const s1 = await sample();
+  await page.waitForTimeout(600);
+  const s2 = await sample();
+  expect(s2).toBe(s1);
+});
+
+test('终审 #1：已展开簇的成员搜索只定位——收起再展开仍回簇位（位置缓存不被原点锚覆写）', async ({ page }) => {
+  await gotoGraph(page);
+  await expect(page.locator('[data-testid="graph-trunk-indicator"]')).toBeVisible({ timeout: 20000 });
+  // 挑离原点最远的簇 blob（判别度：腐化时成员会跳到原点锚）
+  const blob = await page.evaluate(() => {
+    const eng = window.__graphEngine;
+    const snap = eng?.getSnapshot();
+    const blobs = (snap?.nodes ?? []).filter((n) => /^c\d+$/.test(n.key));
+    let best = blobs[0];
+    for (const b of blobs) if (Math.hypot(b.x, b.y) > Math.hypot(best.x, best.y)) best = b;
+    const rect = eng!.canvas.getBoundingClientRect();
+    const t = eng!.getViewport();
+    return { sx: rect.left + (best.x + rect.width / 2) * t.k + t.tx, sy: rect.top + (best.y + rect.height / 2) * t.k + t.ty, key: best.key, bx: best.x, by: best.y };
+  });
+  expect(blob).toBeTruthy();
+  await page.mouse.click(blob!.sx, blob!.sy);
+  await expect
+    .poll(() => expandedContains(page, blob!.key), { timeout: 5000 })
+    .toBe(true);
+  // 展开后拿一个成员 key（非 hub 的 .md）
+  const member = await page.evaluate(() => {
+    const snap = window.__graphEngine?.getSnapshot();
+    const m = snap?.nodes.find((n) => n.key.endsWith('.md') && n.key !== '总目录.md');
+    return m?.key ?? null;
+  });
+  expect(member).toBeTruthy();
+  // 二次搜索同簇成员（旧缺陷路径：已展开仍走展开 → 原点锚 mini-sim 覆写缓存）
+  await page.click('[data-testid="graph-search-open"]');
+  await page.fill('[data-testid="graph-search-input"]', member!.split('/').pop()!.replace(/\.md$/, ''));
+  await page.press('[data-testid="graph-search-input"]', 'Enter');
+  await expect
+    .poll(() => page.evaluate(() => window.__graphEngine?.getSelectedKey()))
+    .toBe(member);
+  // 相机动画（focusNode 600ms）飞行途中采样 chip 屏幕坐标会打在旧位置——慢机 CI 实抓；
+  // 先等视口稳定再取坐标点击（与流式完成的稳定性判据同款纪律，不赌固定 sleep）
+  await waitForViewportStable(page);
+  // 收起（chip）→ 再搜索（缓存重展开）：成员质心必须回到 blob 原位附近，而非原点
+  const chip = await page.evaluate(
+    (k) => {
+      const eng = window.__graphEngine;
+      const pos = eng?.getTrunkCollapseChipPos(k) ?? null;
+      if (!pos || !eng) return null;
+      const rect = eng.canvas.getBoundingClientRect();
+      return { sx: rect.left + pos.sx, sy: rect.top + pos.sy };
+    },
+    blob!.key,
+  );
+  await page.mouse.click(chip!.sx, chip!.sy);
+  await expect
+    .poll(() => expandedContains(page, blob!.key), { timeout: 5000 })
+    .toBe(false);
+  await page.fill('[data-testid="graph-search-input"]', member!.split('/').pop()!.replace(/\.md$/, ''));
+  await page.press('[data-testid="graph-search-input"]', 'Enter');
+  await expect
+    .poll(() => expandedContains(page, blob!.key), { timeout: 5000 })
+    .toBe(true);
+  const centroid = await page.evaluate(
+    (k) => {
+      const snap = window.__graphEngine?.getSnapshot();
+      const members = (snap?.nodes ?? []).filter((n) => n.key.endsWith('.md') && n.key !== '总目录.md');
+      if (members.length === 0) return null;
+      return {
+        x: members.reduce((s, m) => s + m.x, 0) / members.length,
+        y: members.reduce((s, m) => s + m.y, 0) / members.length,
+      };
+    },
+    blob!.key,
+  );
+  expect(centroid).toBeTruthy();
+  expect(Math.hypot(centroid!.x - blob!.bx, centroid!.y - blob!.by)).toBeLessThan(250);
+});
+
+test('终审 #2：收起后的簇不被后台刷新复活', async ({ page }) => {
+  await gotoGraph(page);
+  await expect(page.locator('[data-testid="graph-trunk-indicator"]')).toBeVisible({ timeout: 20000 });
+  const blob = await findBlobScreen(page);
+  expect(blob).toBeTruthy();
+  await page.mouse.click(blob!.sx, blob!.sy);
+  await expect
+    .poll(() => expandedContains(page, blob!.key), { timeout: 5000 })
+    .toBe(true);
+  // 收起 → 写文件触发后台刷新（crumb 徽标出现 = 刷新落地）
+  const chip = await page.evaluate(
+    (k) => {
+      const eng = window.__graphEngine;
+      const pos = eng?.getTrunkCollapseChipPos(k) ?? null;
+      if (!pos || !eng) return null;
+      const rect = eng.canvas.getBoundingClientRect();
+      return { sx: rect.left + pos.sx, sy: rect.top + pos.sy };
+    },
+    blob!.key,
+  );
+  await page.mouse.click(chip!.sx, chip!.sy);
+  await expect
+    .poll(() => expandedContains(page, blob!.key), { timeout: 5000 })
+    .toBe(false);
+  writeFileSync(path.join(vaultDir, '刷新不复活.md'), '# 刷新不复活\n\n孤立节点。\n');
+  await expect(page.locator('.graph-trunk-crumbs')).toBeVisible({ timeout: 30000 });
+  // 已收起 = 不得复活（刷新只匹配 live 条目）
+  expect(await expandedContains(page, blob!.key)).toBe(false);
+  expect(await page.evaluate(() => window.__graphEngine?.getTrunkExpandedClusters().length)).toBe(0);
+});
+
+test('终审 #3：expand B → collapse B → expand A，A↔B 连接仍在（spoke 与展开态解耦）', async ({ page }) => {
+  await gotoGraph(page);
+  await expect(page.locator('[data-testid="graph-trunk-indicator"]')).toBeVisible({ timeout: 20000 });
+  // 拿两个簇 blob
+  const blobs = await page.evaluate(() => {
+    const eng = window.__graphEngine;
+    const snap = eng?.getSnapshot();
+    const rect = eng!.canvas.getBoundingClientRect();
+    const t = eng!.getViewport();
+    return (snap?.nodes ?? [])
+      .filter((n) => /^c\d+$/.test(n.key))
+      .slice(0, 2)
+      .map((b) => ({
+        sx: rect.left + (b.x + rect.width / 2) * t.k + t.tx,
+        sy: rect.top + (b.y + rect.height / 2) * t.k + t.ty,
+        key: b.key,
+      }));
+  });
+  expect(blobs.length).toBe(2);
+  const chipAt = (key: string) =>
+    page.evaluate((k) => {
+      const eng = window.__graphEngine;
+      const pos = eng?.getTrunkCollapseChipPos(k) ?? null;
+      if (!pos || !eng) return null;
+      const rect = eng.canvas.getBoundingClientRect();
+      return { sx: rect.left + pos.sx, sy: rect.top + pos.sy };
+    }, key);
+  // 对照：直接展开 A（此刻无他簇展开）→ 边数含 A↔B spokes → 收起
+  await page.mouse.click(blobs[0]!.sx, blobs[0]!.sy);
+  await expect
+    .poll(() => expandedContains(page, blobs[0]!.key), { timeout: 5000 })
+    .toBe(true);
+  const controlLinks = await page.evaluate(() => window.__graphEngine?.getLinkCount() ?? -1);
+  const chipA = await chipAt(blobs[0]!.key);
+  await page.mouse.click(chipA!.sx, chipA!.sy);
+  await expect
+    .poll(() => expandedContains(page, blobs[0]!.key), { timeout: 5000 })
+    .toBe(false);
+  // 场景：展开 B → 收起 B → 再展开 A——A 的载荷必须仍带 A↔B spoke（旧缺陷：expandedIds
+  // 取了含已收起 B 的页面缓存 → 误发真实边 → 端点不在场被丢 → A↔B 连接消失）
+  await page.mouse.click(blobs[1]!.sx, blobs[1]!.sy);
+  await expect
+    .poll(() => expandedContains(page, blobs[1]!.key), { timeout: 5000 })
+    .toBe(true);
+  const chipB = await chipAt(blobs[1]!.key);
+  await page.mouse.click(chipB!.sx, chipB!.sy);
+  await expect
+    .poll(() => expandedContains(page, blobs[1]!.key), { timeout: 5000 })
+    .toBe(false);
+  await page.mouse.click(blobs[0]!.sx, blobs[0]!.sy);
+  await expect
+    .poll(() => expandedContains(page, blobs[0]!.key), { timeout: 5000 })
+    .toBe(true);
+  const scenarioLinks = await page.evaluate(() => window.__graphEngine?.getLinkCount() ?? -1);
+  expect(scenarioLinks).toBe(controlLinks);
+});
+
+test('chip 双击：一次收起、无重复边、不触发空白 fit（验收反馈修复钉）', async ({ page }) => {
+  await gotoGraph(page);
+  await expect(page.locator('[data-testid="graph-trunk-indicator"]')).toBeVisible({ timeout: 20000 });
+  const blob = await findBlobScreen(page);
+  expect(blob).toBeTruthy();
+  const baseLinks = await page.evaluate(() => window.__graphEngine?.getLinkCount() ?? -1);
+  const baseVp = await page.evaluate(() => window.__graphEngine?.getViewport());
+  await page.mouse.click(blob!.sx, blob!.sy);
+  await expect
+    .poll(() => expandedContains(page, blob!.key), { timeout: 5000 })
+    .toBe(true);
+  const chip = await page.evaluate(
+    (k) => {
+      const eng = window.__graphEngine;
+      const pos = eng?.getTrunkCollapseChipPos(k) ?? null;
+      if (!pos || !eng) return null;
+      const rect = eng.canvas.getBoundingClientRect();
+      return { sx: rect.left + pos.sx, sy: rect.top + pos.sy };
+    },
+    blob!.key,
+  );
+  expect(chip).toBeTruthy();
+  // 双击 chip：第一次触发收起，第二次被重入守卫吃掉——不得双份重建聚合边
+  await page.mouse.dblclick(chip!.sx, chip!.sy);
+  await expect
+    .poll(() => expandedContains(page, blob!.key), { timeout: 5000 })
+    .toBe(false);
+  await page.waitForTimeout(600);
+  const links = await page.evaluate(() => window.__graphEngine?.getLinkCount() ?? -1);
+  expect(links).toBe(baseLinks); // 回到 trunk 基线边数（重复边会让它 > base）
+  // 双击落在 chip 上不触发空白 fit：视口不被程序改写
+  const vp = await page.evaluate(() => window.__graphEngine?.getViewport());
+  expect(Math.abs(vp.k - baseVp.k)).toBeLessThan(0.01);
+  expect(Math.abs(vp.tx - baseVp.tx)).toBeLessThan(1);
+  expect(Math.abs(vp.ty - baseVp.ty)).toBeLessThan(1);
 });
 
 test('选择残留回归（终审 Important-2）：trunk 选中簇后切全量，簇 id 选择清除不压暗', async ({ page }) => {

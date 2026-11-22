@@ -132,9 +132,22 @@ export function trunkClusterColor(id: string): string {
  * 「图里 300 个点、标题写 1284 篇——比不写更糟」；终审 Important-3）。
  * label 由调用方传 i18n 文案。
  */
-export function trunkExportMeta(scene: TrunkScene, clusterLabel: string, hubLabel: string): string {
+export function trunkExportMeta(
+  scene: TrunkScene,
+  clusterLabel: string,
+  hubLabel: string,
+  expandedCount = 0,
+  expandedLabel = '已展开',
+): string {
   const parts: string[] = [];
-  if (scene.clusters.length > 0) parts.push(`${clusterLabel} ${scene.clusters.length}`);
+  if (scene.clusters.length > 0) {
+    // H2 混合场景（代拍 Q）：展开簇的 blob 不在画布上，计数后显式标注展开数——守「所见即所写」
+    parts.push(
+      expandedCount > 0
+        ? `${clusterLabel} ${scene.clusters.length}（${expandedLabel} ${expandedCount}）`
+        : `${clusterLabel} ${scene.clusters.length}`,
+    );
+  }
   if (scene.hubs.length > 0) parts.push(`${hubLabel} ${scene.hubs.length}`);
   return parts.join(' · ');
 }
