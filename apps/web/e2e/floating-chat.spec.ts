@@ -866,7 +866,9 @@ test.describe('Floating chat (方案 D)', () => {
     const bb2 = (await btn.boundingBox())!;
     await page.mouse.move(bb2.x + 26, bb2.y + 26);
     await page.mouse.down();
-    await page.mouse.move(vw - 30, 300, { steps: 8 });
+    // 唤回后按钮已贴右缘：旧目标 vw-30 距起点仅 4px，低于 6px 拖拽阈值，
+    // 会被当成点击而打开面板（按钮随面板消失）。目标再靠缘一些，形成真实拖拽。
+    await page.mouse.move(vw - 8, 300, { steps: 8 });
     await page.mouse.up();
     await page.waitForTimeout(450);
     await expect(btn).toHaveClass(/floating-chat-btn--hidden/);
