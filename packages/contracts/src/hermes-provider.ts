@@ -17,10 +17,19 @@
  * The `custom` preset is the exception: the hermes custom profile declares
  * `env_vars=()` (no fixed key), so its API key travels as `model.api_key`
  * in config.yaml and its endpoint as `model.base_url`.
+ *
+ * `siliconflow` also reuses the generic `custom` profile: hermes has no native
+ * SiliconFlow provider plugin, but the platform speaks OpenAI Chat Completions,
+ * so it runs through `provider: custom` + an endpoint. It is a separate preset
+ * purely for the UI (pre-filled endpoint, free-model list) — which is why
+ * `hermes-config.ts` disambiguates the two by base URL when reading back.
  */
+
+import { SILICONFLOW, SILICONFLOW_MODELS } from './siliconflow.js';
 
 export type HermesPresetId =
   | 'deepseek'
+  | 'siliconflow'
   | 'zai'
   | 'kimi-coding'
   | 'minimax-cn'
@@ -50,7 +59,7 @@ export interface HermesProviderPreset {
    */
   defaultBaseUrl?: string;
   /** Model suggestions for the UI. Empty = free-form input; blank = hermes default. */
-  models: { id: string; label: string }[];
+  models: { id: string; label: string; free?: boolean }[];
   /** Hint text for the API key input (e.g. "sk-..."). */
   apiKeyHint?: string;
   apiKeyUrl?: string;
@@ -71,6 +80,20 @@ export const HERMES_PROVIDER_PRESETS: HermesProviderPreset[] = [
     apiKeyHint: 'sk-...',
     apiKeyUrl: 'https://platform.deepseek.com/api_keys',
     docsUrl: 'https://api-docs.deepseek.com/',
+  },
+  {
+    id: 'siliconflow',
+    name: SILICONFLOW.name,
+    // No native hermes profile for SiliconFlow — reuse the generic OpenAI-
+    // compatible one. `isCustom` makes the daemon write EVERYTHING to
+    // config.yaml (provider/base_url/api_key/default), matching that profile.
+    providerValue: 'custom',
+    defaultBaseUrl: SILICONFLOW.openaiBaseUrl,
+    models: SILICONFLOW_MODELS,
+    apiKeyHint: 'sk-...',
+    apiKeyUrl: SILICONFLOW.apiKeyUrl,
+    docsUrl: SILICONFLOW.docsUrl,
+    isCustom: true,
   },
   {
     id: 'zai',
