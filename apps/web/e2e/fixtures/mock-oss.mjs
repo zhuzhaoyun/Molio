@@ -17,6 +17,11 @@ http
     req.on('data', (c) => chunks.push(c));
     req.on('end', () => {
       const key = decodeURIComponent(new URL(req.url, 'http://x').pathname);
+      /* 健康标记：端口占用判定探针（区分占用 :3199 的是不是本服务） */
+      if (req.method === 'GET' && key === '/__health') {
+        res.writeHead(200, { 'content-type': 'text/plain' });
+        return res.end('molio-mock-oss');
+      }
       if (req.method === 'PUT') {
         const copySrc = req.headers['x-oss-copy-source']; // 服务端 copyObject：无正文，按源键复制字节
         if (copySrc) {
