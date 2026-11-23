@@ -108,6 +108,15 @@
   background: var(--bg-subtle);
   color: var(--text);
 }
+/* 悬停书脊任意处（含空白区）：内容整体提亮——图标转正色、库名转 accent。
+   只提内容不动背景：整条底色一变会和展开按钮自己的 bg-subtle 方块、
+   拖放指示器互相压；「这整条能点」的线索由内容亮度承担。 */
+.kb-file-panel--collapsed .kb-file-rail:hover .kb-file-rail__expand {
+  color: var(--text);
+}
+.kb-file-panel--collapsed .kb-file-rail:hover .kb-file-rail__name {
+  color: var(--accent);
+}
 /* 库名插槽：在展开按钮之下的剩余高度里纵向居中（书脊排印惯例——
    真书脊的书名就是居中排的）。padding-bottom 做光学修正：上方按钮
    有视觉重量，纯数学中心会显得偏低。 */
@@ -121,7 +130,9 @@
   padding-bottom: 14px;
 }
 /* 书脊库名：竖排（中文直立、西文旋转——mixed 是书脊的自然读法），超长省略。
-   也是折叠态的切库控件：hover 提亮为 accent 色，与「展开」的灰色按钮区分开。 */
+   也是折叠态的切库控件：hover 提亮为 accent 色，与「展开」的灰色按钮区分开。
+   padding 是命中区而非留白：竖排下按钮物理宽度只有一个字号（≈12px），
+   左右各垫 7px 撑到与展开按钮同宽（26px），上下垫 8px 给一两字的短名兜底。 */
 .kb-file-rail__name {
   writing-mode: vertical-rl;
   text-orientation: mixed;
@@ -131,7 +142,7 @@
   color: var(--text-muted);
   border: none;
   background: transparent;
-  padding: 0;
+  padding: 8px 7px;
   cursor: pointer;
   white-space: nowrap;
   overflow: hidden;
@@ -139,9 +150,6 @@
   max-height: 100%;
   user-select: none;
   transition: color 120ms ease;
-}
-.kb-file-rail__name:hover {
-  color: var(--accent);
 }
 
 /* 减少动态效果：折叠/展开直接落位（visibility 仍瞬时翻转） */
@@ -3468,6 +3476,18 @@
   border-top: 2px solid var(--accent);
   z-index: 10;
   pointer-events: none;
+}
+/* 折叠态变体：书脊只有 28px 宽，横排文本「释放到根目录」会溢出——换成
+   无文字的整条高亮（accent-soft 铺满 + 左缘 accent 条），语义不变：
+   拖到书脊 = 释放到当前库根目录。 */
+.kb-file-panel--collapsed.drag-over-root::after {
+  content: '';
+  top: 0;
+  height: auto;
+  color: transparent;
+  font-size: 0;
+  border-top: none;
+  border-left: 2px solid var(--accent);
 }
 
 /* ── Directory drop-target highlight ──

@@ -88,4 +88,39 @@ test.describe('KB file panel collapse/expand', () => {
     await page.locator('[data-testid="kb-btn-panel-expand"]').click();
     await expect(page.locator('[data-testid="kb-btn-panel-collapse"]')).toBeVisible();
   });
+
+  // 折叠态拖放：书脊只有 28px 宽，横排「释放到根目录」文本会溢出——指示器必须
+  // 换成无文字的整条高亮形态；行为保留（拖到书脊 = 导入当前库根目录）。
+  test('collapsed spine takes a drop import with a textless full-rail indicator', async ({ page }) => {
+    await page.goto(`/knowledge?vault=${vault.id}`);
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 15_000 });
+    await page.locator('[data-testid="kb-btn-panel-collapse"]').click();
+    await expect(page.locator('[data-testid="kb-panel-spine"]')).toBeVisible();
+
+    // dragenter → 面板进入 drag-over-root，且折叠态的 ::after 是空 content（整条高亮形态）
+    await page.evaluate(() => {
+      const panel = document.querySelector('.kb-file-panel');
+      if (!panel) return;
+      const dt = new DataTransfer();
+      dt.items.add(new File(['# dropped on spine'], 'spine-drop.md', { type: 'text/markdown' }));
+      panel.dispatchEvent(new DragEvent('dragenter', { bubbles: true, cancelable: true, dataTransfer: dt }));
+    });
+    await expect(page.locator('.kb-file-panel')).toHaveClass(/drag-over-root/, { timeout: 5_000 });
+    const indicatorContent = await page.evaluate(() =>
+      getComputedStyle(document.querySelector('.kb-file-panel') as Element, '::after').content);
+    expect(indicatorContent).toBe('""'); // 展开态此处是 '"释放到根目录"'——折叠态必须无文字
+
+    // drop → 导入当前库；展开后文件在树里
+    await page.evaluate(() => {
+      const panel = document.querySelector('.kb-file-panel');
+      if (!panel) return;
+      const dt = new DataTransfer();
+      dt.items.add(new File(['# dropped on spine'], 'spine-drop.md', { type: 'text/markdown' }));
+      panel.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt }));
+    });
+    await page.locator('[data-testid="kb-btn-panel-expand"]').click();
+    await expect(
+      page.locator('.kb-tree-item .kb-tree-name').filter({ hasText: 'spine-drop.md' }),
+    ).toBeVisible({ timeout: 10_000 });
+  });
 });

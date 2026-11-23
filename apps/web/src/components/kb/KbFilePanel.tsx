@@ -18,7 +18,8 @@ type SortBy = 'name' | 'modified' | 'size';
 
 const SORT_OPTIONS: SortBy[] = ['name', 'modified', 'size'];
 
-/** 目录栏折叠态的 localStorage 键（窗口级视图偏好，不按库区分）。 */
+/** 目录栏折叠态的 localStorage 键。同源所有窗口共享（与 molio.kb.tabs 同域，
+ *  桌面端多窗口一致）；视图偏好不按库区分。 */
 const PANEL_COLLAPSED_KEY = 'molio.kb.filePanelCollapsed';
 /** 折叠后细竖条的宽度（px）——只容得下顶部的「展开」按钮。 */
 const PANEL_COLLAPSED_WIDTH = 28;
