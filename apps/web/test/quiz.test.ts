@@ -10,7 +10,6 @@ import assert from 'node:assert';
 const {
   parseQuizBlock,
   gradeQuiz,
-  isQuizComplete,
   computeQuizFingerprint,
   quizStorageKey,
   parseStoredQuizState,
@@ -19,6 +18,7 @@ const {
   isFillAnswerCorrect,
   normalizeFillText,
   isSubjectQuestion,
+  countQuizAnswered,
   MAX_QUIZ_RAW_CHARS,
   MAX_QUIZ_KEY_CHARS,
   MAX_SUBJECT_POINTS,
@@ -161,7 +161,7 @@ describe('parseQuizBlock', () => {
   });
 });
 
-describe('gradeQuiz / isQuizComplete', () => {
+describe('gradeQuiz', () => {
   it('grades single, multiple (exact only) and judge', () => {
     const judge = {
       id: 'j1', type: 'judge' as const, stem: 'x',
@@ -182,14 +182,6 @@ describe('gradeQuiz / isQuizComplete', () => {
     const g2 = gradeQuiz(quiz, { q1: ['A'], m1: ['B', 'A'], j1: ['A'] });
     assert.deepEqual(g2.map((x) => x.correct), [false, true, false]);
     assert.deepEqual(g2[1].chosen, ['A', 'B']);
-  });
-
-  it('is complete only when every question has a valid selection', () => {
-    const quiz = { version: 1 as const, title: 't', questions: [SINGLE] };
-    assert.equal(isQuizComplete(quiz, {}), false);
-    assert.equal(isQuizComplete(quiz, { q1: [] }), false);
-    assert.equal(isQuizComplete(quiz, { q1: ['Z'] }), false);
-    assert.equal(isQuizComplete(quiz, { q1: ['A'] }), true);
   });
 });
 
@@ -221,10 +213,10 @@ describe('fingerprint / localStorage helpers', () => {
 
   it('parses stored state and ignores malformed values', () => {
     assert.deepEqual(parseStoredQuizState('{"selections":{"q1":["B"]},"submitted":true}'), {
-      selections: { q1: ['B'] }, submitted: true,
+      selections: { q1: ['B'] }, submitted: true, subjectImages: {},
     });
     assert.deepEqual(parseStoredQuizState('{"selections":{"q1":"B","q2":[1]},"submitted":"yes"}'), {
-      selections: {}, submitted: false,
+      selections: {}, submitted: false, subjectImages: {},
     });
     assert.equal(parseStoredQuizState('not json'), null);
     assert.equal(parseStoredQuizState(null), null);
@@ -348,12 +340,12 @@ describe('fill 题型（填空）', () => {
     assert.deepEqual(grades[1]!.chosen, ['二十四']);
   });
 
-  it('requires non-blank text for fill completeness', () => {
+  it('requires non-blank text for fill answeredness', () => {
     const res = expectOk(JSON.stringify({ version: 1, title: '填空', questions: [FILL] }));
     const quiz = res.quiz;
-    assert.equal(isQuizComplete(quiz, {}), false);
-    assert.equal(isQuizComplete(quiz, { f1: ['   '] }), false);
-    assert.equal(isQuizComplete(quiz, { f1: ['25'] }), true);
+    assert.equal(countQuizAnswered(quiz, {}), 0);
+    assert.equal(countQuizAnswered(quiz, { f1: ['   '] }), 0);
+    assert.equal(countQuizAnswered(quiz, { f1: ['25'] }), 1);
   });
 
   it('folds ascii notation on both sides before matching', () => {
@@ -450,12 +442,68 @@ describe('subject 题型（主观题）', () => {
     assert.deepEqual(grades[1]!.chosen, []);
   });
 
-  it('subject never blocks quiz completeness', () => {
-    const res = expectOk(JSON.stringify({ version: 1, title: '混合', questions: [SINGLE, SUBJECT] }));
-    assert.equal(res.quiz.questions.length, 2);
-    assert.equal(res.invalidQuestions.length, 0);
-    // 客观题未答 → 不完整；客观题答完、subject 未答 → 完整（subject 不进本地判分批次）。
-    assert.equal(isQuizComplete(res.quiz, {}), false);
-    assert.equal(isQuizComplete(res.quiz, { q1: ['B'] }), true);
+});
+
+describe('countQuizAnswered（已答计数：M1 整卷表单口径）', () => {
+  it('choice/judge 数合法 key，fill/subject 数非空草稿首项', async () => {
+    const { countQuizAnswered } = await import('../src/utils/quiz.ts');
+    const res = expectOk(JSON.stringify({
+      version: 1,
+      title: '口径',
+      questions: [
+        { id: 'q1', type: 'single', stem: 's', options: [{ key: 'A', text: 'a' }, { key: 'B', text: 'b' }], answer: ['B'], explanation: 'e', sources: [{ path: 'p.md' }] },
+        { id: 'q2', type: 'judge', stem: 's', answer: ['A'], explanation: 'e', sources: [{ path: 'p.md' }] },
+        { id: 'q3', type: 'multiple', stem: 's', options: [{ key: 'A', text: 'a' }, { key: 'B', text: 'b' }, { key: 'C', text: 'c' }], answer: ['A', 'B'], explanation: 'e', sources: [{ path: 'p.md' }] },
+        { id: 'q4', type: 'fill', stem: '____', answer: ['25'], explanation: 'e', sources: [{ path: 'p.md' }] },
+        { id: 'q5', type: 'subject', stem: 's', answer: ['评分点'], explanation: 'e', sources: [{ path: 'p.md' }] },
+      ],
+    }));
+    const quiz = res.quiz;
+    // 全空
+    assert.equal(countQuizAnswered(quiz, {}), 0);
+    // 单选选了合法 key
+    assert.equal(countQuizAnswered(quiz, { q1: ['A'] }), 1);
+    // judge 同
+    assert.equal(countQuizAnswered(quiz, { q2: ['B'] }), 1);
+    // 多选 1 个 key 即算已答
+    assert.equal(countQuizAnswered(quiz, { q3: ['C'] }), 1);
+    // fill 有文本 = 1、空白 = 0
+    assert.equal(countQuizAnswered(quiz, { q4: [' 25 '] }), 1);
+    assert.equal(countQuizAnswered(quiz, { q4: ['   '] }), 0);
+    // subject 草稿与 fill 同形：空白 = 0、有内容 = 1
+    assert.equal(countQuizAnswered(quiz, { q5: ['  '] }), 0);
+    assert.equal(countQuizAnswered(quiz, { q5: ['理由如下'] }), 1);
+    // 非法 key 不计
+    assert.equal(countQuizAnswered(quiz, { q1: ['Z'] }), 0);
+    // 混合合计
+    assert.equal(countQuizAnswered(quiz, { q1: ['A'], q4: ['25'], q5: ['答'] }), 3);
+    // 纯图片解答题草稿也算已答（P4 拍照作答：图片会物化进交卷消息）。
+    assert.equal(countQuizAnswered(quiz, { q5: ['  '] }, { q5: ['raw/paper.png'] }), 1);
+    // 图片不救活别的题型：fill 只有图片没文本仍是未答。
+    assert.equal(countQuizAnswered(quiz, { q4: ['  '] }, { q4: ['raw/x.png'] }), 0);
+    // 文本 + 图片同一题只计一次。
+    assert.equal(countQuizAnswered(quiz, { q5: ['答'] }, { q5: ['raw/paper.png'] }), 1);
+  });
+});
+
+describe('parseStoredQuizState（subjectImages 扩展）', () => {
+  it('读取 subjectImages 字段；缺省 {}；形状坏 {}', async () => {
+    const { parseStoredQuizState } = await import('../src/utils/quiz.ts');
+    // 原样读取
+    const full = parseStoredQuizState(JSON.stringify({
+      selections: { q1: ['B'] },
+      submitted: true,
+      subjectImages: { q3: ['raw/a.png', 'raw/b.png'] },
+    }));
+    assert.deepEqual(full?.subjectImages, { q3: ['raw/a.png', 'raw/b.png'] });
+    // 旧存储无字段 → {}
+    const legacy = parseStoredQuizState(JSON.stringify({ selections: {}, submitted: false }));
+    assert.deepEqual(legacy?.subjectImages, {});
+    // 形状坏（值非 string[]）→ 该条目丢弃
+    const bad = parseStoredQuizState(JSON.stringify({ selections: {}, submitted: false, subjectImages: { q3: 'x' } }));
+    assert.deepEqual(bad?.subjectImages, {});
+    // 数组里混入非字符串项 → 该条目丢弃，其余保留（逐条清洗）
+    const mixed = parseStoredQuizState(JSON.stringify({ selections: {}, submitted: false, subjectImages: { q3: ['a', 1], q4: ['ok.png'] } }));
+    assert.deepEqual(mixed?.subjectImages, { q4: ['ok.png'] });
   });
 });

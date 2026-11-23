@@ -462,6 +462,8 @@ export function ChatSessionView({
                 message={msg}
                 conversationId={conversationId}
                 conversationVaultId={conversationVaultId}
+                conversationRunning={isRunning}
+                paperSubmitDisabled={!!composerArea || !!composerDisabled}
                 isLast={msg.id === lastAssistantId}
                 onAnswerToolUse={onSubmitToolResult ? onAnswerToolUse : undefined}
                 onSubmitForm={onSubmitForm ?? ((text: string) => handleSend(text, []))}

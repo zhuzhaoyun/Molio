@@ -39,6 +39,10 @@ interface Props {
   conversationId?: string | null;
   /** 会话所属库（daemon 的 conversations.vault_id）——题卡取库的真相源。 */
   conversationVaultId?: string | null;
+  /** 会话级 run 是否进行中（题卡「批改中」pill 的呼吸态依据）。 */
+  conversationRunning?: boolean;
+  /** 宿主发送链不可用（无可用 runtime）→ 含解答草稿的题卡禁用交卷。 */
+  paperSubmitDisabled?: boolean;
   /**
    * First-run guide is on the save step: keep the toolbar visible and label the
    * save action, so the next step is discoverable without hovering.
@@ -46,7 +50,7 @@ interface Props {
   highlightSave?: boolean;
 }
 
-export function AssistantMessage({ message, isLast, onAnswerToolUse, onSubmitForm, onRegenerate, onContinue, onRequestDelete, conversationId, conversationVaultId, highlightSave }: Props) {
+export function AssistantMessage({ message, isLast, onAnswerToolUse, onSubmitForm, onRegenerate, onContinue, onRequestDelete, conversationId, conversationVaultId, conversationRunning, paperSubmitDisabled, highlightSave }: Props) {
   const { t } = useI18n();
   const vaultId = useActiveVaultId();
   const selectMode = useSelectMode();
@@ -142,6 +146,9 @@ export function AssistantMessage({ message, isLast, onAnswerToolUse, onSubmitFor
           streaming={false}
           conversationId={conversationId}
           conversationVaultId={conversationVaultId}
+          onSubmitPaper={onSubmitForm}
+          paperSubmitDisabled={paperSubmitDisabled}
+          conversationRunning={conversationRunning}
         />
       ))}
 
@@ -224,6 +231,9 @@ export function AssistantMessage({ message, isLast, onAnswerToolUse, onSubmitFor
                   streaming={message.streaming}
                   conversationId={conversationId}
                   conversationVaultId={conversationVaultId}
+                  onSubmitPaper={onSubmitForm}
+                  paperSubmitDisabled={paperSubmitDisabled}
+                  conversationRunning={conversationRunning}
                 />
               );
             }

@@ -340,18 +340,36 @@ export function gradeQuiz(quiz: Quiz, selections: QuizSelections): QuizGrade[] {
   });
 }
 
-export function isQuizComplete(quiz: Quiz, selections: QuizSelections): boolean {
-  return quiz.questions.every((question) => {
-    if (question.type === 'subject') {
-      // 主观题在问答输入框里作答（发送时物化），不算进本地提交的完成条件。
-      return true;
-    }
+/**
+ * 已作答题数（M1 整卷表单口径）。
+ *
+ * 与 isQuizComplete 的「全部完成才可交」不同：整卷表单允许未答完交卷（考试
+ * 心智），提交门槛是「至少答了一题」，确认条要报「还有几题没答」——两者都
+ * 从这一个计数派生。subject 与 fill 同形：草稿存 selections[qid] = [text]，
+ * 首项 trim 非空即算已答。subject 另接受 subjectImages（题目 id → vault 相对
+ * 路径列表）：**纯图片作答也算已答**（P4 拍照作答——图片 markdown 会物化进
+ * 交卷消息，run 的 cwd 就是库根，批改方读得到）。
+ */
+export function countQuizAnswered(
+  quiz: Quiz,
+  selections: QuizSelections,
+  subjectImages: Record<string, ReadonlyArray<string>> = {},
+): number {
+  let count = 0;
+  for (const question of quiz.questions) {
+    const picked = selections[question.id] ?? [];
     if (question.type === 'fill') {
-      return (selections[question.id]?.[0] ?? '').trim().length > 0;
+      if ((picked[0] ?? '').trim().length > 0) count += 1;
+    } else if (question.type === 'subject') {
+      if ((picked[0] ?? '').trim().length > 0 || (subjectImages[question.id]?.length ?? 0) > 0) {
+        count += 1;
+      }
+    } else {
+      const validKeys = new Set(question.options.map((option) => option.key));
+      if (picked.some((key) => validKeys.has(key))) count += 1;
     }
-    const validKeys = new Set(question.options.map((option) => option.key));
-    return (selections[question.id] ?? []).some((key) => validKeys.has(key));
-  });
+  }
+  return count;
 }
 
 /** 指纹只覆盖 {version, questions}，不含 title / 引导语。 */
@@ -385,7 +403,7 @@ export function quizStorageKey(conversationId: string, fingerprint: string): str
 
 export function parseStoredQuizState(
   raw: string | null,
-): { selections: QuizSelections; submitted: boolean } | null {
+): { selections: QuizSelections; submitted: boolean; subjectImages: Record<string, string[]> } | null {
   if (!raw) return null;
   try {
     const data: unknown = JSON.parse(raw);
@@ -398,7 +416,17 @@ export function parseStoredQuizState(
         }
       }
     }
-    return { selections, submitted: data.submitted === true };
+    // 解答题草稿图（M1）：与 selections 同风格宽容清洗——值必须逐项是字符串，
+    // 否则该条目丢弃（其余保留；缺字段是旧存储常态）。
+    const subjectImages: Record<string, string[]> = {};
+    if (isRecord(data.subjectImages)) {
+      for (const [questionId, value] of Object.entries(data.subjectImages)) {
+        if (Array.isArray(value) && value.every((item) => typeof item === 'string')) {
+          subjectImages[questionId] = value;
+        }
+      }
+    }
+    return { selections, submitted: data.submitted === true, subjectImages };
   } catch {
     return null;
   }
