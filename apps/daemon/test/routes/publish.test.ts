@@ -1,6 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { publishRoutes, cleanupAllBridges } from '../../src/routes/publish.js';
+import { generateBridgePage } from '../../src/publish-bridge/bridge-page.js';
 
 /**
  * Tests for publish API routes.
@@ -115,6 +116,45 @@ describe('Publish routes', () => {
         const body = await jsonBody(res);
         assert.ok(body['bridgeUrl']);
       });
+    });
+  });
+
+  describe('COSE content-script DOM gate', () => {
+    // Regression: COSE 1.3.x content.js only injects window.$cose when the page
+    // either is https://md.doocs.org OR has #app containing BOTH #editor and
+    // #preview #output (the doocs/md editor layout). The bridge page is served
+    // from http://localhost:<port>, so it must mimic that DOM or COSE never
+    // injects and the page shows "未检测到 COSE 扩展" even with the extension
+    // installed. See bridge-page.ts detectCose() + COSE content.js gate.
+    const html = generateBridgePage({
+      title: 'Gate',
+      markdown: '# Gate',
+      html: '<p>gate</p>',
+      css: '',
+    });
+
+    it('bridge page exposes #app wrapper required by COSE gate', () => {
+      assert.ok(/id=["']app["']/.test(html), 'bridge page must contain an #app element');
+    });
+
+    it('bridge page exposes #editor inside #app', () => {
+      assert.ok(/id=["']editor["']/.test(html), 'bridge page must contain an #editor element');
+    });
+
+    it('bridge page nests #editor and #preview > #output inside #app', () => {
+      // COSE gate: app.querySelector('#editor') && app.querySelector('#preview #output').
+      // #app is the last body element before the inline <script>, so everything
+      // between its opening tag and <script> is inside it.
+      const appStart = html.search(/<div id=["']app["']/);
+      assert.ok(appStart !== -1, 'missing #app opening tag');
+      const scriptStart = html.indexOf('<script>', appStart);
+      assert.ok(scriptStart > appStart, 'missing inline script after #app block');
+      const appBlock = html.slice(appStart, scriptStart);
+      assert.ok(/id=["']editor["']/.test(appBlock), '#editor must be inside #app');
+      const previewIdx = appBlock.search(/id=["']preview["']/);
+      const outputIdx = appBlock.search(/id=["']output["']/);
+      assert.ok(previewIdx !== -1, '#preview must be inside #app');
+      assert.ok(outputIdx > previewIdx, '#output must be nested inside #preview (descendant selector "#preview #output")');
     });
   });
 

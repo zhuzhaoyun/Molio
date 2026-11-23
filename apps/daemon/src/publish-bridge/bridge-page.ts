@@ -295,8 +295,20 @@ export function generateBridgePage(data: BridgePageData): string {
 
   <!-- Hidden copy button for COSE clipboard reading -->
   <button class="copy-btn" style="position:fixed;left:-9999px;top:-9999px;opacity:0" id="copy-btn">复制</button>
-  <!-- Hidden styled content container -->
-  <div id="output" style="position:fixed;left:-9999px;top:-9999px;opacity:0"></div>
+  <!-- COSE injection gate (content.js, COSE 1.3.x): inject.js (window.$cose) is
+       only injected on https://md.doocs.org OR pages whose DOM has #app containing
+       both #editor and "#preview #output" (the doocs/md editor layout). The bridge
+       page is served from http://localhost:<port>, so it must mimic that structure
+       or COSE never injects and detectCose() times out with "未检测到 COSE 扩展"
+       even when the extension is installed. This wrapper is a detection contract,
+       not UI — keep it hidden and keep the ids/nesting intact.
+       Regression test: test/routes/publish.test.ts "COSE content-script DOM gate". -->
+  <div id="app" style="position:fixed;left:-9999px;top:-9999px;opacity:0">
+    <div id="editor"></div>
+    <div id="preview">
+      <div id="output"></div>
+    </div>
+  </div>
 
   <script>
     // ── Article data (injected by daemon) ──
