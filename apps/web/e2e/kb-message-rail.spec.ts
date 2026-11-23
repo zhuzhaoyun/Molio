@@ -242,4 +242,37 @@ test.describe('KB message rail', () => {
     await expect(page.locator('.home-page.chat-active [data-testid="chat-message-rail"]')).toBeVisible();
     await expect(page.locator('.home-page.chat-active [data-testid="chat-message-rail-tick"]')).toHaveCount(3);
   });
+
+  test('M2 预览元信息：出题轮 hover 显示「第 N 问 · N 卡」，普通轮只有「第 N 问」', async ({ page }) => {
+    // M2（spec §4.2-1）：出题轮的预览元信息带该轮渲染出的题卡数
+    // （contracts countQuizCards 同口径）；无题卡轮自然退化只有「第 N 问」。
+    const quizMsgs = [
+      { id: 'q-u0', role: 'user', content: '第一章出五道选择题', timestamp: 1700000000000 },
+      { id: 'q-a0', role: 'assistant', content: '好的。\n\n```quiz\n{"version":1,"title":"第一章 · 5 题","questions":[{"id":"c1","type":"single","stem":"1+1=?","options":[{"key":"A","text":"2"},{"key":"B","text":"3"}],"answer":["A"],"explanation":"e","sources":[{"path":"doc.md"}]},{"id":"c2","type":"judge","stem":"对。","answer":["A"],"explanation":"e","sources":[{"path":"doc.md"}]}]}\n```\n\n再来一张：\n\n```quiz\n{"version":1,"title":"加练","questions":[{"id":"c3","type":"fill","stem":"____ 是答案。","answer":["A"],"explanation":"e","sources":[{"path":"doc.md"}]}]}\n```', timestamp: 1700000000001 },
+      { id: 'q-u1', role: 'user', content: '第二章也出几道', timestamp: 1700000000002 },
+      { id: 'q-a1', role: 'assistant', content: '第二章内容较长。' + LONG, timestamp: 1700000000003 },
+      { id: 'q-u2', role: 'user', content: '第三章继续', timestamp: 1700000000004 },
+      { id: 'q-a2', role: 'assistant', content: '第三章答。' + LONG, timestamp: 1700000000005 },
+    ];
+    await mockConv(page, 'conv-quiz-meta', '出题带卡会话', quizMsgs);
+    await page.goto(`/knowledge?vault=${vault.id}&file=doc.md`);
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 10_000 });
+    await page.locator('[data-testid="kb-btn-ask"]').click();
+    await expect(page.locator('[data-testid="kb-chat-session-tab"]')).toHaveCount(1);
+    await page.locator('[data-testid="kb-chat-session-history"]').click();
+    await page.locator('[data-testid="kb-chat-panel"] [data-testid="composer-history-item"]')
+      .filter({ hasText: '出题带卡会话' }).click();
+    await expect(page.locator('[data-testid="kb-chat-panel"] [data-testid="chat-message-rail-tick"]')).toHaveCount(3, { timeout: 10_000 });
+
+    const panel = page.locator('[data-testid="kb-chat-panel"]');
+    const preview = panel.locator('[data-testid="chat-message-rail-preview"]');
+    const meta = preview.locator('.chat-message-rail-preview-meta');
+    // 出题轮（tick 0）：第 1 问 · 2 卡
+    await panelTicks(page).nth(0).hover();
+    await expect(preview).toBeVisible();
+    await expect(meta).toHaveText('第 1 问 · 2 卡');
+    // 普通轮（tick 1）：退化只有第 N 问
+    await panelTicks(page).nth(1).hover();
+    await expect(meta).toHaveText('第 2 问');
+  });
 });

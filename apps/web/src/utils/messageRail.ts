@@ -2,6 +2,9 @@
 // 消息导航 rail 的纯函数层（docs/2026-11-16-message-rail-design.md §4）。
 // 刻度 = 一次提问（问答对）：user 开对、其后 assistant/error 并入、前导孤儿不入对。
 // 几何（tops/heights）由调用方从 DOM 量出缓存后传入——本层不碰 DOM。
+// 预览元信息（M2）：该轮渲染出的题卡数，走 contracts countQuizCards 同口径。
+import { countQuizCards } from '@molio/contracts';
+
 export const RAIL_TICK_IDEAL = 18;
 export const RAIL_TICK_MIN = 4;
 export const RAIL_TICK_GAP = 6;
@@ -15,6 +18,8 @@ export interface RailPair {
   lastMsgIndex: number;
   /** 提问预览文本（已清洗） */
   preview: string;
+  /** 该轮渲染出的题卡数（无题卡 = undefined——预览元信息退化为只有「第 N 问」） */
+  quizCards?: number;
 }
 
 /** 逐条扫描消息序列，按 user 消息切分成问答对。前导非 user 消息不属于任何 pair。 */
@@ -25,10 +30,20 @@ export function buildRailPairs(
   for (let i = 0; i < messages.length; i++) {
     if (messages[i]!.role !== 'user') continue;
     let last = i;
+    let quizCards: number | undefined;
     for (let j = i + 1; j < messages.length && messages[j]!.role !== 'user'; j++) {
       last = j;
+      if (messages[j]!.role === 'assistant') {
+        const cards = countQuizCards(messages[j]!.content);
+        if (cards > 0) quizCards = (quizCards ?? 0) + cards;
+      }
     }
-    pairs.push({ userMsgIndex: i, lastMsgIndex: last, preview: previewText(messages[i]!.content) });
+    pairs.push({
+      userMsgIndex: i,
+      lastMsgIndex: last,
+      preview: previewText(messages[i]!.content),
+      quizCards,
+    });
   }
   return pairs;
 }
