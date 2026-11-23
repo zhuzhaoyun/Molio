@@ -771,6 +771,7 @@ const en: Record<string, string> = {
   'kb.expandAll': 'Expand all',
   'kb.collapsePanel': 'Collapse sidebar',
   'kb.expandPanel': 'Expand sidebar',
+  'kb.switchVault': 'Switch vault',
   'kb.save': 'Save',
   'kb.copy': 'Copy',
   'kb.ctxSelectAll': 'Select All',

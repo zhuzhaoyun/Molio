@@ -774,6 +774,7 @@ const zh: Record<string, string> = {
   'kb.expandAll': '展开全部',
   'kb.collapsePanel': '折叠目录栏',
   'kb.expandPanel': '展开目录栏',
+  'kb.switchVault': '切换知识库',
   'kb.save': '保存',
   'kb.copy': '复制',
   'kb.ctxSelectAll': '全选',

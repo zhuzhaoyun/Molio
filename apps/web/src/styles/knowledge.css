@@ -86,7 +86,7 @@
   visibility: visible;
   transition: opacity 200ms ease 120ms, visibility 0s;
 }
-.kb-file-rail button {
+.kb-file-rail__expand {
   width: 26px;
   height: 26px;
   padding: 0;
@@ -100,23 +100,28 @@
   justify-content: center;
   transition: all 120ms ease;
 }
-.kb-file-rail button svg {
+.kb-file-rail__expand svg {
   width: 15px;
   height: 15px;
 }
-.kb-file-rail button:hover {
+.kb-file-rail__expand:hover {
   background: var(--bg-subtle);
   color: var(--text);
 }
-/* 书脊库名：竖排（中文直立、西文旋转——mixed 是书脊的自然读法），超长省略；
-   悬停整条时提亮 */
+/* 书脊库名：竖排（中文直立、西文旋转——mixed 是书脊的自然读法），超长省略。
+   也是折叠态的切库控件：hover 提亮为 accent 色，与「展开」的灰色按钮区分开。 */
 .kb-file-rail__name {
   margin-top: 14px;
   writing-mode: vertical-rl;
   text-orientation: mixed;
+  font-family: inherit;
   font-size: 12px;
   letter-spacing: 3px;
   color: var(--text-muted);
+  border: none;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -124,8 +129,8 @@
   user-select: none;
   transition: color 120ms ease;
 }
-.kb-file-rail:hover .kb-file-rail__name {
-  color: var(--text);
+.kb-file-rail__name:hover {
+  color: var(--accent);
 }
 
 /* 减少动态效果：折叠/展开直接落位（visibility 仍瞬时翻转） */

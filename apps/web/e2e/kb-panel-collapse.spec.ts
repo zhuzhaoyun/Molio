@@ -49,6 +49,15 @@ test.describe('KB file panel collapse/expand', () => {
     const collapsedBox = await panel.boundingBox();
     expect(collapsedBox?.width ?? 99).toBeLessThan(40);
 
+    // 折叠态切库：书脊库名是切库入口——点击打开仓库管理器，面板保持折叠
+    const spineName = page.locator('[data-testid="kb-spine-name"]');
+    await expect(spineName).toBeVisible();
+    await spineName.click();
+    await expect(page.locator('[data-testid="vault-manager-modal"]')).toBeVisible();
+    await expect(panel).toHaveClass(/kb-file-panel--collapsed/); // 没被连带展开
+    await page.keyboard.press('Escape');
+    await expect(page.locator('[data-testid="vault-manager-modal"]')).toBeHidden();
+
     await expandBtn.click();
 
     // 展开态恢复：书脊让位隐藏，折叠按钮回来、树可见、面板回到正常宽度

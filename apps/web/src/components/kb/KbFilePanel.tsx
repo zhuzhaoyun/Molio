@@ -397,6 +397,7 @@ export const KbFilePanel = forwardRef<KbFilePanelHandle, KbFilePanelProps>(funct
       >
         <button
           type="button"
+          className="kb-file-rail__expand"
           title={t('kb.expandPanel')}
           onClick={() => applyCollapsed(false)}
           data-testid="kb-btn-panel-expand"
@@ -408,7 +409,19 @@ export const KbFilePanel = forwardRef<KbFilePanelHandle, KbFilePanelProps>(funct
             <path d="m14 9 3 3-3 3" />
           </svg>
         </button>
-        {vaultName && <span className="kb-file-rail__name">{vaultName}</span>}
+        {/* 库名 = 折叠态的切库入口：点击打开仓库管理器（stopPropagation：
+            书脊其余区域是「展开」，名字是「切换」，两个意图不能串） */}
+        {vaultName && (
+          <button
+            type="button"
+            className="kb-file-rail__name"
+            title={t('kb.switchVault')}
+            onClick={(e) => { e.stopPropagation(); onVaultClick(); }}
+            data-testid="kb-spine-name"
+          >
+            {vaultName}
+          </button>
+        )}
       </div>
 
       <div className="kb-file-panel__body" inert={panelCollapsed || undefined}>
