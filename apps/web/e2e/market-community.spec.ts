@@ -3,6 +3,7 @@ import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { gotoHome, clickNav } from './helpers/navigation';
+import { ensureLoggedOut as ensureLoggedOutShared } from './helpers/auth';
 
 /**
  * @area market
@@ -105,8 +106,9 @@ test.afterAll(async () => {
  * 保证 loginViaDevCode 看到的是登录表单而非资料卡。照抄 auth.spec.ts 用法。
  */
 async function ensureLoggedOut(request: APIRequestContext) {
-  const status = (await (await request.get('/api/auth/status')).json()) as { loggedIn?: boolean };
-  if (status.loggedIn) await request.post('/api/auth/logout');
+  // 实现移入 helpers/auth.ts（kb-panel-collapse 也需要显式登出），此包装保留
+  // 以免改动本文件内十余处调用点；注释见 helpers/auth.ts。
+  await ensureLoggedOutShared(request);
 }
 
 /**
@@ -159,12 +161,16 @@ test.describe('社区发布 → 展示 → 下载闭环（P1，mock OSS）', () 
     });
 
     // 2) ?vault= 直达 beforeAll 建的含 md 库的 KB 页（per-window source of truth）。
-    //    「发布到资源库」按钮已移除（资源发布未开放，2026-11-23），发布 tab 经
-    //    深链 ?panel=publish 打开（页面消费参数后即删，刷新不重放）。
-    await page.goto(`/knowledge?vault=${vaultId}&panel=publish`);
+    //    「发布到资源库」按钮按权限显隐（2026-11-23 修正）：管理员登录后按钮出现
+    //    （身份判定走 marketRoleStore 自动即答），点击打开页内发布 tab。按钮可见
+    //    本身就是「已判定为 admin」的可观测信号——未判定/非管理员一律不渲染。
+    await page.goto(`/knowledge?vault=${vaultId}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 15_000 }); // vite dev 冷转换可超 5s（Windows 本地）
+    const publishBtn = page.locator('[data-testid="kb-btn-publish-vault"]');
+    await expect(publishBtn).toBeVisible({ timeout: 10_000 });
 
-    // 3) 深链 → 页内发布 tab：名称/简介 + 效果图 + 声明 → 提交 → 成功态
+    // 3) 面板「发布到资源库」→ 页内发布 tab：名称/简介 + 效果图 + 声明 → 提交 → 成功态
+    await publishBtn.click();
     await expect(page.locator('[data-testid="kb-publish-pane"]')).toBeVisible({ timeout: 10_000 });
     await expect(page.locator('[data-testid="kb-wtab-publish"]')).toHaveClass(/is-active/);
 
