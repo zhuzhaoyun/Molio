@@ -27,6 +27,44 @@
   position: relative;
 }
 
+/* 折叠态：细竖条。min/max-width 必须跟着收到同一宽度，否则内联 width:28
+   会被展开态的 min-width:180 顶回去。 */
+.kb-file-panel--collapsed {
+  min-width: 28px;
+  max-width: 28px;
+}
+
+/* 折叠竖条：顶部只有「展开」按钮（样式与工具栏按钮同形） */
+.kb-file-rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-top: 8px;
+  width: 100%;
+}
+.kb-file-rail button {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  border-radius: 5px;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 120ms ease;
+}
+.kb-file-rail button svg {
+  width: 15px;
+  height: 15px;
+}
+.kb-file-rail button:hover {
+  background: var(--bg-subtle);
+  color: var(--text);
+}
+
 /* Top toolbar */
 .kb-file-toolbar {
   padding: 8px 12px;

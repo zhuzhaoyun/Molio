@@ -769,6 +769,8 @@ const en: Record<string, string> = {
   'kb.noFileBody': 'Pick a file from the tree on the left to view it.',
   'kb.collapseAll': 'Collapse all',
   'kb.expandAll': 'Expand all',
+  'kb.collapsePanel': 'Collapse sidebar',
+  'kb.expandPanel': 'Expand sidebar',
   'kb.save': 'Save',
   'kb.copy': 'Copy',
   'kb.ctxSelectAll': 'Select All',
@@ -1056,10 +1058,8 @@ const en: Record<string, string> = {
   'resources.pay.noBase': 'Payment is not enabled — contact us to purchase.',
   'resources.pay.download': 'Download pack',
   // ── Community market: publish wizard / my listings / vault entry (Task 10) ──
-  'vault.publish': 'Publish to market',
-  'vault.publishRolePending': 'Checking publish permission…',
-  'vault.publishRoleRetry': 'Rechecking publish permission…',
-  'vault.publishRoleFailed': 'Could not verify admin status — check your network and try again',
+  // 「发布到资源库」入口按钮与门禁已移除（2026-11-23），vault.publish* 文案键随之清理；
+  // 发布 tab 自身的文案（publish.*）保留——管线休眠，深链 ?panel=publish 仍在用。
   // ── Vault list: inline ⋯ menu (copy ID / reveal / remove) ──
   'vault.listHeader': 'Vaults',
   'vault.listEmpty': 'No vaults yet',

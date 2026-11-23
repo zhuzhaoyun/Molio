@@ -324,7 +324,9 @@
         "kb-folder-ops",
         "kb-folder-drag-real",
         "kb-file-drag-real",
-        "kb-folder-root-drop"
+        "kb-folder-root-drop",
+        "kb-panel-collapse",
+        "market-community"
       ]
     },
     "market": {
@@ -772,6 +774,10 @@
     "skill-hub-real-install": {
       "priority": "P2",
       "file": "skill-hub-real-install.spec.ts"
+    },
+    "kb-panel-collapse": {
+      "priority": "P1",
+      "file": "kb-panel-collapse.spec.ts"
     }
   }
 }

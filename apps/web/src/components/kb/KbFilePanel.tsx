@@ -18,6 +18,11 @@ type SortBy = 'name' | 'modified' | 'size';
 
 const SORT_OPTIONS: SortBy[] = ['name', 'modified', 'size'];
 
+/** 目录栏折叠态的 localStorage 键（窗口级视图偏好，不按库区分）。 */
+const PANEL_COLLAPSED_KEY = 'molio.kb.filePanelCollapsed';
+/** 折叠后细竖条的宽度（px）——只容得下顶部的「展开」按钮。 */
+const PANEL_COLLAPSED_WIDTH = 28;
+
 interface KbFilePanelProps {
   width: number;
   tree: TreeNode[];
@@ -54,16 +59,6 @@ interface KbFilePanelProps {
   treeError?: string | null;
   /** 重试拉树（错误条上的「重试」）。 */
   onRetryTree?: () => void;
-  /** Publish the current vault to the resources hub. */
-  onPublishVault: () => void;
-  /**
-   * 「发布到资源库」门禁的当前判定结果：
-   * - admin：页内发布 tab；contact：系统浏览器打开官网联系页；
-   * - pending / error：身份还没判定出来（登录态或管理员身份未决 / 判定失败）。
-   *   这两种状态下点击不会直接分流，调用方会等判定结果（见 KnowledgeBasePage）。
-   * 渲染成属性，调用方/E2E 才能等门禁落定后再点。undefined = 调用方未提供。
-   */
-  publishGate?: 'admin' | 'contact' | 'pending' | 'error';
   children?: ReactNode;
 }
 
@@ -97,8 +92,6 @@ export const KbFilePanel = forwardRef<KbFilePanelHandle, KbFilePanelProps>(funct
   onMoveFile,
   treeError,
   onRetryTree,
-  onPublishVault,
-  publishGate,
   children,
 }, ref) {
   const { t } = useI18n();
@@ -114,6 +107,19 @@ export const KbFilePanel = forwardRef<KbFilePanelHandle, KbFilePanelProps>(funct
   const [sortBy, setSortBy] = useState<SortBy>('name');
   const [sortMenuOpen, setSortMenuOpen] = useState(false);
   const sortRef = useRef<HTMLDivElement>(null);
+
+  // 目录栏折叠/展开（Obsidian/VSCode 同款侧栏开关）：折叠后只剩一条细竖条，
+  // 顶部是「展开」按钮。状态持久化——下次打开窗口保持上次的形态。
+  const [panelCollapsed, setPanelCollapsed] = useState(() => {
+    try { return localStorage.getItem(PANEL_COLLAPSED_KEY) === '1'; } catch { return false; }
+  });
+  const togglePanelCollapsed = useCallback(() => {
+    setPanelCollapsed((c) => {
+      const next = !c;
+      try { localStorage.setItem(PANEL_COLLAPSED_KEY, next ? '1' : '0'); } catch { /* 存储不可用时静默 */ }
+      return next;
+    });
+  }, []);
 
   // Unified 新建 dropdown — note / folder / new-window. Positioned with
   // position:fixed computed from the trigger, so the file panel's overflow:hidden
@@ -367,13 +373,32 @@ export const KbFilePanel = forwardRef<KbFilePanelHandle, KbFilePanelProps>(funct
 
   return (
     <aside
-      className={`kb-file-panel ${dragClass}`}
-      style={{ width }}
+      className={`kb-file-panel ${dragClass}${panelCollapsed ? ' kb-file-panel--collapsed' : ''}`}
+      style={{ width: panelCollapsed ? PANEL_COLLAPSED_WIDTH : width }}
       onDragEnter={handleDragEnter}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
+      {panelCollapsed ? (
+        /* 折叠态：细竖条，顶部只有「展开」按钮（Obsidian/VSCode 同款） */
+        <div className="kb-file-rail">
+          <button
+            type="button"
+            title={t('kb.expandPanel')}
+            onClick={togglePanelCollapsed}
+            data-testid="kb-btn-panel-expand"
+          >
+            {/* panel-left-open — 侧栏展开的标准画法（Lucide 官方图形） */}
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <rect width="18" height="18" x="3" y="3" rx="2" />
+              <path d="M9 3v18" />
+              <path d="m14 9 3 3-3 3" />
+            </svg>
+          </button>
+        </div>
+      ) : (
+      <>
       {/* Toolbar */}
       <div className="kb-file-toolbar">
         {/* 新建 — unified create menu: note / folder / new-window */}
@@ -582,25 +607,23 @@ export const KbFilePanel = forwardRef<KbFilePanelHandle, KbFilePanelProps>(funct
             </svg>
           )}
         </button>
-        {onPublishVault && (
-          <button
-            type="button"
-            className="kb-btn kb-btn-publish"
-            title={publishGate === 'pending' ? t('vault.publishRolePending')
-              : publishGate === 'error' ? t('vault.publishRoleFailed')
-                : t('vault.publish')}
-            onClick={onPublishVault}
-            data-testid="kb-btn-publish-vault"
-            data-publish-gate={publishGate}
-          >
-            {/* upload — publish to resources */}
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-              <polyline points="17 8 12 3 7 8" />
-              <line x1="12" y1="3" x2="12" y2="15" />
-            </svg>
-          </button>
-        )}
+        {/* 目录栏折叠 — 原位置是「发布到资源库」按钮（资源发布未开放，点击只会被
+            门禁分流到官网联系页，2026-11-23 移除）。注意与左边「折叠全部/展开全部」
+            （管树节点）是两回事：这颗管目录栏本身。折叠后细竖条留在原位，
+            展开入口不丢。 */}
+        <button
+          type="button"
+          title={t('kb.collapsePanel')}
+          onClick={togglePanelCollapsed}
+          data-testid="kb-btn-panel-collapse"
+        >
+          {/* panel-left-close — 侧栏折叠的标准画法（Lucide 官方图形） */}
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <rect width="18" height="18" x="3" y="3" rx="2" />
+            <path d="M9 3v18" />
+            <path d="m16 15-3-3 3-3" />
+          </svg>
+        </button>
       </div>
 
       {/* Search */}
@@ -682,6 +705,8 @@ export const KbFilePanel = forwardRef<KbFilePanelHandle, KbFilePanelProps>(funct
 
       {/* Resize handle */}
       {children}
+      </>
+      )}
     </aside>
   );
 });

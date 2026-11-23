@@ -772,6 +772,8 @@ const zh: Record<string, string> = {
   'kb.noFileBody': '从左侧文件树中选择一个文件查看内容。',
   'kb.collapseAll': '折叠全部',
   'kb.expandAll': '展开全部',
+  'kb.collapsePanel': '折叠目录栏',
+  'kb.expandPanel': '展开目录栏',
   'kb.save': '保存',
   'kb.copy': '复制',
   'kb.ctxSelectAll': '全选',
@@ -1061,10 +1063,8 @@ const zh: Record<string, string> = {
   'resources.pay.noBase': '支付服务未开通，请直接联系购买',
   'resources.pay.download': '下载资源包',
   // ── 社区资源市场：发布向导 / 我的上架 / 知识库入口（Task 10） ──
-  'vault.publish': '发布到资源库',
-  'vault.publishRolePending': '正在校验发布权限…',
-  'vault.publishRoleRetry': '正在重新校验发布权限…',
-  'vault.publishRoleFailed': '暂时无法校验管理员身份，请检查网络后重试',
+  // 「发布到资源库」入口按钮与门禁已移除（2026-11-23），vault.publish* 文案键随之清理；
+  // 发布 tab 自身的文案（publish.*）保留——管线休眠，深链 ?panel=publish 仍在用。
   // ── 知识库列表：行内 ⋯ 菜单（复制 ID / 定位文件 / 移除） ──
   'vault.listHeader': '全部知识库',
   'vault.listEmpty': '还没有知识库',

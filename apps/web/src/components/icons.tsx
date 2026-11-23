@@ -480,16 +480,16 @@ export function BookIcon({ size = 16, className }: IconProps) {
 }
 
 
-/** Lucide scan-search（官方图形，ISC 许可）。 */
-export function ScanSearchIcon({ size = 16, className }: IconProps) {
+/** Lucide stethoscope（官方图形，ISC 许可）——「健康检查」的医疗符号，
+ *  与文档里一直叫的「🩺健康检查」语义对齐（替代读不出健康的 scan-search）。 */
+export function StethoscopeIcon({ size = 16, className }: IconProps) {
   return (
     <svg {...base(size)} className={className}>
-      <path d="M3 7V5a2 2 0 0 1 2-2h2" />
-      <path d="M17 3h2a2 2 0 0 1 2 2v2" />
-      <path d="M21 17v2a2 2 0 0 1-2 2h-2" />
-      <path d="M7 21H5a2 2 0 0 1-2-2v-2" />
-      <circle cx="12" cy="12" r="3" />
-      <path d="m16 16-1.9-1.9" />
+      <path d="M11 2v2" />
+      <path d="M5 2v2" />
+      <path d="M5 3H4a2 2 0 0 0-2 2v4a6 6 0 0 0 12 0V5a2 2 0 0 0-2-2h-1" />
+      <path d="M8 15a6 6 0 0 0 12 0v-3" />
+      <circle cx="20" cy="10" r="2" />
     </svg>
   );
 }

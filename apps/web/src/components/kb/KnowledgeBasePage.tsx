@@ -17,8 +17,6 @@ import { useOnboardingHint } from '../../hooks/useOnboardingHint';
 import { OnboardingChecklist } from './OnboardingChecklist';
 import { kbChatSessionsStore } from '../../stores/kbChatSessionsStore';
 import { navigationHistoryStore } from '../../stores/navigationHistoryStore';
-import { useAuthStatus } from '../../stores/authStore';
-import { useMarketRole } from '../../stores/marketRoleStore';
 import { KbFilePanel, type KbFilePanelHandle } from './KbFilePanel';
 import { KbTabBar } from './KbTabBar';
 import { KbMainContent } from './KbMainContent';
@@ -39,24 +37,9 @@ import { ImportConflictDialog } from './ImportConflictDialog';
 import { ContextMenu, type MenuItem } from './ContextMenu';
 import { useI18n } from '../../i18n';
 import { api } from '../../api/client';
-import { BookIcon, ChatIcon, ScanSearchIcon } from '../icons';
+import { BookIcon, ChatIcon, StethoscopeIcon } from '../icons';
 import { openInNewWindow } from '../../utils/openWindow';
 import { shouldReuseWindowOnVaultSwitch } from '../../utils/vaultSwitchWindow';
-
-/** 非管理员 / 未登录点「发布到资源库」的落地页：官网联系方式（顾问个人微信二维码）。 */
-const PUBLISH_CONTACT_URL = 'https://molio.cn/enterprise.html#contact';
-
-/**
- * 在系统默认浏览器打开联系页（不在应用内跳转）。
- * Electron 桌面端由 main.js 的 setWindowOpenHandler 统一转交
- * shell.openExternal；纯浏览器环境（dev / E2E）即新标签页。
- */
-function openPublishContactPage(): void {
-  // 注意：不带 windowFeatures 第三参——带 'noopener' 时部分 Chromium 场景下
-  // 不产生可观测的新页/外部跳转；Electron 桌面端由 setWindowOpenHandler 统一
-  // 转交系统浏览器，不依赖 opener 隔离。
-  window.open(PUBLISH_CONTACT_URL, '_blank');
-}
 
 interface KnowledgeBasePageProps {
   agentId: string | null;
@@ -887,41 +870,22 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
     tabs.openTab({ id: PUBLISH_TAB_ID, type: 'publish', title: t('publish.tabTitle'), vaultId });
   }, [tabs, showToast, t]);
 
-  // 发布到资源库门禁（前端拦截，后端不设门槛）：仅管理员可打开发布 tab，未登录/
-  // 非管理员在系统浏览器打开官网联系页（顾问微信上架，人工审核）。
-  // 身份判定走 marketRoleStore（daemon /api/market/role 本地即答）：已判定才能同步
-  // 分流，因为 window.open 必须留在用户手势里。**未判定**（首装首次判定 / 云端不可达）
-  // 绝不能当成非管理员——那会把管理员丢进浏览器，页内发布配置页永远打不开。
-  const auth = useAuthStatus();
-  const loggedIn = auth?.loggedIn === true;
-  const { role: marketRole, failed: marketRoleFailed, ensure: ensureMarketRole } = useMarketRole();
+  // 「发布到资源库」入口按钮已随门禁一并移除（资源发布未开放，2026-11-23）：
+  // 页内发布 tab 基础设施保留休眠（openPublishTab / 发布 pane / ?panel=publish 深链），
+  // 将来功能开放时恢复 UI 入口即可。
 
-  type PublishGate = 'admin' | 'contact' | 'pending' | 'error';
-  const publishGate: PublishGate = (() => {
-    if (auth === null) return 'pending';            // 登录态还没取回
-    if (!loggedIn) return 'contact';                // 确定未登录
-    if (marketRole === 'admin') return 'admin';
-    if (marketRole === 'member' || marketRole === 'signed-out') return 'contact';
-    return marketRoleFailed ? 'error' : 'pending';  // 未判定：等，不猜
-  })();
-
-  const handlePublishActive = useCallback(() => {
-    // 用同步的 activeVaultId 判定，而非 kb.activeVault（对象要等 vault 列表异步拉回）。
-    // 否则冷启动 / E2E 直接 goto 时，列表未到位的窗口里点击会被 !vault 吞掉：管理员的
-    // 发布 tab 打不开、非管理员的联系页弹窗也不触发（window.open 还会因异步续体丢手势）。
+  // ?panel=publish — 发布 tab 的深链入口。UI 上没有按钮了，market-community 的
+  // 发布闭环 E2E 经这条深链进入发布管线；将来恢复 UI 入口时也落到 openPublishTab。
+  // 与 ?panel=graph 同一个「参数即一次性意图」套路：消费即删，刷新不重放。
+  useEffect(() => {
+    if (searchParams.get('panel') !== 'publish') return;
     if (!activeVaultId) return;
-    const vaultId = activeVaultId;
-    // 已判定：同步分流（window.open 必须在用户手势里）
-    if (publishGate === 'admin') { openPublishTab(vaultId); return; }
-    if (publishGate === 'contact') { openPublishContactPage(); return; }
-    // 未决 / 上次判定失败：先把身份问清楚，再按结果分流。
-    showToast(t(publishGate === 'error' ? 'vault.publishRoleRetry' : 'vault.publishRolePending'));
-    void ensureMarketRole(publishGate === 'error').then((role) => {
-      if (role === 'admin') openPublishTab(vaultId);
-      else if (role === null) showToast(t('vault.publishRoleFailed'));
-      else openPublishContactPage();
-    });
-  }, [activeVaultId, publishGate, openPublishTab, ensureMarketRole, showToast, t]);
+    openPublishTab(activeVaultId);
+    const next = new URLSearchParams(searchParams);
+    next.delete('panel');
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams, openPublishTab, activeVaultId]);
+
   const handleIngestFile = useCallback((filePath: string, isDirectory = false) => {
     if (!agentId) return;
     panelRef.current?.runWikiOp({ mode: 'ingest', filePath, isDirectory });
@@ -1562,8 +1526,6 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
         onMoveFile={handleMoveFile}
         treeError={kb.treeError}
         onRetryTree={() => { void handleRefreshTree(); }}
-        onPublishVault={handlePublishActive}
-        publishGate={publishGate}
       >
         <div className="kb-resize-handle" onMouseDown={handleResizeStart} />
       </KbFilePanel>
@@ -1626,7 +1588,7 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
                 title={kb.activeVault && kb.wikiInitialized ? t('kb.lintWiki') : t('kb.cmdNeedsVault')}
                 data-testid="kb-btn-lint-wiki"
               >
-                <ScanSearchIcon size={14} />
+                <StethoscopeIcon size={14} />
               </button>
               <button
                 type="button"
