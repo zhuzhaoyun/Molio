@@ -8,8 +8,9 @@ import { createTempVault, cleanupTempVault, type TempVault } from './helpers/cle
  * 文件面板（知识库目录栏）折叠/展开开关。
  *
  * 背景：工具栏右端的「发布到资源库」按钮（功能未对非管理员开放，点击只会被
- * 门禁分流到官网）移除后，原位置换成目录栏折叠开关——Obsidian/VSCode 同款：
- * 折叠后留一条细竖条，顶部只有「展开」按钮；状态持久化到 localStorage。
+ * 门禁分流到官网）移除后，原位置换成目录栏折叠开关——折叠后留一条「书脊」
+ * 细竖条：顶部展开按钮 + 竖排知识库名（用户知道当前库被折叠了、以及是哪个库），
+ * 整条可点击展开；折叠/展开有宽度过渡动画；状态持久化到 localStorage。
  *
  * Prerequisites: `pnpm dev` running (daemon :3100, web :5173).
  */
@@ -22,22 +23,27 @@ test.describe('KB file panel collapse/expand', () => {
   });
   test.afterAll(async () => { if (vault) await cleanupTempVault(vault); });
 
-  test('collapse button folds the panel into a slim rail; expand restores it', async ({ page }) => {
+  test('collapse button folds the panel into a spine rail; expand restores it', async ({ page }) => {
     await page.goto(`/knowledge?vault=${vault.id}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 15_000 });
 
-    // 默认展开：折叠按钮可见、树可见
+    // 默认展开：折叠按钮可见、树可见、书脊隐藏
     const collapseBtn = page.locator('[data-testid="kb-btn-panel-collapse"]');
     await expect(collapseBtn).toBeVisible({ timeout: 10_000 });
     const panel = page.locator('.kb-file-panel');
     await expect(panel).not.toHaveClass(/kb-file-panel--collapsed/);
     await expect(page.locator('.kb-tree-scroll')).toBeVisible();
+    const spine = page.locator('[data-testid="kb-panel-spine"]');
+    await expect(spine).toBeHidden();
 
     await collapseBtn.click();
 
-    // 折叠态：细竖条 + 展开按钮，树隐藏，面板宽度收窄到竖条宽度
+    // 折叠态：书脊可见（展开按钮 + 竖排库名），树隐藏，面板宽度收窄到竖条宽度
     const expandBtn = page.locator('[data-testid="kb-btn-panel-expand"]');
     await expect(expandBtn).toBeVisible();
+    await expect(spine).toBeVisible();
+    // 书脊显示当前库名——用户看得出「哪个库被折叠了」
+    await expect(spine).toContainText('e2e-panel-collapse');
     await expect(panel).toHaveClass(/kb-file-panel--collapsed/);
     await expect(page.locator('.kb-tree-scroll')).toBeHidden();
     const collapsedBox = await panel.boundingBox();
@@ -45,7 +51,8 @@ test.describe('KB file panel collapse/expand', () => {
 
     await expandBtn.click();
 
-    // 展开态恢复：折叠按钮回来、树可见、面板回到正常宽度
+    // 展开态恢复：书脊让位隐藏，折叠按钮回来、树可见、面板回到正常宽度
+    await expect(spine).toBeHidden();
     await expect(page.locator('[data-testid="kb-btn-panel-collapse"]')).toBeVisible();
     await expect(page.locator('.kb-tree-scroll')).toBeVisible();
     const expandedBox = await panel.boundingBox();
@@ -58,13 +65,13 @@ test.describe('KB file panel collapse/expand', () => {
     await expect(page.locator('[data-testid="kb-btn-panel-collapse"]')).toBeVisible({ timeout: 10_000 });
 
     await page.locator('[data-testid="kb-btn-panel-collapse"]').click();
-    await expect(page.locator('[data-testid="kb-btn-panel-expand"]')).toBeVisible();
+    await expect(page.locator('[data-testid="kb-panel-spine"]')).toBeVisible();
 
     await page.reload();
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 15_000 });
 
     // 重载后仍是折叠态
-    await expect(page.locator('[data-testid="kb-btn-panel-expand"]')).toBeVisible({ timeout: 10_000 });
+    await expect(page.locator('[data-testid="kb-panel-spine"]')).toBeVisible({ timeout: 10_000 });
     await expect(page.locator('.kb-file-panel')).toHaveClass(/kb-file-panel--collapsed/);
     await expect(page.locator('.kb-tree-scroll')).toBeHidden();
 

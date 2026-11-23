@@ -108,18 +108,24 @@ export const KbFilePanel = forwardRef<KbFilePanelHandle, KbFilePanelProps>(funct
   const [sortMenuOpen, setSortMenuOpen] = useState(false);
   const sortRef = useRef<HTMLDivElement>(null);
 
-  // 目录栏折叠/展开（Obsidian/VSCode 同款侧栏开关）：折叠后只剩一条细竖条，
-  // 顶部是「展开」按钮。状态持久化——下次打开窗口保持上次的形态。
+  // 目录栏折叠/展开：折叠后只剩一条「书脊」细竖条（顶部展开按钮 + 竖排库名），
+  // 用户看得出当前库被折叠了、是哪个库。状态持久化——下次打开窗口保持上次的形态。
   const [panelCollapsed, setPanelCollapsed] = useState(() => {
     try { return localStorage.getItem(PANEL_COLLAPSED_KEY) === '1'; } catch { return false; }
   });
-  const togglePanelCollapsed = useCallback(() => {
-    setPanelCollapsed((c) => {
-      const next = !c;
-      try { localStorage.setItem(PANEL_COLLAPSED_KEY, next ? '1' : '0'); } catch { /* 存储不可用时静默 */ }
-      return next;
-    });
+  // 宽度过渡动画只在该标志为 true 的窗口期内挂（点击后约一个动画时长摘除）：
+  // 若 transition:width 常驻，「拖拽调宽」的每一帧都会朝目标缓动，手感变橡皮筋。
+  const [panelAnimating, setPanelAnimating] = useState(false);
+  const applyCollapsed = useCallback((next: boolean) => {
+    setPanelAnimating(true);
+    setPanelCollapsed(next);
+    try { localStorage.setItem(PANEL_COLLAPSED_KEY, next ? '1' : '0'); } catch { /* 存储不可用时静默 */ }
   }, []);
+  useEffect(() => {
+    if (!panelAnimating) return;
+    const t = setTimeout(() => setPanelAnimating(false), 280);
+    return () => clearTimeout(t);
+  }, [panelAnimating, panelCollapsed]);
 
   // Unified 新建 dropdown — note / folder / new-window. Positioned with
   // position:fixed computed from the trigger, so the file panel's overflow:hidden
@@ -373,32 +379,39 @@ export const KbFilePanel = forwardRef<KbFilePanelHandle, KbFilePanelProps>(funct
 
   return (
     <aside
-      className={`kb-file-panel ${dragClass}${panelCollapsed ? ' kb-file-panel--collapsed' : ''}`}
+      className={`kb-file-panel ${dragClass}${panelCollapsed ? ' kb-file-panel--collapsed' : ''}${panelAnimating ? ' kb-file-panel--animating' : ''}`}
       style={{ width: panelCollapsed ? PANEL_COLLAPSED_WIDTH : width }}
       onDragEnter={handleDragEnter}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
-      {panelCollapsed ? (
-        /* 折叠态：细竖条，顶部只有「展开」按钮（Obsidian/VSCode 同款） */
-        <div className="kb-file-rail">
-          <button
-            type="button"
-            title={t('kb.expandPanel')}
-            onClick={togglePanelCollapsed}
-            data-testid="kb-btn-panel-expand"
-          >
-            {/* panel-left-open — 侧栏展开的标准画法（Lucide 官方图形） */}
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <rect width="18" height="18" x="3" y="3" rx="2" />
-              <path d="M9 3v18" />
-              <path d="m14 9 3 3-3 3" />
-            </svg>
-          </button>
-        </div>
-      ) : (
-      <>
+      {/* 书脊 — 常驻挂载，靠 visibility/opacity 显隐（CSS 里控制过渡时序：
+          折叠时延迟淡入、展开时先淡出让位）。整条可点击 = 展开，库名让
+          「空白竖条」变成「这个库被折叠了」。 */}
+      <div
+        className="kb-file-rail"
+        data-testid="kb-panel-spine"
+        title={t('kb.expandPanel')}
+        onClick={() => applyCollapsed(false)}
+      >
+        <button
+          type="button"
+          title={t('kb.expandPanel')}
+          onClick={() => applyCollapsed(false)}
+          data-testid="kb-btn-panel-expand"
+        >
+          {/* panel-left-open — 侧栏展开的标准画法（Lucide 官方图形） */}
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <rect width="18" height="18" x="3" y="3" rx="2" />
+            <path d="M9 3v18" />
+            <path d="m14 9 3 3-3 3" />
+          </svg>
+        </button>
+        {vaultName && <span className="kb-file-rail__name">{vaultName}</span>}
+      </div>
+
+      <div className="kb-file-panel__body" inert={panelCollapsed || undefined}>
       {/* Toolbar */}
       <div className="kb-file-toolbar">
         {/* 新建 — unified create menu: note / folder / new-window */}
@@ -609,12 +622,12 @@ export const KbFilePanel = forwardRef<KbFilePanelHandle, KbFilePanelProps>(funct
         </button>
         {/* 目录栏折叠 — 原位置是「发布到资源库」按钮（资源发布未开放，点击只会被
             门禁分流到官网联系页，2026-11-23 移除）。注意与左边「折叠全部/展开全部」
-            （管树节点）是两回事：这颗管目录栏本身。折叠后细竖条留在原位，
-            展开入口不丢。 */}
+            （管树节点）是两回事：这颗管目录栏本身。折叠后成「书脊」竖条
+            （库名竖排），展开入口不丢。 */}
         <button
           type="button"
           title={t('kb.collapsePanel')}
-          onClick={togglePanelCollapsed}
+          onClick={() => applyCollapsed(true)}
           data-testid="kb-btn-panel-collapse"
         >
           {/* panel-left-close — 侧栏折叠的标准画法（Lucide 官方图形） */}
@@ -705,8 +718,7 @@ export const KbFilePanel = forwardRef<KbFilePanelHandle, KbFilePanelProps>(funct
 
       {/* Resize handle */}
       {children}
-      </>
-      )}
+      </div>
     </aside>
   );
 });
