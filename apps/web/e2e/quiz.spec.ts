@@ -1300,10 +1300,16 @@ test.describe('Quiz interaction block', () => {
       { type: 'status', label: 'running' },
       { type: 'text_delta', delta: MIXED_QUIZ },
       { type: 'turn_end', stopReason: 'end_turn' },
+      // completed 终态必须有：交卷前 run-1 已结束 → 交卷确定走「新建 run」
+      // 路径（POST /api/runs），run-2 才会被 mockSecondTurn 创建并供批改帧。
+      // 缺了它交卷可能走 multi-turn /messages（{ok:true}，无新 run）——CI 上
+      // 因此拿不到批改（本地时序侥幸过的那类竞态）。
+      { type: 'status', label: 'completed' },
     ] });
-    // Playwright 路由是 LIFO：捕获层必须在 mockChatRun 之后注册才会先执行，
-    // fallback 落回 mock 的应答。首发送走 POST /api/runs；同会话追问走
-    // POST /api/runs/:id/messages——两条都拦。
+    // 批改二轮（先注册 = 后执行）：交卷 POST 落到 run-2 供批改帧。
+    await mockSecondTurn(page, '【批改·第3题】得分 2/2\n1. 命中｜图片内容与题意吻合');
+    // Playwright 路由是 LIFO：捕获层最后注册 = 最先执行——先截获交卷消息
+    // （含提交判卷首行），再 fallback 给 mockSecondTurn 完成新建 run-2。
     await page.route('**/api/runs', async (route) => {
       if (route.request().method() === 'POST') {
         sentMessage = (JSON.parse(route.request().postData() || '{}') as { message?: string }).message ?? null;
@@ -1316,8 +1322,6 @@ test.describe('Quiz interaction block', () => {
       }
       await route.fallback();
     });
-    // 批改二轮（先于捕获层注册 = 后执行）：交卷 POST 落到 run-2 供批改帧。
-    await mockSecondTurn(page, '【批改·第3题】得分 2/2\n1. 命中｜图片内容与题意吻合');
     await gotoHome(page);
     await sendMessage(page, '出混合题');
 
@@ -1345,7 +1349,8 @@ test.describe('Quiz interaction block', () => {
     await card.locator('[data-testid="quiz-submit"]').click();
     await card.locator('[data-testid="quiz-confirm-submit"]').click();
 
-    await expect.poll(() => sentMessage).not.toBeNull();
+    // 等到交卷消息被捕获（而非首发送的提问）再断言内容。
+    await expect.poll(() => sentMessage ?? '').toMatch(/提交判卷：/);
     const msg = sentMessage!;
     // 首行给人读；标记块紧随其后。
     expect(msg.startsWith('提交判卷：《混合 · 3 题》')).toBe(true);
