@@ -410,17 +410,20 @@ export const KbFilePanel = forwardRef<KbFilePanelHandle, KbFilePanelProps>(funct
           </svg>
         </button>
         {/* 库名 = 折叠态的切库入口：点击打开仓库管理器（stopPropagation：
-            书脊其余区域是「展开」，名字是「切换」，两个意图不能串） */}
+            书脊其余区域是「展开」，名字是「切换」，两个意图不能串）。
+            name-slot 在按钮之下的剩余高度里纵向居中（CSS）。 */}
         {vaultName && (
-          <button
-            type="button"
-            className="kb-file-rail__name"
-            title={t('kb.switchVault')}
-            onClick={(e) => { e.stopPropagation(); onVaultClick(); }}
-            data-testid="kb-spine-name"
-          >
-            {vaultName}
-          </button>
+          <span className="kb-file-rail__name-slot">
+            <button
+              type="button"
+              className="kb-file-rail__name"
+              title={t('kb.switchVault')}
+              onClick={(e) => { e.stopPropagation(); onVaultClick(); }}
+              data-testid="kb-spine-name"
+            >
+              {vaultName}
+            </button>
+          </span>
         )}
       </div>
 

@@ -108,10 +108,21 @@
   background: var(--bg-subtle);
   color: var(--text);
 }
+/* 库名插槽：在展开按钮之下的剩余高度里纵向居中（书脊排印惯例——
+   真书脊的书名就是居中排的）。padding-bottom 做光学修正：上方按钮
+   有视觉重量，纯数学中心会显得偏低。 */
+.kb-file-rail__name-slot {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding-bottom: 14px;
+}
 /* 书脊库名：竖排（中文直立、西文旋转——mixed 是书脊的自然读法），超长省略。
    也是折叠态的切库控件：hover 提亮为 accent 色，与「展开」的灰色按钮区分开。 */
 .kb-file-rail__name {
-  margin-top: 14px;
   writing-mode: vertical-rl;
   text-orientation: mixed;
   font-family: inherit;
@@ -125,7 +136,7 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-height: calc(100% - 60px);
+  max-height: 100%;
   user-select: none;
   transition: color 120ms ease;
 }
