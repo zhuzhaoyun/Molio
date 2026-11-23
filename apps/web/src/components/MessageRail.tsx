@@ -210,10 +210,14 @@ function MessageRailImpl({ logRef, pairs, onJumpScroll }: MessageRailProps) {
           data-testid="chat-message-rail-preview"
           style={{ top: previewTop }}
         >
-          {/* 元信息行只放通用事实（序号）。题卡数/对错等会话状态是后续增量层：
-              等解答题交互改版后经可选 meta 字段接入，不在导航基座里耦合。 */}
+          {/* 元信息行只放通用事实：序号 + 该轮题卡数（M2 接入，contracts
+              countQuizCards 同口径；无题卡轮次只有「第 N 问」）。对错数不在
+              此处——客户端从消息序推不出客观题判定，属 M3 数据层。 */}
           <div className="chat-message-rail-preview-meta">
             {t('chat.messageRailRound', { n: hover + 1 })}
+            {pairs[hover]!.quizCards != null && pairs[hover]!.quizCards! > 0 && (
+              <> · {t('chat.messageRailCards', { n: pairs[hover]!.quizCards! })}</>
+            )}
           </div>
           <div className="chat-message-rail-preview-text">
             {pairs[hover].preview || t('chat.messageRailImageOnly')}
@@ -234,6 +238,7 @@ function pairsEqual(a: RailPair[], b: RailPair[]): boolean {
       x.userMsgIndex !== y.userMsgIndex
       || x.lastMsgIndex !== y.lastMsgIndex
       || x.preview !== y.preview
+      || x.quizCards !== y.quizCards
     ) {
       return false;
     }

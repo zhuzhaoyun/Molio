@@ -34,6 +34,26 @@ describe('buildRailPairs', () => {
     assert.equal(pairs[0]!.preview, '看 这篇 怎么说');
   });
 
+  test('quizCards：assistant 消息里的 quiz 围栏按渲染口径计数（M2 预览元信息）', () => {
+    const quiz = '```quiz\n{"version":1,"title":"t","questions":[{"id":"q1","type":"single","stem":"s","options":[{"key":"A","text":"a"},{"key":"B","text":"b"}],"answer":["A"],"explanation":"e","sources":[{"path":"p.md"}]}]}\n```';
+    const pairs = buildRailPairs([u('出题'), a(`讲一下。\n\n${quiz}`)]);
+    assert.equal(pairs[0]!.quizCards, 1);
+    // 一条 assistant 带两张卡 + 同轮另一条带一张 → 3
+    const pairs2 = buildRailPairs([u('再来'), a(`${quiz}\n\n${quiz}`), a(quiz)]);
+    assert.equal(pairs2[0]!.quizCards, 3);
+  });
+
+  test('quizCards：无题卡轮次为 undefined（预览退化为只有「第 N 问」）', () => {
+    const pairs = buildRailPairs([u('问'), a('普通回答')]);
+    assert.equal(pairs[0]!.quizCards, undefined);
+  });
+
+  test('quizCards：畸形 JSON 围栏不计数（与渲染器同口径——渲染不出来的不算）', () => {
+    const bad = '```quiz\n{"version":1,"broken":true}\n```';
+    const pairs = buildRailPairs([u('问'), a(`${bad}`)]);
+    assert.equal(pairs[0]!.quizCards, undefined);
+  });
+
   test('空数组 / 无 user → []', () => {
     assert.deepEqual(buildRailPairs([]), []);
     assert.deepEqual(buildRailPairs([a(), a()]), []);
