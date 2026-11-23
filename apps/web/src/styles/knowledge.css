@@ -27,6 +27,146 @@
   position: relative;
 }
 
+/* 折叠态：书脊细竖条。min/max-width 必须跟着收到同一宽度，否则内联 width:28
+   会被展开态的 min-width:180 顶回去。 */
+.kb-file-panel--collapsed {
+  min-width: 28px;
+  max-width: 28px;
+}
+
+/* 折叠/展开的宽度过渡只挂在 --animating 上（组件在点击后约一个动画时长内
+   摘掉它）：transition:width 若常驻，「拖拽调宽」每帧都朝目标缓动，手感变成
+   橡皮筋。动画窗口内同时松开 min/max，内联 width 才能在 28 ↔ 260 间自由
+   过渡——本规则必须在 --collapsed 之后，两条并存（折叠动画中）时以它为准。 */
+.kb-file-panel--animating {
+  transition: width 240ms cubic-bezier(0.4, 0, 0.2, 1);
+  min-width: 0;
+  max-width: none;
+}
+
+/* 面板主体：折叠时整层淡出让位给书脊（inert 由组件控制）。visibility 必须跟着
+   翻转——只 opacity:0 的话，读屏和 Playwright 都仍视其为可见；visibility 延迟
+   到淡出完成后再隐藏，动画节奏不被截断。 */
+.kb-file-panel__body {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  opacity: 1;
+  visibility: visible;
+  transition: opacity 160ms ease, visibility 0s;
+}
+.kb-file-panel--collapsed .kb-file-panel__body {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 120ms ease, visibility 0s linear 120ms;
+}
+
+/* 书脊：顶部展开按钮 + 竖排库名。常驻挂载，靠 visibility/opacity 显隐——
+   折叠方向：visibility 立即可见、透明度延迟 120ms 淡入（面板先开始收窄，
+   书脊随后浮现）；展开方向：先 160ms 淡出让位，visibility 再隐藏
+   （visibility 延迟必须 ≥ 透明度时长，否则淡出被截断）。 */
+.kb-file-rail {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-top: 8px;
+  background: var(--bg);
+  opacity: 0;
+  visibility: hidden;
+  cursor: pointer;
+  transition: opacity 160ms ease, visibility 0s linear 160ms;
+}
+.kb-file-panel--collapsed .kb-file-rail {
+  opacity: 1;
+  visibility: visible;
+  transition: opacity 200ms ease 120ms, visibility 0s;
+}
+.kb-file-rail__expand {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  border-radius: 5px;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 120ms ease;
+}
+.kb-file-rail__expand svg {
+  width: 15px;
+  height: 15px;
+}
+.kb-file-rail__expand:hover {
+  background: var(--bg-subtle);
+  color: var(--text);
+}
+/* 悬停书脊任意处（含空白区）：内容整体提亮——图标转正色、库名转 accent。
+   只提内容不动背景：整条底色一变会和展开按钮自己的 bg-subtle 方块、
+   拖放指示器互相压；「这整条能点」的线索由内容亮度承担。 */
+.kb-file-panel--collapsed .kb-file-rail:hover .kb-file-rail__expand {
+  color: var(--text);
+}
+.kb-file-panel--collapsed .kb-file-rail:hover .kb-file-rail__name {
+  color: var(--accent);
+}
+/* 库名插槽：在展开按钮之下的剩余高度里纵向居中（书脊排印惯例——
+   真书脊的书名就是居中排的）。padding-bottom 做光学修正：上方按钮
+   有视觉重量，纯数学中心会显得偏低。 */
+.kb-file-rail__name-slot {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding-bottom: 14px;
+}
+/* 书脊库名：竖排（中文直立、西文旋转——mixed 是书脊的自然读法），超长省略。
+   也是折叠态的切库控件：hover 提亮为 accent 色，与「展开」的灰色按钮区分开。
+   padding 是命中区而非留白：竖排下按钮物理宽度只有一个字号（≈12px），
+   左右各垫 7px 撑到与展开按钮同宽（26px），上下垫 8px 给一两字的短名兜底。 */
+.kb-file-rail__name {
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  font-family: inherit;
+  font-size: 12px;
+  letter-spacing: 3px;
+  color: var(--text-muted);
+  border: none;
+  background: transparent;
+  padding: 8px 7px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-height: 100%;
+  user-select: none;
+  transition: color 120ms ease;
+}
+
+/* 减少动态效果：折叠/展开直接落位（visibility 仍瞬时翻转） */
+@media (prefers-reduced-motion: reduce) {
+  .kb-file-panel--animating {
+    transition: none;
+  }
+  .kb-file-panel__body,
+  .kb-file-panel--collapsed .kb-file-panel__body {
+    transition: none;
+  }
+  .kb-file-rail,
+  .kb-file-panel--collapsed .kb-file-rail {
+    transition: visibility 0s;
+  }
+}
+
 /* Top toolbar */
 .kb-file-toolbar {
   padding: 8px 12px;
@@ -3336,6 +3476,18 @@
   border-top: 2px solid var(--accent);
   z-index: 10;
   pointer-events: none;
+}
+/* 折叠态变体：书脊只有 28px 宽，横排文本「释放到根目录」会溢出——换成
+   无文字的整条高亮（accent-soft 铺满 + 左缘 accent 条），语义不变：
+   拖到书脊 = 释放到当前库根目录。 */
+.kb-file-panel--collapsed.drag-over-root::after {
+  content: '';
+  top: 0;
+  height: auto;
+  color: transparent;
+  font-size: 0;
+  border-top: none;
+  border-left: 2px solid var(--accent);
 }
 
 /* ── Directory drop-target highlight ──

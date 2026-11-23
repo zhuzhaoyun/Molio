@@ -159,23 +159,13 @@ test.describe('社区发布 → 展示 → 下载闭环（P1，mock OSS）', () 
     });
 
     // 2) ?vault= 直达 beforeAll 建的含 md 库的 KB 页（per-window source of truth）。
-    //    门禁在点击时**同步**判定 isAdmin，而 isAdmin 是异步落定的（登录态 →
-    //    GET /api/market/my → setState）。首屏去掉 configLoaded 白屏 gate 后，按钮在
-    //    门禁未决时就可点——点了会误走非管理员分支（系统浏览器打开官网联系页），
-    //    页内发布 tab 永远不出现。等 `/my` 的**网络响应**不够贴近：响应到达 ≠ React
-    //    已提交（且 goto 前挂的监听可能吃到上一个页面 /me 的响应）。改等按钮上的
-    //    data-publish-gate 属性变成 admin，即「状态已渲染到 UI」的可观测信号。
-    await page.goto(`/knowledge?vault=${vaultId}`);
+    //    「发布到资源库」按钮已移除（资源发布未开放，2026-11-23），发布 tab 经
+    //    深链 ?panel=publish 打开（页面消费参数后即删，刷新不重放）。
+    await page.goto(`/knowledge?vault=${vaultId}&panel=publish`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 15_000 }); // vite dev 冷转换可超 5s（Windows 本地）
-    await expect(page.locator('[data-testid="kb-btn-publish-vault"]')).toHaveAttribute(
-      'data-publish-gate',
-      'admin',
-      { timeout: 10_000 },
-    );
 
-    // 3) 面板「发布到资源库」→ 页内发布 tab：名称/简介 + 效果图 + 声明 → 提交 → 成功态
-    await page.locator('[data-testid="kb-btn-publish-vault"]').click({ timeout: 5_000 });
-    await expect(page.locator('[data-testid="kb-publish-pane"]')).toBeVisible({ timeout: 5_000 });
+    // 3) 深链 → 页内发布 tab：名称/简介 + 效果图 + 声明 → 提交 → 成功态
+    await expect(page.locator('[data-testid="kb-publish-pane"]')).toBeVisible({ timeout: 10_000 });
     await expect(page.locator('[data-testid="kb-wtab-publish"]')).toHaveClass(/is-active/);
 
     // 悬浮对话按钮必须让位：它固定在 right/bottom 24px，与发布页脚右对齐的「发布」完全
@@ -341,16 +331,10 @@ test.describe('社区发布 → 展示 → 下载闭环（P1，mock OSS）', () 
     await gotoHome(page);
     await loginViaDevCode(page, 'admin2@test.local');
 
-    // 同用例 1：等门禁渲染成 admin（而非只等 /my 网络响应）再点，消除竞态
-    await page.goto(`/knowledge?vault=${vaultId}`);
+    // 同用例 1：发布 tab 经深链打开（入口按钮已移除）
+    await page.goto(`/knowledge?vault=${vaultId}&panel=publish`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 15_000 }); // vite dev 冷转换可超 5s（Windows 本地）
-    await expect(page.locator('[data-testid="kb-btn-publish-vault"]')).toHaveAttribute(
-      'data-publish-gate',
-      'admin',
-      { timeout: 10_000 },
-    );
-    await page.locator('[data-testid="kb-btn-publish-vault"]').click();
-    await expect(page.locator('[data-testid="kb-publish-pane"]')).toBeVisible();
+    await expect(page.locator('[data-testid="kb-publish-pane"]')).toBeVisible({ timeout: 10_000 });
 
     // 行为 1：打开即空表单——无 loading 态、无 publish-suggest 请求
     await expect(page.locator('[data-testid="publish-ai-btn"]')).toBeEnabled();
@@ -398,79 +382,7 @@ test.describe('社区发布 → 展示 → 下载闭环（P1，mock OSS）', () 
     // 不提交，到此为止（关页面即放弃，不做关 tab 断言以保持用例聚焦）
   });
 
-  test('非管理员：点「发布到资源库」→ 系统浏览器打开官网联系页，不进发布 tab', async ({ page, request }) => {
-    test.setTimeout(60_000);
-    await ensureLoggedOut(request);
-    // 登录为非管理员（非 admin@test.local / admin2@test.local）
-    await gotoHome(page);
-    await loginViaDevCode(page, `molio-e2e-gate-${Date.now()}@example.com`);
-
-    // 「上架」Tab 对非管理员隐藏（等 /my 落定再断言，防未决态假通过）。
-    // loginViaDevCode 登录后已在 /me（首次 /my 预取可能早于监听挂载）——先离开再经
-    // nav 按钮回来，确保监听器捕获本次挂载触发的 /my 请求
-    await gotoHome(page);
-    const myListingsSettled = page
-      .waitForResponse((r) => r.url().includes('/api/market/my'), { timeout: 10_000 })
-      .catch(() => null);
-    // 已登录点账号入口 → 导航 /me（authStore 未决时弹窗一闪、由 NavRail 竞态兜底导航）
-    await page.locator('[data-testid="nav-account-btn"]').click();
-    await expect(page).toHaveURL(/\/me$/, { timeout: 10_000 });
-    await myListingsSettled;
-    await expect(page.locator('[data-testid="me-tab-listings"]')).toHaveCount(0);
-
-    // 同用例 1：等门禁状态落定再点（也顺带等 vault 解析，防 activeVault 未决早退）。
-    // 门禁现走 GET /api/market/role（本地缓存即答），不再等 /my 的云端往返。
-    await page.goto(`/knowledge?vault=${vaultId}`);
-    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 15_000 }); // vite dev 冷转换可超 5s（Windows 本地）
-    await expect(page.locator('[data-testid="kb-btn-publish-vault"]')).toHaveAttribute(
-      'data-publish-gate',
-      'contact',
-      { timeout: 10_000 },
-    );
-
-    // 官网联系页（外部真实网络不可依赖）→ context 级 route mock（window.open 的新
-    // 页也在同一 context）；断言新开页指向联系页，且应用页未离开、未打开发布 tab
-    await page.context().route('**/enterprise.html*', (route) =>
-      route.fulfill({ status: 200, contentType: 'text/html', body: '<html><body>联系我们</body></html>' }),
-    );
-    const popupPromise = page.context().waitForEvent('page', { timeout: 10_000 });
-    await page.locator('[data-testid="kb-btn-publish-vault"]').click();
-    const popup = await popupPromise;
-    await popup.waitForLoadState('domcontentloaded').catch(() => {});
-    expect(popup.url()).toContain('enterprise.html');
-    // 应用页留在原处：无 SPA 导航、无发布 tab
-    expect(page.url()).toContain('/knowledge');
-    await expect(page.locator('[data-testid="kb-publish-pane"]')).toHaveCount(0);
-    await popup.close().catch(() => {});
-  });
-
-  test('管理员：门禁未决时点击不会开浏览器，判定后进入发布 tab', async ({ page, request }) => {
-    test.setTimeout(60_000);
-    // 回归（2026-10 用户报告）：门禁未落定时点「发布到资源库」，管理员被当成非管理员
-    // 丢进系统浏览器（官网联系页），页内发布配置页永远打不开。现在未决窗口里的点击
-    // 必须**等判定**再分流，绝不能先开浏览器。
-    await ensureLoggedOut(request);
-    await gotoHome(page);
-    await loginViaDevCode(page, 'admin@test.local');
-    await expect(page.locator('[data-testid="me-tab-listings"]')).toBeVisible({ timeout: 5_000 });
-
-    // 人为拖慢身份判定：把「未决 → 已判定」的窗口拉长，模拟云端慢/首装首次判定
-    await page.route('**/api/market/role', async (route) => {
-      await new Promise((resolve) => setTimeout(resolve, 2_000));
-      await route.continue();
-    });
-
-    const popups: string[] = [];
-    page.context().on('page', (p) => popups.push(p.url()));
-
-    await page.goto(`/knowledge?vault=${vaultId}`);
-    const publishBtn = page.locator('[data-testid="kb-btn-publish-vault"]');
-    await expect(publishBtn).toBeVisible({ timeout: 15_000 });
-    await expect(publishBtn).toHaveAttribute('data-publish-gate', 'pending', { timeout: 5_000 });
-
-    // 未决时点击：不得开新页；判定落定后应直接打开页内发布 tab
-    await publishBtn.click();
-    await expect(page.locator('[data-testid="kb-wtab-publish"]')).toHaveClass(/is-active/, { timeout: 15_000 });
-    expect(popups).toEqual([]);
-  });
+  // 「发布到资源库」门禁用例（非管理员联系页分流 / 管理员未决等判定）已随入口按钮
+  // 一并移除（2026-11-23）——门禁代码不复存在，无可测行为；发布 tab 现经
+  // ?panel=publish 深链打开，不再有按身份分流的入口。
 });
