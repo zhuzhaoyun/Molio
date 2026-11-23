@@ -6,6 +6,7 @@ import { useQuizSubjects } from '../stores/quizSubjectStore';
 import {
   buildQuizSubmissionMessage,
   mergeSubjectDrafts,
+  splitSubjectBody,
   subjectImageMarkdown,
   gradingMapKey,
   type SubjectAnswerEntry,
@@ -471,18 +472,38 @@ function QuizBody({
   }, [submitted, answeredCount, paperNeeded, fingerprint, paperSubmitDisabled, unansweredCount, doSubmit]);
 
   const handleRedo = useCallback(() => {
-    setSelections({});
-    setSubjectImages({});
-    setSubmitted(false);
-    setConfirmOpen(false);
-    if (storageKey) {
-      try {
-        localStorage.removeItem(storageKey);
-      } catch {
-        // ignore
+    // 重做 = 回到作答态，且**可编辑**：上一版答案（消息推导）回填为草稿——
+    // 文字进 textarea、图片回缩略图（× 可删）。纯清空会让推导已答的题卡死在
+    // 只读回显里（真机反馈 2026-11-23：无法编辑、图片无法删除）。历史消息
+    // 照旧不动（回显与旧批改是事实）；重新交卷后新批改覆盖旧批改。
+    const nextSelections: QuizSelections = {};
+    const nextImages: Record<string, string[]> = {};
+    if (fingerprint && subjectStates) {
+      const key8 = fingerprint.slice(0, 8);
+      for (const [index, question] of quiz.questions.entries()) {
+        if (!isSubjectQuestion(question)) continue;
+        const key = gradingMapKey(key8, index + 1);
+        const draftText = (selections[question.id]?.[0] ?? '').trim();
+        const draftImages = subjectImages[question.id] ?? [];
+        if (draftText || draftImages.length > 0) {
+          // 已有本地草稿：原样保留（重做前编辑到一半的内容不丢）
+          nextSelections[question.id] = selections[question.id] ?? [];
+          nextImages[question.id] = draftImages;
+        } else {
+          const derived = subjectStates.answers.get(key);
+          if (derived) {
+            const { text, images } = splitSubjectBody(derived);
+            if (text) nextSelections[question.id] = [text];
+            if (images.length > 0) nextImages[question.id] = images;
+          }
+        }
       }
     }
-  }, [storageKey]);
+    setSelections(nextSelections);
+    setSubjectImages(nextImages);
+    setSubmitted(false);
+    setConfirmOpen(false);
+  }, [fingerprint, subjectStates, quiz, selections, subjectImages]);
 
   // ── 解答题卡内作答：上传 / 符号 / 粘贴 ───────────────────────────────────
   const uploadInputRefs = useRef<Record<string, HTMLInputElement | null>>({});

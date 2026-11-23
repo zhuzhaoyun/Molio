@@ -478,6 +478,36 @@ describe('mergeSubjectDrafts（草稿 ∪ 消息推导）', () => {
   });
 });
 
+describe('splitSubjectBody（重做回填：正文/图片行拆分）', () => {
+  it('splits text and image lines (v3 alt 作答图片)', async () => {
+    const { splitSubjectBody } = await import('../src/utils/quizAnswer.ts');
+    const body = '答：假设沿墙下滑前距离为 l1。\n![作答图片](raw/a.png)\n结论：外移 0.77 米。';
+    assert.deepEqual(splitSubjectBody(body), {
+      text: '答：假设沿墙下滑前距离为 l1。\n结论：外移 0.77 米。',
+      images: ['raw/a.png'],
+    });
+  });
+
+  it('tolerates the legacy alt text image (v2 composer era)', async () => {
+    const { splitSubjectBody } = await import('../src/utils/quizAnswer.ts');
+    const r = splitSubjectBody('![image](raw/feishu/x.png)');
+    assert.equal(r.text, '');
+    assert.deepEqual(r.images, ['raw/feishu/x.png']);
+  });
+
+  it('image-only body yields empty text (photo-only redo)', async () => {
+    const { splitSubjectBody } = await import('../src/utils/quizAnswer.ts');
+    const r = splitSubjectBody('![作答图片](raw/a.png)\n![作答图片](raw/b.png)');
+    assert.equal(r.text, '');
+    assert.deepEqual(r.images, ['raw/a.png', 'raw/b.png']);
+  });
+
+  it('plain text passes through untouched', async () => {
+    const { splitSubjectBody } = await import('../src/utils/quizAnswer.ts');
+    assert.deepEqual(splitSubjectBody('纯文字作答\n第二段'), { text: '纯文字作答\n第二段', images: [] });
+  });
+});
+
 describe('pairQuizGradings（重交覆盖：同一指纹同题号）', () => {
   it('a second grading for the same key overwrites the first', () => {
     const first = buildQuizSubmissionMessage('卷', [{ ...ENTRY_A, body: '第一版作答' }]);

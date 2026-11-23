@@ -254,6 +254,24 @@ export function buildQuizSubmissionMessage(
   return [`提交判卷：《${quizTitle}》`, '', blocks.join('\n\n')].join('\n');
 }
 
+/**
+ * 把消息推导的作答正文拆回「文字 + 图片路径」（重做回填用）。
+ *
+ * 整行匹配图片 markdown（v3 的 `![作答图片](path)` 与锚时代 v2 的
+ * `![image](path)` 都认）——只把「独占一行的图片」抽出来进可删除的缩略图，
+ * 行内混排的图片语法保留在正文里照常渲染。文字行原序拼接、trim。
+ */
+export function splitSubjectBody(body: string): { text: string; images: string[] } {
+  const textLines: string[] = [];
+  const images: string[] = [];
+  for (const line of body.split('\n')) {
+    const m = line.match(/^!\[[^\]]*\]\(([^)\s]+)\)\s*$/);
+    if (m) images.push(m[1]!);
+    else textLines.push(line);
+  }
+  return { text: textLines.join('\n').trim(), images };
+}
+
 /** 卡内作答图 → markdown 行（正文的一部分；渲染侧走 preprocessLocalImages）。 */
 export function subjectImageMarkdown(paths: ReadonlyArray<string>): string {
   return paths.map((path) => `![作答图片](${path})`).join('\n');

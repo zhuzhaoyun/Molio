@@ -1316,6 +1316,8 @@ test.describe('Quiz interaction block', () => {
       }
       await route.fallback();
     });
+    // 批改二轮（先于捕获层注册 = 后执行）：交卷 POST 落到 run-2 供批改帧。
+    await mockSecondTurn(page, '【批改·第3题】得分 2/2\n1. 命中｜图片内容与题意吻合');
     await gotoHome(page);
     await sendMessage(page, '出混合题');
 
@@ -1360,6 +1362,21 @@ test.describe('Quiz interaction block', () => {
     });
     expect(stored).not.toBeNull();
     expect(JSON.parse(stored!).subjectImages).toEqual({ q3: ['raw/feishu/2026-10-26/answer.png'] });
+
+    // 批改回流 → 重做 → 图片回缩略图且**可删**（真机反馈 2026-11-23：重做后
+    // 图片无法删除）。文字草稿回填 textarea，与图片分开管理。
+    const score = card.locator('[data-testid="quiz-subject-score"]');
+    await expect(score).toHaveText('2/2');
+    await card.locator('[data-testid="quiz-redo"]').click();
+    const input = card.locator('[data-testid="quiz-subject-input"][data-question-id="q3"]');
+    await expect(input).toHaveValue('看图作答：由图可知……');
+    const remove = card.locator('[data-testid="quiz-asset-remove"]');
+    await expect(remove).toBeVisible();
+    await remove.click();
+    await expect(card.locator('[data-testid="quiz-answer-assets"]')).toHaveCount(0);
+    await expect(input).toHaveValue('看图作答：由图可知……');
+    await page.unroute('**/api/runs');
+    await page.unroute('**/api/runs/run-2/events**');
   });
 
   /** turn_end 后的作答发送会新建 run（不走 /messages 排队），所以二轮批改
@@ -1547,9 +1564,10 @@ test.describe('Quiz interaction block', () => {
     await page.unroute('**/api/runs/run-2/events**');
   });
 
-  test('redo clears drafts but keeps message-derived answers as read-only echo', async ({ page }) => {
-    // 重做（M1）：清草稿 + 判分态，回作答态；交卷消息是事实——推导已答的题
-    // 变成只读回显，进度不丢（旧会话语义：重做不动历史消息）。
+  test('redo restores message-derived answers as editable drafts', async ({ page }) => {
+    // 重做（真机反馈 2026-11-23 修正）：推导已答的题**不能**卡死在只读回显里
+    // ——重做 = 回到可编辑作答态，上一版答案（文字）回填 textarea；历史消息
+    // 照旧不动；重新交卷后新批改覆盖旧批改。
     const gradingReply = [
       '【批改·第3题】得分 2/3',
       '1. 命中｜写出帕斯卡法则',
@@ -1578,22 +1596,23 @@ test.describe('Quiz interaction block', () => {
     await card.locator('[data-testid="quiz-confirm-submit"]').click();
     await expect(card.locator('[data-testid="quiz-subject-score"]')).toHaveText('2/3');
 
-    // 重做 → 草稿与判分态清空；推导已答转只读回显（消息是事实）。
+    // 重做 → 可编辑作答态：上一版文字回填 textarea；历史批改留在 pill 上。
     await card.locator('[data-testid="quiz-redo"]').click();
     await expect(card.locator('[data-testid="quiz-subject-score"]')).toHaveCount(0);
-    await expect(card.locator('[data-testid="quiz-subject-input"]')).toHaveCount(0);
-    await expect(card.locator('[data-testid="quiz-subject-echo"]')).toContainText('证明过程……');
+    const input = card.locator('[data-testid="quiz-subject-input"][data-question-id="q3"]');
+    await expect(input).toBeVisible();
+    await expect(input).toHaveValue('证明过程……');
     const status = card.locator('[data-testid="quiz-subject-status"]');
     await expect(status).toHaveAttribute('data-state', 'graded');
     await expect(status).toHaveText('已批改');
-    // 进度并集：草稿没了但推导已答仍在 → 1/3。
+    // 进度不丢（草稿 ∪ 推导同值）。
     await expect(card.locator('[data-testid="quiz-progress"]')).toHaveText('已作答 1/3');
-    // 本地草稿态已清：键会被恢复 effect 以空态重写（既有行为），断言内容为空。
+    // 回填的草稿落 localStorage（重做后的可编辑态是持久状态，刷新不丢）。
     const stored = await page.evaluate(() => {
       const key = Object.keys(localStorage).find((k) => k.startsWith('molio.quiz.conv-1.'));
       return key ? localStorage.getItem(key) : null;
     });
-    expect(stored ? JSON.parse(stored).selections : {}).toEqual({});
+    expect(stored ? JSON.parse(stored).selections : {}).toEqual({ q3: ['证明过程……'] });
     expect(stored ? JSON.parse(stored).submitted : false).toBe(false);
 
     await page.unroute('**/api/runs');
