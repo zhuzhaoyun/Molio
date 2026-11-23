@@ -1330,6 +1330,14 @@ test.describe('Quiz interaction block', () => {
     });
     await expect(card.locator('[data-testid="quiz-answer-assets"] img')).toBeVisible();
 
+    // 回归（真机反馈 2026-11-23）：base.css 全局 textarea:focus 的 3px 蓝环
+    // （特异性 (0,1,1) 压过类规则）会横在缩略条上方，× 按钮戳进环里，
+    // 视觉上就是「图片与输入框重叠」。聚焦信号由容器的 focus-within 承担，
+    // 输入自身必须无 ring。
+    const subjectInput = card.locator('[data-testid="quiz-subject-input"][data-question-id="q3"]');
+    await subjectInput.focus();
+    await expect(subjectInput).toHaveCSS('box-shadow', 'none');
+
     // 草稿文本 + 交卷（客观题未答 → 确认条放行）。
     await card.locator('[data-testid="quiz-subject-input"][data-question-id="q3"]').fill('看图作答：由图可知……');
     await card.locator('[data-testid="quiz-submit"]').click();

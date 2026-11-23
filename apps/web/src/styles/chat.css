@@ -2222,6 +2222,11 @@
 }
 .quiz-subject-textarea::placeholder { color: var(--text-soft); }
 .quiz-subject-textarea:disabled { opacity: 0.75; }
+/* base.css 全局 input/textarea:focus（特异性 (0,1,1)）会漏进卡内：3px 蓝 ring
+   底边横在缩略条上方，× 按钮戳进环里——真机反馈「图片与输入框重叠」
+   （2026-11-23）。聚焦信号由容器的 focus-within 边框承担，输入自身不画 ring。 */
+.quiz-subject-textarea:focus,
+.quiz-fill-input:focus { border: none; outline: none; box-shadow: none; }
 
 /* 工具行：符号 + 插入图片（顶 hairline 分隔），失败提示内联。 */
 .quiz-subject-toolbar {
@@ -2248,7 +2253,7 @@
 .quiz-upload-error { padding: 0 6px; font-size: 11px; color: var(--red); }
 
 /* 附件缩略图条：44px 方图，× 悬停浮出红沿。 */
-.quiz-answer-assets { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 10px 8px; }
+.quiz-answer-assets { display: flex; flex-wrap: wrap; gap: 6px; padding: 6px 10px 8px; }
 .quiz-asset-thumb {
   position: relative;
   width: 44px;
