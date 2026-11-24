@@ -38,4 +38,5 @@ corepack pnpm build:harness
 在宿主应用菜单打开「知识库」「知识图谱」或「资源市场」。三个入口共用随包启动的本地服务。桌面知识工具连接同一实例的随机回环端口。资源市场使用 Molio 账号和原有云服务，保留发布、购买和下载。插件及知识管理界面随安装包交付。
 
 升级时先执行 `git add vendor/deepseek-harness`，让构建读取待提交的版本指针，再执行上述构建命令。若上游改变集成入口，适配脚本会指出需要核对的文件。旧版构建副本会保留在 `.harness-build/host-before-*`。
+
 本地调试可以用 `corepack pnpm build:harness --app` 生成桌面程序和预装资源，然后在 `.harness-build/host` 中运行 `corepack pnpm start:desktop`。完整交付使用上面的安装包构建命令。
