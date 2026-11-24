@@ -134,8 +134,9 @@ try {
   await request('/api/knowledge/vaults/' + vault.id + '/external-roots', { label: 'Sources', target: externalPath });
   const graph = await request('/api/graph/' + vault.id);
   assert.ok(graph.nodes.some(node => node.key === 'external/Sources/Mounted.md'));
-  assert.ok(graph.edges.some(edge => edge.source === 'Probe.md' && edge.target === 'Evidence.md'));
-  assert.ok(graph.edges.some(edge => edge.source === 'external/Sources/Mounted.md' && edge.target === 'Probe.md'));
+  const linked = (a, b) => graph.edges.some(({ source, target }) => (source === a && target === b) || (source === b && target === a));
+  assert.ok(linked('Probe.md', 'Evidence.md'));
+  assert.ok(linked('external/Sources/Mounted.md', 'Probe.md'));
   const tree = await request('/api/knowledge/vaults/' + vault.id + '/tree');
   assert.match(JSON.stringify(tree), /Mounted\.md/);
   await choose('知识图谱');

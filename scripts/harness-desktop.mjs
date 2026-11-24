@@ -5,10 +5,28 @@ import { fileURLToPath } from 'node:url';
 const root = fileURLToPath(new URL('../', import.meta.url));
 
 function insert(file, anchor, replacement) {
-  const source = readFileSync(file, 'utf8');
+  const original = readFileSync(file, 'utf8');
+  const source = original.replaceAll('\r\n', '\n');
   if (source.includes(replacement)) return;
   if (source.split(anchor).length !== 2) throw new Error(`Unexpected upstream layout in ${file}: ${anchor}`);
-  writeFileSync(file, source.replace(anchor, replacement));
+  const result = source.replace(anchor, () => replacement);
+  writeFileSync(file, original.includes('\r\n') ? result.replaceAll('\n', '\r\n') : result);
+}
+
+// Cached Windows checkouts can contain a repeated pair from an older overlay.
+// electron-builder copies extraResources concurrently, so every destination must be unique.
+export function applyDesktopResources(hostRoot) {
+  const file = join(hostRoot, 'apps/desktop/scripts/electron-builder-config.mjs');
+  const original = readFileSync(file, 'utf8');
+  const source = original.replaceAll('\r\n', '\n');
+  const anchor = '    extraResources: [\n';
+  const rows = [ ['molio-resources', 'molio'], ['molio-support', 'molio-support'] ].map(([from, to]) =>
+    `      { from: fileURLToPath(new URL('../${from}', import.meta.url)), to: '${to}' },\n`);
+  if (source.split(anchor).length !== 2) throw new Error('Unexpected extraResources in desktop packaging config');
+  let clean = source;
+  for (const row of rows) clean = clean.replaceAll(row, '');
+  const updated = clean.replace(anchor, () => anchor + rows.join(''));
+  if (source !== updated) writeFileSync(file, original.includes('\r\n') ? updated.replaceAll('\n', '\r\n') : updated);
 }
 
 export function applyDesktop(hostRoot) {
@@ -64,7 +82,5 @@ export function applyDesktop(hostRoot) {
     if (app.isPackaged) app.setAsDefaultProtocolClient('molio')
   }`);
   insert(main, 'const applicationItems = (): MenuItemConstructorOptions[] => [', 'const applicationItems = (): MenuItemConstructorOptions[] => [\n    ...molioMenu,');
-  insert(join(desktop, 'scripts/electron-builder-config.mjs'), 'extraResources: [', `extraResources: [
-      { from: fileURLToPath(new URL('../molio-resources', import.meta.url)), to: 'molio' },
-      { from: fileURLToPath(new URL('../molio-support', import.meta.url)), to: 'molio-support' },`);
+  applyDesktopResources(hostRoot);
 }
