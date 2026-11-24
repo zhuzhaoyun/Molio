@@ -19,7 +19,8 @@
     "desktop:run": "pnpm build && pnpm --filter @molio/desktop run:unpacked",
     "test": "pnpm --filter @molio/cloud test && pnpm --filter @molio/daemon test && pnpm --filter @molio/cli test && pnpm --filter dsh-plugin-molio test && pnpm --filter @molio/desktop test && pnpm --filter @molio/web test && node --test \"apps/landing-page/test/*.test.mjs\"",
     "test:e2e": "pnpm --filter @molio/web test:e2e",
-    "typecheck": "pnpm -r typecheck"
+    "typecheck": "pnpm -r typecheck",
+    "build:harness": "node scripts/build-harness.mjs"
   },
   "engines": {
     "node": ">=24.0.0"

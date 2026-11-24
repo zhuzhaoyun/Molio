@@ -16,6 +16,8 @@
 
 </div>
 
+The preinstalled Molio Harness desktop edition includes the knowledge base, graph, and resource marketplace. [Build and update instructions](docs/harness-upstream.md).
+
 ---
 
 What you've accumulated isn't one kind of thing: experience and methods scattered across notes, documents, and chat logs — and also whole books, PDFs full of figures, piles of industry material. Most of it sits in a form AI can't read, so every conversation starts from zero.

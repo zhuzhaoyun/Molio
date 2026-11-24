@@ -18,7 +18,7 @@ export type AcpModelsUpdatedDetail = {
   currentModelId?: string;
 };
 
-export function useAgents() {
+export function useAgents(enabled = true) {
   const [agents, setAgents] = useState<AgentInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -34,15 +34,16 @@ export function useAgents() {
   };
 
   useEffect(() => {
-    fetchAgents();
-  }, []);
+    if (enabled) fetchAgents();
+  }, [enabled]);
 
   // Refresh when agents are installed/uninstalled from the Runtimes page.
   useEffect(() => {
+    if (!enabled) return;
     const handler = () => fetchAgents();
     window.addEventListener(AGENTS_CHANGED_EVENT, handler);
     return () => window.removeEventListener(AGENTS_CHANGED_EVENT, handler);
-  }, []);
+  }, [enabled]);
 
   // Merge dynamic model lists reported by ACP agents (Hermes) into the agent info.
   useEffect(() => {

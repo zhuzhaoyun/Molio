@@ -14,6 +14,7 @@ import { maybeCreateDefaultVault } from './core/default-vault.js';
 const execFileAsync = promisify(execFile);
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+const harnessSidecar = process.env['MOLIO_HARNESS_SIDECAR'] === '1';
 const port = Number(process.env['MOLIO_PORT'] ?? 3100);
 
 /**
@@ -126,8 +127,8 @@ async function checkAndKillPortOccupant(port_: number): Promise<void> {
 //
 // ⚠️ Retirement guard FIRST: it needs the retiring rows (and their overlays)
 // to still exist — the seed below deletes them (design §5.6 ordering).
-quarantineRetiredWithOverlay(db);
-const skillsSeeded = initSkillLibrary(db);
+if (!harnessSidecar) quarantineRetiredWithOverlay(db);
+const skillsSeeded = !harnessSidecar && initSkillLibrary(db);
 
 // ⚠️ The port-occupant check is NO LONGER done preemptively here. It used to
 // run execSync netstat/tasklist (+ up to 2s busy-wait) on every start even
@@ -155,6 +156,8 @@ async function runDeferredStartupChores(): Promise<void> {
   } catch (err) {
     console.error('[startup] vault watcher start failed:', err instanceof Error ? err.message : err);
   }
+
+  if (harnessSidecar) return;
 
   // Check which heavy skill tools are already installed. Results are stored in
   // the PreloadManager and served via GET /api/preload/status so the web UI can
@@ -224,6 +227,7 @@ async function runDeferredStartupChores(): Promise<void> {
 }
 
 function startServicesAfterListen(): void {
+  if (harnessSidecar) return;
   // First-boot provisioning for Docker/NAS one-click deploy: on an empty
   // install, auto-create the default vault pointing at the mounted docs dir
   // (/vaults or MOLIO_DEFAULT_VAULT_PATH) so users land inside a vault, not
@@ -252,8 +256,9 @@ function startServicesAfterListen(): void {
 }
 
 function startServer(): void {
-  const server = serve({ fetch: app.fetch, port }, () => {
-    console.log(`Molio daemon listening on http://localhost:${port}`);
+  const server = serve({ fetch: app.fetch, port, ...(harnessSidecar && { hostname: '127.0.0.1' }) }, (info) => {
+    if (harnessSidecar) process.send?.({ type: 'molio-ready', port: info.port });
+    console.log(`Molio daemon listening on http://localhost:${info.port}`);
     console.log(`[startup] phase=listen atMs=${elapsedMs()}`);
     // 登录态恢复（读本地 token → 云端 refresh 验证 → 拉权益快照）必须在
     // listen 之后异步执行——重活挂 listen 前会拖垮桌面壳的启动超时（教训）。
@@ -308,6 +313,10 @@ function shutdown(): void {
 
 process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);
+if (harnessSidecar) {
+  if (process.connected) process.once('disconnect', shutdown);
+  else shutdown();
+}
 
 // [DEBUG] catch uncaught exceptions to diagnose daemon crashes
 process.on('uncaughtException', (err) => {

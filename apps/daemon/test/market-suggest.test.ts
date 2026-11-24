@@ -216,3 +216,48 @@ test('publish-suggest 路由：成功回建议；vault 缺失/起草失败各归
   assert.equal(failed.status, 502);
   assert.deepEqual(await failed.json(), { error: 'suggest_failed' });
 });
+
+test('Harness publishing uses the bundled headless profile, draft stdin and a private working directory', async t => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'molio draft runner '));
+  const vault = makeVault();
+  t.after(() => {
+    for (const location of [dir, vault]) fs.rmSync(location, { recursive: true, force: true });
+  });
+  const cli = path.join(dir, 'bundled harness.mjs');
+  const patch = path.join(dir, 'suggest.patch.yml');
+  const record = path.join(dir, 'invocation.json');
+  fs.writeFileSync(cli, `
+    import fs from 'node:fs';
+    let prompt = '';
+    for await (const chunk of process.stdin) prompt += chunk;
+    fs.writeFileSync(${JSON.stringify(record)}, JSON.stringify({
+      args: process.argv.slice(2), cwd: process.cwd(), prompt,
+      electron: process.env.ELECTRON_RUN_AS_NODE, secret: process.env.MOLIO_DESKTOP_CRYPTO_TOKEN
+    }));
+    console.log(JSON.stringify({name:'红楼梦', summary:'人物资料', tags:[]}));
+  `);
+  const env = {
+    MOLIO_HARNESS_SIDECAR: '1', MOLIO_HARNESS_EXECUTABLE: process.execPath,
+    MOLIO_HARNESS_CLI: cli, MOLIO_HARNESS_SUGGEST_PATCH: patch,
+    MOLIO_DESKTOP_CRYPTO_TOKEN: 'test-only',
+  };
+  for (const [key, value] of Object.entries(env)) {
+    const previous = process.env[key];
+    process.env[key] = value;
+    t.after(() => { if (previous === undefined) delete process.env[key]; else process.env[key] = previous; });
+  }
+  const result = await suggestPublishMeta(vault);
+  assert.equal(result.agentId, 'harness');
+  assert.equal(result.name, '红楼梦');
+  const call = JSON.parse(fs.readFileSync(record, 'utf8'));
+  assert.deepEqual(call.args, ['--profile', 'headless', '--patch', patch, '--permission-mode', 'read-only', '--approval-policy', 'never', '-']);
+  assert.equal(call.electron, '1');
+  assert.equal(call.secret, undefined);
+  assert.match(call.prompt, /曹雪芹/);
+  assert.notEqual(call.cwd, vault);
+  assert.equal(fs.existsSync(call.cwd), false);
+  fs.writeFileSync(cli, 'setInterval(() => {}, 1000)');
+  await assert.rejects(suggestPublishMeta(vault, { timeoutMs: 300 }), /suggest_timeout/);
+  delete process.env.MOLIO_HARNESS_CLI;
+  await assert.rejects(suggestPublishMeta(vault), /suggest_unavailable/);
+});

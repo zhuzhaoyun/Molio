@@ -73,6 +73,7 @@ export function getEffectiveSkillIds(db: Database.Database, vaultId: string): st
  * throwing, so callers (vault creation, startup fan-out) are never aborted.
  */
 export function reconcileVault(db: Database.Database, vault: Vault, opts?: SkillPathsOpts): void {
+  if (process.env['MOLIO_HARNESS_SIDECAR'] === '1') return;
   try {
     const effective = getEffectiveSkills(db, vault.id);
 
