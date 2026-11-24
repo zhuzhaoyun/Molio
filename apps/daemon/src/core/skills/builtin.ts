@@ -54,6 +54,7 @@ const BUNDLED_FALLBACK: Record<string, { name: string; description: string }> = 
   'wiki-lint': { name: 'wiki-lint', description: '对知识库 Wiki 做健康检查/质量审查。' },
   'wiki-save': { name: 'wiki-save', description: '将当前对话中有价值的内容归档为 wiki 页面。' },
   'wiki-query': { name: 'wiki-query', description: '基于已构建的 wiki 和源文件回答库内问题/为库内任务提供依据。' },
+  'molio-doctor': { name: 'Molio 诊断', description: 'Molio 自身故障的自助诊断：读本机体检结果，给出针对这台机器的修复步骤，修不了时生成支持包。' },
 };
 
 /** Read a bundled skill's display name/description from its shipped SKILL.md frontmatter. */

@@ -65,6 +65,8 @@ export const BUILTIN_SKILLS = [
   // rule-sandbox — 生成可拖动的阈值演示（声明式 JSON，不执行任何代码）。
   // 与 quiz-generate 分工：出题 → quiz；看懂边界怎么变 → rule-sandbox。
   'rule-sandbox',
+  // molio-doctor — Molio 自身故障的自助诊断，由知识库问答面板的确定性注入与用户自然语言触发。
+  'molio-doctor',
   // NOTE: remotion used to be bundled here. It was retired (see
   // RETIRED_BUNDLED_SKILLS): users who want video creation install the
   // third-party `am-will/remotion` skill from the skill hub instead — a
