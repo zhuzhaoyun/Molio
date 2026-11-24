@@ -1,7 +1,7 @@
 /** Windows smoke against an unpacked Molio.exe, or the ordinary host app in dev mode. */
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
-import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { once } from 'node:events';
 import { tmpdir } from 'node:os';
@@ -164,12 +164,16 @@ try {
   await application.close();
   application = undefined;
   await assert.rejects(fetch(origin + '/api/health'));
+  const projections = join(profile, 'dsh/storages/session_projcache/sessions');
+  const sessions = await Promise.all((await readdir(projections)).filter(file => file.endsWith('.json'))
+    .map(async file => JSON.parse(await readFile(join(projections, file), 'utf8'))));
+  assert.ok(sessions.some(session => session.record.identity.cwd === vaultPath), 'Harness session cwd must equal the selected vault path');
   application = await launch(['molio://open/file/Probe.md']);
   const coldClip = await waitPage(url => url.startsWith('http://127.0.0.1:') && url.includes('/knowledge'));
   await coldClip.locator('.kb-wtab.is-active[title="Probe.md"]').waitFor({ state: 'visible' });
   await application.close();
   application = undefined;
-  console.log('Harness startup, native menu, three modules, cold and warm clipper, five bundled tools and owned shutdown passed.');
+  console.log('Harness startup, native menu, three modules, four contextual drafts and vault cwd, cold and warm clipper, five bundled tools and owned shutdown passed.');
 } catch (error) {
   console.error('Smoke profile:', profile);
   throw error;
