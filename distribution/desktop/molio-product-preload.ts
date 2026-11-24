@@ -5,6 +5,9 @@ type Draft = { path: string; prompt: string }
 // Only the product page gets this bridge. Replies use a private one-shot port
 // from main, so a stale renderer cannot acknowledge another window's request.
 export function installKnowledgeComposer() {
+  contextBridge.exposeInMainWorld('molioNavigation', {
+    open: (id: string) => ipcRenderer.send('molio:navigate', id),
+  })
   contextBridge.exposeInMainWorld('molioKnowledgeComposer', {
     listen: (callback: (draft: Draft) => Promise<void>) => {
       const handle = (event: Electron.IpcRendererEvent, draft: Draft) => {

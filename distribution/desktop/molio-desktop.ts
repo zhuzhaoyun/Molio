@@ -32,9 +32,7 @@ export function bindMolioConversationWindow(getWindow: () => BrowserWindow) {
 }
 
 const documentTypes = new Set(['.md', '.txt', '.csv', '.pdf', '.docx', '.xlsx', '.pptx', '.jpg', '.jpeg', '.png', '.webp', '.gif', '.mp3', '.mp4', '.wav'])
-const menuRoutes = [
-  ['知识库', '/knowledge'], ['知识图谱', '/knowledge?panel=graph'], ['资源市场', '/resources'],
-] as const
+const moduleRoutes = new Map([['knowledge', '/knowledge'], ['graph', '/knowledge?panel=graph'], ['resources', '/resources']])
 
 export async function startMolioDesktop() {
   const directory = app.isPackaged ? process.resourcesPath : app.getAppPath()
@@ -180,7 +178,10 @@ export async function startMolioDesktop() {
     existing.webContents.send('molio:clip-route', route)
   }
   if (pendingClip) { deliverClip(pendingClip); pendingClip = undefined }
-  return menuRoutes.map(([label, route]) => ({
-    label, click: () => { void open(route).catch(e => dialog.showErrorBox('Molio', String(e))) },
-  }))
+  ipcMain.on('molio:navigate', (event, id: string) => {
+    const host = productWindow?.()
+    if (!host || event.sender !== host.webContents || event.senderFrame !== host.webContents.mainFrame) return
+    const route = moduleRoutes.get(id)
+    if (route) void open(route).catch(error => dialog.showErrorBox('Molio', String(error)))
+  })
 }

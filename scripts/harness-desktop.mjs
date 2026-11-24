@@ -62,8 +62,18 @@ export function applyDesktop(hostRoot) {
     })
   }))
 ` + binding);
+  const sidebar = join(hostRoot, 'packages/client/ui-sidebar/src/client');
+  copyFileSync(join(root, 'distribution/desktop/MolioSidebar.tsx'), join(sidebar, 'MolioSidebar.tsx'));
+  const sidebarRoot = join(sidebar, 'SidebarRoot.tsx');
+  insert(sidebarRoot, "import css from './SidebarRoot.module.css'", "import { MolioSidebar } from './MolioSidebar.tsx'\nimport css from './SidebarRoot.module.css'");
+  insert(sidebarRoot, '      <div className={css.scrollRegion}>', '      <MolioSidebar wide={wide} />\n      <div className={css.scrollRegion}>');
   const main = join(desktop, 'src/main.ts');
-  insert(main, 'async function main(): Promise<void> {', "import { startMolioDesktop } from './molio-desktop.js'\n\nasync function main(): Promise<void> {\n  const molioMenu = await startMolioDesktop()");
+  // Migrate existing generated workspaces that injected the three native menu items.
+  const original = readFileSync(main, 'utf8');
+  const migrated = original.replace('const molioMenu = await startMolioDesktop()', 'await startMolioDesktop()')
+    .replace(/^[ \t]*\.\.\.molioMenu,\r?\n/m, '');
+  if (migrated !== original) writeFileSync(main, migrated);
+  insert(main, 'async function main(): Promise<void> {', "import { startMolioDesktop } from './molio-desktop.js'\n\nasync function main(): Promise<void> {\n  await startMolioDesktop()");
   insert(main, "import { startMolioDesktop }", "import { installMolioProtocol } from './molio-desktop.js'\nimport { startMolioDesktop }");
   insert(main, 'if (ownsDesktopInstance) void app.whenReady()', 'if (ownsDesktopInstance) installMolioProtocol(() => focusPrimaryWindow())\n\nif (ownsDesktopInstance) void app.whenReady()');
   insert(main, "import { installMolioProtocol }", "import { bindMolioConversationWindow } from './molio-desktop.js'\nimport { installMolioProtocol }");
@@ -81,6 +91,5 @@ export function applyDesktop(hostRoot) {
     ${registration}
     if (app.isPackaged) app.setAsDefaultProtocolClient('molio')
   }`);
-  insert(main, 'const applicationItems = (): MenuItemConstructorOptions[] => [', 'const applicationItems = (): MenuItemConstructorOptions[] => [\n    ...molioMenu,');
   applyDesktopResources(hostRoot);
 }
