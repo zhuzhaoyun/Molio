@@ -18,7 +18,10 @@ import { createRequire } from 'node:module';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const desktopDir = resolve(__dirname, '..');
-const resourcesDir = join(desktopDir, 'resources');
+const harnessResources = process.argv.includes('--harness');
+const resourcesDir = harnessResources
+  ? resolve(desktopDir, '../../.harness-build/host/apps/desktop/molio-resources')
+  : join(desktopDir, 'resources');
 const monorepoRoot = resolve(desktopDir, '..', '..');
 
 // Paths
@@ -394,10 +397,20 @@ mkdirSync(resourcesDir, { recursive: true });
 
 await bundleDaemon();
 await bundleVaultWorker();
-await bundleMonitoring();
+if (!harnessResources) await bundleMonitoring();
 copyNativeDependencies();
 copyTrashBinaries();
-downloadElectronPrebuilds();
+if (harnessResources) {
+  const sqliteDir = findPackageDir('better-sqlite3');
+  const Database = createRequire(import.meta.url)(sqliteDir);
+  new Database(':memory:').close();
+  const dest = join(resourcesDir, 'daemon/node_modules/better-sqlite3/build/Release');
+  mkdirSync(dest, { recursive: true });
+  cpSync(join(sqliteDir, 'build/Release/better_sqlite3.node'), join(dest, 'better_sqlite3.node'));
+  cpSync(process.execPath, join(resourcesDir, process.platform === 'win32' ? 'node.exe' : 'node'));
+} else {
+  downloadElectronPrebuilds();
+}
 copyWebBuild();
 copySkillSources();
 copySampleVaultSources();

@@ -1,7 +1,7 @@
 // apps/daemon/src/core/market/suggest.ts
 // 发布元数据起草（"AI 先写、用户改"）：采样 vault → 一次性 agent 调用 → 归一为
 // MarketPublishSuggestion。纪律：
-// - 只支持 claude / codex（两者都有稳定的无交互 JSON 输出模式）；都不可用 →
+// - Harness 桌面版使用随附的 headless CLI；常规版选择本机 Claude / Codex。无可用模型 →
 //   suggest_unavailable，前端静默回落手填，绝不阻断发布。
 // - 运行 cwd = 空临时目录：纯文本起草，agent 不接触用户文件；超时强杀。
 // - 产物一律过 normalize 硬校验（与云端 service.create 同口径：名称 ≤30 码点、
@@ -202,6 +202,10 @@ export interface PickedAgent { agentId: string; binary: string; }
 
 /** 选第一个可用的起草 agent（claude 优先） */
 export function pickSuggestAgent(): PickedAgent | null {
+  if (process.env.MOLIO_HARNESS_SIDECAR === '1') {
+    const harness = bundledHarness();
+    return harness ? { agentId: 'harness', binary: harness.executable } : null;
+  }
   for (const id of SUGGEST_AGENT_IDS) {
     const def = getAgentDef(id);
     if (!def) continue;
@@ -212,6 +216,13 @@ export function pickSuggestAgent(): PickedAgent | null {
     }
   }
   return null;
+}
+
+function bundledHarness() {
+  const { MOLIO_HARNESS_EXECUTABLE: executable, MOLIO_HARNESS_CLI: cli, MOLIO_HARNESS_SUGGEST_PATCH: patch } = process.env;
+  // The CLI lives inside app.asar, so only Electron can resolve its physical entry.
+  if (!executable || !cli || !patch || ![executable, cli, patch].every(value => path.isAbsolute(value))) return null;
+  return { executable, cli, patch };
 }
 
 /** 在空临时目录里跑一次性调用；超时强杀；返回 stdout 文本 */
@@ -231,8 +242,8 @@ function spawnOneShot(binary: string, args: string[], env: NodeJS.ProcessEnv, pr
       stdio: ['pipe', 'pipe', 'pipe'],
       cwd: workDir,
       shell: isCmd,
+      // Node quotes native argv, including the CLI path under Program Files.
       windowsHide: true,
-      windowsVerbatimArguments: process.platform === 'win32' && !isCmd,
     });
     let stdout = '';
     let stdoutLen = 0;
@@ -242,10 +253,10 @@ function spawnOneShot(binary: string, args: string[], env: NodeJS.ProcessEnv, pr
     const timer = setTimeout(() => {
       if (settled) return;
       settled = true;
-      child.kill();
+      child.kill('SIGKILL');
       reject(new Error('suggest_timeout'));
     }, timeoutMs);
-    const cleanup = () => fs.rmSync(workDir, { recursive: true, force: true });
+    const cleanup = () => fs.rmSync(workDir, { recursive: true, force: true, maxRetries: 3 });
     child.stdout?.setEncoding('utf8');
     child.stderr?.setEncoding('utf8');
     child.stdout?.on('data', (chunk: string) => {
@@ -262,10 +273,10 @@ function spawnOneShot(binary: string, args: string[], env: NodeJS.ProcessEnv, pr
       reject(new Error(`suggest_failed: spawn: ${err.message}`));
     });
     child.on('close', (code) => {
+      cleanup();
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      cleanup();
       if (code === 0) resolve(stdout);
       else reject(new Error(`suggest_failed: exit ${code}: ${stderr.slice(-500)}`));
     });
@@ -304,6 +315,14 @@ export type OneShotRunner = (agentId: string, prompt: string, timeoutMs: number)
 
 /** 真实 runner：解析二进制 → 组 env → spawn → 按 agent 提取最终文本 */
 export const defaultOneShotRunner: OneShotRunner = async (agentId, prompt, timeoutMs) => {
+  if (agentId === 'harness') {
+    const launch = bundledHarness();
+    if (!launch) throw new Error('suggest_unavailable');
+    const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('MOLIO_')));
+    return spawnOneShot(launch.executable, ['--expose-internals', launch.cli, '--profile', 'headless',
+      '--patch', launch.patch, '--permission-mode', 'read-only', '--approval-policy', 'never', '-'],
+    { ...env, ELECTRON_RUN_AS_NODE: '1' }, prompt, timeoutMs);
+  }
   const def = getAgentDef(agentId);
   if (!def) throw new Error('suggest_unavailable');
   const agentConfig = getAgentConfig(agentId);

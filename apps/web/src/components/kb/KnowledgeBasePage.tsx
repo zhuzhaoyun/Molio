@@ -12,6 +12,7 @@ import type { ScrollIntent } from '../../hooks/useScrollMemory';
 import { useKbTabs, MAX_TABS, type WorkspaceTab } from '../../hooks/useKbTabs';
 import { vaultStore, useActiveVaultId, useVaultsLoaded, useVaults } from '../../stores/vaultStore';
 import { onboardingStore } from '../../stores/onboardingStore';
+import { harnessMode } from '../../harnessMode';
 import { useAgents } from '../../hooks/useAgents';
 import { useOnboardingHint } from '../../hooks/useOnboardingHint';
 import { OnboardingChecklist } from './OnboardingChecklist';
@@ -322,23 +323,6 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
   // Pending import files for conflict retry (replaces fragile `as any` function-property hack)
   const pendingImportRef = useRef<{ files: File[]; targetDir: string; oversizedCount: number } | null>(null);
 
-  const handleOpenQa = useCallback(() => {
-    // 上下文跟随可见视图：图谱/发布预览面板激活时，可见上下文是库（vault）而非文档，
-    // 不携带被隐藏的 selectedFile——否则会凭空给新会话绑定、或把活跃会话改绑到
-    // 一个用户当前看不见的文件。openQa 约定 filePath=null = 打开/继续会话且不改绑。
-    const contextHidden = tabs.activeTabId === GRAPH_TAB_ID || tabs.activeTabId === PUBLISH_TAB_ID;
-    panelRef.current?.openQa({
-      filePath: contextHidden ? null : kb.selectedFile ?? null,
-      vaultId: kb.activeVault?.id ?? null,
-      selectedText: null,
-    });
-  }, [tabs.activeTabId, kb.selectedFile, kb.activeVault?.id]);
-
-  const handleAskAboutSelection = useCallback((selectedText: string) => {
-    if (!kb.selectedFile) return;
-    panelRef.current?.openQa({ filePath: kb.selectedFile, vaultId: kb.activeVault?.id ?? null, selectedText });
-  }, [kb.selectedFile, kb.activeVault?.id]);
-
   // ─── Save toast helper (used by file selection and other callbacks) ───
 
   const showToast = useCallback((msg: string) => {
@@ -346,6 +330,37 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
     setSaveToast(msg);
     saveToastTimer.current = setTimeout(() => setSaveToast(null), 2000);
   }, []);
+
+  const openKnowledgeAction = useCallback((
+    mode: 'ask' | 'build' | 'lint' | 'ingest',
+    context: { filePath?: string; selectedText?: string; isDirectory?: boolean } = {},
+  ) => {
+    if (harnessMode) {
+      if (!kb.activeVault) return;
+      const open = window.__electron__?.openKnowledgeConversation;
+      if (!open) {
+        showToast('请在 Molio Harness 桌面端打开知识库对话');
+        return;
+      }
+      void open({ mode, vaultId: kb.activeVault.id, vaultPath: kb.activeVault.path, ...context })
+        .catch((error: Error) => showToast(error.message || '无法打开知识库对话'));
+    } else if (mode === 'ask') {
+      panelRef.current?.openQa({
+        vaultId: kb.activeVault?.id ?? null, filePath: context.filePath ?? null, selectedText: context.selectedText ?? null,
+      });
+    } else if (kb.activeVault && agentId) {
+      panelRef.current?.runWikiOp({ mode, ...context });
+    }
+  }, [kb.activeVault, agentId, panelRef, showToast]);
+
+  const handleOpenQa = useCallback(() => {
+    const hideFile = tabs.activeTabId === GRAPH_TAB_ID || tabs.activeTabId === PUBLISH_TAB_ID;
+    openKnowledgeAction('ask', !hideFile && kb.selectedFile ? { filePath: kb.selectedFile } : {});
+  }, [tabs.activeTabId, kb.selectedFile, openKnowledgeAction]);
+
+  const handleAskAboutSelection = useCallback((selectedText: string) => {
+    if (kb.selectedFile) openKnowledgeAction('ask', { filePath: kb.selectedFile, selectedText });
+  }, [kb.selectedFile, openKnowledgeAction]);
 
   /** 显式刷新目录树（右键「刷新目录」/ 错误条「重试」）：成功失败都给反馈。 */
   const handleRefreshTree = useCallback(async () => {
@@ -362,7 +377,7 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
   // 引导动画指向真实按钮：导入 → 文件面板的导入键，提问 → 文档头的问答键，
   // 保存 → 消息工具条。没有可用运行时的那一帧例外：提问键点了也发不出去，
   // 此时动画仍留在 checklist 的「先配置 AI」上。
-  const { agents, loading: agentsLoading, error: agentsError } = useAgents();
+  const { agents, loading: agentsLoading, error: agentsError } = useAgents(!harnessMode);
   // daemon 永远会列出全部已知运行时（包括没装的），「没装」体现在 available
   // 为 false，而不是数组为空——只判 length 会让真机上这条分流永远不生效。
   const noRuntime =
@@ -371,7 +386,7 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
 
   // 只在库列表首次取回时初始化：0 库 → 激活，老用户 → 直接 done。
   useEffect(() => {
-    if (!vaultsLoaded) return;
+    if (harnessMode || !vaultsLoaded) return;
     onboardingStore.init(storeVaults.length);
   }, [vaultsLoaded, storeVaults.length]);
 
@@ -850,12 +865,7 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
     document.addEventListener('mouseup', onUp);
   }, [kb.panelWidth, kb.setPanelWidth]);
 
-  // Wiki operation handlers — 通过 panel 的 runWikiOp 入口下发（互斥/排队在 panel 内部处理）
-  const handleBuildWiki = useCallback(() => {
-    if (!kb.activeVault) return;
-    if (!agentId) return;
-    panelRef.current?.runWikiOp({ mode: 'build' });
-  }, [kb.activeVault, agentId]);
+  const handleBuildWiki = useCallback(() => openKnowledgeAction('build'), [openKnowledgeAction]);
   // 发布当前知识库到资源库：打开/激活页内 publish tab（store per-vault，
   // id 固定即天然单例）。要求登录；未登录挂起登录意图，登录成功后续接打开。
   const openPublishTab = useCallback((vaultId: string) => {
@@ -894,9 +904,8 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
   }, [searchParams, setSearchParams, openPublishTab, activeVaultId]);
 
   const handleIngestFile = useCallback((filePath: string, isDirectory = false) => {
-    if (!agentId) return;
-    panelRef.current?.runWikiOp({ mode: 'ingest', filePath, isDirectory });
-  }, [agentId]);
+    openKnowledgeAction('ingest', { filePath, isDirectory });
+  }, [openKnowledgeAction]);
 
   // Ctrl/Cmd+F — 打开全文搜索（仅 KB 页面）
   useEffect(() => {
@@ -938,7 +947,7 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
     };
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
-  }, [kb.selectedFile, kb.activeVault?.id]);
+  }, [handleOpenQa]);
 
   // ─── New file / folder flows (React dialogs instead of window.prompt) ───
 
@@ -1102,7 +1111,7 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
           if (kb.selectedFile !== node.path) {
             handleSelectFile(node.path);
           }
-          panelRef.current?.openQa({ filePath: node.path, vaultId: kb.activeVault?.id ?? null, selectedText: null });
+          openKnowledgeAction('ask', { filePath: node.path });
         },
       });
     } else if (!readonly) {
@@ -1207,7 +1216,7 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
     }
 
     return items;
-  }, [ctxMenu, kb, hasExternalRoots, showToast, handleNewFile, handleNewFolder, handleSelectFile, handleOpenInNewTab, handleDeleteFile, handleDeleteFolder, openGraphTab, handleRefreshTree]);
+  }, [ctxMenu, kb, hasExternalRoots, showToast, handleNewFile, handleNewFolder, handleSelectFile, handleOpenInNewTab, handleDeleteFile, handleDeleteFolder, openGraphTab, handleRefreshTree, openKnowledgeAction]);
 
   // ─── Inline rename ───
 
@@ -1540,7 +1549,7 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
 
       {/* Tab Bar + Main Content */}
       <div className="kb-main-wrapper">
-        <OnboardingChecklist
+        {!harnessMode && <OnboardingChecklist
           hasVault={storeVaults.length > 0}
           noRuntime={noRuntime}
           onImport={() => kb.setShowImport(true)}
@@ -1554,7 +1563,7 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
           }}
           onOpenHistory={() => navigate('/history')}
           onOpenRuntimeSettings={() => navigate('/settings?tab=runtimes')}
-        />
+        />}
         <KbTabBar
           tabs={tabs.tabs}
           activeTabId={tabs.activeTabId}
@@ -1738,7 +1747,7 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
                   onContentChange={() => {}}
                   onCopy={() => {}}
                   onPublish={() => {}}
-                  onBuildWiki={() => {}}
+                  onBuildWiki={handleBuildWiki}
                   showFileName={true}
                   onNavigateToFile={handleNavigateToFile}
                   scrollIntentRef={companionScrollIntentRef}

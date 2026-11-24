@@ -1,0 +1,19 @@
+.harness-page {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+}
+.harness-content {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+.harness-market-nav {
+  display: flex;
+  justify-content: flex-end;
+  padding: 6px 20px;
+  border-bottom: 1px solid var(--border);
+}
+.harness-market-nav a {
+  color: var(--text);
+}
