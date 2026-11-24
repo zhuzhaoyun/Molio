@@ -12,7 +12,8 @@ import { chatRuntimeStore } from '../../stores/chatRuntimeStore';
 import { onboardingStore } from '../../stores/onboardingStore';
 import { type PastedImage, buildAttachmentPrefix } from '../ChatComposer';
 import { useI18n } from '../../i18n';
-import { WIKI_QUERY_TRIGGER, deriveChatTitle } from './kbChatPrompts';
+import { WIKI_QUERY_TRIGGER, deriveChatTitle, DIAGNOSE_DIRECTIVE, wrapDiagnoseDirective } from './kbChatPrompts';
+import { isDiagnoseRequest } from '../../utils/diagnoseIntent';
 
 export interface KbChatSessionApi {
   send: (text: string) => void;
@@ -132,6 +133,13 @@ export function KbChatSessionController({
   const messageCountRef = useRef(chat.messages.length);
   messageCountRef.current = chat.messages.length;
 
+  // 隐式诊断指令（见 utils/diagnoseIntent.ts）同一会话只注入一次：首条命中后置位，
+  // 后续消息（包括再次抱怨）不再包裹——重复注入只会让每条消息都顶着体检指令。
+  // 用 ref 而非 state：buildSend 不因此重建（chat.messages 不进它的依赖数组）。
+  // 历史加载的两条路径（挂载 + openConversation 就地切换）都要按 DB 内容回填标记，
+  // 否则从历史打开一个诊断过的会话再抱怨，会被重复注入；clear（新会话）复位。
+  const diagnosedRef = useRef(false);
+
   // api 注册：send/clear 通过 ref 转发到最新 chat 方法，api 对象稳定
   const sendRef = useRef(chat.send); sendRef.current = chat.send;
   const setMessagesRef = useRef(chat.setMessages); setMessagesRef.current = chat.setMessages;
@@ -182,6 +190,7 @@ export function KbChatSessionController({
         const cur = kbChatSessionsStore.getSessions().find((s) => s.id === session.id);
         if (!cur || cur.conversationId !== loadedConversationId) return;
         chat.setMessages(msgs.map(toChatMessage), loadedConversationId);
+        diagnosedRef.current = msgs.some((m) => m.role === 'user' && m.content.startsWith(DIAGNOSE_DIRECTIVE));
         // 该会话存在活跃 run（回复进行中）→ 重新订阅回放直播，避免 UI 把 run 弄丢
         void maybeResume(loadedConversationId);
         const firstUser = msgs.find((m) => m.role === 'user');
@@ -240,6 +249,7 @@ export function KbChatSessionController({
     send: (text) => sendRef.current(text),
     clear: () => {
       setMessagesRef.current([], null);
+      diagnosedRef.current = false;
       kbChatSessionsStore.updateSession(session.id, { conversationId: null });
     },
     // 就地切换（历史打开不走新标签）：更新 store conversationId → 清空当前 → 从 DB 加载。
@@ -253,6 +263,7 @@ export function KbChatSessionController({
           const cur = kbChatSessionsStore.getSessions().find((s) => s.id === session.id);
           if (!cur || cur.conversationId !== conversationId) return;
           chat.setMessages(msgs.map(toChatMessage), conversationId);
+          diagnosedRef.current = msgs.some((m) => m.role === 'user' && m.content.startsWith(DIAGNOSE_DIRECTIVE));
           // 切到的历史会话若正在生成 → 恢复直播（与重挂载同一启发式）
           void maybeResume(conversationId);
           const firstUser = msgs.find((m) => m.role === 'user');
@@ -294,7 +305,15 @@ export function KbChatSessionController({
         }
         const isFirstTurn = chat.conversationId == null;
         const wrapped = session.mode === 'qa' && isFirstTurn ? WIKI_QUERY_TRIGGER(message) : message;
-        sendRef.current(wrapped, { queueIfRunning: true });
+        // 隐式诊断触发（仅 qa 模式）：故障抱怨包上体检指令再发。判定看用户原文
+        // `message`，注入在既有包装 `wrapped` 之外——指令在最外层、独占首行，
+        // 展示层 stripDiagnoseDirective 先剥它、再剥 wiki-query 触发语。
+        let outgoing = wrapped;
+        if (session.mode === 'qa' && !diagnosedRef.current && isDiagnoseRequest(message)) {
+          outgoing = wrapDiagnoseDirective(outgoing);
+          diagnosedRef.current = true;
+        }
+        sendRef.current(outgoing, { queueIfRunning: true });
       },
     [t, session.mode, chat.conversationId],
   );
