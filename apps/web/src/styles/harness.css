@@ -11,6 +11,7 @@
 .harness-market-nav {
   display: flex;
   justify-content: flex-end;
+  gap: 16px;
   padding: 6px 20px;
   border-bottom: 1px solid var(--border);
 }

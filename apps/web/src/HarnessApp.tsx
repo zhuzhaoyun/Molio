@@ -5,6 +5,7 @@ import { useI18n } from './i18n';
 import { AppErrorBoundary } from './components/AppErrorBoundary';
 import { AccountModal } from './components/account/AccountModal';
 import { authStore, useAuthStatus } from './stores/authStore';
+import { useMarketRole } from './stores/marketRoleStore';
 import { loginIntentStore } from './stores/loginIntentStore';
 import './styles/harness.css';
 import './styles/knowledge.css';
@@ -22,6 +23,7 @@ function HarnessRoutes() {
   const { pathname, search } = useLocation();
   const { t } = useI18n();
   const status = useAuthStatus();
+  const { role } = useMarketRole();
   const resume = useRef<(() => void) | null>(null);
   const [loginOpen, setLoginOpen] = useState(false);
   useEffect(() => {
@@ -49,6 +51,9 @@ function HarnessRoutes() {
     <main className="harness-page">
       {(pathname.startsWith('/resources') || pathname === '/me') && (
         <nav className="harness-market-nav">
+          {status?.loggedIn && role === 'admin' && (
+            <Link to="/knowledge?panel=publish" data-testid="harness-publish-vault">{t('publish.tabTitle')}</Link>
+          )}
           <Link to={pathname === '/me' ? '/resources' : '/me'} data-testid="harness-market-account">
             {t(pathname === '/me' ? 'nav.resources' : 'nav.me')}
           </Link>
