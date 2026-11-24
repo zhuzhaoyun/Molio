@@ -116,6 +116,7 @@ test('paid ZIP opens as a local vault and can be submitted by its publisher', as
   await page.getByTestId('vault-menu-reveal').click();
   await expect(page.locator('body')).toHaveAttribute('data-revealed', folder.replaceAll('\\', '/'));
   await row.click();
+  await page.getByTestId('vault-manager-close').click();
   await expect(page.locator('.kb-tree-item').filter({ hasText: 'Readme.md' })).toBeVisible();
   const file = page.locator('.kb-tree-item').filter({ hasText: 'Readme.md' });
   await file.hover();
@@ -138,9 +139,8 @@ test('paid ZIP opens as a local vault and can be submitted by its publisher', as
   expect(await lastConversation()).toMatchObject({
     mode: 'ask', filePath: 'Readme.md', vaultPath: folder, selectedText: '已下载的资料',
   });
-  const publish = page.getByTestId('kb-btn-publish-vault');
-  await expect(publish).toHaveAttribute('data-publish-gate', 'admin');
-  await publish.click();
+  await page.goto('/resources');
+  await page.getByTestId('harness-publish-vault').click();
   const pane = page.getByTestId('kb-publish-pane');
   await expect(pane).toBeVisible();
   await page.getByTestId('publish-category').selectOption('culture');

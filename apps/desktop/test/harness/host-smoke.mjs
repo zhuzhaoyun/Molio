@@ -128,6 +128,16 @@ try {
   };
   const vault = await request('/api/knowledge/vaults', { name: 'Probe', path: vaultPath });
   await request('/api/knowledge/active-vault', { id: vault.id });
+  const externalPath = join(profile, 'source');
+  await mkdir(externalPath);
+  await writeFile(join(externalPath, 'Mounted.md'), 'Linked [[Probe]]');
+  await request('/api/knowledge/vaults/' + vault.id + '/external-roots', { label: 'Sources', target: externalPath });
+  const graph = await request('/api/graph/' + vault.id);
+  assert.ok(graph.nodes.some(node => node.key === 'external/Sources/Mounted.md'));
+  assert.ok(graph.edges.some(edge => edge.source === 'Probe.md' && edge.target === 'Evidence.md'));
+  assert.ok(graph.edges.some(edge => edge.source === 'external/Sources/Mounted.md' && edge.target === 'Probe.md'));
+  const tree = await request('/api/knowledge/vaults/' + vault.id + '/tree');
+  assert.match(JSON.stringify(tree), /Mounted\.md/);
   await choose('知识图谱');
   await knowledge.getByTestId('kb-graph-pane').waitFor({ state: 'visible' });
   await choose('资源市场');
