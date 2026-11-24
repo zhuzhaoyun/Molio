@@ -35,7 +35,7 @@ corepack pnpm build:harness
 
 构建命令在 `.harness-build/host` 创建固定提交的独立构建副本，将 Molio 页面、知识工具、桌面入口和图标装入宿主。Windows 本地构建生成按用户安装的未签名 NSIS 安装包。构建产物目录为 `.harness-build/host/apps/desktop/.desktop-build/targets/win-x64/unsigned-artifacts`。上传、签名和自动更新渠道由正式发布流程单独配置。
 
-在宿主应用菜单打开「知识库」「知识图谱」或「资源市场」。三个入口共用随包启动的本地服务。桌面知识工具连接同一实例的随机回环端口。资源市场使用 Molio 账号和原有云服务，保留发布、购买和下载。插件及知识管理界面随安装包交付。
+在宿主左侧栏打开「知识库」「知识图谱」或「资源市场」。三个入口共用随包启动的本地服务。桌面知识工具连接同一实例的随机回环端口。资源市场使用 Molio 账号和原有云服务，保留发布、购买和下载。插件及知识管理界面随安装包交付。
 
 升级时先执行 `git add vendor/deepseek-harness`，让构建读取待提交的版本指针，再执行上述构建命令。若上游改变集成入口，适配脚本会指出需要核对的文件。旧版构建副本会保留在 `.harness-build/host-before-*`。
 

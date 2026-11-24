@@ -101,25 +101,10 @@ try {
   await welcome.locator('#api-key').click();
   await welcome.locator('#skip-key').click();
   const product = await waitPage(url => url.startsWith('dsh-app://app/'));
-  const button = product.locator('[data-windows-menu]').getByRole('menuitem').first();
-  await button.waitFor({ state: 'visible', timeout: 90_000 });
-  // Drive the actual Windows caption button. At the OS popup boundary select the item by label.
-  await application.evaluate(({ Menu }) => {
-    globalThis.molioSmokeMenu = [];
-    Menu.prototype.popup = function(options) {
-      globalThis.molioSmokeMenu = this.items.map(item => item.label);
-      this.items.find(item => item.label === globalThis.molioSmokeAction)?.click();
-      options?.callback?.();
-    };
-  });
-  const choose = async label => {
-    await application.evaluate((_, label) => { globalThis.molioSmokeAction = label; }, label);
-    await button.click();
-  };
+  const sidebar = product.getByRole('navigation', { name: '知识管理' });
+  const choose = label => sidebar.getByRole('button', { name: label, exact: true }).click();
   await choose('知识库');
   const knowledge = await waitPage(url => url.endsWith('/knowledge'));
-  const labels = await application.evaluate(() => globalThis.molioSmokeMenu);
-  assert.deepEqual(labels.slice(0, 3), ['知识库', '知识图谱', '资源市场']);
   const origin = new URL(knowledge.url()).origin;
   const request = async (path, body) => {
     const res = await fetch(origin + path, body ? { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) } : {});
@@ -184,7 +169,7 @@ try {
   await coldClip.locator('.kb-wtab.is-active[title="Probe.md"]').waitFor({ state: 'visible' });
   await application.close();
   application = undefined;
-  console.log('Harness startup, native menu, three modules, four contextual drafts and vault cwd, cold and warm clipper, five bundled tools and owned shutdown passed.');
+  console.log('Harness startup, fixed sidebar, three modules, four contextual drafts and vault cwd, cold and warm clipper, five bundled tools and owned shutdown passed.');
 } catch (error) {
   console.error('Smoke profile:', profile);
   throw error;

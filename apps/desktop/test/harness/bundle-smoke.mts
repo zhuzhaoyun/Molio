@@ -51,12 +51,14 @@ try {
   });
   await writeFile(join(directory, 'package.json'), JSON.stringify({ name: 'molio-test', main: 'main.mjs' }));
   await writeFile(join(directory, 'main.mjs'), `
-    import {app, Menu} from 'electron';
-    import {startMolioDesktop} from './integration.mjs';
+    import {app, ipcMain} from 'electron';
+    import {startMolioDesktop, bindMolioConversationWindow} from './integration.mjs';
     void app.whenReady().then(async () => {
-    const items = await startMolioDesktop();
-    Menu.setApplicationMenu(Menu.buildFromTemplate([{ label: 'Molio', submenu: items }]));
-    items[0].click(); }).catch(error => { console.error(error); app.exit(1); });
+    await startMolioDesktop();
+    const sender = { mainFrame: {} };
+    bindMolioConversationWindow(() => ({ webContents: sender }));
+    globalThis.openModule = id => ipcMain.emit('molio:navigate', {sender, senderFrame: sender.mainFrame}, id);
+    globalThis.openModule('knowledge'); }).catch(error => { console.error(error); app.exit(1); });
   `);
   electron = await _electron.launch({
     executablePath: desktop('electron'), args: [directory, '--user-data-dir=' + join(directory, 'profile')],
@@ -85,9 +87,7 @@ try {
   const vault = await request('/api/knowledge/vaults', { name: 'Fixture', path: vaultPath });
   await request('/api/knowledge/active-vault', { id: vault.id });
   assert.ok((await request('/api/graph/' + vault.id)).nodes.length >= 2);
-  const clickMenu = async index => electron.evaluate(({ Menu }, index) => {
-    Menu.getApplicationMenu().items[0].submenu.items[index].click();
-  }, index);
+  const openModule = (id: string) => electron.evaluate((_electron, id) => globalThis.openModule(id), id);
   await assert.rejects(readFile(join(vaultPath, 'CLAUDE.md')));
   await electron.evaluate(({ dialog, shell }, vaultPath) => {
     dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [vaultPath] });
@@ -105,9 +105,9 @@ try {
   await (await childPage).close();
   await page.evaluate(() => window.open('https://example.test/download.zip'));
   assert.equal(await electron.evaluate(() => globalThis.smokeExternal), 'https://example.test/download.zip');
-  await clickMenu(1);
+  await openModule('graph');
   await page.getByTestId('kb-graph-pane').waitFor({ state: 'visible' });
-  await clickMenu(2);
+  await openModule('resources');
   await page.getByTestId('resources-grid').waitFor({ state: 'visible' });
   assert.equal((await request('/api/market/listings')).stale, false);
   const email = 'desktop-smoke@example.test';
