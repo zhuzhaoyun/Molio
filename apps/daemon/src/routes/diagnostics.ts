@@ -33,8 +33,9 @@ export function diagnosticsRoutes(deps: DiagnosticsDeps, opts?: { bundleDir?: st
       if (c.req.query('format') === 'text') return c.text(renderDiagnosticsText(report));
       return c.json(report);
     } catch (err) {
-      // 单项采集抛错在编排层已按「未能检查」兜底；走到这里是编排本身失败
-      // （如 vault 清单读不出来），必须回 500 让调用方拿到确定的结果。
+      // 单项采集抛错在编排层已按兜底值处理（listVaults→[]、readMainLog→null、
+      // 同步探测→null）；走到这里是编排本身失败（如 now/uptime 都拿不到），
+      // 必须回 500 让调用方拿到确定的结果。
       const message = err instanceof Error ? err.message : 'Failed to run diagnostics';
       return c.json({ error: { code: 'INTERNAL', message } }, 500);
     }

@@ -71,6 +71,26 @@ describe('runDiagnostics 编排', () => {
     assert.equal(r.items.find((i) => i.code === 'vault.missing'), undefined);
     assert.notEqual(r.items.find((i) => i.code === 'vaults')?.level, 'error');
   });
+
+  it('runDiagnostics: listVaults 抛错按空列表处理', async () => {
+    // 体检正是为「生病的机器」准备的：DB 锁死/损坏时报告必须照常出，
+    // 只是没有库相关条目——单项失败或超时不得影响其他项
+    const r = await runDiagnostics(makeDeps({ listVaults: () => { throw new Error('boom'); } }));
+    assert.equal(r.items.find((i) => i.code === 'vault.missing'), undefined);
+    assert.equal(r.items.find((i) => i.code === 'vault.readonly'), undefined);
+    assert.equal(r.items.find((i) => i.code === 'vault.watch'), undefined);
+    assert.equal(r.items.find((i) => i.code === 'vaults'), undefined);
+    // 数据目录的磁盘项照常产出
+    assert.ok(r.items.find((i) => i.code === 'system.disk'));
+  });
+
+  it('runDiagnostics: readMainLog 抛错按没有日志处理', async () => {
+    // 与 listVaults 同一条兜底约定的对称面：日志读不出 = 没有日志
+    const r = await runDiagnostics(makeDeps({ readMainLog: () => { throw new Error('boom'); } }));
+    assert.equal(r.items.find((i) => i.code === 'update.channel')?.level, 'skip');
+    assert.equal(r.items.find((i) => i.code === 'daemon.exits')?.level, 'skip');
+    assert.equal(r.items.find((i) => i.code === 'runtime.agents')?.level, 'ok');
+  });
 });
 
 describe('withTimeout', () => {

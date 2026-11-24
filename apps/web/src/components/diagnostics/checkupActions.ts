@@ -7,14 +7,18 @@ import type { DiagnosticAction } from '@molio/contracts';
  * 只声明体检用到的全局形状（全部可选）：打包后的渲染进程里由 preload 注入，
  * 浏览器 / Playwright 里不存在。不复用 electron.d.ts 的 DesktopAPI——它没有
  * restartApp 声明，且单测要用字面量对象当假 window，结构化窄化最省事。
+ * 桥面按 preload.cjs 的真实归属划分：restartApp/openPath 在 window.__electron__，
+ * checkForUpdates/getLogPath 在 window.updater（updaterAPI）。
  */
 export interface BridgeWindow {
   __electron__?: {
     restartApp?: () => Promise<unknown>;
     openPath?: (p: string) => Promise<unknown>;
+  };
+  updater?: {
+    checkForUpdates?: () => Promise<unknown>;
     getLogPath?: () => Promise<string | null>;
   };
-  updater?: { checkForUpdates?: () => Promise<unknown> };
 }
 
 /** 从 window 里读出的桌面能力（缺的 方法=undefined）。 */
@@ -30,7 +34,7 @@ export function readDesktopBridge(win: BridgeWindow): DesktopBridge | null {
   const bridge: DesktopBridge = {
     restartApp: win.__electron__?.restartApp,
     openPath: win.__electron__?.openPath,
-    getLogPath: win.__electron__?.getLogPath,
+    getLogPath: win.updater?.getLogPath,
     checkForUpdates: win.updater?.checkForUpdates,
   };
   const hasAny = bridge.restartApp ?? bridge.openPath ?? bridge.getLogPath ?? bridge.checkForUpdates;

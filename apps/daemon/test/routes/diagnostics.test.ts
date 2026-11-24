@@ -40,7 +40,10 @@ describe('GET /api/diagnostics', () => {
   });
 
   it('采集过程抛错时返回 500 而不是让连接悬空', async () => {
-    const res = await makeApp({ listVaults: () => { throw new Error('boom'); } }).request('/api/diagnostics');
+    // 单项采集抛错（listVaults / readMainLog…）在编排层已按兜底值处理；
+    // 这里改用编排本身会抛的依赖（now 在守卫之外同步调用），
+    // 保持「编排级失败 → 显式 500」的用例意图不变。
+    const res = await makeApp({ now: () => { throw new Error('boom'); } }).request('/api/diagnostics');
     assert.equal(res.status, 500);
   });
 });

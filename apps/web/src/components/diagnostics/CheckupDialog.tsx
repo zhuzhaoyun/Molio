@@ -82,6 +82,10 @@ export function CheckupDialog({
   const panelRef = useRef<HTMLDivElement>(null);
   // 每次检查自增：慢请求回来时若用户已点了「重新检查」，旧响应直接丢弃
   const reqIdRef = useRef(0);
+  // 支持包请求令牌（与 reqIdRef 同构）：POST 前要先跑完一整轮体检（agent 探测
+  // 预算 8s），期间用户点「返回」/关面板/重新检查都会清场——迟到的回包不得
+  // 把界面从报告页拽去结果页
+  const bundleReqRef = useRef(0);
 
   const [status, setStatus] = useState<FetchStatus>('loading');
   const [report, setReport] = useState<DiagnosticsReport | null>(null);
@@ -96,17 +100,25 @@ export function CheckupDialog({
   const bridge = useMemo(() => readDesktopBridge(window), []);
   const canReveal = useMemo(() => isRevealAvailable(), []);
 
+  // 支持包流程的统一清场：作废在途请求的回包 + 状态归零。
+  // 重新检查、关面板、两个「返回」按钮都走这里——离开支持包流程的每条路径
+  // 都同时作废迟到的回包，不留任何一条能把界面拽走的活口
+  const resetBundleFlow = useCallback(() => {
+    bundleReqRef.current += 1;
+    setBundle('idle');
+    setBundlePath(null);
+  }, []);
+
   const runCheck = useCallback(() => {
     const req = ++reqIdRef.current;
     setStatus('loading');
     // 重新检查从体检报告看起：支持包的一次性结果不跨检查残留
     setView('report');
-    setBundle('idle');
-    setBundlePath(null);
+    resetBundleFlow();
     api.getDiagnostics()
       .then((r) => { if (reqIdRef.current === req) { setReport(r); setStatus('ready'); } })
       .catch(() => { if (reqIdRef.current === req) setStatus('unreachable'); });
-  }, []);
+  }, [resetBundleFlow]);
 
   useEffect(() => {
     if (!open) return;
@@ -137,22 +149,29 @@ export function CheckupDialog({
   }, [bridge]);
 
   // 生成期间按钮已 disabled，这里再守一道：连点只发一次请求；
-  // 结束（无论成败）都整体切到 result 视图
+  // 结束（无论成败）都整体切到 result 视图——但仅当期间没有返回/关面板/
+  // 重新检查过（令牌被清场作废）时才算数，迟到的回包直接丢弃
   const createBundle = useCallback(() => {
     if (bundle === 'working') return;
+    const req = ++bundleReqRef.current;
     setBundle('working');
     api.createSupportBundle()
-      .then((r) => { setBundlePath(r.path); setBundle('done'); setView('result'); })
-      .catch(() => { setBundle('failed'); setView('result'); });
+      .then((r) => {
+        if (bundleReqRef.current !== req) return;
+        setBundlePath(r.path); setBundle('done'); setView('result');
+      })
+      .catch(() => {
+        if (bundleReqRef.current !== req) return;
+        setBundle('failed'); setView('result');
+      });
   }, [bundle]);
 
   // 关面板即清场：下次打开从体检报告看起
   useEffect(() => {
     if (open) return;
     setView('report');
-    setBundle('idle');
-    setBundlePath(null);
-  }, [open]);
+    resetBundleFlow();
+  }, [open, resetBundleFlow]);
 
   if (!open) return null;
 
@@ -364,7 +383,7 @@ export function CheckupDialog({
 
         {status === 'ready' && view === 'confirm' && (
           <div className="kb-modal-footer">
-            <button type="button" className="kb-btn" data-testid="checkup-bundle-back" onClick={() => setView('report')}>
+            <button type="button" className="kb-btn" data-testid="checkup-bundle-back" onClick={() => { setView('report'); resetBundleFlow(); }}>
               {t('checkup.bundleBack')}
             </button>
             <button
@@ -386,7 +405,7 @@ export function CheckupDialog({
               type="button"
               className="kb-btn"
               data-testid="checkup-bundle-back"
-              onClick={() => { setView('report'); setBundle('idle'); setBundlePath(null); }}
+              onClick={() => { setView('report'); resetBundleFlow(); }}
             >
               {t('checkup.bundleBackToReport')}
             </button>

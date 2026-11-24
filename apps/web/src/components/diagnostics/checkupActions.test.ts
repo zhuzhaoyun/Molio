@@ -14,13 +14,25 @@ describe('checkupActions', () => {
   it('readDesktopBridge: 没有桌面桥返回 null，有则取出各方法', () => {
     const empty: BridgeWindow = {};
     assert.equal(readDesktopBridge(empty), null);
+    // 真实 preload 形状：restartApp/openPath 在 __electron__，checkForUpdates/getLogPath 在 updater
     const b = readDesktopBridge({
       __electron__: { restartApp: async () => {} },
-      updater: { checkForUpdates: async () => {} },
+      updater: { checkForUpdates: async () => {}, getLogPath: async () => null },
     });
     assert.equal(typeof b?.restartApp, 'function');
     assert.equal(typeof b?.checkForUpdates, 'function');
+    assert.equal(typeof b?.getLogPath, 'function');
     assert.equal(b?.openPath, undefined);
+  });
+
+  it('readDesktopBridge: getLogPath 只认 updater 桥（preload 在 updaterAPI 里暴露）', () => {
+    // 回归钉子：getLogPath 曾被从 __electron__ 读——preload 从没在那里暴露过，
+    // 「打开日志文件夹」按钮在真实应用里永远渲染不出来
+    const b = readDesktopBridge({ updater: { getLogPath: async () => '/logs/updater.log' } });
+    assert.equal(typeof b?.getLogPath, 'function');
+    // __electron__ 上没有 getLogPath：只装了 restartApp 时它必须是 undefined
+    const noUpdater = readDesktopBridge({ __electron__: { restartApp: async () => {} } });
+    assert.equal(noUpdater?.getLogPath, undefined);
   });
 
   it('canRunAction: 应用内跳转恒可执行，桌面动作要有对应方法', () => {

@@ -46,13 +46,13 @@ export interface DiagnosticsDeps {
   platform: NodeJS.Platform;
   arch: string;
   uptimeSec: () => number;
-  listVaults: () => Vault[];
+  listVaults: () => Vault[]; // 抛错 → []（DB 读不出时体检照常出，只是没有库条目）
   pathExists: (p: string) => boolean | null; // 抛错 → null
   pathWritable: (p: string) => boolean | null; // 抛错 → null
   diskUsage: (p: string) => DiskSpace | null; // 抛错 → null
   detectAgents: () => Promise<AgentInfo[]>;
   listSecuritySoftware: () => Promise<string[] | null>;
-  readMainLog: () => string[] | null; // null = 没有日志可读
+  readMainLog: () => string[] | null; // null = 没有日志可读；抛错 → null 同义
   timeouts?: { agentProbeMs: number; securitySoftwareMs: number };
 }
 
@@ -87,8 +87,8 @@ export async function runDiagnostics(deps: DiagnosticsDeps): Promise<Diagnostics
   // 只有桌面版才有主进程日志目录；有目录即可断定应用装在 process.execPath 旁
   const installDir = deps.env['MOLIO_MAIN_LOG_DIR'] ? path.dirname(process.execPath) : null;
 
-  // 空日志 = 没有日志：更新状态与退出摘要都按「读不到」处理
-  const lines = deps.readMainLog() ?? [];
+  // 空日志 = 没有日志：更新状态与退出摘要都按「读不到」处理；读日志自身抛错同理
+  const lines = probe(() => deps.readMainLog()) ?? [];
   const hasLog = lines.length > 0;
   const updaterStatus = hasLog ? parseUpdaterStatus(lines) : null;
   const exitSummary = hasLog ? summarizeDaemonExits(parseDaemonExits(lines), now) : null;
@@ -102,7 +102,9 @@ export async function runDiagnostics(deps: DiagnosticsDeps): Promise<Diagnostics
   if (dataUsage !== null) {
     diskUsages.push({ label: 'Molio 数据', freeBytes: dataUsage.freeBytes, totalBytes: dataUsage.totalBytes });
   }
-  for (const vault of deps.listVaults()) {
+  // vault 清单读不出（DB 锁死/损坏）按空列表处理：体检正是为生病的机器准备的，
+  // 报告必须照常出——只是没有库相关条目，其余项不受影响
+  for (const vault of probe(() => deps.listVaults()) ?? []) {
     const exists = probe(() => deps.pathExists(vault.path));
     // 只对确认存在的库测可写；exists 探测失败时 writable 不能想当然
     const writable = exists === true ? probe(() => deps.pathWritable(vault.path)) : null;
