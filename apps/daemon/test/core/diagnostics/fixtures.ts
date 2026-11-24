@@ -19,6 +19,14 @@ export const UPD_AVAIL = L('2026-11-23T07:29:34.141Z', '[INFO] [updater] update 
 export const START = L('2026-11-23T07:51:50.858Z', '[INFO] [main] Starting daemon: D:\\molio\\resources\\daemon\\daemon.mjs');
 export const WATCH_FAIL = L('2026-11-18T14:42:24.839Z', "[INFO] [daemon] [vault-watcher] failed to watch 3edb6697-1 (/Volumes/My Passport/demo): ENOENT: no such file or directory, watch '/Volumes/My Passport/demo'");
 
+// —— 支持包隐私夹具 ——
+
+// 账号标识行：支持包绝不能把它（或它的续行）带出去
+export const ACCOUNT_LINE = L('2026-11-23T07:40:00.000Z', '[INFO] [auth-status-watch] user logged in (id=u_abc123)');
+// daemon stdout 转发：首行带标签，后续行不带时间戳前缀（续行）
+export const TAIL_HEAD = L('2026-11-23T07:39:02.509Z', '[ERROR] [main] daemon stdout tail:');
+export const TAIL_CONT = 'Molio daemon listening on http://localhost:3100';
+
 // —— runDiagnostics 依赖夹具 ——
 
 // 完整的可用 Claude Code 探测结果（models / installable 是 AgentInfo 必填字段）
