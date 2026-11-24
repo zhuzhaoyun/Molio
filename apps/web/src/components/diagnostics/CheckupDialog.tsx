@@ -10,6 +10,7 @@ import { useI18n } from '../../i18n';
 import {
   readDesktopBridge, canRunAction, runDiagnosticAction, type DesktopBridge,
 } from './checkupActions';
+import { isRevealAvailable, revealAbsolutePath } from '../../utils/reveal';
 
 export interface CheckupDialogProps {
   open: boolean;
@@ -84,15 +85,24 @@ export function CheckupDialog({
 
   const [status, setStatus] = useState<FetchStatus>('loading');
   const [report, setReport] = useState<DiagnosticsReport | null>(null);
-  // view 是支持包（Task 9）的 confirm/result 预留；本任务只渲染 report
+  // 支持包流程与体检报告互斥占满面板：正文和底部按钮整体切换（追加在报告后面
+  // 会被模态框 80vh 限高裁出可视区，用户点了却像什么都没发生）
   const [view, setView] = useState<'report' | 'confirm' | 'result'>('report');
+  // 支持包生成状态机：idle → working → done | failed
+  const [bundle, setBundle] = useState<'idle' | 'working' | 'done' | 'failed'>('idle');
+  const [bundlePath, setBundlePath] = useState<string | null>(null);
 
   // 桌面桥在整个会话期不变（preload 注入一次），memo 一次即可
   const bridge = useMemo(() => readDesktopBridge(window), []);
+  const canReveal = useMemo(() => isRevealAvailable(), []);
 
   const runCheck = useCallback(() => {
     const req = ++reqIdRef.current;
     setStatus('loading');
+    // 重新检查从体检报告看起：支持包的一次性结果不跨检查残留
+    setView('report');
+    setBundle('idle');
+    setBundlePath(null);
     api.getDiagnostics()
       .then((r) => { if (reqIdRef.current === req) { setReport(r); setStatus('ready'); } })
       .catch(() => { if (reqIdRef.current === req) setStatus('unreachable'); });
@@ -125,6 +135,24 @@ export function CheckupDialog({
     if (!p || !bridge?.openPath) return;
     bridge.openPath(p.replace(/[\\/][^\\/]+$/, ''));
   }, [bridge]);
+
+  // 生成期间按钮已 disabled，这里再守一道：连点只发一次请求；
+  // 结束（无论成败）都整体切到 result 视图
+  const createBundle = useCallback(() => {
+    if (bundle === 'working') return;
+    setBundle('working');
+    api.createSupportBundle()
+      .then((r) => { setBundlePath(r.path); setBundle('done'); setView('result'); })
+      .catch(() => { setBundle('failed'); setView('result'); });
+  }, [bundle]);
+
+  // 关面板即清场：下次打开从体检报告看起
+  useEffect(() => {
+    if (open) return;
+    setView('report');
+    setBundle('idle');
+    setBundlePath(null);
+  }, [open]);
 
   if (!open) return null;
 
@@ -222,6 +250,61 @@ export function CheckupDialog({
             </div>
           )}
 
+          {status === 'ready' && view === 'confirm' && (
+            // 确认视图：先让用户看清会打包什么、不会打包什么——清单可见前不发任何请求
+            <div data-testid="checkup-view-confirm">
+              <p className="checkup-view-intro">{t('checkup.bundleIntro')}</p>
+              <ul className="checkup-includes">
+                <li>{t('checkup.bundleItemReport')}</li>
+                <li>{t('checkup.bundleItemLog')}</li>
+                <li>{t('checkup.bundleItemEnv')}</li>
+              </ul>
+              <p className="checkup-note">{t('checkup.bundleExcludes')}</p>
+            </div>
+          )}
+
+          {view === 'result' && (
+            bundle === 'done' ? (
+              // 成功：结论 + 路径单独成框（等宽、可整段选中）+ 在文件夹中显示（仅桌面壳）
+              <div data-testid="checkup-view-result">
+                <h3 className="checkup-verdict">
+                  <span className="checkup-dot" />
+                  <span>{t('checkup.bundleDoneTitle')}</span>
+                </h3>
+                <div className="checkup-path">{bundlePath}</div>
+                <p className="checkup-verdict-note">{t('checkup.bundleDoneHint')}</p>
+                {canReveal && (
+                  <div className="checkup-view-actions">
+                    <button
+                      type="button"
+                      className="kb-btn"
+                      data-testid="checkup-bundle-reveal"
+                      onClick={() => { if (bundlePath) revealAbsolutePath(bundlePath); }}
+                    >
+                      {t('checkup.bundleReveal')}
+                    </button>
+                  </div>
+                )}
+              </div>
+            ) : (
+              // 失败：不是裸报错（不渲染 detail/英文报错），给「打开日志文件夹」的下一步
+              <div data-testid="checkup-view-result">
+                <h3 className="checkup-verdict">
+                  <span className="checkup-dot" data-level="error" />
+                  <span>{t('checkup.bundleFailedTitle')}</span>
+                </h3>
+                <p className="checkup-verdict-note">{t('checkup.bundleFailedHint')}</p>
+                {(bridge?.getLogPath && bridge?.openPath) && (
+                  <div className="checkup-view-actions">
+                    <button type="button" className="kb-btn" data-testid="checkup-open-log-folder" onClick={() => { void openLogFolder(); }}>
+                      {t('checkup.openLogFolder')}
+                    </button>
+                  </div>
+                )}
+              </div>
+            )
+          )}
+
           {status === 'unreachable' && (
             // 后台服务没回应：不是白屏也不是裸报错，给「重启 + 日志文件夹」指引。
             // 复用 checkup-item 的红色色带排版；这个状态没有底部栏（没有可重试的确定性动作）。
@@ -263,6 +346,9 @@ export function CheckupDialog({
             <button type="button" className="kb-btn" data-testid="checkup-recheck" onClick={runCheck}>
               {t('checkup.recheck')}
             </button>
+            <button type="button" className="kb-btn" data-testid="checkup-bundle" onClick={() => setView('confirm')}>
+              {t('checkup.bundle')}
+            </button>
             {canRunAgent && (
               <button
                 type="button"
@@ -273,6 +359,37 @@ export function CheckupDialog({
                 {t('checkup.askAi')}
               </button>
             )}
+          </div>
+        )}
+
+        {status === 'ready' && view === 'confirm' && (
+          <div className="kb-modal-footer">
+            <button type="button" className="kb-btn" data-testid="checkup-bundle-back" onClick={() => setView('report')}>
+              {t('checkup.bundleBack')}
+            </button>
+            <button
+              type="button"
+              className="kb-btn kb-btn-primary"
+              data-testid="checkup-bundle-confirm"
+              disabled={bundle === 'working'}
+              onClick={createBundle}
+            >
+              {bundle === 'working' ? t('checkup.bundleWorking') : t('checkup.bundleConfirm')}
+            </button>
+          </div>
+        )}
+
+        {view === 'result' && (
+          <div className="kb-modal-footer">
+            {/* 回到体检结果不走重新请求：报告还在 state 里 */}
+            <button
+              type="button"
+              className="kb-btn"
+              data-testid="checkup-bundle-back"
+              onClick={() => { setView('report'); setBundle('idle'); setBundlePath(null); }}
+            >
+              {t('checkup.bundleBackToReport')}
+            </button>
           </div>
         )}
       </div>

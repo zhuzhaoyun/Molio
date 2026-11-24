@@ -242,4 +242,67 @@ test.describe('Molio 体检面板（听诊器入口）', () => {
     await expect(page.locator('[data-testid="checkup-verdict"]')).toHaveText('Molio 运行正常');
     await expect(page.locator('[data-testid="checkup-ask-ai"]')).toBeVisible();
   });
+
+  test('生成支持包：先看内容清单，确认后显示文件路径，可以返回', async ({ page }) => {
+    await mockDiagnostics(page);
+    let bundlePosts = 0;
+    await page.route('**/api/diagnostics/support-bundle', (route) => {
+      bundlePosts++;
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ path: 'C:\\Users\\demo\\Documents\\molio-support-20261124-150205.txt' }),
+      });
+    });
+
+    await page.goto(`/knowledge?vault=${cvault.id}`);
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+    await page.locator('[data-testid="kb-btn-lint-wiki"]').click();
+    await expect(page.locator('[data-testid="checkup-view-report"]')).toBeVisible();
+
+    // 点「生成支持包」→ 整体切换成确认视图：先看到内容清单，此时还没有发任何请求
+    await page.locator('[data-testid="checkup-bundle"]').click();
+    const confirmView = page.locator('[data-testid="checkup-view-confirm"]');
+    await expect(confirmView).toBeVisible();
+    await expect(confirmView).toContainText('体检结果');
+    await expect(confirmView).toContainText('运行日志');
+    await expect(confirmView).toContainText('系统与版本信息');
+    await expect(confirmView).toContainText('不包含对话内容');
+    expect(bundlePosts).toBe(0);
+
+    // 确认后结果视图给出结论 + 文件路径（等结果出来再数请求，避免与路由拦截竞速）
+    await page.locator('[data-testid="checkup-bundle-confirm"]').click();
+    const resultView = page.locator('[data-testid="checkup-view-result"]');
+    await expect(resultView).toContainText('支持包已生成');
+    await expect(resultView).toContainText('C:\\Users\\demo\\Documents\\molio-support-20261124-150205.txt');
+    // 恰好发一次请求：不预取（上面 bundlePosts===0 已证）、不重复
+    expect(bundlePosts).toBe(1);
+    // 纯浏览器没有桌面桥：「在文件夹中显示」不渲染，而不是点了没反应
+    await expect(page.locator('[data-testid="checkup-bundle-reveal"]')).toHaveCount(0);
+
+    // 返回体检结果：报告原样还在，结论不因来回切换而重查
+    await page.locator('[data-testid="checkup-bundle-back"]').click();
+    await expect(page.locator('[data-testid="checkup-view-report"]')).toBeVisible();
+    await expect(page.locator('[data-testid="checkup-verdict"]')).toHaveText('有 1 处问题需要处理');
+  });
+
+  test('支持包生成失败时说明下一步，而不是裸报错', async ({ page }) => {
+    await mockDiagnostics(page);
+    await page.route('**/api/diagnostics/support-bundle', (route) =>
+      route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'boom' }) }));
+
+    await page.goto(`/knowledge?vault=${cvault.id}`);
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+    await page.locator('[data-testid="kb-btn-lint-wiki"]').click();
+    await expect(page.locator('[data-testid="checkup-view-report"]')).toBeVisible();
+
+    await page.locator('[data-testid="checkup-bundle"]').click();
+    await page.locator('[data-testid="checkup-bundle-confirm"]').click();
+
+    const resultView = page.locator('[data-testid="checkup-view-result"]');
+    await expect(resultView).toContainText('支持包没有生成成功');
+    await expect(resultView).toContainText('日志文件夹');
+    // 不把 daemon 的英文报错细节漏给用户
+    await expect(resultView).not.toContainText('boom');
+  });
 });

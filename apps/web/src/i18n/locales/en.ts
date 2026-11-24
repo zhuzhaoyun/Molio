@@ -1220,6 +1220,21 @@ const en: Record<string, string> = {
   'checkup.unreachableStep1': 'Restart Molio',
   'checkup.unreachableStep2': 'If it still happens after restarting, open the logs folder and send the files to Molio support',
   'checkup.openLogFolder': 'Open logs folder',
+  'checkup.bundle': 'Create support bundle',
+  'checkup.bundleIntro': 'Pack the items below into one file and send it to Molio support, so they can see what happened on this computer.',
+  'checkup.bundleItemReport': 'The checkup results',
+  'checkup.bundleItemLog': 'Runtime logs (last 300 lines, account info removed, your username masked)',
+  'checkup.bundleItemEnv': 'System and version info (OS version, Molio version, security software, location and number of your knowledge bases)',
+  'checkup.bundleExcludes': "Does not include conversations, document contents, passwords or keys. The file is only created on this computer and is never uploaded automatically.",
+  'checkup.bundleBack': 'Back',
+  'checkup.bundleConfirm': 'Create support bundle',
+  'checkup.bundleWorking': 'Creating…',
+  'checkup.bundleDoneTitle': 'Support bundle created',
+  'checkup.bundleDoneHint': 'Please send this file to Molio support.',
+  'checkup.bundleReveal': 'Show in folder',
+  'checkup.bundleFailedTitle': 'The support bundle was not created',
+  'checkup.bundleFailedHint': 'Please open the logs folder and send the files in it to Molio support.',
+  'checkup.bundleBackToReport': 'Back to checkup results',
 };
 
 export default en;

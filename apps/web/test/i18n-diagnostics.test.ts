@@ -32,6 +32,21 @@ describe('Molio 体检文案', () => {
     'checkup.unreachableStep1',
     'checkup.unreachableStep2',
     'checkup.openLogFolder',
+    'checkup.bundle',
+    'checkup.bundleIntro',
+    'checkup.bundleItemReport',
+    'checkup.bundleItemLog',
+    'checkup.bundleItemEnv',
+    'checkup.bundleExcludes',
+    'checkup.bundleBack',
+    'checkup.bundleConfirm',
+    'checkup.bundleWorking',
+    'checkup.bundleDoneTitle',
+    'checkup.bundleDoneHint',
+    'checkup.bundleReveal',
+    'checkup.bundleFailedTitle',
+    'checkup.bundleFailedHint',
+    'checkup.bundleBackToReport',
   ];
 
   it('每条文案中英双语', () => {
@@ -54,5 +69,15 @@ describe('Molio 体检文案', () => {
       assert.match(en[key], /\{n\}/, `${key} 缺少 {n}`);
     }
     assert.match(zh['checkup.skipNote'], /\{n\}.*\{names\}/);
+  });
+
+  it('支持包路径单独成框，不拼进句子（无 {path} 占位符）', () => {
+    // 生成成功的界面里，文件路径由独立的 checkup-path 框渲染（等宽、可整段选中），
+    // 不走 t(key, { path }) 插值——Windows 反斜杠路径混进句子里就没法整段复制了。
+    // 若哪天想把路径拼回文案，先改回独立成框的排版，而不是加占位符。
+    for (const key of ['checkup.bundleDoneTitle', 'checkup.bundleDoneHint']) {
+      assert.doesNotMatch(zh[key], /\{path\}/, `${key} 不该有 {path} 占位符`);
+      assert.doesNotMatch(en[key], /\{path\}/, `${key} 不该有 {path} 占位符`);
+    }
   });
 });

@@ -16,7 +16,7 @@ import type {
   HubSkillDetailQuery, HubSkillDetailResponse,
   ExternalRoot, ExternalRootsResponse, AddExternalRootRequest,
   SaveQuizAttemptsRequest,
-  DiagnosticsReport,
+  DiagnosticsReport, SupportBundleResult,
 } from '@molio/contracts';
 
 /**
@@ -1011,6 +1011,13 @@ export const api = {
   async getDiagnostics(): Promise<DiagnosticsReport> {
     const res = await fetch(`${BASE}/diagnostics`);
     if (!res.ok) throw new Error(`Failed to run diagnostics: ${res.status}`);
+    return res.json();
+  },
+
+  /** 支持包：体检结果 + 运行日志 + 系统信息打包成一个本地文件，返回其绝对路径。 */
+  async createSupportBundle(): Promise<SupportBundleResult> {
+    const res = await fetch(`${BASE}/diagnostics/support-bundle`, { method: 'POST' });
+    if (!res.ok) throw new Error(`Failed to create support bundle: ${res.status}`);
     return res.json();
   },
 

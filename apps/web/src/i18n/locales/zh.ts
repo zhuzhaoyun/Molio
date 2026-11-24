@@ -1225,6 +1225,21 @@ const zh: Record<string, string> = {
   'checkup.unreachableStep1': '重启 Molio',
   'checkup.unreachableStep2': '如果重启后仍然如此，请打开日志文件夹，把里面的文件发给 Molio 支持人员',
   'checkup.openLogFolder': '打开日志文件夹',
+  'checkup.bundle': '生成支持包',
+  'checkup.bundleIntro': '把下面的内容打包成一个文件，发给 Molio 支持人员，他们就能看到这台电脑上发生了什么。',
+  'checkup.bundleItemReport': '体检结果',
+  'checkup.bundleItemLog': '运行日志（最近 300 行，已去除账号信息，用户名已打码）',
+  'checkup.bundleItemEnv': '系统与版本信息（系统版本、Molio 版本、安全软件、知识库的位置与数量）',
+  'checkup.bundleExcludes': '不包含对话内容、文档正文、密码和密钥。文件只生成在这台电脑上，不会自动上传。',
+  'checkup.bundleBack': '返回',
+  'checkup.bundleConfirm': '生成支持包',
+  'checkup.bundleWorking': '正在生成…',
+  'checkup.bundleDoneTitle': '支持包已生成',
+  'checkup.bundleDoneHint': '请把这个文件发给 Molio 支持人员。',
+  'checkup.bundleReveal': '在文件夹中显示',
+  'checkup.bundleFailedTitle': '支持包没有生成成功',
+  'checkup.bundleFailedHint': '请打开日志文件夹，把里面的文件发给 Molio 支持人员。',
+  'checkup.bundleBackToReport': '返回体检结果',
 };
 
 export default zh;
