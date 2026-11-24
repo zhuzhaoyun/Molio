@@ -14,12 +14,14 @@ import { withSurfaceTransitionSync, skipSurfaceTransition } from '../../stores/s
 import { ChatSessionTabBar } from './ChatSessionTabBar';
 import { KbChatSession } from './KbChatSession';
 import { useKbChatSessionApi } from './KbChatSessionsProvider';
-import { WIKI_PROMPTS, WIKI_INGEST_PROMPT, WIKI_TITLES } from './kbChatPrompts';
+import { WIKI_PROMPTS, WIKI_INGEST_PROMPT, WIKI_TITLES, wrapDiagnoseDirective } from './kbChatPrompts';
 import { ConfirmDialog } from './KbModals';
 import './KbChatSessionsPanel.css';
 
 export interface KbChatSessionsPanelHandle {
   runWikiOp: (opts: { mode: 'build' | 'lint' | 'ingest'; filePath?: string; isDirectory?: boolean }) => void;
+  /** Molio 体检面板的「让 AI 帮我看」：总开新 qa 会话并发送带诊断指令的消息。 */
+  askDoctor: (message: string) => void;
   openQa: (opts: { filePath: string | null; vaultId: string | null; selectedText?: string | null }) => void;
   /** 打开历史会话（方案 D：任意页面就地打开，不跳转知识库页）。 */
   openConversation: (conversationId: string) => void;
@@ -667,6 +669,24 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
     clearAndSend(tab.id, opts);
   }, [sessions, anyWikiRunning, clearAndSend, showToast]);
 
+  // Molio 体检的「让 AI 帮我看」：总开**新** qa 会话——诊断需要干净的上下文，
+  // 复用旧会话会把体检结论混进无关的对话历史里。消息先包诊断指令（与隐式触发
+  // 同一条指令），agent 会先跑只读体检再回答。
+  const askDoctor = useCallback((message: string) => {
+    const res = kbChatSessionsStore.openSession({
+      mode: 'qa', title: 'Molio 诊断', conversationId: null, filePath: null,
+    });
+    if (!res.opened || !res.tab) {
+      showToast(`已达 ${MAX_CHAT_SESSIONS} 个会话标签上限`);
+      return;
+    }
+    withSurfaceTransitionSync(() => kbChatSessionsStore.setPanelOpen(true));
+    const text = wrapDiagnoseDirective(message);
+    const a = getApi(res.tab.id);
+    if (a) a.send(text);
+    else pendingAutoSendRef.current.set(res.tab.id, text); // 标签未 mount，注册 API 时补发
+  }, [getApi, showToast]);
+
   const handleConfirmDialog = useCallback(async (action: 'interrupt' | 'queue') => {
     setConfirmDialog((prev) => ({ ...prev, show: false }));
     const opts = pendingWikiRef.current;
@@ -802,9 +822,9 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
   }, [getApi]);
 
   useImperativeHandle(ref, () => ({
-    runWikiOp, openQa, openConversation: handleOpenConversation, resetConversations,
+    runWikiOp, askDoctor, openQa, openConversation: handleOpenConversation, resetConversations,
     requestCloseSession: handleCloseTab,
-  }), [runWikiOp, openQa, handleOpenConversation, resetConversations, handleCloseTab]);
+  }), [runWikiOp, askDoctor, openQa, handleOpenConversation, resetConversations, handleCloseTab]);
 
   // toast 与两个确认框（wiki 三选一 / 关闭运行中会话）：面板与「全屏态 portal」共用同一份，
   // 关闭守卫（handleCloseTab）只此一份实现。

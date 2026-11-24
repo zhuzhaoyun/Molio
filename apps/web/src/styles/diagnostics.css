@@ -1,0 +1,234 @@
+/* ── Molio 体检面板 ──
+   只用 tokens.css 的变量。深色有「显式深色」「跟随系统」两条路，
+   写死颜色会在其中一条上失效（见 tokens.css 的 ⚠️ 注释）。 */
+
+.kb-modal.checkup-dialog {
+  width: min(480px, calc(100vw - 32px));
+}
+
+/* ── 结论：一句话说清，不让用户自己数 ── */
+.checkup-verdict {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 0;
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 1.45;
+  color: var(--text-strong);
+}
+.checkup-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--green);
+  transform: translateY(-1px);
+}
+.checkup-dot[data-level='warn'] { background: var(--amber); }
+.checkup-dot[data-level='error'] { background: var(--red); }
+.checkup-verdict-note {
+  margin: 4px 0 0 18px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+/* ── 问题：一条色带表示严重度，不堆卡片 ── */
+.checkup-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin: 18px 0 0;
+}
+.checkup-item {
+  padding-left: 12px;
+  border-left: 3px solid var(--amber);
+}
+.checkup-item[data-level='error'] { border-left-color: var(--red); }
+.checkup-item-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.checkup-item-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.45;
+  color: var(--text-strong);
+}
+.checkup-item-summary {
+  margin: 3px 0 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-muted);
+}
+.checkup-item-actions { flex: none; display: flex; gap: 6px; }
+.checkup-item-actions .kb-btn { height: 28px; padding: 0 10px; font-size: 12px; }
+
+/* 步骤确实是先后顺序，才用编号 */
+.checkup-steps-label {
+  margin: 10px 0 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+.checkup-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: step;
+}
+.checkup-steps li {
+  position: relative;
+  padding-left: 22px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text);
+  counter-increment: step;
+}
+.checkup-steps li::before {
+  content: counter(step);
+  position: absolute;
+  top: 3px;
+  left: 0;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--bg-muted);
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 16px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.checkup-item-actions--below { margin-top: 10px; }
+
+/* ── 安静区：正常的不抢眼 ── */
+.checkup-quiet {
+  margin-top: 18px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-soft);
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--text-muted);
+}
+.checkup-ok summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 4px;
+  cursor: pointer;
+  list-style: none;
+}
+.checkup-ok summary::-webkit-details-marker { display: none; }
+.checkup-ok summary:hover { color: var(--text); }
+.checkup-ok summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.checkup-chevron { transition: transform 150ms ease; }
+.checkup-ok[open] .checkup-chevron { transform: rotate(90deg); }
+.checkup-ok-list {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px 16px;
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+  color: var(--text-muted);
+}
+.checkup-skip { margin: 2px 0 0; color: var(--text-muted); }
+.checkup-wiki {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 6px;
+  padding-top: 10px;
+}
+.checkup-wiki .kb-btn { height: 26px; padding: 0 10px; font-size: 12px; }
+
+/* ── 加载 / 后台服务无响应 ── */
+.checkup-loading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 64px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.checkup-spinner {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--bg-muted);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: checkup-spin 700ms linear infinite;
+}
+@keyframes checkup-spin { to { transform: rotate(360deg); } }
+
+/* ── 支持包：独立的一步，正文与底部按钮整体切换 ── */
+.checkup-view-intro {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.65;
+  color: var(--text-muted);
+}
+.checkup-includes {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 14px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.checkup-includes li {
+  position: relative;
+  padding-left: 16px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text);
+}
+.checkup-includes li::before {
+  content: '';
+  position: absolute;
+  top: 9px;
+  left: 2px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--text-faint);
+}
+.checkup-note {
+  margin: 16px 0 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-soft);
+  font-size: 12.5px;
+  line-height: 1.65;
+  color: var(--text-muted);
+}
+.checkup-path {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-subtle);
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text);
+  word-break: break-all;
+  user-select: all;
+}
+.checkup-view-actions { display: flex; gap: 8px; margin-top: 14px; }
+
+/* ── 无障碍 ── */
+.checkup-dialog .kb-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) {
+  .checkup-spinner { animation: none; }
+  .checkup-chevron { transition: none; }
+}

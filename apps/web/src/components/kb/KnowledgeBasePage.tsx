@@ -33,6 +33,7 @@ import { useSplitView } from '../../stores/splitViewStore';
 import { useCompanionFile } from '../../hooks/useCompanionFile';
 import { FilePicker } from '../FilePicker';
 import { ImportModal, CoseInstallPrompt, InputDialog, ConfirmDialog } from './KbModals';
+import { CheckupDialog } from '../diagnostics/CheckupDialog';
 import { ImportConflictDialog } from './ImportConflictDialog';
 import { ContextMenu, type MenuItem } from './ContextMenu';
 import { useI18n } from '../../i18n';
@@ -170,6 +171,8 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
   const [pendingUrlNav, setPendingUrlNav] = useState<UrlFileNavigation | null>(null);
   const [showOutline, setShowOutline] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
+  // Molio 体检面板（听诊器入口）：无 Wiki / 无 agent 也总能打开——体检查的是 Molio 自身
+  const [checkupOpen, setCheckupOpen] = useState(false);
   // 发布 tab 表单是否有已填内容（PublishForm 上报）——关 tab 前的放弃确认用
   const publishDirtyRef = useRef(false);
 
@@ -1583,9 +1586,8 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
               <button
                 type="button"
                 className="kb-btn kb-btn-ghost"
-                onClick={handleLintWiki}
-                disabled={!kb.activeVault || !kb.wikiInitialized}
-                title={kb.activeVault && kb.wikiInitialized ? t('kb.lintWiki') : t('kb.cmdNeedsVault')}
+                onClick={() => setCheckupOpen(true)}
+                title={t('kb.molioCheckup')}
                 data-testid="kb-btn-lint-wiki"
               >
                 <StethoscopeIcon size={14} />
@@ -1852,6 +1854,16 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
       <CoseInstallPrompt
         show={kb.showCoseInstallPrompt}
         onClose={() => kb.setShowCoseInstallPrompt(false)}
+      />
+
+      {/* Molio 体检：听诊器按钮的确定性体检面板；Wiki 内容检查收进面板安静区（onWikiLint） */}
+      <CheckupDialog
+        open={checkupOpen}
+        onClose={() => setCheckupOpen(false)}
+        wikiInitialized={!!kb.activeVault && kb.wikiInitialized}
+        canRunAgent={!!agentId}
+        onWikiLint={() => { setCheckupOpen(false); handleLintWiki(); }}
+        onAskDoctor={(m) => { setCheckupOpen(false); panelRef.current?.askDoctor(m); }}
       />
 
       {/* Context menu */}

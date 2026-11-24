@@ -1200,6 +1200,31 @@ const zh: Record<string, string> = {
   'myPurchases.removed': '资源已下架',
   'myPurchases.purchasedAt': '购于 {{date}}',
   'myPurchases.updateHint': '资源更新后，重新下载即可获得最新版本',
+
+  // ── Molio 体检（CheckupDialog：知识库页听诊器入口的确定性体检面板）──
+  'kb.molioCheckup': 'Molio 体检',
+  'checkup.title': 'Molio 体检',
+  'checkup.loading': '正在检查…',
+  'checkup.verdictIssues': '有 {n} 处问题需要处理',
+  'checkup.verdictWarnNote': '另有 {n} 处建议留意',
+  'checkup.verdictWarnOnly': 'Molio 可以正常使用',
+  'checkup.verdictOk': 'Molio 运行正常',
+  'checkup.verdictOkNote': '共检查了 {n} 项，都没有问题',
+  'checkup.okToggleOthers': '其余 {n} 项都正常',
+  'checkup.okToggleAll': '看看检查了哪 {n} 项',
+  'checkup.skipNote': '有 {n} 项没能检查：{names}',
+  'checkup.stepsLabel': '你要做的事',
+  'checkup.wikiLint': '继续检查 Wiki 内容健康（约几分钟）',
+  'checkup.wikiLintBtn': '检查',
+  'checkup.askAi': '让 AI 帮我看',
+  'checkup.askAiIssues': 'Molio 体检发现了需要处理的问题，请帮我看看怎么修复。',
+  'checkup.askAiAllOk': 'Molio 体检显示一切正常，但我使用时遇到了问题，请帮我排查。',
+  'checkup.recheck': '重新检查',
+  'checkup.unreachableTitle': '后台服务没有响应',
+  'checkup.unreachableSummary': 'Molio 的后台服务没有回应，通常说明它已经停止运行。',
+  'checkup.unreachableStep1': '重启 Molio',
+  'checkup.unreachableStep2': '如果重启后仍然如此，请打开日志文件夹，把里面的文件发给 Molio 支持人员',
+  'checkup.openLogFolder': '打开日志文件夹',
 };
 
 export default zh;

@@ -16,6 +16,7 @@ import type {
   HubSkillDetailQuery, HubSkillDetailResponse,
   ExternalRoot, ExternalRootsResponse, AddExternalRootRequest,
   SaveQuizAttemptsRequest,
+  DiagnosticsReport,
 } from '@molio/contracts';
 
 /**
@@ -1001,6 +1002,15 @@ export const api = {
     if (scope.type === 'file' && scope.depth != null) params.set('depth', String(scope.depth));
     const res = await fetch(`${BASE}/graph/${vaultId}/local?${params.toString()}`);
     if (!res.ok) throw new Error(`Failed to fetch local graph: ${res.status}`);
+    return res.json();
+  },
+
+  // ─── Diagnostics ───
+
+  /** Molio 体检：确定性健康检查报告（渲染层不解析 detail）。 */
+  async getDiagnostics(): Promise<DiagnosticsReport> {
+    const res = await fetch(`${BASE}/diagnostics`);
+    if (!res.ok) throw new Error(`Failed to run diagnostics: ${res.status}`);
     return res.json();
   },
 
