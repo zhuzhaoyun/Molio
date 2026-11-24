@@ -561,6 +561,13 @@ describe('main.js: packaged daemon must receive the OS documents directory', () 
   });
 });
 
+describe('main.js: daemon env must carry self-diagnostics inputs', () => {
+  it('injects the app version and main-process log directory for self-diagnostics', () => {
+    assert.ok(mainJs.includes('MOLIO_APP_VERSION: app.getVersion()'));
+    assert.ok(mainJs.includes('MOLIO_MAIN_LOG_DIR: getLogDir()'));
+  });
+});
+
 describe('prepare-resources.mjs: sample vault content must ship in packaged builds', () => {
   it('copies src/tools/sample-vault to resources/daemon/sample-vault', () => {
     assert.ok(

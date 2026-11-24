@@ -55,18 +55,26 @@ export function setLogDir(dir) {
   logFile = null;
 }
 
+/**
+ * Return the log directory without writing anything — it must not depend on a
+ * log line having been written. The desktop shell calls this at startup to
+ * hand the daemon the main-process log directory (MOLIO_MAIN_LOG_DIR), the
+ * only reliable record of a background service that died on its own.
+ * @returns {string} absolute path to the log directory
+ */
+export function getLogDir() {
+  if (customLogDir) return customLogDir;
+  // Lazy import electron only when needed (avoids error in plain Node.js tests)
+  const require = createRequire(import.meta.url);
+  const { app } = require('electron');
+  return path.join(app.getPath('userData'), 'logs');
+}
+
 /** Initialize log directory and file path. Safe to call multiple times. */
 function ensureLogPath() {
   if (logFile) return;
 
-  if (customLogDir) {
-    logDir = customLogDir;
-  } else {
-    // Lazy import electron only when needed (avoids error in plain Node.js tests)
-    const require = createRequire(import.meta.url);
-    const { app } = require('electron');
-    logDir = path.join(app.getPath('userData'), 'logs');
-  }
+  logDir = getLogDir();
 
   if (!existsSync(logDir)) {
     mkdirSync(logDir, { recursive: true });

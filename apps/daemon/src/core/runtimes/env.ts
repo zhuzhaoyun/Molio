@@ -42,6 +42,14 @@ function loadAgentDotEnv(agentId: string): Record<string, string> {
   return loadDotEnv(path.join(configDir, '.env'));
 }
 
+/**
+ * daemon 的本机 API 基址（诊断指令里的 curl 用）。
+ * 端口与 daemon 实际监听保持一致：MOLIO_PORT 覆盖，缺省 3100。
+ */
+export function molioApiBase(env: NodeJS.ProcessEnv = process.env): string {
+  return `http://localhost:${Number(env['MOLIO_PORT']) || 3100}`;
+}
+
 export function buildSpawnEnv(
   def: RuntimeAgentDef,
   baseEnv?: Record<string, string>,
@@ -55,6 +63,9 @@ export function buildSpawnEnv(
   // it is running as (e.g. when the user asks "which runtime is this?").
   env['MOLIO_AGENT_ID'] = def.id;
   env['MOLIO_AGENT_NAME'] = def.name;
+  // 页面端无法可靠得知 daemon 端口（NAS 端口映射），所以由 daemon 告诉 agent：
+  // 自助诊断指令里的 curl 直接用这个地址访问体检端点。
+  env['MOLIO_API_BASE'] = molioApiBase();
 
   if (def.id === 'claude') {
     stripUnlessCustomBaseUrl(env, 'ANTHROPIC_BASE_URL', [
