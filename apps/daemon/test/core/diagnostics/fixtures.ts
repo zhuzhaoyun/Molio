@@ -1,3 +1,6 @@
+import type { AgentInfo } from '@molio/contracts';
+import type { DiagnosticsDeps } from '../../../src/core/diagnostics/run-diagnostics.js';
+
 /**
  * 主进程日志行夹具 — 一律取自真实日志格式（main.log / updater.log）。
  * 后续诊断任务的测试继续往这里加，避免各测试文件自带行字符串。
@@ -15,3 +18,38 @@ export const UPD_OK = L('2026-11-23T07:29:34.141Z', '[INFO] [updater] no update 
 export const UPD_AVAIL = L('2026-11-23T07:29:34.141Z', '[INFO] [updater] update available: v0.4.8');
 export const START = L('2026-11-23T07:51:50.858Z', '[INFO] [main] Starting daemon: D:\\molio\\resources\\daemon\\daemon.mjs');
 export const WATCH_FAIL = L('2026-11-18T14:42:24.839Z', "[INFO] [daemon] [vault-watcher] failed to watch 3edb6697-1 (/Volumes/My Passport/demo): ENOENT: no such file or directory, watch '/Volumes/My Passport/demo'");
+
+// —— runDiagnostics 依赖夹具 ——
+
+// 完整的可用 Claude Code 探测结果（models / installable 是 AgentInfo 必填字段）
+const CLAUDE_AGENT: AgentInfo = {
+  id: 'claude',
+  name: 'Claude Code',
+  available: true,
+  version: '2.1.0',
+  models: [],
+  installable: false,
+};
+
+/**
+ * runDiagnostics 的默认依赖：全绿、时间固定、超时毫秒级（测试不会真等）。
+ * 单条用例只覆写自己关心的那一两项。
+ */
+export function makeDeps(overrides: Partial<DiagnosticsDeps> = {}): DiagnosticsDeps {
+  return {
+    now: () => Date.parse('2026-11-23T12:00:00Z'),
+    env: {},
+    platform: 'win32',
+    arch: 'x64',
+    uptimeSec: () => 3725,
+    listVaults: () => [{ id: 'v1', name: '示例', path: '/vaults/demo', fileCount: 3, createdAt: 0 }],
+    pathExists: () => true,
+    pathWritable: () => true,
+    diskUsage: () => ({ freeBytes: 50 * 1024 ** 3, totalBytes: 200 * 1024 ** 3 }),
+    detectAgents: async () => [CLAUDE_AGENT],
+    listSecuritySoftware: async () => ['Windows Defender'],
+    readMainLog: () => null,
+    timeouts: { agentProbeMs: 20, securitySoftwareMs: 20 },
+    ...overrides,
+  };
+}
