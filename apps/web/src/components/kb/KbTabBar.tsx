@@ -281,7 +281,9 @@ export function KbTabBar({ tabs, activeTabId, onActivate, onClose, onAddTab, onT
   // Animate the close: mark the tab as closing so CSS collapses it, then defer
   // the real store removal until the transition finishes. If the close ends up
   // showing a confirm dialog instead (dirty tab) and the tab survives, restore it.
+  const lastBlank = tabs.length === 1 && tabs[0]?.type === 'blank';
   const requestClose = useCallback((id: string) => {
+    if (lastBlank) return;
     setClosingIds((prev) => { const n = new Set(prev); n.add(id); return n; });
     window.setTimeout(() => {
       onClose(id);
@@ -289,7 +291,7 @@ export function KbTabBar({ tabs, activeTabId, onActivate, onClose, onAddTab, onT
         setClosingIds((prev) => { const n = new Set(prev); n.delete(id); return n; });
       }
     }, 190);
-  }, [onClose]);
+  }, [lastBlank, onClose]);
 
   // Close dropdown on Esc or outside click (button + menu count as one unit).
   useEffect(() => {
@@ -420,7 +422,7 @@ export function KbTabBar({ tabs, activeTabId, onActivate, onClose, onAddTab, onT
                 </span>
               )}
               <span className="kb-wtab-title">{display}</span>
-              <button
+              {!lastBlank && <button
                 type="button"
                 className="kb-wtab-close"
                 onClick={(e) => {
@@ -428,7 +430,7 @@ export function KbTabBar({ tabs, activeTabId, onActivate, onClose, onAddTab, onT
                   requestClose(tab.id);
                 }}
                 title="关闭"
-              >×</button>
+              >×</button>}
             </div>
           );
         })}
@@ -480,12 +482,12 @@ export function KbTabBar({ tabs, activeTabId, onActivate, onClose, onAddTab, onT
                 title={tooltip}
               >
                 <span className="kb-wtab-dropdown-title">{display}</span>
-                <button
+                {!lastBlank && <button
                   type="button"
                   className="kb-wtab-dropdown-close"
                   onClick={(e) => { e.stopPropagation(); requestClose(tab.id); }}
                   title="关闭"
-                >×</button>
+                >×</button>}
               </div>
             );
           })}

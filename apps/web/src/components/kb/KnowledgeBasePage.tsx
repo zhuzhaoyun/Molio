@@ -1665,6 +1665,9 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
               hasFiles={kb.tree.length > 0}
               onAskAboutSelection={handleAskAboutSelection}
               onOpenOutline={() => setShowOutline(true)}
+              blankTab={tabs.getActiveTab()?.type === 'blank'}
+              onNewNote={() => handleNewFile()}
+              onSearchFiles={() => setShowSearch(true)}
               onAskAboutFile={handleOpenQa}
               guideAsk={onboardingHint === 'ask' && !noRuntime}
               showFileName={true}
