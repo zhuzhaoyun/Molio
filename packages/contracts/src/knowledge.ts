@@ -190,6 +190,12 @@ export interface GraphData {
    * 局部图接口不携带；旧缓存条目没有该字段 = web fail-open 不启用 trunk。
    */
   communities?: GraphCommunities;
+  /**
+   * 布局种子（H3）：daemon worker 预跑同款力配方的近终态坐标，全量图端点 best-effort 携带
+   * （覆盖率不足/预跑未完成时缺省）；缺失 = 浏览器回退现状（d3 黝始化 + 全量 reheat）。
+   * 局部图端点不携带。坐标取整 1 位小数。
+   */
+  positions?: import('./graph-layout.js').GraphPositions;
 }
 
 /** trunk 对象 id 空间：簇 = "c1".."cn"（按成员最小 key 排序编号）；hub = 节点 key（相对路径，恒以 .md 结尾，无碰撞）。 */
