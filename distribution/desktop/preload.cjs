@@ -17,9 +17,17 @@ const navigate = () => {
   if (!root?.firstElementChild || !queuedRoute) return;
   observer?.disconnect();
   observer = undefined;
-  const idx = (window.history.state?.idx ?? 0) + 1;
-  window.history.pushState({ usr: null, key: crypto.randomUUID(), idx }, '', queuedRoute);
+  const destination = new URL(queuedRoute, window.location.href);
   queuedRoute = undefined;
+  if (destination.origin !== window.location.origin) return;
+  // Finish cross-page navigation even if the knowledge view is still mirroring
+  // its selected vault into the old route. Keep its tabs for in-page navigation.
+  if (destination.pathname !== window.location.pathname) {
+    window.location.assign(destination.href);
+    return;
+  }
+  const idx = (window.history.state?.idx ?? 0) + 1;
+  window.history.pushState({ usr: null, key: crypto.randomUUID(), idx }, '', destination.href);
   window.dispatchEvent(new PopStateEvent('popstate', { state: window.history.state }));
 };
 ipcRenderer.on('molio:clip-route', (_event, route) => {

@@ -5,7 +5,6 @@ import { join } from 'node:path';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { Hono } from 'hono';
 import { openDatabase, closeDatabase, createVault } from '../../src/core/db.js';
-import { RunManager } from '../../src/core/RunManager.js';
 import { VaultWatcher } from '../../src/core/vault-watcher.js';
 
 // Lower caps so small real files can exercise tooLarge/refuse branches.
@@ -33,7 +32,7 @@ describe('GET /vaults/:id/files/* force + 413', () => {
     vaultId = vault.id;
 
     const root = new Hono();
-    root.route('/api/knowledge', knowledgeRoutes(db, new RunManager(), new VaultWatcher(db)));
+    root.route('/api/knowledge', knowledgeRoutes(db, new VaultWatcher(db)));
     app = root;
   });
 

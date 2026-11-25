@@ -15,6 +15,7 @@
   },
   "files": [
     "dist/src",
+    "desktop",
     "cordis.patch.yml",
     "README.md",
     "LICENSE"

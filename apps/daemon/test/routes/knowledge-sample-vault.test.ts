@@ -6,7 +6,6 @@ import { mkdtempSync, rmSync, mkdirSync, writeFileSync, existsSync } from 'node:
 import { Hono } from 'hono';
 import { knowledgeRoutes } from '../../src/routes/knowledge.js';
 import { openDatabase, closeDatabase, createVault, listVaults } from '../../src/core/db.js';
-import { RunManager } from '../../src/core/RunManager.js';
 import { VaultWatcher } from '../../src/core/vault-watcher.js';
 import { SAMPLE_VAULT_ENTRY } from '../../src/core/sample-vault.js';
 
@@ -27,7 +26,7 @@ describe('POST /api/knowledge/sample-vault', () => {
     db = openDatabase(dataDir);
     vaultWatcher = new VaultWatcher(db);
     const rootApp = new Hono();
-    rootApp.route('/api/knowledge', knowledgeRoutes(db, new RunManager(), vaultWatcher));
+    rootApp.route('/api/knowledge', knowledgeRoutes(db, vaultWatcher));
     app = rootApp;
   });
 

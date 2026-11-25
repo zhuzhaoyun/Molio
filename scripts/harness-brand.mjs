@@ -1,7 +1,7 @@
 import { copyFile, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 
-const source = new URL('../apps/desktop/build/', import.meta.url)
+const source = new URL('../distribution/brand/', import.meta.url)
 const variants = new URL('./harness-icons/', import.meta.url)
 const sidebar = 'packages/client/ui-sidebar/src/client/SidebarRoot.tsx'
 const official = 'packages/client/ui-brand-official/src/client/Brand.tsx'

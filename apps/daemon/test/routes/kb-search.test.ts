@@ -7,7 +7,6 @@ import { Hono } from 'hono';
 import { knowledgeRoutes } from '../../src/routes/knowledge.js';
 import { openDatabase, closeDatabase, createVault } from '../../src/core/db.js';
 import { reindexVault } from '../../src/core/vault-search.js';
-import { RunManager } from '../../src/core/RunManager.js';
 import { VaultWatcher } from '../../src/core/vault-watcher.js';
 
 async function json(res: Response): Promise<Record<string, unknown>> {
@@ -36,7 +35,7 @@ describe('Knowledge routes — full-text search', () => {
     dbRef = db;
     // 路由用硬编码 /api/knowledge 前缀做 path 提取，必须挂到该前缀
     const root = new Hono();
-    root.route('/api/knowledge', knowledgeRoutes(db, new RunManager(), new VaultWatcher(db)));
+    root.route('/api/knowledge', knowledgeRoutes(db, new VaultWatcher(db)));
     app = root;
   });
 

@@ -105,7 +105,7 @@ export async function startMolioDesktop() {
     // A new or redirected Windows profile may have no registered Documents folder yet.
     documents = join(app.getPath('home'), 'Documents')
   }
-  const resources = join(directory, app.isPackaged ? 'molio' : 'molio-resources')
+  const resources = join(directory, app.isPackaged ? 'molio' : 'molio-plugin-resources')
   const dshDirectory = app.isPackaged ? join(app.getAppPath(), 'dsh')
     : process.env.DSH_DESKTOP_DSH_DIR || join(app.getAppPath(), '.desktop-build/development/project')
   const service = await sidecar.startSidecar(resources, {

@@ -1,6 +1,0 @@
-release/
-dist/
-resources/
-e2e/e2e-results/
-test-results/
-src/monitoring-bundle.mjs

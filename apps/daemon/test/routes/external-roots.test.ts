@@ -29,7 +29,7 @@ function app() {
     unwatch: async () => {},
     notifyExternalMutation: () => {},
   };
-  const a = knowledgeRoutes(db, {} as any, watcher as any);
+  const a = knowledgeRoutes(db, watcher as any);
   return { db, a, watchCalls };
 }
 
