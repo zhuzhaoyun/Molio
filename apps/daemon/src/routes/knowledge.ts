@@ -55,7 +55,6 @@ import { searchVaultFiles, indexVaultFile, removeVaultFile, removeVaultDir, ensu
 import { buildTreeInWorker } from '../core/vault-worker.js';
 import { TreeCache } from '../core/tree-cache.js';
 import { VAULT_TREE_CHANGED_EVENT, type VaultWatcher } from '../core/vault-watcher.js';
-import type { RunManager } from '../core/RunManager.js';
 import { reconcileVault } from '../core/skills/vault-config.js';
 import { FileTooLargeError } from '../core/encoding.js';
 import { createSampleVault, SampleVaultPathError } from '../core/sample-vault.js';
@@ -72,7 +71,6 @@ const ILLEGAL_LABEL = /[\\/:*?"<>|]/;
 
 export function knowledgeRoutes(
   db: Database.Database,
-  runManager: RunManager,
   vaultWatcher: VaultWatcher,
   /**
    * @param treeCache 文件树缓存。默认自建一个（每个 app 实例一份）——server.ts 会

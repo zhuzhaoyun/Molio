@@ -1,5 +1,8 @@
 # Molio — 让你的积累，在 AI 时代持续产生价值
 
+桌面预装版以 deepseek-harness 为宿主。开发启动、插件目录、打包及上游更新见 [预装版维护说明](docs/harness-upstream.md)。原独立 Electron 桌面端的说明适用于历史版本。
+
+
 本地优先应用：把 AI runtime（Codex / Codex 等）接到你的本地知识库上，AI 读你的积累做研究、写作、问答，产出回写入库、沉淀为资产；排版与多平台发布只是产出出口之一。
 1. 管理本地知识库（类 Obsidian + LLM Wiki），支持 weknora 知识库
 2. 调用 Codex / Codex 等 AI runtime 基于知识库做研究、写作、咨询等
@@ -11,11 +14,11 @@
 
 ```
 packages/
+  dsh-plugin-molio/ — DSH 知识工具和桌面插件
   contracts/    @molio/contracts  — shared types (AgentEvent, RunInfo, API types, SSE, auth)
 apps/
   daemon/       @molio/daemon    — Hono HTTP server, RunManager, SSE transport (→ apps/daemon/AGENTS.md)
   web/          @molio/web       — Vite + React web UI, consuming daemon SSE (→ apps/web/AGENTS.md)
-  desktop/      @molio/desktop   — Electron shell (→ apps/desktop/AGENTS.md)
   cloud/        @molio/cloud     — 云端认证服务（用户模块；邮箱验证码登录，独立部署，不进应用镜像）(→ apps/cloud/AGENTS.md)
 ```
 
@@ -25,7 +28,7 @@ apps/
 pnpm dev          # daemon (tsx watch :3100) + web (vite :5173)
 pnpm dev:daemon   # daemon only
 pnpm dev:web      # web only
-pnpm dev:desktop  # daemon + web + electron (需确保 5173/3100 端口未被占用)
+pnpm dev:desktop  # 启动已构建的 DSH 预装版
 pnpm dev:cloud    # cloud auth service only (tsx :3200, 无 DATABASE_URL 自动内存模式)
 pnpm build        # build all packages
 pnpm test         # run cloud + daemon + desktop tests (node:test)
@@ -36,7 +39,7 @@ pnpm typecheck    # typecheck all packages
 ### Desktop 构建与运行
 
 ```bash
-pnpm desktop:run    # 一键构建 + 生成未打包版本 (win-unpacked)，可直接运行 exe
+pnpm desktop:run    # 构建并启动 DSH 开发桌面
 pnpm package:dir    # 仅生成未打包目录 (不生成安装包)
 pnpm package        # 完整打包
 ```
@@ -78,7 +81,7 @@ Molio Chrome 扩展保存剪藏时通过 `molio://` 唤起桌面端。协议约�
 - `molio://open/file/<filePath>`：只知道文件相对路径时，由 Web 端使用当前/默认 vault 解析
 - `molio://launch`：只用于打开应用，不应作为剪藏保存后的文件定位主路径
 
-桌面端只负责解析协议并导航到 `/knowledge?...`；Web 端负责等待目标 vault 的文件树加载完成，再选中文件。扩展可能先发出文件打开意图再完成写入，因此 Web 端文件读取允许一次短重试。改这条链路时要同时检查 `molio-connect/background.js`、`apps/desktop/src/main.js`、`apps/web/src/components/kb/KnowledgeBasePage.tsx` 和 `apps/web/src/hooks/useKnowledge.ts`。
+桌面端只负责解析协议并导航到 `/knowledge?...`；Web 端负责等待目标 vault 的文件树加载完成，再选中文件。扩展可能先发出文件打开意图再完成写入，因此 Web 端文件读取允许一次短重试。改这条链路时要同时检查 `molio-connect/background.js`、`distribution/desktop/molio-desktop.ts`、`apps/web/src/components/kb/KnowledgeBasePage.tsx` 和 `apps/web/src/hooks/useKnowledge.ts`。
 
 ## Runtime Context Loading
 
@@ -102,7 +105,7 @@ const child = spawn(binary, args, {
 | 错误来源 | 测试位置 | 测试框架 |
 |---------|---------|---------|
 | daemon bug | `apps/daemon/test/<module>/xxx.test.ts` | node:test |
-| desktop bug | `apps/desktop/test/<module>/xxx.test.js` | node:test |
+| desktop bug | `distribution/test/desktop/harness/xxx.test.js` | node:test |
 | web bug | `apps/web/e2e/xxx.spec.ts` | Playwright |
 | cloud bug | `apps/cloud/test/xxx.test.ts` | node:test |
 
@@ -166,10 +169,10 @@ apps/daemon/src/core/RunManager.ts, conversations/run-starter.ts, db.ts
 
 | 层 | 工具 | 位置 | 触发时机 |
 |---|---|---|---|
-| Unit | `node:test` | `apps/daemon/test/**`, `apps/desktop/test/**` | 每次 PR (win + mac) |
+| Unit | `node:test` | `apps/daemon/test/**`, `distribution/test/desktop/harness/**` | 每次 PR (win + mac) |
 | E2E | Playwright | `apps/web/e2e/*.spec.ts` | 每次 PR (ubuntu) — affected + P0 |
 | E2E Full | Playwright | 同上 | nightly 03:00 UTC + manual |
-| Release Smoke | inline (release.yml) | `apps/desktop/dist/win-unpacked` 等 | tag 触发 |
+| Release Smoke | inline (release.yml) | `win-unpacked/Molio Harness.exe` 等 | tag 触发 |
 | Impact Analysis | grep + area-map | `scripts/codegraph-impact.mjs` | PR opened/synchronize/reopened |
 
 ### E2E 优先级与 area 标签

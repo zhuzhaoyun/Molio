@@ -58,7 +58,7 @@ describe('Knowledge routes — external source roots', () => {
     const root = new Hono();
     root.route(
       '/api/knowledge',
-      knowledgeRoutes(db, {} as never, {
+      knowledgeRoutes(db, {
         watch: async () => {},
         unwatch: async () => {},
     notifyExternalMutation: () => {},
@@ -204,7 +204,7 @@ describe('mount freshness — seeded vault picks up mounted content in search', 
     watcher.on(VAULT_TREE_CHANGED_EVENT, (id: string) => sweeper.scheduleVault(id));
 
     const root = new Hono();
-    root.route('/api/knowledge', knowledgeRoutes(db, {} as any, watcher));
+    root.route('/api/knowledge', knowledgeRoutes(db, watcher));
 
     try {
       await watcher.watch(vault.id, vDir);

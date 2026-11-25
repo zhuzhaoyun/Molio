@@ -40,3 +40,11 @@ corepack pnpm build:harness
 升级时先执行 `git add vendor/deepseek-harness`，让构建读取待提交的版本指针，再执行上述构建命令。若上游改变集成入口，适配脚本会指出需要核对的文件。旧版构建副本会保留在 `.harness-build/host-before-*`。
 
 本地调试可以用 `corepack pnpm build:harness --app` 生成桌面程序和预装资源，然后在 `.harness-build/host` 中运行 `corepack pnpm start:desktop`。完整交付使用上面的安装包构建命令。
+
+## 插件与宿主的维护边界
+
+桌面只有 deepseek-harness 一套 Electron。侧栏、窗口内导航和会话适配位于 `packages/dsh-plugin-molio/desktop`，桌面桥接和品牌资源位于 `distribution/`。上游接口变动集中在 `scripts/harness-*.mjs` 适配，子模块保留上游提交。
+
+预装版的界面入口是 `apps/web/src/harness-main.tsx`，本地服务入口是 `apps/daemon/src/harness-sidecar.ts`。它们复用知识库、图谱、资源市场和账号源码。NAS/Web 保留自己的入口。首次本地构建并启动用 `corepack pnpm desktop:run`，已有构建用 `corepack pnpm dev:desktop`，修改插件源码后重新运行 `desktop:run`。`pnpm dev` 启动独立 Web 开发服务。
+
+预装版发布使用独立标签 `harness-v<版本>`。手动触发 Release 工作流会生成测试安装包；推送预装版标签会发布 GitHub Release 和对应版本的 OSS 下载文件。旧桌面版自动更新地址保留给原版本系列。

@@ -271,8 +271,8 @@
     },
     "desktop": {
       "paths": [
-        "apps/desktop/src/*",
-        "apps/desktop/scripts/*"
+        "distribution/desktop/*",
+        "scripts/*harness*.mjs"
       ],
       "specs": []
     },

@@ -6,6 +6,14 @@ import { viteStaticCopy } from 'vite-plugin-static-copy';
 export default defineConfig({
   plugins: [
     react(),
+    {
+      name: 'molio-desktop-entry',
+      transformIndexHtml: {
+        order: 'pre',
+        handler: html => process.env.VITE_MOLIO_HARNESS === '1'
+          ? html.replace('/src/main.tsx', '/src/harness-main.tsx') : html,
+      },
+    },
     // pdf.js CJK 字形映射 —— 构建期拷一次；pdfCMapOptions() 通过 BASE_URL + 'cmaps/' 引用
     viteStaticCopy({
       // v4 始终保留目录结构，stripBase 平铺到 dist/cmaps/，与 pdfCMapOptions() 的 /cmaps/ 引用一致

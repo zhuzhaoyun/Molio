@@ -6,7 +6,6 @@ import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync, mkdirSync
 import { Hono } from 'hono';
 import { knowledgeRoutes } from '../../src/routes/knowledge.js';
 import { openDatabase, closeDatabase, createVault } from '../../src/core/db.js';
-import { RunManager } from '../../src/core/RunManager.js';
 import { VaultWatcher } from '../../src/core/vault-watcher.js';
 import { reindexVault, searchVaultFiles } from '../../src/core/vault-search.js';
 
@@ -39,7 +38,7 @@ describe('Knowledge routes — file operations', () => {
     vaultId = vault.id;
     // Mount sub-app at /api/knowledge — routes use hardcoded prefix for path extraction
     const root = new Hono();
-    root.route('/api/knowledge', knowledgeRoutes(db, new RunManager(), new VaultWatcher(db)));
+    root.route('/api/knowledge', knowledgeRoutes(db, new VaultWatcher(db)));
     app = root;
   });
 
@@ -347,7 +346,7 @@ describe('Knowledge routes — file operations', () => {
         writeFileSync(join(treeVault, 'docs', 'guide.md'), 'guide');
 
         const treeRoot = new Hono();
-        treeRoot.route('/api/knowledge', knowledgeRoutes(db, new RunManager(), new VaultWatcher(db)));
+        treeRoot.route('/api/knowledge', knowledgeRoutes(db, new VaultWatcher(db)));
         const res = await treeRoot.request(`/api/knowledge/vaults/${tv.id}/tree`);
         assert.equal(res.status, 200);
 

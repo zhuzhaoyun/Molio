@@ -38,9 +38,8 @@ if (!existsSync(host)) {
   run('git', ['checkout', '--detach', pinned], host);
 }
 pnpm(['--filter', '@molio/contracts', 'build:fresh'], root);
-pnpm(['--filter', '@molio/daemon', 'build'], root);
 pnpm(['--filter', '@molio/web', 'build'], root);
-run(process.execPath, ['apps/desktop/scripts/prepare-resources.mjs', '--harness']);
+run(process.execPath, ['scripts/prepare-harness-resources.mjs']);
 await applyBrand(host);
 applyDesktop(host);
 
@@ -52,5 +51,5 @@ if (process.argv.includes('--app')) {
   pnpm(['run', 'build:artifacts'], host);
 } else {
   const target = process.platform === 'win32' ? 'win-x64' : `mac-${process.arch}`;
-  pnpm(['--filter', '@deepseek-ai/dsh-desktop', 'run', 'package', target, '--unsigned'], host);
+  pnpm(['--filter', '@deepseek-ai/dsh-desktop', 'run', 'package', target, '--unsigned', ...(process.argv.includes('--dir') ? ['--dir'] : [])], host);
 }

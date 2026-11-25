@@ -30,8 +30,6 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
 COPY packages/contracts/package.json packages/contracts/
 COPY apps/daemon/package.json apps/daemon/
 COPY apps/web/package.json apps/web/
-# desktop 的 package.json 需要存在以通过 pnpm workspace 解析，但不构建它
-COPY apps/desktop/package.json apps/desktop/
 
 # pnpm v9 lockfile 不存 tarball URL，registry 由 .npmrc 决定。
 # 写 .npmrc 强制走 npmmirror（env var 在 pnpm v11 下不可靠），

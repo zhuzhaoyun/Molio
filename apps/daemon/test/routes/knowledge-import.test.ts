@@ -21,7 +21,6 @@ import { Hono } from 'hono';
 import { MAX_IMPORT_FILE_SIZE } from '@molio/contracts';
 import { knowledgeRoutes } from '../../src/routes/knowledge.js';
 import { openDatabase, closeDatabase, createVault } from '../../src/core/db.js';
-import { RunManager } from '../../src/core/RunManager.js';
 import { VaultWatcher } from '../../src/core/vault-watcher.js';
 
 async function json(res: Response): Promise<Record<string, unknown>> {
@@ -56,9 +55,8 @@ describe('Knowledge routes — file import', () => {
     vaultDir = join(tempDir, 'vault');
     mkdirSync(vaultDir, { recursive: true });
     const db = openDatabase(tempDir);
-    const rm = new RunManager();
     const vw = new VaultWatcher(db);
-    app = knowledgeRoutes(db, rm, vw);
+    app = knowledgeRoutes(db, vw);
     // Mount the routes under /api/knowledge to match URL construction
     const root = new Hono();
     root.route('/api/knowledge', app);

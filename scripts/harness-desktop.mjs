@@ -20,10 +20,10 @@ export function applyDesktopResources(hostRoot) {
   const original = readFileSync(file, 'utf8');
   const source = original.replaceAll('\r\n', '\n');
   const anchor = '    extraResources: [\n';
-  const rows = [ ['molio-resources', 'molio'], ['molio-support', 'molio-support'] ].map(([from, to]) =>
+  const rows = [ ['molio-plugin-resources', 'molio'], ['molio-support', 'molio-support'] ].map(([from, to]) =>
     `      { from: fileURLToPath(new URL('../${from}', import.meta.url)), to: '${to}' },\n`);
   if (source.split(anchor).length !== 2) throw new Error('Unexpected extraResources in desktop packaging config');
-  let clean = source;
+  let clean = source.replaceAll(rows[0].replace('molio-plugin-resources', 'molio-resources'), '');
   for (const row of rows) clean = clean.replaceAll(row, '');
   const updated = clean.replace(anchor, () => anchor + rows.join(''));
   if (source !== updated) writeFileSync(file, original.includes('\r\n') ? updated.replaceAll('\n', '\r\n') : updated);
@@ -36,34 +36,25 @@ export function applyDesktop(hostRoot) {
   for (const name of ['sidecar.mjs', 'preload.cjs', 'suggest.patch.yml']) {
     copyFileSync(join(root, 'distribution/desktop', name), join(support, name));
   }
-  copyFileSync(join(root, 'apps/desktop/src/crypto-server.js'), join(support, 'crypto-server.mjs'));
+  copyFileSync(join(root, 'distribution/desktop/crypto-server.js'), join(support, 'crypto-server.mjs'));
   copyFileSync(join(root, 'distribution/desktop/molio-desktop.ts'), join(desktop, 'src/molio-desktop.ts'));
-  copyFileSync(join(root, 'distribution/desktop/molio-clipper.ts'), join(desktop, 'src/molio-clipper.ts'));
-  for (const name of ['molio-compose.ts', 'molio-product-preload.ts']) {
-    copyFileSync(join(root, 'distribution/desktop', name), join(desktop, 'src', name));
-  }
+  copyFileSync(join(root, 'packages/dsh-plugin-molio/desktop/molio-clipper.ts'), join(desktop, 'src/molio-clipper.ts'));
+  copyFileSync(join(root, 'packages/dsh-plugin-molio/desktop/molio-compose.ts'), join(desktop, 'src/molio-compose.ts'));
+  copyFileSync(join(root, 'distribution/desktop/molio-product-preload.ts'), join(desktop, 'src/molio-product-preload.ts'));
   const preload = join(desktop, 'src/preload-app.ts');
   insert(preload, "import { contextBridge, ipcRenderer, webUtils }", "import { installKnowledgeComposer } from './molio-product-preload.js'\nimport { contextBridge, ipcRenderer, webUtils }");
   insert(preload, "  contextBridge.exposeInMainWorld('dshOnboarding'", "  if (process.isMainFrame) installKnowledgeComposer()\n  contextBridge.exposeInMainWorld('dshOnboarding'");
   const workspace = join(hostRoot, 'packages/client/ui-workspace/src/client/index.ts');
   const binding = '  const browserFlowSource = flowSource';
-  insert(workspace, binding, `  const molioComposer = (globalThis as {
-    molioKnowledgeComposer?: { listen(callback: (draft: { path: string; prompt: string }) => Promise<void>): () => void }
-  }).molioKnowledgeComposer
-  if (molioComposer) ctx.effect(() => molioComposer.listen(async ({ path, prompt }) => {
-    const workspace = workspaces.list.getSnapshot().items.find(item => item.path === path)
-      ?? await workspaces.create({ path })
-    await uiWorkspace.openWorkspace(workspace.workspaceId, id => {
-      const binding = sessions.binding(id)
-      const conversation = ctx.get('conversation')
-      if (!binding || !conversation || conversation.input.requestDraftInitialization(binding, { prompt, whenDraftExists: 'append' }) === 'blocked') {
-        throw new Error('当前会话无法接收知识库草稿')
-      }
-    })
-  }))
-` + binding);
+  const composer = 'registerMolioComposer(ctx, workspaces, sessions, uiWorkspace)';
+  const workspaceSource = readFileSync(workspace, 'utf8');
+  const migratedWorkspace = workspaceSource.replace(/^  const molioComposer = \(globalThis as \{[\s\S]*?^  \}\)\)\r?\n/m, '');
+  if (workspaceSource !== migratedWorkspace) writeFileSync(workspace, migratedWorkspace);
+  copyFileSync(join(root, 'packages/dsh-plugin-molio/desktop/register-composer.ts'), join(workspace, '../register-composer.ts'));
+  insert(workspace, "import { UiWorkspaceService }", "import { registerMolioComposer } from './register-composer.ts'\nimport { UiWorkspaceService }");
+  insert(workspace, binding, '  ' + composer + '\n' + binding);
   const sidebar = join(hostRoot, 'packages/client/ui-sidebar/src/client');
-  copyFileSync(join(root, 'distribution/desktop/MolioSidebar.tsx'), join(sidebar, 'MolioSidebar.tsx'));
+  copyFileSync(join(root, 'packages/dsh-plugin-molio/desktop/MolioSidebar.tsx'), join(sidebar, 'MolioSidebar.tsx'));
   const sidebarRoot = join(sidebar, 'SidebarRoot.tsx');
   const source = readFileSync(sidebarRoot, 'utf8');
   const migratedSidebar = source.replace("import { MolioSidebar }", "import { MolioSidebar, molioPanelId }")
@@ -72,16 +63,12 @@ export function applyDesktop(hostRoot) {
   insert(sidebarRoot, "import css from './SidebarRoot.module.css'", "import { MolioSidebar, molioPanelId } from './MolioSidebar.tsx'\nimport css from './SidebarRoot.module.css'");
   insert(sidebarRoot, '      <div className={css.scrollRegion}>', '      <MolioSidebar wide={wide} selected={activePanelId === molioPanelId} />\n      <div className={css.scrollRegion}>');
   const sidebarIndex = join(sidebar, 'index.ts');
-  insert(sidebarIndex, "import { SidebarRoot }", "import { bridge, molioPanelId, MolioPanel, showMolioPage } from './MolioSidebar.tsx'\nimport { SidebarRoot }");
-  insert(sidebarIndex, '  const panelPins =', `  const navigation = bridge
-  if (navigation) {
-    ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: molioPanelId }, MolioPanel))
-    ctx.effect(() => navigation.listen(url => {
-      showMolioPage(url)
-      ctx.layout.selectPanel(molioPanelId)
-    }))
-  }
-  const panelPins =`);
+  const indexSource = readFileSync(sidebarIndex, 'utf8');
+  const updatedIndex = indexSource.replace(/^import \{ bridge, molioPanelId, MolioPanel, showMolioPage \} from .*\r?\n/m, '')
+    .replace(/^  const navigation = bridge\r?\n  if \(navigation\) \{[\s\S]*?^  \}\r?\n/m, '');
+  if (indexSource !== updatedIndex) writeFileSync(sidebarIndex, updatedIndex);
+  insert(sidebarIndex, "import { SidebarRoot }", "import { registerMolioPanel } from './MolioSidebar.tsx'\nimport { SidebarRoot }");
+  insert(sidebarIndex, '  const panelPins =', '  registerMolioPanel(ctx)\n  const panelPins =');
   const browserGuests = join(desktop, 'src/browser-guests.ts');
   insert(browserGuests, "import { randomUUID }", "import { attachMolioPanel, bindMolioPanel } from './molio-desktop.js'\nimport { randomUUID }");
   insert(browserGuests, "      const id = typeof params.src", `      try {

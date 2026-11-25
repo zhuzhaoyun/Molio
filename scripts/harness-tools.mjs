@@ -47,7 +47,7 @@ export async function applyTools(hostRoot) {
     '', anchor,
   ].join('\n'));
   await writeFile(join(bundle, 'src/molio-kb.ts'), wrapper);
-  const { build } = createRequire(join(root, 'apps/desktop/package.json'))('esbuild');
+  const { build } = createRequire(join(root, 'package.json'))('esbuild');
   // Typert reads src/molio-kb.ts; the host's default tsdown pass emits only index and startup.
   await build({ entryPoints: [join(bundle, 'src/molio-kb.ts')], platform: 'node', format: 'esm',
     outfile: join(bundle, 'lib/molio-kb.js') });
