@@ -137,7 +137,15 @@ export function createPrerun(
     .stop();
 
   const alphaStart = hit >= INCREMENTAL_RATIO ? REFINE_ALPHA_PARTIAL : 1;
-  if (hit >= INCREMENTAL_RATIO) sim.alphaDecay(REFINE_ALPHA_DECAY);
+  if (hit >= INCREMENTAL_RATIO) {
+    // 增量短重跑：快衰减，alphaMin 保持默认 0.001（~87 ticks 收工）
+    sim.alphaDecay(REFINE_ALPHA_DECAY);
+  } else {
+    // 全量预跑：alphaMin 压到 0.0001 —— d3 在 0.001 就停摆但布局仍在终端漂移途中
+    //（实验 A 末速 ~5.9px/tick），冻结太早会把漂移留给浏览器精修（10k 实测 452px
+    // 残余位移）。多烧 ~140 tick 换更深静息，后台成本 +35% 换「出生即定形」成色。
+    sim.alphaMin(0.0001);
+  }
   sim.alpha(alphaStart);
 
   return { sim, nodes, inheritHitRatio: hit, alphaStart, done: false };

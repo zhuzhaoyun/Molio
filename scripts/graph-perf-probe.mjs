@@ -130,6 +130,67 @@ const zoom = await zoomPromise;
 await wheelLoop;
 const zoomRendersTotal = await page.evaluate(() => window.__renderCount);
 
+// ── H3 布局种子指标：payload positions 覆盖率 + 首快照偏差 + 2s 后漂移 ──
+// 大库默认进 trunk——种子量的是全量视图，先切过去（小库无开关，本来就在全量）
+await page.click('[data-testid="graph-view-mode-toggle"]').catch(() => {});
+await page
+  .waitForFunction(() => window.__graphEngine?.getTrunkMode?.() === false, null, { timeout: 30000 })
+  .catch(() => {});
+// 注意此处快照已是收敛后（上面等过 converge），firstFrameDisp 语义 =
+// 「种子坐标 vs 最终布局」的偏差（衡量种子质量）；出生定形的「首帧动量」
+// 在 E2E（graph-seed.spec）用数据刚到时的快照量，探针这里量稳态贴合度。
+// 全量 sim 的 alpha 真死后再采样（切视图后的精修在飞，中途读数会误读为漂移）
+await page.waitForFunction(
+  () => {
+    const w = window;
+    w.__b = w.__b || { low: 0 };
+    const a = w.__graphEngine?.getSimState?.().alpha ?? 0;
+    if (a < 0.0015) w.__b.low++;
+    else w.__b.low = 0;
+    return w.__b.low >= 8;
+  },
+  null,
+  { timeout: 180000, polling: 400 },
+).catch(() => {});
+const graphRes = await page.request.get(`${daemon}/api/graph/${vault.id}`);
+const graphJson = await graphRes.json();
+let seedCoverage = 0;
+let seedDeviation = null;
+if (Array.isArray(graphJson.positions) && graphJson.positions.length > 0) {
+  const seedJson = JSON.stringify(graphJson.positions);
+  const dev = await page.evaluate((json) => {
+    const seed = new Map(JSON.parse(json).map(([k, x, y]) => [k, { x, y }]));
+    const snap = window.__graphEngine?.getSnapshot();
+    if (!snap) return null;
+    let sum = 0;
+    let n = 0;
+    for (const node of snap.nodes) {
+      const p = seed.get(node.key);
+      if (!p) continue;
+      sum += Math.hypot(node.x - p.x, node.y - p.y);
+      n++;
+    }
+    return n === 0 ? null : { mean: sum / n, n };
+  }, seedJson);
+  seedCoverage = +(dev && graphJson.nodes.length ? dev.n / graphJson.nodes.length : 0).toFixed(3);
+  seedDeviation = dev ? +dev.mean.toFixed(1) : null;
+}
+await page.waitForTimeout(2000);
+const seedDrift = await page.evaluate((json) => {
+  const seed = new Map(JSON.parse(json).map(([k, x, y]) => [k, { x, y }]));
+  const snap = window.__graphEngine?.getSnapshot();
+  if (!snap) return null;
+  let sum = 0;
+  let n = 0;
+  for (const node of snap.nodes) {
+    const p = seed.get(node.key);
+    if (!p) continue;
+    sum += Math.hypot(node.x - p.x, node.y - p.y);
+    n++;
+  }
+  return n === 0 ? null : +(sum / n).toFixed(1);
+}, JSON.stringify(graphJson.positions ?? []));
+
 const report = {
   vault: vault.name,
   engineReadyMs: engineMs,
@@ -138,11 +199,17 @@ const report = {
   idle,
   zoom,
   zoomRendersTotal,
+  seed: { coverage: seedCoverage, settledDisp: seedDeviation, dispAfter2s: seedDrift },
 };
 console.log('=== graph-perf-probe ===');
 console.log(`engineReady: ${(engineMs / 1000).toFixed(1)}s | converge: ${(convergeMs / 1000).toFixed(1)}s`);
 console.log(`idle 3s: renders=${idleRenders} (目标 0) | fps=${idle.fps} p50=${idle.p50}ms`);
 console.log(`zoom 6s: fps=${zoom.fps} p50=${zoom.p50}ms p95=${zoom.p95}ms (renders=${zoomRendersTotal})`);
+if (seedCoverage > 0) {
+  console.log(`seed: coverage=${seedCoverage} settledDisp=${seedDeviation}px dispAfter2s=${seedDrift}px (贴合度; 出生定形线看 E2E)`);
+} else {
+  console.log('seed: 无（预跑未完成或旧 daemon）');
+}
 
 // ── H2 展开测量（--expand [clusterId]，缺省取 communities 最大簇）──
 if (expand) {
