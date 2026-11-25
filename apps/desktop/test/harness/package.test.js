@@ -19,7 +19,7 @@ test('unsigned Molio desktop packaging uses platform-specific artifacts and smok
   const files = ['package-target.ts', 'desktop-package-environment.mjs', 'desktop-toolchain-preflight.ts',
     'electron-builder-config.mjs', 'smoke-packaged-runtime.ts', 'prepare-runtime.ts']
   for (const file of files) await cp(join(upstream, file), join(scripts, file))
-  const extra = ['apps/desktop/src/main.ts', 'apps/desktop/src/preload-app.ts', 'packages/client/ui-sidebar/src/client/SidebarRoot.tsx', 'packages/client/ui-workspace/src/client/index.ts']
+  const extra = ['apps/desktop/src/browser-guests.ts', 'packages/client/ui-sidebar/src/client/index.ts', 'apps/desktop/src/main.ts', 'apps/desktop/src/preload-app.ts', 'packages/client/ui-sidebar/src/client/SidebarRoot.tsx', 'packages/client/ui-workspace/src/client/index.ts']
   const upstreamHost = fileURLToPath(new URL('../../../../vendor/deepseek-harness/', import.meta.url))
   for (const name of extra) await cp(join(upstreamHost, name), join(host, name), { recursive: true })
   applyDesktop(host)

@@ -656,6 +656,18 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
     else run();
   }, [tabs, kb, runOrConfirmDiscard]);
 
+  useEffect(() => {
+    if (!harnessMode || !activeVaultId || searchParams.get('panel') !== 'files') return;
+    if (tabs.activeTabId === GRAPH_TAB_ID || tabs.activeTabId === PUBLISH_TAB_ID) {
+      const file = tabs.tabs.find(tab => tab.type === 'file' || tab.type === 'blank');
+      if (file) handleActivateTab(file.id);
+      else handleAddTab();
+    }
+    const next = new URLSearchParams(searchParams);
+    next.delete('panel');
+    setSearchParams(next, { replace: true });
+  }, [activeVaultId, searchParams, tabs, handleActivateTab, handleAddTab, setSearchParams]);
+
   /** Toggle a tab's pinned flag (double-click / right-click menu). */
   const handleTogglePin = useCallback((id: string) => {
     tabs.togglePin(id);

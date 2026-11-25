@@ -1,4 +1,4 @@
-import { app, BrowserWindow, MessageChannelMain, dialog, ipcMain, safeStorage, shell, type IpcMainInvokeEvent } from 'electron'
+import { app, BrowserWindow, MessageChannelMain, dialog, ipcMain, safeStorage, shell, session, type WebContents, type WebPreferences, type IpcMainInvokeEvent } from 'electron'
 import { randomBytes } from 'node:crypto'
 import { realpath } from 'node:fs/promises'
 import { extname, isAbsolute, join, relative, sep } from 'node:path'
@@ -9,14 +9,21 @@ import { clipperRoute } from './molio-clipper.js'
 
 let deliverClip: ((route: string) => void) | undefined
 let pendingClip: string | undefined
+let workspaceEntered: (() => boolean) | undefined
+
+export function flushMolioClip() {
+  if (pendingClip && deliverClip && workspaceEntered?.()) {
+    deliverClip(pendingClip)
+    pendingClip = undefined
+  }
+}
 
 export function installMolioProtocol(focusHost: () => void) {
   const receive = (input: string) => {
     const route = clipperRoute(input)
     if (!route) return
     if (route === '/') focusHost()
-    else if (deliverClip) deliverClip(route)
-    else pendingClip = route
+    else { pendingClip = route; flushMolioClip() }
   }
   for (const arg of process.argv) receive(arg)
   app.on('second-instance', (_event, argv) => { for (const arg of argv) receive(arg) })
@@ -25,14 +32,56 @@ export function installMolioProtocol(focusHost: () => void) {
   })
 }
 
-let productWindow: (() => BrowserWindow) | undefined
+let productWindow: (() => BrowserWindow | undefined) | undefined
 
-export function bindMolioConversationWindow(getWindow: () => BrowserWindow) {
+export function bindMolioConversationWindow(getWindow: () => BrowserWindow | undefined, entered: () => boolean) {
+  workspaceEntered = entered
   productWindow = getWindow
 }
 
 const documentTypes = new Set(['.md', '.txt', '.csv', '.pdf', '.docx', '.xlsx', '.pptx', '.jpg', '.jpeg', '.png', '.webp', '.gif', '.mp3', '.mp4', '.wav'])
-const moduleRoutes = new Map([['knowledge', '/knowledge'], ['graph', '/knowledge?panel=graph'], ['resources', '/resources']])
+const moduleRoutes = new Map([['knowledge', '/knowledge?panel=files'], ['graph', '/knowledge?panel=graph'], ['resources', '/resources']])
+
+const partition = 'persist:molio-knowledge'
+let serviceOrigin: string
+let guestPreload: string
+const guests = new Set<WebContents>()
+
+function pageUrl(route: string) {
+  const url = new URL(route, serviceOrigin)
+  if (url.origin !== serviceOrigin || !/^\/(knowledge|resources(?:\/[^/]+)?|me)$/.test(url.pathname)) throw new Error('Invalid Molio page')
+  return url
+}
+
+export function attachMolioPanel(owner: WebContents, preferences: WebPreferences, params: Record<string, string>) {
+  if (params.partition !== partition) return false
+  if (!owner.getURL().startsWith('dsh-app://app/') || owner !== productWindow?.()?.webContents) throw new Error('Unknown panel owner')
+  pageUrl(params.src ?? '')
+  for (const key of Object.keys(preferences)) Reflect.deleteProperty(preferences, key)
+  Object.assign(preferences, { partition, preload: guestPreload, sandbox: true, contextIsolation: true,
+    nodeIntegration: false, webSecurity: true, webviewTag: false, disablePopups: false })
+  return true
+}
+
+export function bindMolioPanel(owner: WebContents, guest: WebContents) {
+  if (guest.session !== session.fromPartition(partition)) return false
+  guests.add(guest)
+  guest.once('destroyed', () => guests.delete(guest))
+  guest.on('will-attach-webview', event => event.preventDefault())
+  guest.on('will-frame-navigate', event => {
+    if (event.isMainFrame && new URL(event.url).origin !== serviceOrigin) event.preventDefault()
+  })
+  guest.on('will-redirect', (event, url, _inPlace, mainFrame) => {
+    if (mainFrame && new URL(url).origin !== serviceOrigin) event.preventDefault()
+  })
+  guest.setWindowOpenHandler(({ url }) => {
+    const link = new URL(url)
+    if (link.origin === serviceOrigin) owner.send('molio:panel', pageUrl(link.href).href)
+    else if (link.protocol === 'https:') void shell.openExternal(link.href).catch(console.error)
+    return { action: 'deny' }
+  })
+  return true
+}
 
 export async function startMolioDesktop() {
   const directory = app.isPackaged ? process.resourcesPath : app.getAppPath()
@@ -41,12 +90,12 @@ export async function startMolioDesktop() {
   const sidecar = await import(pathToFileURL(join(support, 'sidecar.mjs')).href)
   const token = randomBytes(32).toString('hex')
   const cryptoPort = await crypto.startCryptoServer(safeStorage, { token })
-  const windows = new Set<BrowserWindow>()
+  guestPreload = join(support, 'preload.cjs')
   let running = true
   const cleanup = () => {
     if (!running) return
     running = false
-    for (const window of windows) window.destroy()
+    for (const guest of guests) guest.close()
     void crypto.stopCryptoServer()
   }
   let documents: string
@@ -71,41 +120,12 @@ export async function startMolioDesktop() {
   const origin = `http://127.0.0.1:${service.port}`
   app.once('will-quit', () => service.stop())
 
-  const open = async (route: string, newWindow = false) => {
-    if (!running) throw new Error('知识库服务已停止，请重新启动应用。')
-    const target = new URL(route, origin)
-    if (target.origin !== origin || !/^\/(knowledge|resources(?:\/[^/]+)?|me)$/.test(target.pathname)) {
-      throw new Error('Invalid Molio page')
-    }
-    let window = newWindow ? undefined : [...windows][0]
-    if (!window) {
-      const created = new BrowserWindow({
-        width: 1260, height: 850, title: 'Molio',
-        webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false, preload: join(support, 'preload.cjs') },
-      })
-      windows.add(created)
-      created.on('closed', () => windows.delete(created))
-      created.webContents.setWindowOpenHandler(({ url }) => {
-        const link = new URL(url)
-        if (link.origin === origin) void open(link.href, true).catch(console.error)
-        else if (link.protocol === 'https:') void shell.openExternal(link.href).catch(console.error)
-        return { action: 'deny' }
-      })
-      created.webContents.on('will-navigate', (event, url) => {
-        if (new URL(url).origin !== origin) event.preventDefault()
-      })
-      window = created
-    }
-    if (window.isMinimized()) window.restore()
-    window.show()
-    window.focus()
-    await window.loadURL(target.href)
-  }
+  serviceOrigin = origin
   const owner = (event: IpcMainInvokeEvent) => {
-    const window = BrowserWindow.fromWebContents(event.sender)
-    if (!running || !window || !windows.has(window) || event.senderFrame !== event.sender.mainFrame
-      || new URL(event.sender.mainFrame.url).origin !== origin) throw new Error('Unknown Molio window')
-    return window
+    const host = productWindow?.()
+    if (!running || !host || !guests.has(event.sender) || event.sender.hostWebContents !== host.webContents
+      || event.senderFrame !== event.sender.mainFrame || new URL(event.sender.getURL()).origin !== origin) throw new Error('Unknown Molio panel')
+    return host
   }
   const vaultFile = async (event: IpcMainInvokeEvent, path: unknown) => {
     owner(event)
@@ -162,26 +182,25 @@ export async function startMolioDesktop() {
     return shell.openPath(target)
   })
   ipcMain.handle('molio:window', async (event, route: string) => {
-    owner(event)
-    await open(route, true)
+    owner(event).webContents.send('molio:panel', pageUrl(route).href)
     return { ok: true }
   })
-  deliverClip = route => {
-    const existing = [...windows][0]
-    if (!existing || existing.webContents.isLoadingMainFrame()) {
-      void open(route).catch(error => dialog.showErrorBox('Molio', String(error)))
-      return
+  ipcMain.on('molio:panel-ready', event => {
+    const host = productWindow?.()
+    if (!host || event.sender !== host.webContents || event.senderFrame !== host.webContents.mainFrame) return
+    deliverClip = route => {
+      host.webContents.send('molio:panel', pageUrl(route).href)
+      if (host.isMinimized()) host.restore()
+      host.show()
+      host.focus()
     }
-    if (existing.isMinimized()) existing.restore()
-    existing.show()
-    existing.focus()
-    existing.webContents.send('molio:clip-route', route)
-  }
-  if (pendingClip) { deliverClip(pendingClip); pendingClip = undefined }
+    host.webContents.once('destroyed', () => { deliverClip = undefined })
+    flushMolioClip()
+  })
   ipcMain.on('molio:navigate', (event, id: string) => {
     const host = productWindow?.()
     if (!host || event.sender !== host.webContents || event.senderFrame !== host.webContents.mainFrame) return
     const route = moduleRoutes.get(id)
-    if (route) void open(route).catch(error => dialog.showErrorBox('Molio', String(error)))
+    if (route) host.webContents.send('molio:panel', pageUrl(route).href)
   })
 }

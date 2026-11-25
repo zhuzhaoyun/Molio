@@ -76,7 +76,7 @@ try {
     MOLIO_SKIP_PROTOCOL_REGISTRATION: '1', DSH_HOME: join(profile, 'dsh'), MOLIO_DATA_DIR: join(profile, 'molio'), USERPROFILE: profile, HOME: profile,
     DSH_DESKTOP_DIAGNOSTIC_FILE: join(profile, 'diagnostics.txt'), DSH_DESKTOP_OPEN_DEVTOOLS: '0',
     MOLIO_CODEX_HOME: join(profile, 'codex'), MOLIO_CLAUDE_HOME: join(profile, 'claude'),
-    MOLIO_DEBUG_LOG_DIR: join(profile, 'debug'), MOLIO_AUTH_URL: 'http://127.0.0.1:1',
+    MOLIO_DEBUG_LOG_DIR: join(profile, 'debug'), MOLIO_AUTH_URL: process.env.MOLIO_SMOKE_AUTH_URL || 'http://127.0.0.1:1',
   };
   const inspectorPort = packaged ? undefined : await freePort();
   if (inspectorPort) env.DSH_DESKTOP_HOST_INSPECT_PORT = String(inspectorPort);
@@ -104,8 +104,19 @@ try {
   const sidebar = product.getByRole('navigation', { name: '知识管理' });
   const choose = label => sidebar.getByRole('button', { name: label, exact: true }).click();
   await choose('知识库');
-  const knowledge = await waitPage(url => url.endsWith('/knowledge'));
-  const origin = new URL(knowledge.url()).origin;
+  const panel = product.getByTestId('molio-content')
+  const waitContent = async (page, selector) => {
+    const view = page.getByTestId('molio-content')
+    await view.waitFor({ state: 'visible' })
+    await page.waitForFunction(async selector => {
+      const guest = document.querySelector('[data-testid="molio-content"]')
+      try { return await guest.executeJavaScript('!!document.querySelector(' + JSON.stringify(selector) + ')?.getClientRects().length') }
+      catch { return false }
+    }, selector)
+    assert.equal(await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length), 1)
+  }
+  await waitContent(product, '.harness-content')
+  const origin = new URL(await panel.getAttribute('src')).origin
   const request = async (path, body) => {
     const res = await fetch(origin + path, body ? { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) } : {});
     assert.ok(res.ok, path + ' ' + res.status);
@@ -124,19 +135,53 @@ try {
   assert.ok(linked('external/Sources/Mounted.md', 'Probe.md'));
   const tree = await request('/api/knowledge/vaults/' + vault.id + '/tree');
   assert.match(JSON.stringify(tree), /Mounted\.md/);
+  await application.evaluate(({ dialog, shell }, path) => {
+    dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [path] })
+    shell.showItemInFolder = () => {}
+    shell.openPath = async () => ''
+    shell.openExternal = async url => { globalThis.smokeExternal = url }
+  }, vaultPath)
+  const evaluateGuest = expression => panel.evaluate((view, expression) => view.executeJavaScript(expression), expression)
+  assert.equal(await evaluateGuest('window.__electron__.showDirectoryPicker()'), vaultPath)
+  const probe = JSON.stringify(join(vaultPath, 'Probe.md'))
+  await evaluateGuest('window.__electron__.showItemInFolder(' + probe + ')')
+  assert.equal(await evaluateGuest('window.__electron__.openPath(' + probe + ')'), '')
+  await assert.rejects(evaluateGuest('window.__electron__.openPath(' + JSON.stringify(profile) + ')'))
+  await assert.rejects(evaluateGuest('window.__electron__.openNewWindow("https://example.test/knowledge")'))
+  await evaluateGuest('window.__electron__.openNewWindow("/knowledge")')
+  await evaluateGuest('void window.open("https://example.test/download.zip")')
+  assert.equal(await application.evaluate(() => globalThis.smokeExternal), 'https://example.test/download.zip')
+  if (process.env.MOLIO_SMOKE_AUTH_URL) {
+    assert.equal((await request('/api/market/listings')).stale, false)
+    const email = 'desktop-smoke@example.test'
+    const { devCode } = await request('/api/auth/start', { email })
+    assert.ok(devCode)
+    assert.equal((await request('/api/auth/verify', { email, code: devCode })).loggedIn, true)
+    assert.equal((await request('/api/auth/status')).loggedIn, true)
+    assert.ok(JSON.parse(await readFile(join(profile, 'molio/auth-tokens.json'), 'utf8')).encrypted)
+    assert.deepEqual((await request('/api/market/purchases')).purchases, [])
+  }
   await choose('知识图谱');
-  await knowledge.getByTestId('kb-graph-pane').waitFor({ state: 'visible' });
+  await waitContent(product, '[data-testid="kb-graph-pane"]');
+  await choose('知识库');
+  await product.waitForFunction(async () => {
+    const view = document.querySelector('[data-testid="molio-content"]')
+    return await view.executeJavaScript(`!!document.querySelector('.harness-content') && !document.querySelector('[data-testid="kb-graph-pane"]')`)
+  });
   await choose('资源市场');
-  await knowledge.getByTestId('resources-grid').waitFor({ state: 'visible' });
+  await waitContent(product, '[data-testid="resources-grid"]');
   await application.evaluate(({ app }, id) => app.emit('second-instance', {}, [
     'molio://open/vault/' + encodeURIComponent(id) + '/file/Probe.md',
   ]), vault.id);
-  await knowledge.locator('.kb-wtab.is-active[title="Probe.md"]').first().waitFor({ state: 'visible' });
+  await waitContent(product, '.kb-wtab.is-active[title="Probe.md"]')
   for (const mode of ['ask', 'build', 'lint', 'ingest']) {
-    await knowledge.evaluate(async ({ mode, vaultId, vaultPath }) => {
-      await window.__electron__.openKnowledgeConversation({ mode, vaultId, vaultPath,
-        filePath: 'Probe.md', selectedText: 'smoke-selection-' + mode });
-    }, { mode, vaultId: vault.id, vaultPath });
+    if (mode !== 'ask') {
+      await choose('知识库')
+      await waitContent(product, '.harness-content')
+    }
+    await panel.evaluate((view, request) => view.executeJavaScript(
+      'void window.__electron__.openKnowledgeConversation(' + JSON.stringify(request) + ')'
+    ), { mode, vaultId: vault.id, vaultPath, filePath: 'Probe.md', selectedText: 'smoke-selection-' + mode })
     const editor = product.locator('[data-composer-input]:visible').last();
     const skill = 'wiki-' + (mode === 'ask' ? 'query' : mode);
     await editor.filter({ hasText: skill }).waitFor({ state: 'visible' });
@@ -165,13 +210,16 @@ try {
     .map(async file => JSON.parse(await readFile(join(projections, file), 'utf8'))));
   assert.ok(sessions.some(session => session.record.identity.cwd === vaultPath), 'Harness session cwd must equal the selected vault path');
   application = await launch(['molio://open/file/Probe.md']);
-  const coldClip = await waitPage(url => url.startsWith('http://127.0.0.1:') && url.includes('/knowledge'));
-  await coldClip.locator('.kb-wtab.is-active[title="Probe.md"]').waitFor({ state: 'visible' });
+  const startup = await waitPage(url => url.includes('welcome.html') || url.includes('://welcome'))
+  await startup.locator('#api-key').click()
+  await startup.locator('#skip-key').click()
+  const coldProduct = await waitPage(url => url.startsWith('dsh-app://app/'))
+  await waitContent(coldProduct, '.kb-wtab.is-active[title="Probe.md"]')
   await application.close();
   application = undefined;
   console.log('Harness startup, fixed sidebar, three modules, four contextual drafts and vault cwd, cold and warm clipper, five bundled tools and owned shutdown passed.');
 } catch (error) {
-  console.error('Smoke profile:', profile);
+  console.error('Smoke profile:', profile, error);
   throw error;
 } finally {
   await application?.close();
