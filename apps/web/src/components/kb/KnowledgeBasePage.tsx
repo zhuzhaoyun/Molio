@@ -52,6 +52,7 @@ interface KnowledgeBasePageProps {
 }
 
 interface UrlFileNavigation {
+  keepFileTab?: boolean;
   vaultId: string;
   filePath: string;
 }
@@ -66,7 +67,7 @@ function resolveUrlFileNavigation(
   const vaultId = searchParams.get('vault') || kb.activeVault?.id || kb.vaults[0]?.id || null;
   if (!vaultId) return null;
 
-  return { vaultId, filePath };
+  return { vaultId, filePath, keepFileTab: searchParams.get('open') === 'tab' };
 }
 
 /** Summarize import errors into a human-readable string for toasts. */
@@ -195,6 +196,7 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
     setPendingUrlNav(nav);
     const next = new URLSearchParams(searchParams);
     next.delete('file');
+    next.delete('open');
     next.set('vault', nav.vaultId);
     setSearchParams(next, { replace: true });
   }, [searchParams, kb.vaults, kb.activeVault?.id, setSearchParams]);
@@ -472,7 +474,9 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
    * 前进/后退这类「回到刚才那篇」的调用才传 restore。文档已开在某个标签里
    * （走 activateTab 分支）时一律 restore——那正是「多标签切回」的主场景。
    */
-  const handleSelectFile = useCallback((path: string, opts?: { intent?: ScrollIntent }) => {
+  const handleSelectFile = useCallback((path: string, opts?: { intent?: ScrollIntent; keepFileTab?: boolean }) => {
+    const activeTab = tabs.getActiveTab();
+    const recyclable = activeTab && !activeTab.pinned && (activeTab.type === 'blank' || (activeTab.type === 'file' && !opts?.keepFileTab));
     const action = () => {
       onboardingStore.markOpenOrImport();
       const fileName = path.split('/').pop() ?? path;
@@ -486,10 +490,8 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
       }
       // 换文档（回收当前标签 / 新开标签）：默认「重新开始读」。
       scrollIntentRef.current = opts?.intent ?? 'fresh';
-      const activeTab = tabs.getActiveTab();
       // Recycle the active tab in place iff it is a normal (file/blank) tab and
       // not pinned. Pinned tabs keep their document; special tabs are protected.
-      const recyclable = activeTab && activeTab.pinned !== true && (activeTab.type === 'file' || activeTab.type === 'blank');
       if (recyclable) {
         tabs.updateTab(activeTab.id, { id: tabId, type: 'file', title: fileName, vaultId: activeVaultId ?? undefined, data: undefined, pinned: false });
         kb.selectFile(path);
@@ -506,8 +508,7 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
     // can grow the count, so skip the guard when we'll recycle instead.
     const tabId = `file:${path}`;
     const existingTab = tabs.tabs.find(t => t.id === tabId);
-    const activeTab = tabs.getActiveTab();
-    const willGrow = !existingTab && !(activeTab && activeTab.pinned !== true && (activeTab.type === 'file' || activeTab.type === 'blank'));
+    const willGrow = !existingTab && !recyclable;
     if (willGrow && tabs.tabs.length >= MAX_TABS) {
       showToast(`已达 ${MAX_TABS} 个标签上限，请先关闭某个标签`);
       return;
@@ -789,14 +790,14 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
       .then((canonical) => {
         if (controller.signal.aborted) return;
         setPendingUrlNav(null);
-        handleSelectFileRef.current(canonical ?? filePath);
+        handleSelectFileRef.current(canonical ?? filePath, { keepFileTab: pendingUrlNav.keepFileTab });
       })
       .catch(() => {
         if (controller.signal.aborted) return;
         // Daemon unreachable / resolve errored — degrade to raw path (pre-fix
         // behavior for this click; file may still open via readFile fallback).
         setPendingUrlNav(null);
-        handleSelectFileRef.current(filePath);
+        handleSelectFileRef.current(filePath, { keepFileTab: pendingUrlNav.keepFileTab });
       });
     return () => controller.abort();
     // Opening a tab changes the selection callback. Keep that callback out of

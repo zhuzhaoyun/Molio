@@ -105,6 +105,24 @@ test('a chat link opens a resolved page before the file watcher updates the tree
   await expect(page.locator('.kb-wtab.is-active')).toHaveAttribute('title', path);
 });
 
+test('chat citations keep prior notes open and reactivate a repeated citation', async ({ page }) => {
+  const names = ['裴頠', '王衍', '司马炎', '李特', '刘渊', '西晋统一'];
+  const path = (name: string) => 'wiki/concepts/' + name + '.md';
+  await page.route('**/api/knowledge/vaults', r => r.fulfill({ json: { vaults: [{ id: 'demo', name: 'Demo', path: '/demo' }] } }));
+  await page.route('**/demo/tree', r => r.fulfill({ json: { tree: names.map(name => ({ name, path: path(name), type: 'file' })) } }));
+  await page.route('**/demo/resolve/**', r => r.fulfill({ json: { path: decodeURIComponent(r.request().url().split('/resolve/')[1]!) } }));
+  await page.route('**/demo/files/**', r => r.fulfill({ json: { content: '# 正文', encoding: 'utf-8' } }));
+  await page.goto('/knowledge?vault=demo');
+  for (const name of [...names, names[0]!]) {
+    await page.evaluate(file => {
+      window.history.pushState({}, '', '/knowledge?' + new URLSearchParams({ vault: 'demo', file, open: 'tab' }));
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    }, path(name));
+    await expect(page.locator('.kb-wtab.is-active')).toHaveAttribute('title', path(name));
+  }
+  for (const name of names) await expect(page.locator(`.kb-wtab[title="${path(name)}"]`)).toHaveCount(1);
+});
+
 test('market and account remain reachable from the hosted market', async ({ page }) => {
   await page.route('**/api/market/listings*', route => route.fulfill({ json: { listings: [] } }));
   await page.route('**/api/auth/status', route => route.fulfill({ json: { configured: true, loggedIn: false } }));

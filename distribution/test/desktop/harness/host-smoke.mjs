@@ -222,6 +222,8 @@ try {
     'molio://open/vault/' + encodeURIComponent(id) + '/file/Probe.md',
   ]), vault.id);
   await waitContent(product, '.kb-wtab.is-active[title="Probe.md"]')
+  const guestId = await panel.evaluate(view => view.getWebContentsId())
+  const timeOrigin = await evaluateGuest('performance.timeOrigin')
   for (const mode of ['ask', 'build', 'lint', 'ingest']) {
     if (mode !== 'ask') {
       await choose('知识库')
@@ -236,6 +238,13 @@ try {
     await editor.filter({ hasText: 'smoke-selection-' + mode }).waitFor({ state: 'visible' });
     assert.doesNotMatch(await editor.innerText(), /SKILL\.md/);
     assert.match(await editor.innerText(), new RegExp('smoke-selection-' + mode));
+    if (mode === 'ask') {
+      assert.equal(await openWiki('Evidence'), null)
+      await waitContent(product, '.kb-wtab.is-active[title="Evidence.md"]')
+      assert.equal(await panel.evaluate(view => view.getWebContentsId()), guestId)
+      assert.equal(await evaluateGuest('performance.timeOrigin'), timeOrigin)
+      await waitContent(product, '.kb-wtab[title="Probe.md"]')
+    }
   }
   const tools = inspectorPort ? await checkHostRegistry(inspectorPort) : await application.evaluate(async ({ app }, { packaged, host }) => {
     const { createRequire } = process.getBuiltinModule('node:module');
