@@ -58,24 +58,20 @@
 
 ## 行为说明（对应已合并 PR，改动相关模块前先读）
 
-[desktop-windows-taskbar.md](desktop-windows-taskbar.md)（#261 任务栏身份）·
 [2026-09-16-linkpass-cjk-guard-design.md](2026-09-16-linkpass-cjk-guard-design.md)（#258 链接对账）·
 [2026-09-26-wiki-cjk-emphasis-design.md](2026-09-26-wiki-cjk-emphasis-design.md)（#271 CJK 加粗防护）·
 [2026-09-27-daemon-flaky-tests-design.md](2026-09-27-daemon-flaky-tests-design.md)（#273 flaky 修复）·
 [2026-09-27-kb-scroll-reset-design.md](2026-09-27-kb-scroll-reset-design.md)（#283 滚动重置）·
 [2026-09-17-graph-destroy-white-screen-fix.md](2026-09-17-graph-destroy-white-screen-fix.md)（#260 图谱白屏）·
 [2026-10-05-chat-h4-heading-render-design.md](2026-10-05-chat-h4-heading-render-design.md)（#295 h4 渲染）·
-[2026-09-26-desktop-e2e-spec-revival-design.md](2026-09-26-desktop-e2e-spec-revival-design.md) ·
-[2026-09-30-desktop-e2e-nightly-ci-design.md](2026-09-30-desktop-e2e-nightly-ci-design.md) ·
-[2026-10-09-desktop-e2e-process-cleanup-design.md](2026-10-09-desktop-e2e-process-cleanup-design.md)（#325）·
-[2026-09-30-electron-builder-mirror-fallback-design.md](2026-09-30-electron-builder-mirror-fallback-design.md) ·
 [kb-chat-interrupt-queue.md](kb-chat-interrupt-queue.md)（中断/排队机制）
 
 ## 基础设施 / 长期参考
 
 | 文档 | 主题 |
 |---|---|
-| [desktop-dev-guide.md](desktop-dev-guide.md) | 桌面开发环境构建与运行指南（活文档） |
+| [harness-upstream.md](harness-upstream.md) | 桌面预装版开发、打包与上游升级 |
+| [llm_wiki.md](llm_wiki.md) | LLM Wiki 知识库组织方式 |
 | [user-module-design.md](user-module-design.md) | 云端认证服务设计（auth.molio.cn 已上线） |
 | [hermes-agent-design.md](hermes-agent-design.md) | Hermes/ACP 运行时接入设计（runtime 在产品内） |
 | [article-hermes-agent-integration.md](article-hermes-agent-integration.md) | Hermes 落地笔记（commits bff786c/4365cf7） |
