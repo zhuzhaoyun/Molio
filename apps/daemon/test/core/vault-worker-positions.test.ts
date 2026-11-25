@@ -7,6 +7,7 @@ import {
   buildGraphInWorker,
   getGraphPositions,
   crashGraphWorkerForTest,
+  blockGraphWorkerForTest,
 } from '../../src/core/vault-worker.js';
 import type { GraphData, GraphPositions } from '@molio/contracts';
 
@@ -104,5 +105,28 @@ describe('PositionStore + 后台分片预跑（真实 worker 线程）', () => {
     const again = await pollPositions(vault, 10_000);
     assert.ok(again, '重建 + 重新建图后 positions 重新就绪');
     assert.equal(again.length, g.nodes.length);
+  });
+
+  it('positions 软探测：worker 被占住时快速回 null，且不弄死 worker（终审 Important-1）', async () => {
+    const vault = makeVault(2, 8);
+    await buildGraphInWorker(vault);
+    const positions = await pollPositions(vault, 10_000);
+    assert.ok(positions);
+    // 占住图线程 2.5s（busy-wait 模拟长构建/慢盘）——期间探测 positions：
+    // 旧实现会跟着等满 2.5s；软探测必须独立短超时（1.5s 内）回 null，且
+    // 之后 worker 仍活着（被占任务收场、后续建图正常）——绝不能因为探测
+    // 超时去 terminate 线程（那会把缓存命中的 GET 拴在 worker 健康度上，
+    // 连累别的库在途构建）。
+    const blocked = blockGraphWorkerForTest(2500).catch(() => {}); // 占位路径不存在 → 结束时 reject，无害
+    await new Promise((r) => setTimeout(r, 50)); // 确保 busy-wait 已开场
+    const t0 = Date.now();
+    const probed = await getGraphPositions(vault);
+    const probeMs = Date.now() - t0;
+    assert.equal(probed, null, '占用期间软探测应回 null（不硬等）');
+    assert.ok(probeMs < 2000, `探测耗时 ${probeMs}ms 应 < 2s`);
+    await blocked;
+    // worker 存活：真实建图照常成功
+    const g = await buildGraphInWorker(vault);
+    assert.ok(g.nodes.length > 0);
   });
 });
