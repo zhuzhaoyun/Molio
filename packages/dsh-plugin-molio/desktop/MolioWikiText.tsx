@@ -1,0 +1,28 @@
+import { Fragment } from 'react'
+import type { ReactNode } from 'react'
+import { useMarkdownDelegate } from './MarkdownDelegate.tsx'
+
+/** Called only for Markdown text nodes, outside code and existing links. */
+export function MolioWikiText({ text }: { text: string }) {
+  const { wikiCwd } = useMarkdownDelegate()
+  const bridge = (globalThis as { molioNavigation?: {
+    openWiki(cwd: string, page: string): Promise<string | null>
+  } }).molioNavigation
+  if (!wikiCwd || !bridge) return <>{text}</>
+  const parts: ReactNode[] = []
+  let offset = 0
+  for (const match of text.matchAll(/(?<!!)\[\[([^\[\]|\r\n]+)(?:\|([^\[\]\r\n]*))?\]\]/gu)) {
+    const target = match[1]!.trim()
+    const page = target.split('#')[0]!.trim()
+    if (!page) continue
+    parts.push(text.slice(offset, match.index))
+    parts.push(<a key={match.index} href={'#' + encodeURIComponent(target)} title={target}
+      onClick={async event => {
+        event.preventDefault()
+        const error = await bridge.openWiki(wikiCwd, page).catch(() => '无法连接知识库')
+        if (error) window.alert(error)
+      }}>{match[2]?.trim() || target}</a>)
+    offset = match.index + match[0].length
+  }
+  return <Fragment>{parts}{text.slice(offset)}</Fragment>
+}

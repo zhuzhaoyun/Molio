@@ -212,6 +212,12 @@ try {
   });
   await choose('资源市场');
   await waitContent(product, '[data-testid="resources-grid"]');
+  await mkdir(join(vaultPath, 'wiki/entities'), { recursive: true });
+  await writeFile(join(vaultPath, 'wiki/entities/贾后.md'), '# 贾后');
+  const openWiki = page => product.evaluate(({ cwd, page }) => window.molioNavigation.openWiki(cwd, page), { cwd: vaultPath, page });
+  assert.match(await openWiki('缺失页面'), /找不到/);
+  assert.equal(await openWiki('贾后'), null);
+  await waitContent(product, '.kb-wtab.is-active[title="wiki/entities/贾后.md"]');
   await application.evaluate(({ app }, id) => app.emit('second-instance', {}, [
     'molio://open/vault/' + encodeURIComponent(id) + '/file/Probe.md',
   ]), vault.id);

@@ -21,6 +21,10 @@ test('unsigned Molio desktop packaging uses platform-specific artifacts and smok
   for (const file of files) await cp(join(upstream, file), join(scripts, file))
   const extra = ['apps/desktop/src/browser-guests.ts', 'packages/client/ui-sidebar/src/client/index.ts', 'apps/desktop/src/main.ts', 'apps/desktop/src/preload-app.ts', 'packages/client/ui-sidebar/src/client/SidebarRoot.tsx', 'packages/client/ui-workspace/src/client/index.ts']
   const upstreamHost = fileURLToPath(new URL('../../../../vendor/deepseek-harness/', import.meta.url))
+  extra.push('packages/client/ui-primitives/src/markdown/render.tsx',
+    'packages/client/ui-primitives/src/markdown/MarkdownDelegate.tsx',
+    'packages/client/ui-chat/src/client/chat/ChatView.tsx')
+  await mkdir(join(host, 'packages/client/ui-primitives/tests'), { recursive: true })
   for (const name of extra) await cp(join(upstreamHost, name), join(host, name), { recursive: true })
   applyDesktop(host)
   await applyPackaging(host)
