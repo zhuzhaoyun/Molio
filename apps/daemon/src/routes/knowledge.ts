@@ -87,7 +87,12 @@ export function knowledgeRoutes(
 
   // GET /api/knowledge/vaults — list all vaults
   app.get('/vaults', (c) => {
-    const vaults = listVaults(db).map((v) => ({
+    const rows = listVaults(db);
+    c.header('Vary', 'Prefer');
+    if (c.req.header('Prefer') === 'return=minimal') {
+      return c.json({ vaults: rows.map(({ fileCount: _count, ...metadata }) => metadata) });
+    }
+    const vaults = rows.map((v) => ({
       ...v,
       fileCount: countFilesSafe(v.path),
     }));

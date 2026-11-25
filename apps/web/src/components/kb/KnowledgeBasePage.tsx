@@ -753,6 +753,11 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
    * Dock 最近菜单）不读此设置，恒新窗。
    */
   const handleVaultPick = useCallback((id: string) => {
+    if (harnessMode) {
+      kb.setShowVaultSwitcher(false);
+      kb.selectVault(id);
+      return;
+    }
     const pinnedVaultId = new URLSearchParams(window.location.search).get('vault');
     const crossVault = pinnedVaultId !== null && pinnedVaultId !== id;
     if (crossVault && !shouldReuseWindowOnVaultSwitch()) {

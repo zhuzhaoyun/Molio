@@ -40,6 +40,61 @@ test('host opens the graph directly without Molio chat or runtime discovery', as
   expect(agents).toEqual([]);
 });
 
+test('picking a vault dismisses the manager before its tree loads and reuses the last tree on return', async ({ page }) => {
+  const rows = ['alpha', 'beta'].map(id => ({ id, name: id, path: '/' + id }));
+  let metadataRequested = false;
+  await page.route('**/api/knowledge/vaults', route => {
+    metadataRequested ||= route.request().headers().prefer === 'return=minimal';
+    return route.fulfill({ json: { vaults: rows } });
+  });
+  await page.route('**/api/knowledge/active-vault', route => route.fulfill({ json: { ok: true } }));
+  let delayTree = '';
+  let release: (() => void) | undefined;
+  let version = 1;
+  await page.route('**/api/knowledge/vaults/*/tree', async route => {
+    const id = new URL(route.request().url()).pathname.split('/').at(-2)!;
+    if (delayTree === id) await new Promise<void>(resolve => { release = resolve; });
+    const path = id + '-' + version + '.md';
+    await route.fulfill({ json: { tree: [{ type: 'file', name: path, path }] } });
+  });
+  const graphs: string[] = [];
+  await page.route('**/api/graph/**', route => {
+    graphs.push(route.request().url());
+    return route.fulfill({ json: { nodes: [], edges: [], deadLinks: [] } });
+  });
+  await page.goto('/knowledge?vault=alpha');
+  const treeFile = (name: string) => page.locator('.kb-tree-item').filter({ hasText: name });
+  await expect(treeFile('alpha-1.md')).toBeVisible();
+  const pick = async (id: string) => {
+    await page.locator('.kb-vault-bar').click();
+    const modal = page.getByTestId('vault-manager-modal');
+    await modal.locator('.vm-vault-item').filter({ hasText: id }).click();
+    await expect(modal).toHaveCount(0);
+    await expect(page.locator('.kb-vault-bar__name')).toHaveText(id);
+  };
+  try {
+    delayTree = 'beta';
+    await pick('beta');
+    await expect.poll(() => Boolean(release)).toBe(true);
+    release!();
+    await expect(treeFile('beta-1.md')).toBeVisible();
+    release = undefined;
+    delayTree = 'alpha';
+    version = 2;
+    await pick('alpha');
+    await expect(treeFile('alpha-1.md')).toBeVisible();
+    await expect.poll(() => Boolean(release)).toBe(true);
+    release!();
+    await expect(treeFile('alpha-2.md')).toBeVisible();
+    await expect(treeFile('alpha-1.md')).toHaveCount(0);
+    await pick('alpha');
+    expect(metadataRequested).toBe(true);
+    expect(graphs).toEqual([]);
+  } finally {
+    release?.();
+  }
+});
+
 test('market and account remain reachable from the hosted market', async ({ page }) => {
   await page.route('**/api/market/listings*', route => route.fulfill({ json: { listings: [] } }));
   await page.route('**/api/auth/status', route => route.fulfill({ json: { configured: true, loggedIn: false } }));
@@ -121,7 +176,7 @@ test('paid ZIP opens as a local vault and can be submitted by its publisher', as
   await page.getByTestId('vault-menu-reveal').click();
   await expect(page.locator('body')).toHaveAttribute('data-revealed', folder.replaceAll('\\', '/'));
   await row.click();
-  await page.getByTestId('vault-manager-close').click();
+  await expect(page.getByTestId('vault-manager-close')).toBeHidden();
   await expect(page.locator('.kb-tree-item').filter({ hasText: 'Readme.md' })).toBeVisible();
   const file = page.locator('.kb-tree-item').filter({ hasText: 'Readme.md' });
   await file.hover();
