@@ -214,7 +214,7 @@ export async function startMolioDesktop() {
     const hit = await fetch(origin + '/api/knowledge/vaults/' + encodeURIComponent(vault.id) + '/resolve/' + encoded)
     if (!hit.ok) return hit.status === 404 ? '找不到知识库页面「' + page + '」' : '无法读取知识库页面'
     const { path } = await hit.json() as { path: string }
-    const query = new URLSearchParams({ vault: vault.id, file: path })
+    const query = new URLSearchParams({ vault: vault.id, file: path, open: 'tab' })
     host.webContents.send('molio:panel', pageUrl('/knowledge?' + query).href)
     return null
   })

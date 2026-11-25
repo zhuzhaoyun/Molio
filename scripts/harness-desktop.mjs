@@ -42,6 +42,16 @@ export function applyDesktopResources(hostRoot) {
 }
 
 export function applyDesktop(hostRoot) {
+  const frame = join(hostRoot, 'packages/client/ui-layout/src/client/AppFrame.tsx');
+  const panelSelection = '  const panelId = usePanelInfo(info => info.activePanelId)';
+  insert(frame, panelSelection, panelSelection + `
+  const knowledgeSelected = panelId === 'molio-knowledge'
+  const [knowledgeVisited, setKnowledgeVisited] = useState(false)
+  useEffect(() => { if (knowledgeSelected) setKnowledgeVisited(true) }, [knowledgeSelected])`);
+  insert(frame, "    {renderSlot('main', {}, { entryKey: panelId ?? 'conversation' })}", `    {(knowledgeSelected || knowledgeVisited) && <div style={{ display: knowledgeSelected ? 'contents' : 'none' }}>
+      {renderSlot('main', {}, { entryKey: 'molio-knowledge' })}
+    </div>}
+    {!knowledgeSelected && renderSlot('main', {}, { entryKey: panelId ?? 'conversation' })}`);
   const markdown = join(hostRoot, 'packages/client/ui-primitives/src/markdown');
   copyFileSync(join(root, 'packages/dsh-plugin-molio/desktop/MolioWikiText.tsx'), join(markdown, 'MolioWikiText.tsx'));
   const render = join(markdown, 'render.tsx');
