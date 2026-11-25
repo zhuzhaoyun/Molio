@@ -48,14 +48,25 @@ export function migrateSettings(parsed: Partial<GraphSettings> | null | undefine
   return merged;
 }
 
-function loadSettings(): GraphSettings {
+type GlobalView = GraphSettings['globalView'];
+const VIEW_COOKIE = 'molio.graph.globalView';
+
+function loadSettings(desktopPanel: boolean): GraphSettings {
+  let parsed: Partial<GraphSettings> | null = null;
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return defaultSettings();
-    return migrateSettings(JSON.parse(raw));
-  } catch {
-    return defaultSettings();
+    parsed = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? 'null');
+  } catch { /* A malformed preference falls back to defaults. */ }
+  const settings = migrateSettings(parsed);
+  if (desktopPanel) {
+    // The sidecar has a new port each launch. Host cookies survive that origin change.
+    const saved = document.cookie.split('; ').find(item => item.startsWith(VIEW_COOKIE + '='))?.split('=')[1];
+    settings.globalView = saved === 'full' || saved === 'trunk' ? saved : parsed?.globalView === 'trunk' ? 'trunk' : 'full';
   }
+  return settings;
+}
+
+function rememberView(view: GlobalView) {
+  document.cookie = VIEW_COOKIE + '=' + view + '; Path=/knowledge; SameSite=Strict; Max-Age=31536000';
 }
 
 function saveSettings(s: GraphSettings): void {
@@ -64,8 +75,8 @@ function saveSettings(s: GraphSettings): void {
   } catch { /* quota exceeded — silently ignore */ }
 }
 
-export function useGraphSettings() {
-  const [settings, setSettings] = useState<GraphSettings>(loadSettings);
+export function useGraphSettings(desktopPanel = false) {
+  const [settings, setSettings] = useState<GraphSettings>(() => loadSettings(desktopPanel));
 
   // Persist on every change (debounced to avoid excessive writes during slider drags)
   useEffect(() => {
@@ -74,8 +85,9 @@ export function useGraphSettings() {
   }, [settings]);
 
   const updateSettings = useCallback((patch: Partial<GraphSettings>) => {
+    if (desktopPanel && patch.globalView) rememberView(patch.globalView);
     setSettings((prev) => ({ ...prev, ...patch }));
-  }, []);
+  }, [desktopPanel]);
 
   const updateForce = useCallback((patch: Partial<ForceParams>) => {
     setSettings((prev) => ({
@@ -86,8 +98,13 @@ export function useGraphSettings() {
 
   /** 恢复默认设置：筛选 / 外观 / 力度全部回出厂（取值见 defaultSettings()） */
   const resetSettings = useCallback(() => {
-    setSettings(defaultSettings());
-  }, []);
+    const defaults = defaultSettings();
+    if (desktopPanel) {
+      defaults.globalView = 'full';
+      rememberView(defaults.globalView);
+    }
+    setSettings(defaults);
+  }, [desktopPanel]);
 
   return { settings, updateSettings, updateForce, resetSettings };
 }

@@ -9,6 +9,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { GraphData, GraphNode, GraphScope } from '@molio/contracts';
+import { harnessMode } from '../../harnessMode';
 import { api } from '../../api/client';
 import { useI18n } from '../../i18n';
 import { useActiveVault, useActiveVaultId, vaultStore } from '../../stores/vaultStore';
@@ -128,7 +129,7 @@ export function GraphPage({
   const engineRef = useRef<PixiGraphEngine | null>(null);
   const [engine, setEngine] = useState<PixiGraphEngine | null>(null);
 
-  const { settings, updateSettings, updateForce, resetSettings } = useGraphSettings();
+  const { settings, updateSettings, updateForce, resetSettings } = useGraphSettings(harnessMode);
   const themeColors = getThemeColors(settings.theme);
 
   // 供引擎回调读取的最新值（避免重建引擎）
