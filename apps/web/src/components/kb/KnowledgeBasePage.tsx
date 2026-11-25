@@ -579,6 +579,7 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
   useEffect(() => {
     if (searchParams.get('panel') !== 'graph') return;
     if (!activeVaultId) return;
+    setGraphTabScope(null);
     openGraphTab();
     const next = new URLSearchParams(searchParams);
     next.delete('panel');

@@ -70,6 +70,14 @@ async function checkHostRegistry(port) {
 let application;
 try {
   await mkdir(vaultPath);
+  // Cross the real daemon's community threshold so an aggregate-only canvas cannot pass.
+  for (let topic = 0; topic < 6; topic++) {
+    const folder = join(vaultPath, 'Topic' + topic);
+    await mkdir(folder);
+    const name = index => 'Topic' + topic + '-Note' + (index % 85);
+    await Promise.all(Array.from({ length: 85 }, (_, index) =>
+      writeFile(join(folder, name(index) + '.md'), [1, 3, 7].map(step => '[[' + name(index + step) + ']]').join(' ') + ' [[Probe]]')));
+  }
   await writeFile(join(vaultPath, 'Probe.md'), 'molio-startup-smoke [[Evidence]]');
   await writeFile(join(vaultPath, 'Evidence.md'), '# Evidence');
   const env = { ...process.env,
@@ -108,11 +116,12 @@ try {
   const waitContent = async (page, selector) => {
     const view = page.getByTestId('molio-content')
     await view.waitFor({ state: 'visible' })
-    await page.waitForFunction(async selector => {
-      const guest = document.querySelector('[data-testid="molio-content"]')
-      try { return await guest.executeJavaScript('!!document.querySelector(' + JSON.stringify(selector) + ')?.getClientRects().length') }
-      catch { return false }
-    }, selector)
+    const deadline = Date.now() + 30000
+    while (!(await view.evaluate((guest, selector) => guest.executeJavaScript(
+      'Boolean(document.querySelector(' + JSON.stringify(selector) + ')?.getClientRects().length)'), selector).catch(() => false))) {
+      if (Date.now() >= deadline) throw Error('Missing module content: ' + selector)
+      await delay(100)
+    }
     assert.equal(await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length), 1)
   }
   await waitContent(product, '.harness-content')
@@ -161,8 +170,20 @@ try {
     assert.ok(JSON.parse(await readFile(join(profile, 'molio/auth-tokens.json'), 'utf8')).encrypted)
     assert.deepEqual((await request('/api/market/purchases')).purchases, [])
   }
+  // The fixture creates the vault through HTTP after the guest has mounted.
+  // Reload its initial vault list just as opening an existing profile does.
+  await panel.evaluate(view => view.reload());
+  await product.waitForFunction(async vaultId => {
+    const view = document.querySelector('[data-testid="molio-content"]');
+    try { return new URL(await view.executeJavaScript('location.href')).searchParams.get('vault') === vaultId && await view.executeJavaScript('document.body.innerText.includes("Probe.md")'); }
+    catch { return false; }
+  }, vault.id);
   await choose('知识图谱');
-  await waitContent(product, '[data-testid="kb-graph-pane"]');
+  await waitContent(product, '[data-testid="graph-canvas"] canvas');
+  await waitContent(product, '[data-testid="graph-view-mode-toggle"][aria-pressed="false"]');
+  assert.ok(graph.nodes.length > 500);
+  await evaluateGuest(`document.querySelector('[data-testid="graph-view-mode-toggle"]').click()`);
+  await waitContent(product, '[data-testid="graph-trunk-indicator"]');
   await choose('知识库');
   await product.waitForFunction(async () => {
     const view = document.querySelector('[data-testid="molio-content"]')
@@ -215,10 +236,18 @@ try {
   await startup.locator('#skip-key').click()
   const coldProduct = await waitPage(url => url.startsWith('dsh-app://app/'))
   await waitContent(coldProduct, '.kb-wtab.is-active[title="Probe.md"]')
+  await coldProduct.getByTestId('molio-sidebar-graph').click();
+  await waitContent(coldProduct, '[data-testid="graph-view-mode-toggle"][aria-pressed="true"]');
   await application.close();
   application = undefined;
   console.log('Harness startup, fixed sidebar, three modules, four contextual drafts and vault cwd, cold and warm clipper, five bundled tools and owned shutdown passed.');
 } catch (error) {
+  if (application) {
+    const product = application.windows().find(page => page.url().startsWith('dsh-app://app/'));
+    const state = await product?.evaluate(() => document.querySelector('webview')?.executeJavaScript(
+      '({url:location.href, text:document.body.innerText.slice(-750)})')).catch(() => null);
+    console.error('Module under test:', state);
+  }
   console.error('Smoke profile:', profile, error);
   throw error;
 } finally {
