@@ -160,6 +160,7 @@ export function createTabsStore(vaultId: string): KbTabsStore {
     },
 
     closeTab(id: string) {
+      if (tabs.length === 1 && tabs[0]?.type === 'blank') return;
       const idx = tabs.findIndex((t) => t.id === id);
       if (idx === -1) return;
       const next = tabs.filter((t) => t.id !== id);
