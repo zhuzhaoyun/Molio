@@ -26,7 +26,7 @@
 
 import { Worker } from 'node:worker_threads';
 import { existsSync } from 'node:fs';
-import type { GraphData, TreeNode } from '@molio/contracts';
+import type { GraphData, GraphPositions, TreeNode } from '@molio/contracts';
 import type { ExternalRootRef } from './external-roots.js';
 import type { VaultJobMessage } from './vault-worker-entry.js';
 import { DEFAULT_TRUNK_MIN_NODES } from './graph-communities.js';
@@ -41,6 +41,7 @@ export type VaultJob =
       __testBlockMs?: number;
     }
   | { kind: 'tree'; vaultPath: string; externalRoots?: ExternalRootRef[]; __testBlockMs?: number }
+  | { kind: 'positions'; vaultPath: string }
   | { kind: '__test-crash' }
   | { kind: '__test-hang' };
 
@@ -199,6 +200,17 @@ export function buildTreeInWorker(
   externalRoots: ExternalRootRef[] = [],
 ): Promise<TreeNode[]> {
   return treeClient.request<TreeNode[]>({ kind: 'tree', vaultPath, externalRoots });
+}
+
+/** H3：读某 vault 的布局种子（worker PositionStore）。无库存（预跑未完成/线程刚重建）→ null。
+ *  覆盖率由路由侧按当前图节点数计算——worker 只知预跑时的口径，路由才有当前图。 */
+export function getGraphPositions(vaultPath: string): Promise<GraphPositions | null> {
+  return graphClient.request<GraphPositions | null>({ kind: 'positions', vaultPath });
+}
+
+/** 测试钩子：往共享图线程发一个会崩的任务（崩溃自愈路径端到端验证用）。 */
+export function crashGraphWorkerForTest(): Promise<never> {
+  return graphClient.request<never>({ kind: '__test-crash' });
 }
 
 /** 关停用：结束两条扫描线程（优雅退出时调用；进程退出也会带走它们）。 */
