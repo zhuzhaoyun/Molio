@@ -70,6 +70,7 @@ async function checkHostRegistry(port) {
 let application;
 try {
   await mkdir(vaultPath);
+  await mkdir(join(profile, '.git')); // Nested vault must never install into its enclosing repository.
   // Cross the real daemon's community threshold so an aggregate-only canvas cannot pass.
   for (let topic = 0; topic < 6; topic++) {
     const folder = join(vaultPath, 'Topic' + topic);
@@ -135,6 +136,23 @@ try {
     assert.equal((await fetch(origin + path)).status, 404, path);
   }
   const vault = await request('/api/knowledge/vaults', { name: 'Probe', path: vaultPath });
+  const { FileSystemSkillProvider } = createRequire(join(host, '../../packages/skill/skill-filesystem/package.json'))('@deepseek-ai/dsh-skill-filesystem');
+  const provider = new FileSystemSkillProvider({ get: () => undefined, logger: console }, {
+    invalidate() {}, signal: new AbortController().signal,
+  }, { watch: false, dshHome: join(profile, 'dsh'), agentsHome: join(profile, 'agents') });
+  try {
+    await assert.rejects(readdir(join(profile, '.agents')), { code: 'ENOENT' });
+    const lookup = { cwd: vaultPath };
+    const result = await provider.list(lookup);
+    const projectSkills = (result.candidates ?? result).filter(candidate => candidate.source === 'project-agents');
+    for (const name of ['wiki-build', 'wiki-query', 'wiki-ingest', 'wiki-lint', 'wiki-save']) {
+      const candidate = projectSkills.find(skill => skill.name === name);
+      assert.ok(candidate, 'DSH must discover ' + name);
+      assert.ok((await provider.get(candidate, lookup)).content);
+    }
+  } finally {
+    await provider.dispose();
+  }
   await request('/api/knowledge/active-vault', { id: vault.id });
   const externalPath = join(profile, 'source');
   await mkdir(externalPath);
@@ -208,7 +226,9 @@ try {
     ), { mode, vaultId: vault.id, vaultPath, filePath: 'Probe.md', selectedText: 'smoke-selection-' + mode })
     const editor = product.locator('[data-composer-input]:visible').last();
     const skill = 'wiki-' + (mode === 'ask' ? 'query' : mode);
-    await editor.filter({ hasText: skill }).waitFor({ state: 'visible' });
+    assert.match(await readFile(join(vaultPath, '.agents/skills', skill, 'SKILL.md'), 'utf8'), new RegExp('name: ' + skill));
+    await editor.filter({ hasText: 'smoke-selection-' + mode }).waitFor({ state: 'visible' });
+    assert.doesNotMatch(await editor.innerText(), /SKILL\.md/);
     assert.match(await editor.innerText(), new RegExp('smoke-selection-' + mode));
   }
   const tools = inspectorPort ? await checkHostRegistry(inspectorPort) : await application.evaluate(async ({ app }, { packaged, host }) => {

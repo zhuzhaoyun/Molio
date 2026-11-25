@@ -1,6 +1,6 @@
 ---
 name: rule-sandbox
-description: 从当前知识库内容生成可交互的阈值演示——用户拖动参数越过边界，判定与解释实时翻转。适用于任何领域的边界规则（负载与警戒线、时效与期限、资格与条件、温压与安全区间），不绑定学科或考试。Triggers on: 演示, 可视化, 解释给我看, 拖动, 沙盘, 如果…会怎样, 会发生什么, interactive demo, visualize, simulate.
+description: "从当前知识库内容生成可交互的阈值演示——用户拖动参数越过边界，判定与解释实时翻转。适用于任何领域的边界规则（负载与警戒线、时效与期限、资格与条件、温压与安全区间），不绑定学科或考试。Triggers on: 演示, 可视化, 解释给我看, 拖动, 沙盘, 如果…会怎样, 会发生什么, interactive demo, visualize, simulate."
 version: 1.0.0
 ---
 

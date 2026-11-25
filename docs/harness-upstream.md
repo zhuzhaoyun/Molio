@@ -48,3 +48,5 @@ corepack pnpm build:harness
 预装版的界面入口是 `apps/web/src/harness-main.tsx`，本地服务入口是 `apps/daemon/src/harness-sidecar.ts`。它们复用知识库、图谱、资源市场和账号源码。NAS/Web 保留自己的入口。首次本地构建并启动用 `corepack pnpm desktop:run`，已有构建用 `corepack pnpm dev:desktop`，修改插件源码后重新运行 `desktop:run`。`pnpm dev` 启动独立 Web 开发服务。
 
 预装版发布使用独立标签 `harness-v<版本>`。手动触发 Release 工作流会生成测试安装包；推送预装版标签会发布 GitHub Release 和对应版本的 OSS 下载文件。旧桌面版自动更新地址保留给原版本系列。
+
+知识库会话沿用 DSH 的项目技能发现机制。现有库启动时、新库注册时，将内置技能及配套脚本复制到项目的 `.agents/skills/`。技能始终写入知识库本身。知识库嵌套在其他 Git 仓库中时，预装版也识别该库的项目技能，并保留宿主原有技能来源。已有同名技能优先保留。问答、建库、检查和摄取入口仅生成任务草稿，由模型按技能描述选择。

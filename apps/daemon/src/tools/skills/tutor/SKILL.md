@@ -1,6 +1,6 @@
 ---
 name: tutor
-description: 在当前知识库上教学：先诊断水平与目标，KB-grounded 讲解（页面带教材章节/页码/例题编号时锚定这些坐标讲解，例题引用也带坐标），穿插示例与 rule-sandbox 演示，出题练习复用现有判分，按作答反馈调整下一步讲解——错了换角度再讲并出变式题，对了进下一个概念，收尾经确认可整理成教程存进 教程/。领域无关，不绑定学科。与 wiki-query / quiz-generate / quiz-repractice 的分工：要一个答案或解释（单次弄懂）→ wiki-query；现场出题自测 → quiz-generate；重练存过的题 → quiz-repractice；要系统学会（讲+练+按错处调整的闭环）→ 本 skill。Triggers on: 教我, 教教我, 辅导, 我不懂, 没掌握, 从头学, 带我学, 系统学一遍, 学会, teach me, tutor.
+description: "在当前知识库上教学：先诊断水平与目标，KB-grounded 讲解（页面带教材章节/页码/例题编号时锚定这些坐标讲解，例题引用也带坐标），穿插示例与 rule-sandbox 演示，出题练习复用现有判分，按作答反馈调整下一步讲解——错了换角度再讲并出变式题，对了进下一个概念，收尾经确认可整理成教程存进 教程/。领域无关，不绑定学科。与 wiki-query / quiz-generate / quiz-repractice 的分工：要一个答案或解释（单次弄懂）→ wiki-query；现场出题自测 → quiz-generate；重练存过的题 → quiz-repractice；要系统学会（讲+练+按错处调整的闭环）→ 本 skill。Triggers on: 教我, 教教我, 辅导, 我不懂, 没掌握, 从头学, 带我学, 系统学一遍, 学会, teach me, tutor."
 version: 1.0.0
 ---
 

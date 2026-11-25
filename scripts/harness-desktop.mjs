@@ -13,6 +13,18 @@ function insert(file, anchor, replacement) {
   writeFileSync(file, original.includes('\r\n') ? result.replaceAll('\n', '\r\n') : result);
 }
 
+// DSH normally selects the enclosing Git root. Registered nested vaults also
+// contribute their own project skills, without writing to a parent repository.
+export function applyVaultSkillRoot(hostRoot) {
+  const file = join(hostRoot, 'packages/skill/skill-filesystem/src/index.ts');
+  const anchor = 'const projectRoot = await findProjectRoot(resolve(cwd), optionalFileSystem(this.ctx))';
+  insert(file, anchor, anchor + `
+      const vault = resolve(cwd)
+      if (vault !== projectRoot && await pathExists(join(vault, '.agents/.molio-vault'), optionalFileSystem(this.ctx))) {
+        roots.push({ path: join(vault, '.agents/skills'), source: 'project-agents', rank: PROJECT_AGENTS_RANK - 1, projectRoot: vault })
+      }`);
+}
+
 // Cached Windows checkouts can contain a repeated pair from an older overlay.
 // electron-builder copies extraResources concurrently, so every destination must be unique.
 export function applyDesktopResources(hostRoot) {

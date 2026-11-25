@@ -1,6 +1,6 @@
 ---
 name: wiki-build
-description: 构建/重建本地知识库的 Wiki。扫描 vault 中所有源文件，从中构建一个结构化的 wiki（源文件摘要、实体、概念、对比、概述页），创建分层 INDEX（根索引 + 各目录索引）/log/hot，密集交叉链接。支持超长源文件（百万字级小说等）：prep.mjs 确定性预处理 + 分层 digest 构建 + 断点续传。开工前先侦察源文件：扫描版走 OCR、电子版直接抽文字，**电子版文字层被坏字体污染**（方正书版把数学斜体字母映射成不相干汉字）则先用 fontmap.py 清洗——三类管线完全不同，选错代价极大。支持含图源文件（扫描版教材、PPT、带插图的 PDF/论文）：docling 抽图 → media.mjs 归置与规范化 → 页面内 ![[ ]] 嵌入 → 图版对账。也能把旧单索引库的索引重构为分层布局。Triggers on: 构建 wiki, 重建 wiki, build wiki, 扫描源文件构建, 初始构建, 重新构建知识库, start wiki build, 重构索引, 索引分层, 索引迁移, restructure index, 图片入库, 图版, 插图, 带图的源文件, 扫描版教材, 教材入库, figure, image ingest.
+description: "构建/重建本地知识库的 Wiki。扫描 vault 中所有源文件，从中构建一个结构化的 wiki（源文件摘要、实体、概念、对比、概述页），创建分层 INDEX（根索引 + 各目录索引）/log/hot，密集交叉链接。支持超长源文件（百万字级小说等）：prep.mjs 确定性预处理 + 分层 digest 构建 + 断点续传。开工前先侦察源文件：扫描版走 OCR、电子版直接抽文字，**电子版文字层被坏字体污染**（方正书版把数学斜体字母映射成不相干汉字）则先用 fontmap.py 清洗——三类管线完全不同，选错代价极大。支持含图源文件（扫描版教材、PPT、带插图的 PDF/论文）：docling 抽图 → media.mjs 归置与规范化 → 页面内 ![[ ]] 嵌入 → 图版对账。也能把旧单索引库的索引重构为分层布局。Triggers on: 构建 wiki, 重建 wiki, build wiki, 扫描源文件构建, 初始构建, 重新构建知识库, start wiki build, 重构索引, 索引分层, 索引迁移, restructure index, 图片入库, 图版, 插图, 带图的源文件, 扫描版教材, 教材入库, figure, image ingest."
 version: 2.4.0
 ---
 

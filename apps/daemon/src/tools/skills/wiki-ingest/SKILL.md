@@ -1,6 +1,6 @@
 ---
 name: wiki-ingest
-description: 将源文件/资料增量导入（入库）到现有 wiki，使知识持续积累和演进。读取源文件，生成或更新 source 摘要页与实体/概念/对比等页面，建立交叉链接，检测矛盾，更新分层 INDEX/log/hot（旧单索引库首次入库时自动升级为分层索引）。支持显式文件路径、URL、或无显式目标时自动找最近 raw/wechat 暂存资料。Triggers on: 入库, 导入, 整理进知识库, 保存到知识库, 归档这个文件, ingest, add this to the wiki, process this source, 把这个文件加入 wiki, read and file this.
+description: "将源文件/资料增量导入（入库）到现有 wiki，使知识持续积累和演进。读取源文件，生成或更新 source 摘要页与实体/概念/对比等页面，建立交叉链接，检测矛盾，更新分层 INDEX/log/hot（旧单索引库首次入库时自动升级为分层索引）。支持显式文件路径、URL、或无显式目标时自动找最近 raw/wechat 暂存资料。Triggers on: 入库, 导入, 整理进知识库, 保存到知识库, 归档这个文件, ingest, add this to the wiki, process this source, 把这个文件加入 wiki, read and file this."
 version: 2.4.0
 ---
 
@@ -98,7 +98,7 @@ sources:
   ```bash
   node "<skill_dir>/extract.js" "<url>"
   ```
-  `<skill_dir>` 是 vault 下 `.claude/skills/wechat-article-extractor/` 的绝对路径。脚本 stdout 输出 Markdown 正文，stderr 输出一行 JSON 元数据（含 title/author/account/publishTime）。退出码为 2（内容不可用）时不要重试，提示用户手动粘贴正文。非 `mp.weixin.qq.com` 链接按一般 URL 处理。
+  `<skill_dir>` 是 与本技能同级的 `wechat-article-extractor/` 的绝对路径。脚本 stdout 输出 Markdown 正文，stderr 输出一行 JSON 元数据（含 title/author/account/publishTime）。退出码为 2（内容不可用）时不要重试，提示用户手动粘贴正文。非 `mp.weixin.qq.com` 链接按一般 URL 处理。
 - **无显式目标（如只说「入库」「整理进知识库」）**：找 `raw/wechat/YYYY-MM-DD/` 下最近一次新增的暂存资料（实体文件或 `.md`）作为导入目标。如果有多份或无法确定，先问用户确认，不要猜测。
 
 实体文件（PDF/图片等）本身就是暂存资料，直接读其内容做摘要，**不要再额外新建 `.md` 暂存文件**，也不要重命名或移动它。
@@ -107,7 +107,7 @@ sources:
 
 ## 超长源文件处理
 
-源文件超长（`wc -c` > 1.5MB，约 50 万中文字，或 Read 一次读不完）时，**复用 wiki-build 的确定性管线脚本**（同批安装于 `.claude/skills/`，维护一份，两个 skill 引同一实现）。完整管线见 wiki-build SKILL.md「超长源文件处理」节，这里只列 ingest 的差异。
+源文件超长（`wc -c` > 1.5MB，约 50 万中文字，或 Read 一次读不完）时，**复用 wiki-build 的确定性管线脚本**（下文的 `<wiki_build_dir>` 为与本技能同级的 wiki-build 目录的绝对路径，维护一份，两个 skill 引同一实现）。完整管线见 wiki-build SKILL.md「超长源文件处理」节，这里只列 ingest 的差异。
 
 ```bash
 # 管线（与 build 相同）：
@@ -118,7 +118,7 @@ sources:
 
 1. **place 用 `--append` 模式**（增量追加，不全量重写 INDEX）：
    ```bash
-   node ".claude/skills/wiki-build/scripts/place.mjs" <x> --vault . --append
+   node "<wiki_build_dir>/scripts/place.mjs" <x> --vault . --append
    ```
    build 全量重写 INDEX；ingest 只追加新页条目到现有 INDEX（去重），不抹掉既有条目。**这是 ingest 与 build 最本质的分界**。
 

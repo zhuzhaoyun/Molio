@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { applyTools } from './harness-tools.mjs';
 import { applyBrand } from './harness-brand.mjs';
 import { applyPackaging } from './harness-package.mjs';
-import { applyDesktop } from './harness-desktop.mjs';
+import { applyDesktop, applyVaultSkillRoot } from './harness-desktop.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const stage = join(root, '.harness-build');
@@ -42,6 +42,7 @@ pnpm(['--filter', '@molio/web', 'build'], root);
 run(process.execPath, ['scripts/prepare-harness-resources.mjs']);
 await applyBrand(host);
 applyDesktop(host);
+applyVaultSkillRoot(host);
 
 await applyTools(host);
 await applyPackaging(host);
