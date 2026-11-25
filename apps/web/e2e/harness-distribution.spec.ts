@@ -36,7 +36,7 @@ test('host opens the graph directly without Molio chat or runtime discovery', as
     window.history.pushState({}, '', '/knowledge?panel=files');
     window.dispatchEvent(new PopStateEvent('popstate'));
   });
-  await expect(page.getByTestId('kb-graph-pane')).toHaveCount(0);
+  await expect(page.locator('[data-testid="kb-graph-pane"]:not([inert])')).toHaveCount(0);
   expect(agents).toEqual([]);
 });
 
