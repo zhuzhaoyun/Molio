@@ -6,6 +6,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import type { Vault, TreeNode, FileContent, KbHistoryEntry } from '@molio/contracts';
 import { api } from '../api/client';
+import { harnessMode } from '../harnessMode';
 import type { ThemeConfig } from '../components/kb/MdStylePanel';
 import { defaultThemeConfig } from '../components/kb/MdStylePanel';
 import { copyHtml } from '@molio/doocs-md/shared/utils/clipboard';
@@ -236,6 +237,13 @@ interface UseKnowledgeReturn {
   forceLoadFile: () => Promise<void>;
 }
 
+async function listPickerVaults(): Promise<Vault[]> {
+  if (!harnessMode) return api.listVaults();
+  const response = await fetch('/api/knowledge/vaults', { headers: { Prefer: 'return=minimal' } });
+  if (!response.ok) throw new Error('无法读取知识库列表');
+  return (await response.json()).vaults;
+}
+
 export function useKnowledge(): UseKnowledgeReturn {
   const [vaults, setVaults] = useState<Vault[]>([]);
   // Mirror vaults in a ref so async callbacks (create/open/delete) can compute
@@ -254,6 +262,7 @@ export function useKnowledge(): UseKnowledgeReturn {
   const [treeError, setTreeError] = useState<string | null>(null);
   /** 树请求序号：并发刷新（创建/导入/聚焦/SSE/手动）只认最后发起的那一次。 */
   const treeSeqRef = useRef(0);
+  const recentTrees = useRef(new Map<string, TreeNode[]>());
   // 每次收到「库变了」的信号就 +1。文件树自己重取即可，但别的视图（图谱）需要知道
   // 「该重取了」这件事本身——把信号变成可订阅的计数器，比让每个视图各自开一条 SSE 便宜。
   const [treeRevision, setTreeRevision] = useState(0);
@@ -315,7 +324,7 @@ export function useKnowledge(): UseKnowledgeReturn {
     let cancelled = false;
     (async () => {
       try {
-        const list = await api.listVaults();
+        const list = await listPickerVaults();
         if (cancelled) return;
         setVaults(list);
         vaultStore.setVaults(list); // shared store handles auto-selection
@@ -328,7 +337,7 @@ export function useKnowledge(): UseKnowledgeReturn {
 
   /** Re-fetch the vault list into both local state and the shared store. */
   const refreshVaults = useCallback(async () => {
-    const list = await api.listVaults();
+    const list = await listPickerVaults();
     setVaults(list);
     vaultStore.setVaults(list);
   }, []);
@@ -357,12 +366,19 @@ export function useKnowledge(): UseKnowledgeReturn {
     try {
       const t = await api.getFileTree(vaultId);
       if (seq !== treeSeqRef.current) return true; // 已被更新的请求取代
+      const recent = recentTrees.current;
+      recent.delete(vaultId);
+      recent.set(vaultId, t);
+      if (recent.size > 4) recent.delete(recent.keys().next().value!);
       setTree(t);
       setTreeVaultId(vaultId);
       setTreeError(null);
       return true;
     } catch (err) {
       if (seq !== treeSeqRef.current) return true;
+      recentTrees.current.delete(vaultId);
+      setTree([]);
+      setTreeVaultId(null);
       setTreeError(err instanceof Error ? err.message : String(err));
       return false;
     }
@@ -379,21 +395,22 @@ export function useKnowledge(): UseKnowledgeReturn {
 
     let cancelled = false;
     (async () => {
-      setLoading(true);
-      setTree([]);
+      const preview = recentTrees.current.get(activeVaultId);
+      setLoading(!preview);
+      setTree(preview ?? []);
       setTreeVaultId(null);
       setTreeError(null);
-      const ok = await loadTree(activeVaultId);
-      if (cancelled) return;
+
       // Only clear selection on explicit vault switch, not on mount/remount
       // (tab restore sets selectedFile via KnowledgeBasePage useEffect)
-      if (ok && isVaultSwitch) {
+      if (isVaultSwitch) {
         setSelectedFile(null);
         setFileContent(null);
       }
-      setLoading(false);
+      await loadTree(activeVaultId);
+      if (!cancelled) setLoading(false);
     })();
-    return () => { cancelled = true; };
+    return () => { cancelled = true; treeSeqRef.current++; };
   }, [activeVaultId, loadTree]);
 
   // Check wiki status when vault changes

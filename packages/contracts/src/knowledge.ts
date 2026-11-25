@@ -18,7 +18,7 @@ export interface Vault {
   name: string;
   path: string; // Local filesystem absolute path
   description?: string;
-  fileCount: number;
+  fileCount?: number; // Omitted by metadata-only vault listings.
   createdAt: number;
 }
 
