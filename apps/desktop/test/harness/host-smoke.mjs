@@ -166,7 +166,7 @@ try {
   await choose('知识库');
   await product.waitForFunction(async () => {
     const view = document.querySelector('[data-testid="molio-content"]')
-    return await view.executeJavaScript(`!!document.querySelector('.harness-content') && !document.querySelector('[data-testid="kb-graph-pane"]')`)
+    return await view.executeJavaScript(`!!document.querySelector('.harness-content') && !document.querySelector('[data-testid="kb-graph-pane"]:not([inert])')`)
   });
   await choose('资源市场');
   await waitContent(product, '[data-testid="resources-grid"]');
