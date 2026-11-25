@@ -40,6 +40,7 @@ import { useI18n } from '../../i18n';
 import { api } from '../../api/client';
 import { BookIcon, ChatIcon, StethoscopeIcon } from '../icons';
 import { openInNewWindow } from '../../utils/openWindow';
+import { PublicationPanel } from '../publication/PublicationPanel';
 import { shouldReuseWindowOnVaultSwitch } from '../../utils/vaultSwitchWindow';
 
 interface KnowledgeBasePageProps {
@@ -171,6 +172,7 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
   const [pendingUrlNav, setPendingUrlNav] = useState<UrlFileNavigation | null>(null);
   const [showOutline, setShowOutline] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
+  const [showPublicPublication, setShowPublicPublication] = useState(false);
   // 发布 tab 表单是否有已填内容（PublishForm 上报）——关 tab 前的放弃确认用
   const publishDirtyRef = useRef(false);
 
@@ -1531,9 +1533,13 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
         onMoveFile={handleMoveFile}
         treeError={kb.treeError}
         onRetryTree={() => { void handleRefreshTree(); }}
+        onOpenPublicWiki={() => setShowPublicPublication(true)}
       >
         <div className="kb-resize-handle" onMouseDown={handleResizeStart} />
       </KbFilePanel>
+      {showPublicPublication && activeVaultId && <div className="publication-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setShowPublicPublication(false); }}>
+        <PublicationPanel vaultId={activeVaultId} tree={kb.tree} onClose={() => setShowPublicPublication(false)} />
+      </div>}
 
       {/* Tab Bar + Main Content */}
       <div className="kb-main-wrapper">

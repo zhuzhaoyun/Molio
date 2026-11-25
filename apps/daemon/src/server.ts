@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import type Database from 'better-sqlite3';
 import { RunManager } from './core/RunManager.js';
-import { openDatabase, closeDatabase } from './core/db.js';
+import { openDatabase, closeDatabase, getVault } from './core/db.js';
 import { agentsRoutes } from './routes/agents.js';
 import { runsRoutes } from './routes/runs.js';
 import { eventsRoutes } from './routes/events.js';
@@ -37,11 +37,15 @@ import { loadAccessConfig } from './core/access/config.js';
 import { createSessionStore } from './core/access/sessions.js';
 import { createAccessGuard } from './core/access/guard.js';
 import { accessRoutes } from './routes/access.js';
+import { createPublicationStore } from './core/publication/store.js';
+import { publicRoutes } from './routes/public.js';
+import { createPublicationPrincipalResolver, publicationRoutes } from './routes/publication.js';
 
 // Validate before constructing services or opening application data.
 export const accessConfig = loadAccessConfig(process.env);
 export const runManager = new RunManager();
 export const db: Database.Database = openDatabase();
+export const publicationStore = createPublicationStore(db);
 export const adminSessions = accessConfig.mode === 'server'
   ? createSessionStore(db, { credential: JSON.stringify([accessConfig.username, accessConfig.passwordHash]) })
   : null;
@@ -98,6 +102,12 @@ app.use('*', cors({
 }));
 
 app.route('/api/access', accessRoutes(accessConfig, adminSessions));
+app.route('/api/public', publicRoutes(publicationStore));
+app.route('/api/publication', publicationRoutes(
+  publicationStore,
+  (vaultId) => getVault(db, vaultId)?.path ?? null,
+  createPublicationPrincipalResolver(accessConfig.mode, adminSessions),
+));
 
 // Health check — includes process metrics so the desktop shell can bridge
 // daemon memory data to ARMS (the daemon has no ARMS SDK of its own).

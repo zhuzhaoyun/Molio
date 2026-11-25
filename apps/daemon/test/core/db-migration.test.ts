@@ -33,6 +33,13 @@ describe('db migration: vault_id + messages_fts', () => {
     assert.match(row!.sql, /trigram/);
   });
 
+  it('publication migration creates a disabled empty public site', () => {
+    const state = db.prepare('SELECT enabled, revision, vault_id FROM publication_state WHERE id = 1').get() as
+      | { enabled: number; revision: number; vault_id: string | null }
+      | undefined;
+    assert.deepEqual(state, { enabled: 0, revision: 0, vault_id: null });
+  });
+
   it('migration is idempotent (openDatabase twice does not error)', () => {
     assert.doesNotThrow(() => openDatabase(tempDir));
   });

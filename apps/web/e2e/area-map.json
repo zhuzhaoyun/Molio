@@ -375,6 +375,27 @@
       "specs": [
         "market-community"
       ]
+    },
+    "public-wiki": {
+      "paths": [
+        "apps/web/src/components/public/**",
+        "apps/web/src/components/publication/**",
+        "apps/web/src/api/publication.ts",
+        "apps/web/src/main.tsx",
+        "apps/web/src/components/kb/KnowledgeBasePage.tsx",
+        "apps/web/src/components/kb/KbFilePanel.tsx",
+        "apps/web/src/i18n/locales/*.ts",
+        "apps/daemon/src/core/publication/**",
+        "apps/daemon/src/routes/public*.ts",
+        "apps/daemon/src/core/access/guard.ts",
+        "apps/web/src/components/NavRail.tsx",
+        "packages/contracts/src/publication.ts",
+        "apps/daemon/src/core/knowledge.ts"
+      ],
+      "specs": [
+        "publication-ui",
+        "publication-server"
+      ]
     }
   },
   "specs": {
@@ -813,6 +834,14 @@
     "upstream-server-api": {
       "priority": "P0",
       "file": "upstream-server-api.spec.ts"
+    },
+    "publication-ui": {
+      "priority": "P1",
+      "file": "publication-ui.spec.ts"
+    },
+    "publication-server": {
+      "priority": "P1",
+      "file": "publication-server.spec.ts"
     }
   }
 }

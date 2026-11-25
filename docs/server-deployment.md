@@ -1,6 +1,6 @@
 # Molio server 部署与管理员初始化
 
-server 模式保护全部管理 API。Docker 默认 server，daemon 在容器内监听 `0.0.0.0:3100`，宿主机只映射 `127.0.0.1:3100`，由 HTTPS 反向代理提供访问。`MOLIO_PUBLIC_URL` 必须与浏览器实际使用的 HTTPS Origin 完全一致，不能包含业务路径。云端邮箱账号与本站管理员账号相互独立。
+server 模式保护全部管理 API；访客只读已发布快照。Docker 默认 server，daemon 在容器内监听 `0.0.0.0:3100`，宿主机只映射 `127.0.0.1:3100`，由 HTTPS 反向代理提供访问。`MOLIO_PUBLIC_URL` 必须与浏览器实际使用的 HTTPS Origin 完全一致，不能包含业务路径。云端邮箱账号与本站管理员账号相互独立。
 
 ## 1. 从源码构建镜像
 
@@ -63,7 +63,7 @@ docker compose up -d
 docker compose -f docker-compose.yml -f docker-compose.https.yml up -d
 ```
 
-Caddy 使用持久化卷保存证书，转发到内部 `molio:3100`，配置包含即时流式转发；Caddy 不接收管理员哈希。访问初始化时填写的 HTTPS 地址。
+Caddy 使用持久化卷保存证书，转发到内部 `molio:3100`，配置包含即时流式转发；Caddy 不接收管理员哈希。访问初始化时填写的 HTTPS 地址。首次启动没有任何已发布页，管理端选择页面并发布后，访客可访问 `/public/wiki` 与 `/public/graph`。
 
 Caddy 默认示例使用公开域名标准 443 端口；非标准端口需同步修改代理端口映射与 PUBLIC_URL。不要将自签本机测试证书视为生产可信证书。
 
@@ -85,7 +85,8 @@ MOLIO_IMAGE=molio:main MOLIO_SKIP_PULL=1 bash install.sh
 
 - HTTPS 页面可打开；匿名 `/api/access/session` 为 server/未登录，`/api/config` 为 401。
 - 管理员登录后能操作工作台，退出后旧会话失效。
-- 匿名请求不能通过原文件 API、管理 SSE 或私有附件取得知识库内容。
+- 只有已发布内容能匿名访问；更新源文件不自动公开，重新发布后更新，撤回/关闭后旧入口不可读取。
+- 不能通过原文件 API、管理 SSE 或私有附件取得未发布内容。
 
 更新使用已验证的镜像标签，保留知识库挂载与命名卷。重新运行本版本安装脚本时会先停止既有 Caddy，验证新 daemon 的健康状态和匿名管理 401 后才重开入口；失败则停止 daemon 与 Caddy。使用自有反向代理或手动更新时，应先关闭该代理入口，完成同样检查后再恢复，避免检查前转发新镜像。启用了 Caddy 时，所有 up/restart/down 操作使用同一组 `-f docker-compose.yml -f docker-compose.https.yml`；不要使用 `down -v` 删除数据库或证书卷。
 

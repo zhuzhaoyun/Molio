@@ -168,6 +168,22 @@ export { splitContent, stripQuizFences } from './messageSegments.js';
 export type { Segment } from './messageSegments.js';
 
 export type {
+  PublicPageSummary,
+  PublicSite,
+  PublicPage,
+  PublicGraph,
+  PublicAsset,
+  PublicationStatus,
+  PublicationPreviewRequest,
+  PublicationPreviewPage,
+  PublicationPreview,
+  PublicationCommitRequest,
+  PublicationWithdrawRequest,
+  PublicationSiteRequest,
+  PublicationRevision,
+} from './publication.js';
+
+export type {
   SkillKind,
   SkillManifestEntry,
   CreateSkillRequest,

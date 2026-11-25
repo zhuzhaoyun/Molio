@@ -11,6 +11,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import { molioDataDir } from './data-dir.js';
 import { migrateAdminAccess } from './access/migration.js';
+import { migratePublication } from './publication/migration.js';
 import { randomUUID } from 'node:crypto';
 import type { ChatMessage, Project, Conversation, ConversationHistoryItem, ConversationHistoryPage, ListHistoryQuery, Vault, KbHistoryEntry, ExternalRoot } from '@molio/contracts';
 import { quizTracesByConversation } from './quiz-trace.js';
@@ -78,6 +79,7 @@ export function closeDatabase(_db?: SqliteDb): void {
 
 function migrate(db: SqliteDb): void {
   migrateAdminAccess(db);
+  migratePublication(db);
   db.exec(`
     CREATE TABLE IF NOT EXISTS projects (
       id TEXT PRIMARY KEY,

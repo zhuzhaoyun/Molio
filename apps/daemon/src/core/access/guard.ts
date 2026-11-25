@@ -23,7 +23,12 @@ export function createAccessGuard(config: AccessConfig, store: SessionStore | nu
     const isHealth = path === '/api/health' && (method === 'GET' || method === 'HEAD');
     const isSession = path === '/api/access/session' && method === 'GET';
     const isLogin = path === '/api/access/login' && method === 'POST';
-    if (isHealth || isSession || isLogin) {
+    const isPublicRead = (method === 'GET' || method === 'HEAD') && (
+      path === '/api/public/site' || path === '/api/public/graph' ||
+      /^\/api\/public\/pages\/[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(path) ||
+      /^\/api\/public\/assets\/[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(path)
+    );
+    if (isHealth || isSession || isLogin || isPublicRead) {
       if (isLogin && c.req.header('origin') !== config.publicOrigin) return c.json({ error: 'forbidden' }, 403);
       await next();
       if (!isHealth) c.res.headers.set('Cache-Control', 'no-store');

@@ -23,7 +23,20 @@ test('server authenticates each request and requires origin and CSRF for writes'
     app.get('/api/knowledge/vaults/:id/files/*', (c) => c.json({ ok: true }));
     app.post('/api/config', (c) => c.json({ ok: true }));
     app.get('/api/health', (c) => c.json({ status: 'ok' }));
+    app.get('/api/public/site', (c) => c.json({ enabled: true }));
+    app.get('/api/public/pages/:id', (c) => c.json({ id: c.req.param('id') }));
+    app.get('/api/public/graph', (c) => c.json({ graph: true }));
+    app.get('/api/public/assets/:id', (c) => c.body('asset'));
+    app.post('/api/public/site', (c) => c.json({ write: true }));
     assert.equal((await app.request('/api/health', { method: 'HEAD' })).status, 200);
+    for (const path of ['/api/public/site', '/api/public/pages/123e4567-e89b-42d3-a456-426614174000', '/api/public/graph', '/api/public/assets/123e4567-e89b-42d3-a456-426614174000']) {
+      assert.equal((await app.request(path)).status, 200, `public read ${path}`);
+      assert.equal((await app.request(path, { method: 'HEAD' })).status, 200, `public head ${path}`);
+    }
+    for (const path of ['/api/public/other', '/api/public/site/extra', '/api/public/pages/a%2Fb', '/api/public//graph', '/api/public/../config']) {
+      assert.equal((await app.request(path)).status, 401, `unlisted public path ${path}`);
+    }
+    assert.equal((await app.request('/api/public/site', { method: 'POST' })).status, 401, 'public prefix does not allow writes');
     const anonymousSession = await app.request('/api/access/session');
     assert.deepEqual(await anonymousSession.json(), { mode: 'server', authenticated: false });
     assert.equal(anonymousSession.headers.get('cache-control'), 'no-store');
