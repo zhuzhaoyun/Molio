@@ -126,7 +126,7 @@ src/
     account.css    账号面板 + 登录表单样式（复用 kb-overlay/kb-modal/kb-btn）
     resources.css  资源页样式（列表/详情/灯箱/支付弹窗）
   e2e/
-    *.spec.ts       Playwright 自动化测试（需先 pnpm dev）
+    *.spec.ts       Playwright 自动化测试（服务自动拉起，端口被占自动平移）
     helpers/        mock-sse.ts 等测试辅助
     scenarios/      kimi-webbridge 场景文档（非自动化，手动/AI 驱动）
   vendor/
@@ -151,7 +151,7 @@ pnpm build        # vite build
 pnpm preview      # vite preview
 pnpm typecheck    # tsc --noEmit
 pnpm test         # node:test 单测（graph engine 纯函数 + settings 迁移，Node 24 原生 TS）
-pnpm test:e2e     # Playwright 自动启动隔离的 daemon/cloud/web（先关闭占用测试端口的服务）
+pnpm test:e2e     # Playwright E2E（webServer 自动拉起 daemon/web/cloud/mock-oss；默认端口被占时自动平移，见 e2e/helpers/ports.ts）
 ```
 
 ## E2E 同步规则（强制）

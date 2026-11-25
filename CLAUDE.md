@@ -31,7 +31,7 @@ pnpm dev:desktop  # daemon + web + electron (需确保 5173/3100 端口未被占
 pnpm dev:cloud    # cloud auth service only (tsx :3200, 无 DATABASE_URL 自动内存模式)
 pnpm build        # build all packages
 pnpm test         # run cloud + daemon + desktop + web tests (node:test)
-pnpm test:e2e     # run web E2E tests (Playwright, 需先 pnpm dev)
+pnpm test:e2e     # run web E2E tests (Playwright, 服务自动拉起+端口自动平移)
 pnpm typecheck    # typecheck all packages
 ```
 
@@ -135,8 +135,8 @@ const child = spawn(binary, args, {
 
 **核心原则**：WebUI first，Electron 只是壳。E2E 直接测 web 层。
 
-- 使用 Playwright 对 `http://localhost:5173` 进行测试
-- 前置条件：`pnpm dev`（daemon + web 同时运行）
+- 使用 Playwright 测试（默认 `http://localhost:5173`；端口被其他无关服务占用时自动平移，见 apps/web/e2e/helpers/ports.ts）
+- 前置条件：无（webServer 自动拉起 daemon/web/cloud/mock-oss，无需先 pnpm dev）
 - 常用命令：`npx playwright test` / `--ui` / `--debug` / `--headed` / `-g "test name"`
 - 定位策略：优先 `data-testid`，其次 CSS class，不依赖文本内容
 - 编写规范见 `apps/web/CLAUDE.md`
