@@ -1,6 +1,6 @@
 ---
 name: wiki-lint
-description: 对本地知识库的 Wiki 做健康检查/质量审查。查孤立页、断链、断引用、frontmatter 缺失、空段落、内容矛盾、过时内容、INDEX 偏差、知识缺口，生成 lint 报告并给出补充方向建议。Triggers on: 健康检查, 检查 wiki 健康状况, lint, clean up wiki, wiki 维护, check the wiki, wiki audit, find orphans, 审查 wiki.
+description: "对本地知识库的 Wiki 做健康检查/质量审查。查孤立页、断链、断引用、frontmatter 缺失、空段落、内容矛盾、过时内容、INDEX 偏差、知识缺口，生成 lint 报告并给出补充方向建议。Triggers on: 健康检查, 检查 wiki 健康状况, lint, clean up wiki, wiki 维护, check the wiki, wiki audit, find orphans, 审查 wiki."
 version: 2.4.0
 ---
 
@@ -37,21 +37,21 @@ wiki 相关内容的目录结构：
    ```bash
    grep -roh '\[\[[^]]*\]\]' wiki/ | sort | uniq -c | sort -rn
    ```
-   这一步能同时得到：所有被引用的页面名、引用频次，用于检测断链/缺失页面和引用结构。注意 grep 不会跳过代码块——**代码块/行内代码里的 `[[...]]` 是字面文本、不算链接**（与 deadcheck、图谱同口径），数到它们不要当断链报；断链的精确判定直接用专用脚本：
+   这一步能同时得到：所有被引用的页面名、引用频次，用于检测断链/缺失页面和引用结构。注意 grep 不会跳过代码块——**代码块/行内代码里的 `[[...]]` 是字面文本、不算链接**（与 deadcheck、图谱同口径），数到它们不要当断链报；断链的精确判定直接用专用脚本。下文的 `<wiki_build_dir>` 替换为与本技能同级的 wiki-build 技能目录的绝对路径：
    ```bash
-   node ".claude/skills/wiki-build/scripts/deadcheck.mjs" --vault .
+   node "<wiki_build_dir>/scripts/deadcheck.mjs" --vault .
    ```
    **孤立页的判定不靠这里的计数**——grep 会把 INDEX 的枚举链接算进入度，导致"每个 stub 都被 INDEX 链过 → 永远测不出孤儿"，用专用脚本（口径：排除 INDEX/log/hot 结构页）：
    ```bash
-   node ".claude/skills/wiki-build/scripts/orphan-audit.mjs" --vault .
+   node "<wiki_build_dir>/scripts/orphan-audit.mjs" --vault .
    ```
    **加粗失效（CJK flanking）也用专用脚本**——`**` 定界符一侧贴括号/引号/逗号等标点、另一侧紧贴汉字的加粗，CommonMark 判定不生效、`**` 按字面渲染（如 `**生态位（萝卜坑）**的分配`）；口径与 deadcheck 一致，跳过 frontmatter/代码块/行内代码：
    ```bash
-   node ".claude/skills/wiki-build/scripts/cjk-emphasis-check.mjs" --vault .
+   node "<wiki_build_dir>/scripts/cjk-emphasis-check.mjs" --vault .
    ```
    含图库再查图版（悬空图片引用 / 孤儿图 / 裸文件名歧义 / `![](...)` 的笔记相对路径）：
    ```bash
-   node ".claude/skills/wiki-build/scripts/media.mjs" check --vault .
+   node "<wiki_build_dir>/scripts/media.mjs" check --vault .
    ```
 4. 使用 Bash 检查实际文件与索引的一致性（两层对比）：
    ```bash

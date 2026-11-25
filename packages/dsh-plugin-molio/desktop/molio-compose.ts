@@ -1,4 +1,4 @@
-import { isAbsolute, join } from 'node:path'
+import { isAbsolute } from 'node:path'
 
 export interface ContextRequest {
   mode: 'ask' | 'build' | 'lint' | 'ingest'
@@ -16,7 +16,7 @@ const modes = {
   ingest: '将下列来源摄取到当前知识库 Wiki。',
 }
 
-export function knowledgeDraft(input: ContextRequest, skillsDirectory: string) {
+export function knowledgeDraft(input: ContextRequest) {
   if (!input || !Object.hasOwn(modes, input.mode) || typeof input.vaultId !== 'string'
     || !input.vaultId || typeof input.vaultPath !== 'string') throw new Error('无效的知识库会话请求')
   const { filePath, selectedText } = input
@@ -24,9 +24,8 @@ export function knowledgeDraft(input: ContextRequest, skillsDirectory: string) {
     || filePath.split(/[\\/]/).includes('..'))) throw new Error('文件路径必须位于知识库内')
   if (selectedText !== undefined && typeof selectedText !== 'string') throw new Error('无效的选区')
   if (input.mode === 'ingest' && !filePath) throw new Error('请选择要摄取的来源')
-  const skill = 'wiki-' + (input.mode === 'ask' ? 'query' : input.mode)
   return [
-    modes[input.mode], '请先读取并遵循 ' + join(skillsDirectory, skill, 'SKILL.md'),
+    modes[input.mode],
     filePath && (input.isDirectory ? '目录：' : '文件：') + filePath,
     selectedText && '选中文字：\n' + selectedText,
   ].filter(Boolean).join('\n\n')

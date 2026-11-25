@@ -3,6 +3,7 @@ import { Hono } from 'hono';
 import { openDatabase, closeDatabase } from './core/db.js';
 import { AuthClient } from './core/auth/auth-client.js';
 import { disposeVaultWorkers } from './core/vault-worker.js';
+import { reconcileAllVaults } from './core/skills/vault-config.js';
 import { createKnowledgeServices } from './knowledge-services.js';
 import { authRoutes } from './routes/auth.js';
 import { configRoutes } from './routes/config.js';
@@ -17,7 +18,9 @@ import { createStaticFileMiddleware } from './static-files.js';
 if (!process.connected) throw new Error('The Molio knowledge service requires a desktop IPC parent');
 const staticDir = process.env.MOLIO_STATIC_DIR;
 if (!staticDir) throw new Error('Missing bundled Molio interface');
+
 const db = openDatabase();
+reconcileAllVaults(db);
 const { vaultWatcher, vaultIndexSweeper, graphCache, treeCache } = createKnowledgeServices(db);
 const cached = (id: string) => vaultWatcher.isReady(id);
 const auth = new AuthClient();

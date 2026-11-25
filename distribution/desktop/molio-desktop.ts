@@ -144,7 +144,7 @@ export async function startMolioDesktop() {
   }
   ipcMain.handle('molio:conversation', async (event, input: ContextRequest) => {
     owner(event)
-    const prompt = knowledgeDraft(input, join(resources, 'daemon/skills'))
+    const prompt = knowledgeDraft(input)
     const response = await fetch(origin + '/api/knowledge/vaults')
     if (!response.ok) throw new Error('知识库服务不可用')
     const { vaults } = await response.json() as { vaults: Array<{ id: string; path: string }> }
