@@ -6,6 +6,7 @@ type Draft = { path: string; prompt: string }
 // from main, so a stale renderer cannot acknowledge another window's request.
 export function installKnowledgeComposer() {
   contextBridge.exposeInMainWorld('molioNavigation', {
+    openWiki: (cwd: string, page: string) => ipcRenderer.invoke('molio:wiki', cwd, page),
     listen: (callback: (url: string) => void) => {
       const handle = (_event: Electron.IpcRendererEvent, url: string) => callback(url)
       ipcRenderer.on('molio:panel', handle)

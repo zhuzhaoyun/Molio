@@ -197,6 +197,27 @@ export async function startMolioDesktop() {
     host.webContents.once('destroyed', () => { deliverClip = undefined })
     flushMolioClip()
   })
+  ipcMain.handle('molio:wiki', async (event, cwd: unknown, page: unknown) => {
+    const host = productWindow?.()
+    if (!host || event.sender !== host.webContents || event.senderFrame !== host.webContents.mainFrame) throw new Error('Unknown host')
+    if (typeof cwd !== 'string' || !isAbsolute(cwd) || typeof page !== 'string' || !page.trim()
+      || isAbsolute(page) || /[:\\\x00-\x1f]/u.test(page) || page.split('/').some(part => !part || part === '.' || part === '..')) return '知识库链接无效'
+    const list = await fetch(origin + '/api/knowledge/vaults', { headers: { Prefer: 'return=minimal' } })
+    if (!list.ok) return '无法读取知识库列表'
+    const { vaults } = await list.json() as { vaults: Array<{ id: string; path: string }> }
+    const vault = vaults.filter(item => {
+      const diff = relative(item.path, cwd)
+      return !isAbsolute(diff) && diff !== '..' && !diff.startsWith('..' + sep)
+    }).sort((a, b) => b.path.length - a.path.length)[0]
+    if (!vault) return '当前对话的工作目录未关联知识库'
+    const encoded = page.split('/').map(encodeURIComponent).join('/')
+    const hit = await fetch(origin + '/api/knowledge/vaults/' + encodeURIComponent(vault.id) + '/resolve/' + encoded)
+    if (!hit.ok) return hit.status === 404 ? '找不到知识库页面「' + page + '」' : '无法读取知识库页面'
+    const { path } = await hit.json() as { path: string }
+    const query = new URLSearchParams({ vault: vault.id, file: path })
+    host.webContents.send('molio:panel', pageUrl('/knowledge?' + query).href)
+    return null
+  })
   ipcMain.on('molio:navigate', (event, id: string) => {
     const host = productWindow?.()
     if (!host || event.sender !== host.webContents || event.senderFrame !== host.webContents.mainFrame) return

@@ -42,6 +42,20 @@ export function applyDesktopResources(hostRoot) {
 }
 
 export function applyDesktop(hostRoot) {
+  const markdown = join(hostRoot, 'packages/client/ui-primitives/src/markdown');
+  copyFileSync(join(root, 'packages/dsh-plugin-molio/desktop/MolioWikiText.tsx'), join(markdown, 'MolioWikiText.tsx'));
+  const render = join(markdown, 'render.tsx');
+  copyFileSync(join(root, 'distribution/test/desktop/harness/wiki-links.client.spec.tsx'),
+    join(markdown, '../../tests/wiki-links.client.spec.tsx'));
+  insert(render, "import { FenceCodeBlock", "import { MolioWikiText } from './MolioWikiText.tsx'\nimport { FenceCodeBlock");
+  insert(render, "case 'text':\n      return node.value", "case 'text':\n      return !context.inLink && node.value.includes('[[') ? <MolioWikiText key={key} text={node.value} /> : node.value");
+  const delegate = join(markdown, 'MarkdownDelegate.tsx');
+  insert(delegate, 'export interface MarkdownDelegate {', 'export interface MarkdownDelegate {\n  readonly wikiCwd?: string | undefined');
+  insert(delegate, '  children,\n  openExternalLink,', '  children,\n  wikiCwd,\n  openExternalLink,');
+  insert(delegate, '({ openExternalLink, openFile', '({ wikiCwd, openExternalLink, openFile');
+  insert(delegate, '[openExternalLink, openFile', '[wikiCwd, openExternalLink, openFile');
+  const chat = join(hostRoot, 'packages/client/ui-chat/src/client/chat/ChatView.tsx');
+  insert(chat, '<MarkdownDelegateProvider\n', '<MarkdownDelegateProvider\n              wikiCwd={cwd}\n');
   const desktop = join(hostRoot, 'apps/desktop');
   const support = join(desktop, 'molio-support');
   mkdirSync(support, { recursive: true });
