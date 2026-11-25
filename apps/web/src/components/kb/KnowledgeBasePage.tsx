@@ -834,9 +834,14 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
 
   // Reactive safety net: close tabs whose file no longer exists in the active vault's tree.
   // Triggers on tree refresh (external deletes via VaultWatcher) and vault switches.
+  const checkedTree = useRef<{ vaultId: string; tree: TreeNode[] } | null>(null);
   useEffect(() => {
     const av = kb.activeVault;
     if (!av || kb.treeVaultId !== av.id || kb.tree.length === 0) return;
+    // A link can resolve a newly written file before the watcher delivers its
+    // updated tree. An older snapshot cannot invalidate a newly opened tab.
+    if (checkedTree.current?.vaultId === av.id && checkedTree.current.tree === kb.tree) return;
+    checkedTree.current = { vaultId: av.id, tree: kb.tree };
     const paths = new Set<string>();
     const collect = (nodes: TreeNode[]) => {
       for (const n of nodes) {

@@ -95,6 +95,16 @@ test('picking a vault dismisses the manager before its tree loads and reuses the
   }
 });
 
+test('a chat link opens a resolved page before the file watcher updates the tree', async ({ page }) => {
+  const path = 'wiki/entities/贾后.md';
+  await page.route('**/api/knowledge/vaults', r => r.fulfill({ json: { vaults: [{ id: 'demo', name: 'Demo', path: '/demo' }] } }));
+  await page.route('**/api/knowledge/vaults/demo/tree', r => r.fulfill({ json: { tree: [{ type: 'file', name: 'index.md', path: 'index.md' }] } }));
+  await page.route('**/demo/resolve/**', r => r.fulfill({ json: { path } }));
+  await page.route('**/demo/files/**', r => r.fulfill({ json: { path, content: '# 贾后', encoding: 'utf-8' } }));
+  await page.goto('/knowledge?vault=demo&file=' + encodeURIComponent(path));
+  await expect(page.locator('.kb-wtab.is-active')).toHaveAttribute('title', path);
+});
+
 test('market and account remain reachable from the hosted market', async ({ page }) => {
   await page.route('**/api/market/listings*', route => route.fulfill({ json: { listings: [] } }));
   await page.route('**/api/auth/status', route => route.fulfill({ json: { configured: true, loggedIn: false } }));
