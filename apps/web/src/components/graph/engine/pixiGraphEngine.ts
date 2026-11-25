@@ -46,6 +46,7 @@ import { zoom, zoomIdentity, type ZoomBehavior, type ZoomTransform } from 'd3-zo
 import { Group, Tween } from '@tweenjs/tween.js';
 import { NODE_TYPE_COLORS, type ForceParams, type ThemeColors } from '../types';
 import { GRAPH_LAYOUT_RECIPE, autoLinkStrength } from '@molio/contracts';
+import { planSeedRefine } from '../seedPolicy';
 import {
   trunkBlobRadius,
   trunkEdgeWidth,
@@ -295,6 +296,8 @@ export class PixiGraphEngine {
    *  刷新（库变了）要继承——否则「只加了一个文件、整个布局重炸」；换 vault 不能继承——
    *  两个库的图没有可比性，沿用旧坐标会让新库长成旧库的形状。 */
   private inheritPositions = true;
+  /** H3 布局种子（daemon 预跑 positions）：仅全量模式消费，setData 注入、trunk 不吃。 */
+  private pendingSeed: Map<string, { x: number; y: number }> | null = null;
   private hasUserInteracted = false;
   private hasFitFirstLayout = false;
   private refitTimer: ReturnType<typeof setTimeout> | null = null;
@@ -467,9 +470,10 @@ export class PixiGraphEngine {
     }
   }
 
-  setData(nodes: EngineNode[], edges: EngineEdge[]): void {
+  setData(nodes: EngineNode[], edges: EngineEdge[], seed?: Map<string, { x: number; y: number }>): void {
     if (this.destroyed) return;
     this.trunkMode = false;
+    this.pendingSeed = seed ?? null;
     this.buildAndRender(
       nodes,
       edges.map((e) => ({ ...e })),
@@ -486,6 +490,7 @@ export class PixiGraphEngine {
   setTrunkData(scene: TrunkScene, opts?: { preserveViewport?: boolean }): void {
     if (this.destroyed) return;
     this.trunkMode = true;
+    this.pendingSeed = null;
     this.trunkSceneRef = scene;
     // 场景重建 = 展开态清零（刷新保态由宿主 matchExpansionsOnRefresh 后重注入；chip 随层销毁）
     this.trunkBlobPos.clear();
@@ -944,8 +949,11 @@ export class PixiGraphEngine {
 
     const nodeById = new Map<string, SimNode>();
     const simNodes: SimNode[] = [];
+    // H3 布局种子只在全量模式生效（trunk 是固定配方的另一套世界）
+    const seed = trunk === null ? this.pendingSeed : null;
     for (const n of nodes) {
       const prev = prevNodes?.get(n.key);
+      const seeded = seed?.get(n.key);
       simNodes.push({
         id: n.key,
         text: n.label,
@@ -956,12 +964,12 @@ export class PixiGraphEngine {
         trunkCluster: n.trunkCluster,
         radius: this.radiusOf(n),
         rank: 0,
-        // 老节点从原位继续仿真（刷新只微调，不重炸）；新节点不给坐标，
-        // 交给 d3 默认的 phyllotaxis 散布，自然长在既有布局之外。
-        x: prev?.x,
-        y: prev?.y,
-        vx: prev?.vx,
-        vy: prev?.vy,
+        // 老节点从原位继续仿真（刷新只微调，不重炸）；新节点优先吃布局种子
+        // （daemon 预跑的近终态坐标——「出生定形」），无种子才交给 d3 默认散布。
+        x: prev?.x ?? seeded?.x,
+        y: prev?.y ?? seeded?.y,
+        vx: prev?.vx ?? (seeded ? 0 : undefined),
+        vy: prev?.vy ?? (seeded ? 0 : undefined),
       });
     }
     for (const n of simNodes) nodeById.set(n.id, n);
@@ -1464,6 +1472,20 @@ export class PixiGraphEngine {
       .force('x', forceX<SimNode>(0).strength(CONTAIN_STRENGTH))
       .force('y', forceY<SimNode>(0).strength(CONTAIN_STRENGTH))
       .force('collide', forceCollide<SimNode>().radius(collideRadius).iterations(COLLIDE_ITERATIONS));
+    // H3 播种精修档：种子覆盖率 × 配方完好性决定起跑温度（seedPolicy 三档）。
+    // 全量种子+默认配方+nodeScale=1 → α=0.1 低温（出生定形）；部分 → 0.3；
+    // 改过力参/nodeScale≠1/无种子 → 现状 α=1。trunk 用 TRUNK_FORCE 固定配方，不吃种子。
+    if (!this.trunkMode) {
+      let seedCount = 0;
+      if (this.pendingSeed) for (const n of this.nodes) if (this.pendingSeed.has(n.id)) seedCount++;
+      const policy = planSeedRefine({
+        seedCount,
+        nodeCount: this.nodes.length,
+        forces: this.forces,
+        nodeScale: this.nodeScale,
+      });
+      sim.alpha(policy.alpha).alphaDecay(policy.alphaDecay);
+    }
     // 仿真收敛后布局范围才稳定 —— 若用户未交互过，重新 fit 一次，
     // 避免「早期小范围 fit 的缩放」看「后期大范围布局」导致放大叠团的错觉。
     // 若宿主注册了 pendingReframe（scope 切换：局部图 ⇄ 全量图），优先执行它
