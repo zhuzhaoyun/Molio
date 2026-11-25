@@ -14,6 +14,7 @@ import { CappedBuffer } from './capped-buffer.js';
 import { createVaultRecency } from './vault-recency.js';
 import { createRendererReadiness } from './renderer-readiness.js';
 import { createRevealGate, createLoadWatchdog, APP_LOAD_REVEAL_TIMEOUT_MS, APP_LOAD_TIMEOUT_MS } from './window-reveal.js';
+import { decideNavigation, shouldClearReadiness } from './navigation-policy.js';
 
 const errMsg = (err) => (err instanceof Error ? err.message : String(err));
 
@@ -44,6 +45,15 @@ const DAEMON_PORT = Number(process.env.MOLIO_PORT) || 3100;
 
 /** Base URL of the local daemon. */
 const DAEMON_BASE = `http://localhost:${DAEMON_PORT}`;
+
+/**
+ * Origins allowed to navigate in place inside an app window: the daemon
+ * (production app) and the vite dev server (dev mode). Anything else is an
+ * external site and is redirected to the system browser by the will-navigate
+ * handler in createWindow. Kept at module scope so createWindow's body stays
+ * free of daemon-URL references (guarded by test/daemon-startup.test.js).
+ */
+const APP_ORIGINS = new Set([DAEMON_BASE, 'http://localhost:5173']);
 
 /**
  * Official cloud auth endpoint (用户模块). Built-in default for packaged builds
@@ -545,6 +555,11 @@ function createWindow({ url = '' } = {}) {
   // after one in-app route change reload the window and kill the in-flight
   // reply. See renderer-readiness.js.
   win.webContents.on('did-start-navigation', (details) => {
+    /* did-start-navigation 先于 will-navigate 触发（Electron 事件顺序），而
+       will-navigate 会把外链导航 cancel 掉。被 cancel 的导航不销毁文档，不能
+       清 readiness——否则取消后没有任何事件能恢复它，之后每次剪藏都退化成
+       整页重载、打断流式输出。只有会被放行的主框架跨文档导航才清。 */
+    if (!shouldClearReadiness(details, APP_ORIGINS)) return;
     if (rendererStates.onNavigationStarted(wcId, details)) {
       log('info', 'main', `renderer state cleared — document navigating to ${details.url}`);
     }
@@ -563,6 +578,21 @@ function createWindow({ url = '' } = {}) {
   win.webContents.setWindowOpenHandler(({ url: targetUrl }) => {
     shell.openExternal(targetUrl);
     return { action: 'deny' };
+  });
+
+  // Intercept in-place navigation to external sites. The web layer already
+  // routes external link clicks through window.open(), but anything it misses
+  // (a plain <a href> without target=_blank, a programmatic location.assign)
+  // would otherwise replace the app window with the external page and leave
+  // the user stranded outside Molio. Only the app origins (APP_ORIGINS) and
+  // local files (error page) may navigate in place; http(s) and mailto/tel go
+  // to the system (browser / mail client); other schemes are blocked without
+  // being handed to the OS (see navigation-policy.js).
+  win.webContents.on('will-navigate', (event, targetUrl) => {
+    const decision = decideNavigation(targetUrl, APP_ORIGINS);
+    if (decision === 'allow') return;
+    event.preventDefault();
+    if (decision === 'external') shell.openExternal(targetUrl);
   });
 
   // Record the vault in the URL on ANY navigation: full loads (did-navigate —

@@ -102,6 +102,7 @@
     "kb": {
       "paths": [
         "apps/web/src/components/kb/*",
+        "apps/web/src/utils/externalLinks*",
         "apps/web/src/components/ConversationHistoryMenu*",
         "apps/web/src/utils/vaultSwitchWindow*",
         "apps/web/src/components/kb/docExport/*",
@@ -127,6 +128,7 @@
         "kb-open-vault-error",
         "knowledge",
         "markdown-render",
+        "external-links",
         "kb-images",
         "kb-tree-sort-locate",
         "kb-chat-entry",
@@ -550,6 +552,10 @@
     "markdown-render": {
       "priority": "P1",
       "file": "markdown-render.spec.ts"
+    },
+    "external-links": {
+      "priority": "P0",
+      "file": "external-links.spec.ts"
     },
     "kb-images": {
       "priority": "P1",
