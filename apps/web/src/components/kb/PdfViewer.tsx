@@ -1,3 +1,5 @@
+import { accessController } from '../../access/runtime';
+import { isDaemonApiUrl } from '../../api/http';
 import {
   forwardRef, memo, useCallback, useEffect, useImperativeHandle,
   useMemo, useRef, useState, type KeyboardEvent, type ReactNode,
@@ -307,7 +309,13 @@ export const PdfViewer = forwardRef<PdfViewerHandle, PdfViewerProps>(
     // 加载 / 卸载 / url 切换
     useEffect(() => {
       let disposed = false;
-      let loadedDoc: PDFDocumentProxy | null = null;
+      let loadingTask: { destroy(): Promise<void> } | null = null;
+      const dispose = () => {
+        if (disposed) return;
+        disposed = true;
+        loadingTask?.destroy().catch(() => {});
+      };
+      const untrack = accessController.getContext()?.resources.track(dispose);
       const load = async () => {
         setStatus('loading');
         setError(null);
@@ -319,9 +327,9 @@ export const PdfViewer = forwardRef<PdfViewerHandle, PdfViewerProps>(
           pdfjs = await loadPdfjs();
           if (disposed) return;
           const task = pdfjs.getDocument({ url, ...pdfCMapOptions() });
+          loadingTask = task;
           const pdfDoc = await task.promise;
-          if (disposed) { void pdfDoc.loadingTask.destroy(); return; }
-          loadedDoc = pdfDoc;
+          if (disposed) return;
           setDoc(pdfDoc);
           textIndexRef.current = null; // 切换文件：丢弃旧文档的文本索引缓存
           // 并行预取各页基准尺寸（scale=1）——避免大 PDF 串行 getPage 阻塞首屏
@@ -346,6 +354,7 @@ export const PdfViewer = forwardRef<PdfViewerHandle, PdfViewerProps>(
           setStatus('ready');
         } catch (err) {
           if (disposed) return;
+          if (isDaemonApiUrl(url)) void accessController.revalidate('asset-error');
           setDoc(null);
           const kind: PdfErrorKind =
             pdfjs && err instanceof pdfjs.PasswordException ? 'password'
@@ -357,8 +366,7 @@ export const PdfViewer = forwardRef<PdfViewerHandle, PdfViewerProps>(
       };
       load();
       return () => {
-        disposed = true;
-        loadedDoc?.loadingTask.destroy().catch(() => {});
+        untrack?.(); dispose();
       };
     }, [url, reloadNonce]);
 

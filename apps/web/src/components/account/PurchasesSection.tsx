@@ -1,3 +1,4 @@
+import { daemonFetch } from '../../api/http';
 /**
  * 我的已购分区 —— 「我的」页面（/me?tab=purchases）内嵌。
  *
@@ -23,7 +24,7 @@ export function PurchasesSection() {
     setError(null);
     setPurchases(null);
     try {
-      const res = await fetch('/api/market/purchases');
+      const res = await daemonFetch('/api/market/purchases');
       if (!res.ok) throw new Error(`market ${res.status}`);
       const body = (await res.json()) as { purchases: MarketPurchase[] };
       setPurchases(body.purchases);
@@ -39,7 +40,7 @@ export function PurchasesSection() {
     setDownloadingId(p.id);
     setError(null);
     try {
-      const res = await fetch(`/api/market/listings/${encodeURIComponent(p.id)}/download`);
+      const res = await daemonFetch(`/api/market/listings/${encodeURIComponent(p.id)}/download`);
       if (!res.ok) throw new Error(`download ${res.status}`);
       const body = (await res.json()) as { url: string };
       window.open(body.url, '_blank', 'noopener,noreferrer');

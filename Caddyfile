@@ -1,0 +1,5 @@
+{$MOLIO_SITE_ADDRESS} {
+    reverse_proxy molio:3100 {
+        flush_interval -1
+    }
+}

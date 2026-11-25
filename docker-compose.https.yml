@@ -1,0 +1,22 @@
+# 可选的同机 HTTPS 入口：docker compose -f docker-compose.yml -f docker-compose.https.yml up -d
+# 域名应解析到此机器，80/443 端口可达；使用已有反代时无需此文件。
+services:
+  caddy:
+    image: caddy:2-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      MOLIO_SITE_ADDRESS: ${MOLIO_SITE_ADDRESS:?请先运行管理员初始化工具}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - molio-caddy-data:/data
+      - molio-caddy-config:/config
+    depends_on:
+      molio:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  molio-caddy-data:
+  molio-caddy-config:

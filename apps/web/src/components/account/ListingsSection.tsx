@@ -1,3 +1,4 @@
+import { daemonFetch } from '../../api/http';
 /**
  * 我的上架分区 —— 「我的」页面（/me?tab=listings）内嵌，仅市场管理员可见入口。
  *
@@ -22,7 +23,7 @@ export function ListingsSection() {
   const load = useCallback(async () => {
     setError(null);
     try {
-      const res = await fetch('/api/market/my');
+      const res = await daemonFetch('/api/market/my');
       if (!res.ok) throw new Error(`market ${res.status}`);
       const body = (await res.json()) as { isAdmin?: boolean; listings: MarketMyListing[] };
       setListings(body.listings);
@@ -38,7 +39,7 @@ export function ListingsSection() {
     if (!removeTarget || removing) return;
     setRemoving(true);
     try {
-      const res = await fetch(`/api/market/listings/${removeTarget.id}`, { method: 'DELETE' });
+      const res = await daemonFetch(`/api/market/listings/${removeTarget.id}`, { method: 'DELETE' });
       if (!res.ok) throw new Error(`market ${res.status}`);
       setRemoveTarget(null);
       void load();
@@ -55,7 +56,7 @@ export function ListingsSection() {
     if (!restoreTarget || removing) return;
     setRemoving(true);
     try {
-      const res = await fetch(`/api/market/admin/listings/${restoreTarget.id}/restore`, { method: 'POST' });
+      const res = await daemonFetch(`/api/market/admin/listings/${restoreTarget.id}/restore`, { method: 'POST' });
       if (!res.ok) throw new Error(`market ${res.status}`);
       setRestoreTarget(null);
       void load();

@@ -407,6 +407,55 @@ function resolveWithFallbacks(vaultPath: string, relPath: string): string {
   return resolveFilePath(vaultPath, relPath);
 }
 
+/** Resolve directory segments case-insensitively, retaining real names and the vault boundary. */
+function resolveDirectoryCase(vaultPath: string, requestedDir: string): string | null {
+  const root = path.resolve(vaultPath);
+  assertWithinVault(vaultPath, requestedDir);
+  let current = root;
+  try {
+    for (const segment of path.relative(root, requestedDir).split(path.sep).filter(Boolean)) {
+      const entries = fs.readdirSync(current, { withFileTypes: true });
+      if (entries.length > MAX_DIR_ENTRIES) return null;
+      // existsSync is case-insensitive on Windows and can therefore succeed
+      // for a differently-cased request. Always recover the spelling from
+      // the directory entry so canonical paths match the vault tree.
+      const exact = entries.find((entry) => entry.name === segment);
+      const matches = entries.filter((entry) => entry.name.toLowerCase() === segment.toLowerCase());
+      // Prefer an exact spelling; otherwise an ambiguous case-insensitive
+      // match must not resolve to an arbitrary entry.
+      const match = exact ?? (matches.length === 1 ? matches[0] : undefined);
+      if (!match) return null;
+      const candidate = path.join(current, match.name);
+      const real = resolveRealWithinVault(vaultPath, candidate);
+      if (!fs.statSync(real).isDirectory()) return null;
+      current = candidate;
+    }
+    return current;
+  } catch {
+    return null;
+  }
+}
+
+/** Recover the actual on-disk spelling for an existing file path. */
+function resolveFileCase(vaultPath: string, requestedFile: string): string | null {
+  const exact = resolveFilePath(vaultPath, requestedFile);
+  const dir = resolveDirectoryCase(vaultPath, path.dirname(exact));
+  if (!dir) return null;
+  try {
+    const entries = fs.readdirSync(dir);
+    const base = path.basename(exact);
+    const exactEntry = entries.find((entry) => entry === base);
+    const matches = entries.filter((entry) => entry.toLowerCase() === base.toLowerCase());
+    const match = exactEntry ?? (matches.length === 1 ? matches[0] : undefined);
+    if (!match) return null;
+    const candidate = path.join(dir, match);
+    resolveRealWithinVault(vaultPath, candidate);
+    return candidate;
+  } catch {
+    return null;
+  }
+}
+
 /** Run the per-candidate fallback strategies (prefixes, .md, case, stem). */
 function tryResolveCandidate(vaultPath: string, relPath: string): string | null {
   const ext = path.extname(relPath).toLowerCase();
@@ -425,10 +474,13 @@ function tryResolveCandidate(vaultPath: string, relPath: string): string | null 
     const exact = resolveFilePath(vaultPath, baseRelPath);
     if (fs.existsSync(exact)) return exact;
 
+    const targetDir = resolveDirectoryCase(vaultPath, path.dirname(exact));
+    if (!targetDir) continue;
+
     // Strategy B: add .md extension (preserve on-disk case by listing entries)
     if (!hasExt) {
       const md = resolveFilePath(vaultPath, baseRelPath + '.md');
-      const mdDir = path.dirname(md);
+      const mdDir = targetDir;
       const mdBase = path.basename(md);
       try {
         const mdEntries = fs.readdirSync(mdDir);
@@ -444,7 +496,6 @@ function tryResolveCandidate(vaultPath: string, relPath: string): string | null 
     }
 
     // Strategy C: case-insensitive search in the target directory
-    const targetDir = path.dirname(exact);
     const targetBase = path.basename(exact);
     const targetLower = targetBase.toLowerCase();
     try {
@@ -613,7 +664,13 @@ export function resolveCanonicalPath(
   let resolved: string;
   try {
     resolved = resolveFilePath(vaultPath, relPath);
-    if (!fs.existsSync(resolved)) {
+    if (fs.existsSync(resolved)) {
+      // On case-insensitive filesystems existsSync accepts aliases with the
+      // wrong spelling. Return the directory entry's canonical path instead.
+      if (process.platform === 'win32' || process.platform === 'darwin') {
+        resolved = resolveFileCase(vaultPath, relPath) ?? resolved;
+      }
+    } else {
       resolved = resolveWithFallbacks(vaultPath, relPath);
     }
   } catch {

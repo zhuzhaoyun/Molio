@@ -36,7 +36,8 @@ apps/web/e2e
 
 # 文档（不影响构建，但 skills 目录除外——运行时需要）
 docs
-scripts
+scripts/*
+!scripts/setup-server.mjs
 
 # 杂项
 *.log

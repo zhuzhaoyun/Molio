@@ -60,6 +60,7 @@ export function preloadRoutes(preloadManager: PreloadManager): Hono {
     );
 
     // Create a stream that fires progress events for ACTIVE preloads only
+    let unsubscribeAll = () => {};
     const stream = new ReadableStream<Uint8Array>({
       start(controller) {
         const encoder = new TextEncoder();
@@ -105,11 +106,16 @@ export function preloadRoutes(preloadManager: PreloadManager): Hono {
               });
               if (allDone && !closed) {
                 closed = true;
+                unsubscribeAll();
                 try { controller.close(); } catch { /* already closed */ }
               }
             }
           });
         });
+        unsubscribeAll = () => {
+          closed = true;
+          for (const unsubscribe of unsubs) unsubscribe();
+        };
 
         // 4. Start preloading each missing/paused skill (fire-and-forget —
         //    progress events are delivered through the listener above).
@@ -117,6 +123,7 @@ export function preloadRoutes(preloadManager: PreloadManager): Hono {
           preloadManager.startPreload(skill).catch(() => {});
         }
       },
+      cancel() { unsubscribeAll(); },
     });
 
     return c.newResponse(stream, 200, {

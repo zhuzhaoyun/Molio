@@ -1,3 +1,5 @@
+import { openManagedEvents, type ManagedTransportState, type ManagedEventSubscription } from '../api/managed-events';
+import { accessController } from '../access/runtime';
 /**
  * Knowledge Base state management hook.
  * Manages vaults, file tree, file content, and UI state.
@@ -159,6 +161,8 @@ export function preprocessKbMarkdown(
 }
 
 interface UseKnowledgeReturn {
+  transportState: ManagedTransportState;
+  retryTransport(): void;
   // Data
   vaults: Vault[];
   activeVault: Vault | null;
@@ -552,6 +556,12 @@ export function useKnowledge(): UseKnowledgeReturn {
       .catch(() => {});
   }, [activeVaultId]);
 
+  const [transportState, setTransportState] = useState<ManagedTransportState>('open');
+  const liveEvents = useRef<ManagedEventSubscription | null>(null);
+  const retryTransport = useCallback(() => {
+    void accessController.revalidate('stream-error').then(() => { if (accessController.getContext()) liveEvents.current?.reconnect(); });
+  }, []);
+
   // Live tree refresh via SSE — daemon's VaultWatcher pushes `tree-changed`
   // when files land externally (Chrome extension clippings, weixin media,
   // external edits), so the tree updates without needing window focus.
@@ -586,17 +596,17 @@ export function useKnowledge(): UseKnowledgeReturn {
   useEffect(() => {
     if (!activeVaultId) return;
     if (!windowFocused) return;
-    const es = new EventSource(`/api/knowledge/vaults/${activeVaultId}/events`);
-    es.onmessage = (msg) => {
+    const es = openManagedEvents({ url: () => `/api/knowledge/vaults/${activeVaultId}/events`, onState: setTransportState, onMessage: (msg) => {
       try {
         const payload = JSON.parse(msg.data);
         if (payload?.type === 'tree-changed') void refreshTree();
       } catch {
         // Ignore keepalive pings / parse errors
       }
-    };
-    // EventSource auto-reconnects on error; nothing to do here.
-    return () => es.close();
+    }});
+    // Reconnection and session verification belong to managed-events.
+    liveEvents.current = es;
+    return () => { es.close(); if (liveEvents.current === es) liveEvents.current = null; };
   }, [activeVaultId, refreshTree, windowFocused]);
 
   // File operations
@@ -749,6 +759,7 @@ export function useKnowledge(): UseKnowledgeReturn {
   }, [editedContent, fileContent, selectedFile]);
 
   return {
+    transportState: accessController.getContext()?.mode === 'server' ? transportState : 'open' as ManagedTransportState, retryTransport,
     vaults,
     activeVault,
     treeVaultId,
