@@ -61,3 +61,11 @@ test('GraphData 可携带 positions（[key, x, y] 三元组数组）', () => {
   const g: GraphData = { nodes: [], edges: [], deadLinks: [], positions };
   assert.deepEqual(g.positions, positions);
 });
+
+test('DEFAULT_FORCE_PARAMS 与 recipe 对应项一致（types.ts 漂移即红）', async () => {
+  const { DEFAULT_FORCE_PARAMS } = await import('./types.ts');
+  assert.equal(DEFAULT_FORCE_PARAMS.repelStrength, GRAPH_LAYOUT_RECIPE.repelStrength);
+  assert.equal(DEFAULT_FORCE_PARAMS.centerStrength, GRAPH_LAYOUT_RECIPE.centerStrength);
+  assert.equal(DEFAULT_FORCE_PARAMS.linkDistance, GRAPH_LAYOUT_RECIPE.linkDistance);
+  assert.equal(DEFAULT_FORCE_PARAMS.linkStrength, GRAPH_LAYOUT_RECIPE.linkStrength);
+});

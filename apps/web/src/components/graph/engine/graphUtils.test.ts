@@ -328,3 +328,20 @@ describe('tileIsolatedNodes', () => {
     for (const p of tiled.values()) assert.ok(Math.hypot(p.x, p.y) >= 1);
   });
 });
+
+// ── H3 Task 2：配方单一来源（contracts）——防漂移钉 ──
+import { GRAPH_LAYOUT_RECIPE, collideRadiusValue as contractsCollideRadiusValue } from '@molio/contracts';
+import { SUPER_HUB_DEGREE, COLLIDE_RADIUS_MULT, COLLIDE_PAD, COLLIDE_MAX, collideRadiusValue } from './graphUtils.ts';
+
+describe('配方单一来源（contracts）', () => {
+  it('SUPER_HUB_DEGREE 与 COLLIDE_* 常量与 contracts recipe 一致（漂移即红）', () => {
+    assert.equal(SUPER_HUB_DEGREE, GRAPH_LAYOUT_RECIPE.superHubDegree);
+    assert.equal(COLLIDE_RADIUS_MULT, GRAPH_LAYOUT_RECIPE.collideMult);
+    assert.equal(COLLIDE_PAD, GRAPH_LAYOUT_RECIPE.collidePad);
+    assert.equal(COLLIDE_MAX, GRAPH_LAYOUT_RECIPE.collideMax);
+  });
+
+  it('collideRadiusValue 是 contracts 实现的 re-export（同一函数对象，非复制品）', () => {
+    assert.strictEqual(collideRadiusValue, contractsCollideRadiusValue);
+  });
+});

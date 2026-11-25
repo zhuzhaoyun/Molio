@@ -21,6 +21,7 @@ import {
   type SimulationLinkDatum,
 } from 'd3-force';
 import { DEFAULT_FORCE_PARAMS } from '../types.ts';
+import { autoLinkStrength } from '@molio/contracts';
 import { collideRadiusValue } from './graphUtils.ts';
 
 interface LayoutRequest {
@@ -72,14 +73,15 @@ ctx.onmessage = (e: MessageEvent<LayoutRequest>) => {
       forceLink<LayoutNode, SimulationLinkDatum<LayoutNode>>(links)
         .id((d) => d.id)
         .distance(f.linkDistance)
-        // 0 = d3 默认按度数加权（1/min(deg)）——与引擎 setForces 同语义
+        // 0 = d3 默认按度数加权（1/min(deg) + super-hub 减弱）——与引擎 setForces
+        // 同语义，公式本体在 contracts.autoLinkStrength（H3 单一来源）
         .strength(
           f.linkStrength > 0
             ? f.linkStrength
             : (l) => {
                 const s = l.source as LayoutNode;
                 const t = l.target as LayoutNode;
-                return 1 / Math.max(Math.min(deg.get(s.id) ?? 1, deg.get(t.id) ?? 1), 1);
+                return autoLinkStrength(deg.get(s.id) ?? 1, deg.get(t.id) ?? 1);
               },
         ),
     )

@@ -45,6 +45,7 @@ import { drag, type D3DragEvent } from 'd3-drag';
 import { zoom, zoomIdentity, type ZoomBehavior, type ZoomTransform } from 'd3-zoom';
 import { Group, Tween } from '@tweenjs/tween.js';
 import { NODE_TYPE_COLORS, type ForceParams, type ThemeColors } from '../types';
+import { GRAPH_LAYOUT_RECIPE, autoLinkStrength } from '@molio/contracts';
 import {
   trunkBlobRadius,
   trunkEdgeWidth,
@@ -185,8 +186,8 @@ const HOVER_LINGER_MS = 150;
 const CLICK_MOVE_TOLERANCE = 4;
 /** 位移场安装阈值：mousedown 不装位移场，位移超过该值（canvas CSS px）才装（=单击零力零运动） */
 const DRAG_THRESHOLD = 4;
-/** collide 迭代：静止时 3（质量优先），位移场期降到 1（拖拽降质） */
-const COLLIDE_ITERATIONS = 3;
+/** collide 迭代：静止时 3（质量优先），位移场期降到 1（拖拽降质）。值自 contracts recipe（H3 单一来源）。 */
+const COLLIDE_ITERATIONS = GRAPH_LAYOUT_RECIPE.collideIterations;
 /** 标签 LOD（H2 统一规则 labelLod.ts）：屏幕直径阈值 + 同屏可见总数上限（防汤，代拍 B） */
 const LABEL_MIN_SCREEN_DIAMETER = 8;
 const LABEL_MAX_ONSCREEN = 60;
@@ -201,11 +202,11 @@ const FIT_PADDING = 80;
 const EXPORT_MARGIN_SCREEN = 48;
 /** 出图：目标输出长边（device px）；不卡死，实际受 1:1 下限与 4096 上限夹逼 */
 const EXPORT_TARGET_LONG_EDGE = 2000;
-/** v6 配方：forceX/Y 谐波约束强度 —— 让长弹簧向心屈服，整体紧凑、局部由 collide 撑开 */
-const CONTAIN_STRENGTH = 0.06;
+/** v6 配方：forceX/Y 谐波约束强度 —— 让长弹簧向心屈服，整体紧凑、局部由 collide 撑开。值自 contracts recipe（H3 单一来源） */
+const CONTAIN_STRENGTH = GRAPH_LAYOUT_RECIPE.containStrength;
 // collide 半径公式（×5+4 封顶 100）与 COLLIDE_PAD 已移 graphUtils（单一来源，mini-sim/worker 共用）
-/** manyBody 电荷分母下限：d<DISTANCE_MIN 时按 DISTANCE_MIN 计，封顶 1/d² 电荷爆（拖拽级联的节点瞬时重叠加速） */
-const DISTANCE_MIN = 20;
+/** manyBody 电荷分母下限：d<DISTANCE_MIN 时按 DISTANCE_MIN 计，封顶 1/d² 电荷爆（拖拽级联的节点瞬时重叠加速）。值自 contracts recipe（H3 单一来源） */
+const DISTANCE_MIN = GRAPH_LAYOUT_RECIPE.distanceMin;
 /** 位移场期 collide 迭代降到 1（拖拽降质：collide 是每 tick 最大 CPU 成本） */
 const COLLIDE_ITERATIONS_MOTION = 1;
 /** 拖拽期 link 强度倍率：调软防「被拖 hub 的 683 条弹簧把整图拽向内收缩」，松手恢复全强度 */
@@ -2158,15 +2159,11 @@ function makeTweenNode(group: Group): TweenNode {
 
 /** d3 forceLink 默认强度：1/min(度数source, 度数target)；但当一边是超级 hub（度数>阈值）时按 1/√max 大幅减弱 */
 function defaultLinkStrength(adjacency: ReadonlyMap<string, ReadonlySet<string>>) {
+  // 公式本体在 contracts.autoLinkStrength（H3 单一来源：daemon 预跑共用同一语义）
   return (l: SimLink) => {
     const s = l.source as SimNode;
     const t = l.target as SimNode;
-    const ds = Math.max(adjacency.get(s.id)?.size ?? 1, 1);
-    const dt = Math.max(adjacency.get(t.id)?.size ?? 1, 1);
-    const hi = Math.max(ds, dt);
-    if (hi > SUPER_HUB_DEGREE) return 1 / Math.sqrt(hi);
-    return 1 / Math.min(ds, dt);
-    // 与 graphUtils.makeAutoLinkStrength 保持一致（单一来源 SUPER_HUB_DEGREE）
+    return autoLinkStrength(adjacency.get(s.id)?.size ?? 1, adjacency.get(t.id)?.size ?? 1);
   };
 }
 
