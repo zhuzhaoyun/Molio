@@ -65,8 +65,30 @@ export function applyDesktop(hostRoot) {
   const sidebar = join(hostRoot, 'packages/client/ui-sidebar/src/client');
   copyFileSync(join(root, 'distribution/desktop/MolioSidebar.tsx'), join(sidebar, 'MolioSidebar.tsx'));
   const sidebarRoot = join(sidebar, 'SidebarRoot.tsx');
-  insert(sidebarRoot, "import css from './SidebarRoot.module.css'", "import { MolioSidebar } from './MolioSidebar.tsx'\nimport css from './SidebarRoot.module.css'");
-  insert(sidebarRoot, '      <div className={css.scrollRegion}>', '      <MolioSidebar wide={wide} />\n      <div className={css.scrollRegion}>');
+  const source = readFileSync(sidebarRoot, 'utf8');
+  const migratedSidebar = source.replace("import { MolioSidebar }", "import { MolioSidebar, molioPanelId }")
+    .replace('<MolioSidebar wide={wide} />', '<MolioSidebar wide={wide} selected={activePanelId === molioPanelId} />');
+  if (source !== migratedSidebar) writeFileSync(sidebarRoot, migratedSidebar);
+  insert(sidebarRoot, "import css from './SidebarRoot.module.css'", "import { MolioSidebar, molioPanelId } from './MolioSidebar.tsx'\nimport css from './SidebarRoot.module.css'");
+  insert(sidebarRoot, '      <div className={css.scrollRegion}>', '      <MolioSidebar wide={wide} selected={activePanelId === molioPanelId} />\n      <div className={css.scrollRegion}>');
+  const sidebarIndex = join(sidebar, 'index.ts');
+  insert(sidebarIndex, "import { SidebarRoot }", "import { bridge, molioPanelId, MolioPanel, showMolioPage } from './MolioSidebar.tsx'\nimport { SidebarRoot }");
+  insert(sidebarIndex, '  const panelPins =', `  const navigation = bridge
+  if (navigation) {
+    ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: molioPanelId }, MolioPanel))
+    ctx.effect(() => navigation.listen(url => {
+      showMolioPage(url)
+      ctx.layout.selectPanel(molioPanelId)
+    }))
+  }
+  const panelPins =`);
+  const browserGuests = join(desktop, 'src/browser-guests.ts');
+  insert(browserGuests, "import { randomUUID }", "import { attachMolioPanel, bindMolioPanel } from './molio-desktop.js'\nimport { randomUUID }");
+  insert(browserGuests, "      const id = typeof params.src", `      try {
+        if (attachMolioPanel(owner, preferences, params)) return
+      } catch { event.preventDefault(); return }
+      const id = typeof params.src`);
+  insert(browserGuests, '      let attachedLease:', '      if (bindMolioPanel(owner, guest)) return\n      let attachedLease:');
   const main = join(desktop, 'src/main.ts');
   // Migrate existing generated workspaces that injected the three native menu items.
   const original = readFileSync(main, 'utf8');
@@ -78,14 +100,13 @@ export function applyDesktop(hostRoot) {
   insert(main, 'if (ownsDesktopInstance) void app.whenReady()', 'if (ownsDesktopInstance) installMolioProtocol(() => focusPrimaryWindow())\n\nif (ownsDesktopInstance) void app.whenReady()');
   insert(main, "import { installMolioProtocol }", "import { bindMolioConversationWindow } from './molio-desktop.js'\nimport { installMolioProtocol }");
   const welcome = '  let openingWelcome: Promise<void> | undefined';
-  insert(main, welcome, `  bindMolioConversationWindow(() => {
-    if (!mainWindow || !enteredWorkspace) {
-      focusPrimaryWindow()
-      throw new Error('请先完成 Harness 欢迎页，再打开知识库会话')
-    }
-    return mainWindow
-  })
-` + welcome);
+  const oldBinding = /  bindMolioConversationWindow\(\(\) => \{\r?\n    if \(!mainWindow \|\| !enteredWorkspace\)[\s\S]*?\r?\n  \}\)\r?\n/;
+  const mainSource = readFileSync(main, 'utf8');
+  const cleaned = mainSource.replace(oldBinding, '').replace(/  bindMolioConversationWindow\(\(\) => mainWindow\)\r?\n/, '');
+  if (cleaned !== mainSource) writeFileSync(main, cleaned);
+  insert(main, welcome, '  bindMolioConversationWindow(() => mainWindow, () => enteredWorkspace)\n' + welcome);
+  insert(main, "import { bindMolioConversationWindow }", "import { flushMolioClip } from './molio-desktop.js'\nimport { bindMolioConversationWindow }");
+  insert(main, '    enteredWorkspace = true', '    enteredWorkspace = true\n    flushMolioClip()');
   const registration = "if (app.isPackaged || process.env.DSH_DESKTOP_DEV_APP === '1') app.setAsDefaultProtocolClient('dsh')";
   insert(main, registration, `if (process.env.MOLIO_SKIP_PROTOCOL_REGISTRATION !== '1') {
     ${registration}
