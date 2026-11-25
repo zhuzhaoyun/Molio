@@ -282,7 +282,7 @@ test('catalog upstream failure returns 503, not an empty successful catalog', as
 test('SSR 商品页：MarketContent 渲染事实卡/问答/范围/样例/FAQ', async () => {
   const { app, marketStore } = await bootSsrApp();
   const content = JSON.parse(readFileSync(
-    path.resolve(process.cwd(), '../../content/market/01M4PZPNGWR1YZ1W9GGVTJG82N.json'),
+    path.resolve(process.cwd(), 'test/fixtures/market/math-listing.json'),
     'utf8',
   ));
   await marketStore.insertListing(listing({
@@ -314,7 +314,7 @@ test('SSR 商品页：MarketContent 渲染事实卡/问答/范围/样例/FAQ', a
 test('SSR 商品页：只有 AI 自动起草的 draft 显示核对提示', async () => {
   const { app, marketStore } = await bootSsrApp();
   const base = JSON.parse(readFileSync(
-    path.resolve(process.cwd(), '../../content/market/01M4PZPNGWR1YZ1W9GGVTJG82N.json'),
+    path.resolve(process.cwd(), 'test/fixtures/market/math-listing.json'),
     'utf8',
   ));
   await marketStore.insertListing(listing({

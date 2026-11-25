@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 /**
- * 校验 content/market/*.json 的字段完整性与「事实数字」是否和本地 wiki 对得上。
+ * 校验 $MOLIO_MARKET_CONTENT_DIR/*.json 的字段完整性与「事实数字」是否和本地 wiki 对得上。
  *
+ * 先将 MOLIO_MARKET_CONTENT_DIR 设为外部商品 JSON 目录。
  * 用法（仓库根目录）：
  *   node apps/cloud/scripts/check-market-content.mjs
  *   MOLIO_RESOURCE_ROOT=D:/work/molio_resource node apps/cloud/scripts/check-market-content.mjs
@@ -10,10 +11,9 @@
  */
 import { readdirSync, readFileSync, existsSync } from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
-const contentDir = path.join(root, 'content', 'market');
+const contentDir = process.env.MOLIO_MARKET_CONTENT_DIR;
+if (!contentDir) throw new Error('Set MOLIO_MARKET_CONTENT_DIR to the directory containing the listing JSON files');
 const resourceRoot = process.env.MOLIO_RESOURCE_ROOT || 'D:/work/molio_resource';
 const map = JSON.parse(readFileSync(path.join(contentDir, 'product-map.json'), 'utf8'));
 

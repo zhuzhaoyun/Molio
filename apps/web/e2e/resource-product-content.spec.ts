@@ -6,7 +6,7 @@ import { renderProductPage } from '../../cloud/src/ssr/render';
 import type { MarketListing } from '@molio/contracts';
 
 const content = JSON.parse(readFileSync(
-  path.resolve(process.cwd(), '../../content/market/01M4PZPNGWR1YZ1W9GGVTJG82N.json'),
+  path.resolve(process.cwd(), '../cloud/test/fixtures/market/math-listing.json'),
   'utf8',
 ));
 
