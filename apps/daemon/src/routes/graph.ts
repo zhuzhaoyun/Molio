@@ -13,8 +13,8 @@ import { getVault, listExternalRoots } from '../core/db.js';
 import type { ExternalRootRef } from '../core/external-roots.js';
 import { GraphCache } from '../core/graph-cache.js';
 import { filterLocalGraph } from '../core/graph-build.js';
-import { buildGraphInWorker } from '../core/vault-worker.js';
-import type { GraphData, GraphScope } from '@molio/contracts';
+import { buildGraphInWorker, getGraphPositions } from '../core/vault-worker.js';
+import { REFINE_COVERAGE, type GraphData, type GraphScope } from '@molio/contracts';
 
 // 兼容既有导入点（测试与一次性调用都从这里拿）——实现已经搬去 core/graph-build.ts。
 // 注意：这里导出的是**同步**的进程内实现；HTTP 路由走的是 worker 版本。
@@ -27,7 +27,7 @@ export { buildGraph, buildLocalGraph, filterLocalGraph, isGraphExcludedFile } fr
  * 就等于把「没有信号」当成「内容没变」——图谱会停在旧数据上直到 TTL 到期。
  */
 async function buildGraphCached(
-  cache: GraphCache,
+  cache: GraphCache | Pick<GraphCache, 'getOrBuild'>,
   vault: { id: string; path: string },
   isCacheable: (vaultId: string) => boolean,
   externalRoots: ExternalRootRef[],
@@ -59,7 +59,18 @@ export function graphRoutes(
     try {
       // Mounted folders contribute nodes too — the graph must match the tree.
       const graphData = await buildGraphCached(cache, vault, isCacheable, externalRefs(db, vault.id));
-      return c.json(graphData);
+      // H3：布局种子 best-effort 附加——worker 预跑完成且覆盖率达标才附；缺失/未达标
+      // （会话头预跑未完、图刚改过、worker 刚重建）= 字段缺省 = 浏览器走现状，零回归。
+      let payload: GraphData = graphData;
+      try {
+        const positions = await getGraphPositions(vault.path);
+        if (positions && positions.length >= Math.ceil(graphData.nodes.length * REFINE_COVERAGE)) {
+          payload = { ...graphData, positions };
+        }
+      } catch {
+        // 种子通道异常不连累主响应
+      }
+      return c.json(payload);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to build graph';
       return c.json({ error: { code: 'INTERNAL', message } }, 500);
@@ -119,4 +130,25 @@ export function graphRoutes(
 /** Registered external roots as scanner refs (label + canonical target). */
 function externalRefs(db: Database.Database, vaultId: string): ExternalRootRef[] {
   return listExternalRoots(db, vaultId).map((r) => ({ label: r.label, target: r.target }));
+}
+
+/**
+ * H3 预热器（设计 §3.1 裁定 1）：把「vault 被触碰 → 建图 + 触发 worker 预跑」提前到
+ * 树请求（UI 打开知识库的第一步）。每 vaultId 每进程至多一次；错误静默（best-effort）。
+ * server.ts 把它接到 knowledge 路由的 onVaultTouched 上。
+ */
+export function makeGraphWarmer(
+  cache: GraphCache | Pick<GraphCache, 'getOrBuild'>,
+  isCacheable: (vaultId: string) => boolean,
+): (vault: { id: string; path: string }, externalRoots: ExternalRootRef[]) => Promise<void> {
+  const done = new Set<string>();
+  return async (vault, externalRoots) => {
+    if (done.has(vault.id)) return;
+    done.add(vault.id);
+    try {
+      await buildGraphCached(cache, vault, isCacheable, externalRoots);
+    } catch {
+      // 预热失败不打扰任何人：后续 GET 走正常建图路径
+    }
+  };
 }

@@ -82,6 +82,12 @@ export function knowledgeRoutes(
    */
   treeCache: TreeCache = new TreeCache(),
   isTreeCacheable: (vaultId: string) => boolean = () => true,
+  /**
+   * H3 预热钩子：vault 被触碰（树请求 = UI 打开知识库的第一步）时同步回调一次。
+   * 调用方（server.ts）决定 fire-and-forget 语义（接 makeGraphWarmer 提前建图 +
+   * worker 布局预跑）。可选参数，不传 = 行为与之前完全一致（既有测试零改动）。
+   */
+  onVaultTouched?: (vault: { id: string; path: string }) => void,
 ): Hono {
   const app = new Hono();
 
@@ -198,6 +204,7 @@ export function knowledgeRoutes(
     if (!vault) {
       return c.json({ error: { code: 'NOT_FOUND', message: 'Vault not found' } }, 404);
     }
+    onVaultTouched?.(vault);
 
     try {
       // 树缓存与图谱缓存（#337）同一套规矩：watcher 未就绪 → 没有失效信号 →
