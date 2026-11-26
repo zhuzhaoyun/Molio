@@ -14,12 +14,17 @@ import { withSurfaceTransitionSync, skipSurfaceTransition } from '../../stores/s
 import { ChatSessionTabBar } from './ChatSessionTabBar';
 import { KbChatSession } from './KbChatSession';
 import { useKbChatSessionApi } from './KbChatSessionsProvider';
-import { WIKI_PROMPTS, WIKI_INGEST_PROMPT, WIKI_TITLES } from './kbChatPrompts';
+import { WIKI_PROMPTS, WIKI_INGEST_PROMPT, WIKI_TITLES, wrapDiagnoseDirective } from './kbChatPrompts';
 import { ConfirmDialog } from './KbModals';
+import { CheckupDialog } from '../diagnostics/CheckupDialog';
+import { api } from '../../api/client';
+import { setCheckupOpen, useCheckupOpen } from '../../stores/checkupStore';
 import './KbChatSessionsPanel.css';
 
 export interface KbChatSessionsPanelHandle {
   runWikiOp: (opts: { mode: 'build' | 'lint' | 'ingest'; filePath?: string; isDirectory?: boolean }) => void;
+  /** Molio 体检面板的「让 AI 帮我看」：总开新 qa 会话并发送带诊断指令的消息。 */
+  askDoctor: (message: string) => void;
   openQa: (opts: { filePath: string | null; vaultId: string | null; selectedText?: string | null }) => void;
   /** 打开历史会话（方案 D：任意页面就地打开，不跳转知识库页）。 */
   openConversation: (conversationId: string) => void;
@@ -135,10 +140,13 @@ function readFloatPos(): { left: number; top: number } | null {
 }
 
 // 面板不再从 App 接收 props：历史下拉删除后的收敛由面板自己处理（handle.resetConversations）。
-interface Props {}
+interface Props {
+  /** 「让 AI 帮我看」按钮的可用门槛（体检本身不依赖 AI——缺 agent 只少一个解读入口）。 */
+  agentId: string | null;
+}
 
 export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(function KbChatSessionsPanel(
-  _props, ref,
+  { agentId }, ref,
 ) {
   const location = useLocation();
   const navigate = useNavigate();
@@ -667,6 +675,47 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
     clearAndSend(tab.id, opts);
   }, [sessions, anyWikiRunning, clearAndSend, showToast]);
 
+  // Molio 体检的「让 AI 帮我看」：总开**新** qa 会话——诊断需要干净的上下文，
+  // 复用旧会话会把体检结论混进无关的对话历史里。消息先包诊断指令（与隐式触发
+  // 同一条指令），agent 会先跑只读体检再回答。
+  const askDoctor = useCallback((message: string) => {
+    const res = kbChatSessionsStore.openSession({
+      mode: 'qa', title: 'Molio 诊断', conversationId: null, filePath: null,
+    });
+    if (!res.opened || !res.tab) {
+      showToast(`已达 ${MAX_CHAT_SESSIONS} 个会话标签上限`);
+      return;
+    }
+    withSurfaceTransitionSync(() => kbChatSessionsStore.setPanelOpen(true));
+    const text = wrapDiagnoseDirective(message);
+    const a = getApi(res.tab.id);
+    if (a) a.send(text);
+    else pendingAutoSendRef.current.set(res.tab.id, text); // 标签未 mount，注册 API 时补发
+  }, [getApi, showToast]);
+
+  // ── Molio 体检弹窗（唯一实例挂本面板的 portal 层：askDoctor / runWikiOp / wiki 状态都在这里）──
+  // 入口两处：KB 页听诊器按钮 + 悬浮按钮右键菜单（stores/checkupStore 的全局开合）。
+  const checkupOpen = useCheckupOpen();
+  // Wiki 内容检查行的可见性：弹窗打开时现查（KnowledgeBasePage 的 useKnowledge 实例不在这里，
+  // 而 wiki 是否初始化只在「打开面板」这一刻有意义——一次请求换准确性，值得）。
+  const [checkupWikiInitialized, setCheckupWikiInitialized] = useState(false);
+  useEffect(() => {
+    if (!checkupOpen || !currentVaultId) {
+      setCheckupWikiInitialized(false);
+      return;
+    }
+    let cancelled = false;
+    api.getWikiStatus(currentVaultId)
+      .then((s) => { if (!cancelled) setCheckupWikiInitialized(s.initialized); })
+      .catch(() => { if (!cancelled) setCheckupWikiInitialized(false); });
+    return () => { cancelled = true; };
+  }, [checkupOpen, currentVaultId]);
+  const handleCheckupWikiLint = useCallback(() => {
+    setCheckupOpen(false);
+    if (!currentVaultId) { showToast('请先选择知识库'); return; }
+    runWikiOp({ mode: 'lint' });
+  }, [currentVaultId, runWikiOp, showToast]);
+
   const handleConfirmDialog = useCallback(async (action: 'interrupt' | 'queue') => {
     setConfirmDialog((prev) => ({ ...prev, show: false }));
     const opts = pendingWikiRef.current;
@@ -802,9 +851,9 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
   }, [getApi]);
 
   useImperativeHandle(ref, () => ({
-    runWikiOp, openQa, openConversation: handleOpenConversation, resetConversations,
+    runWikiOp, askDoctor, openQa, openConversation: handleOpenConversation, resetConversations,
     requestCloseSession: handleCloseTab,
-  }), [runWikiOp, openQa, handleOpenConversation, resetConversations, handleCloseTab]);
+  }), [runWikiOp, askDoctor, openQa, handleOpenConversation, resetConversations, handleCloseTab]);
 
   // toast 与两个确认框（wiki 三选一 / 关闭运行中会话）：面板与「全屏态 portal」共用同一份，
   // 关闭守卫（handleCloseTab）只此一份实现。
@@ -837,6 +886,16 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
         onConfirm={() => handleCloseConfirm(true)}
         onTertiary={closePendingIsWikiRef.current ? undefined : () => handleCloseConfirm(false)}
         onCancel={() => { closePendingRef.current = null; closePendingIsWikiRef.current = false; setClosePendingOpen(false); }}
+      />
+      {/* Molio 体检：两个入口（KB 页听诊器按钮 + 悬浮按钮右键菜单）共享这一实例；
+          放 overlays 而非面板本体——全屏路由降级时它也必须可用（入口是任意页面的）。 */}
+      <CheckupDialog
+        open={checkupOpen}
+        onClose={() => setCheckupOpen(false)}
+        wikiInitialized={checkupWikiInitialized}
+        canRunAgent={!!agentId}
+        onWikiLint={handleCheckupWikiLint}
+        onAskDoctor={(m) => { setCheckupOpen(false); askDoctor(m); }}
       />
     </>
   );

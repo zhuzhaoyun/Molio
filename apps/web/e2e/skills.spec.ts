@@ -681,7 +681,28 @@ test.describe('Skills custom instructions on LIBRARY rows', () => {
       await expect(page.getByTestId('custom-instructions-saved')).toBeVisible({ timeout: 10_000 });
       await page.keyboard.press('Escape');
       // Overlay badge appears on the library row (mirrors bundled rows).
-      await expect(page.getByTestId(`skill-custom-badge-${skill.id}`)).toBeVisible();
+      // 10s 而非默认 5s：徽章要等保存后的列表重拉落地（onSaved 的三个并发重拉之一），
+      // 共享 runner 被挤占时这一拉可以超过 5s——本地延迟 6s 复现：徽章只是迟到（~7.6s），不缺席。
+      try {
+        // 30s 窗口只在失败路径消耗（绿跑时徽章一出现断言即通过）：CI 的 E2E 是
+        // ~100 条 spec 并行共享同一 daemon，徽章依赖的列表重拉实测可拖到 10s+。
+        // 三轮数据：5s ❌ / 10s ❌ / 10s ✓。CIDIAG 块在未来再红时自动采集三方状态。
+        await expect(page.getByTestId(`skill-custom-badge-${skill.id}`)).toBeVisible({ timeout: 30_000 });
+      } catch {
+        // 临时诊断（CI 两连红，本地无法复现）：失败时把三方状态打全——
+        // daemon 权威数据 / 列表接口实际返回 / 页面真实 DOM。拿到证据后本块还原。
+        const detail = await page.request.get(`${DAEMON}/api/skills/${skill.id}`);
+        const detailBody = await detail.json().catch(() => null);
+        console.log('CIDIAG detail:', JSON.stringify(detailBody).slice(0, 600));
+        const list = await page.request.get(`${DAEMON}/api/skills`);
+        const listBody = await list.json().catch(() => null);
+        const listRow = (listBody as { skills?: Array<{ id: string; customInstructions?: string }> })
+          ?.skills?.find((s) => s.id === skill.id);
+        console.log('CIDIAG listRow:', JSON.stringify(listRow).slice(0, 600));
+        console.log('CIDIAG badges on page:', await page.locator('[data-testid^="skill-custom-badge-"]').count());
+        console.log('CIDIAG rows on page:', await page.locator('[data-testid^="skill-row-"]').count());
+        throw new Error('badge missing (CIDIAG diagnostics logged above)');
+      }
 
       // Reopen → persisted.
       await page.getByTestId(`skill-custom-${skill.id}`).click();

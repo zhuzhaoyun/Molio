@@ -2504,8 +2504,9 @@ function detectMusl(): boolean {
 /**
  * Parse the Windows build number from os.release() (e.g. "10.0.14393" → 14393).
  * Returns null on non-Windows or if parsing fails.
+ * @internal exported for reuse (diagnostics platform line) and testing
  */
-function getWindowsBuildNumber(): number | null {
+export function getWindowsBuildNumber(): number | null {
   if (process.platform !== 'win32') return null;
   const parts = os.release().split('.');
   const build = parseInt(parts[parts.length - 1] || '', 10);

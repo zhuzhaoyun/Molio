@@ -256,3 +256,13 @@ export type { MarketTaxon, MarketTaxonomy } from './market.js';
 
 export { marketCatalogView } from './catalog.js';
 export type { CatalogQuery } from './catalog.js';
+
+// Molio Doctor 自助诊断
+export type {
+  DiagnosticLevel,
+  DiagnosticActionCode,
+  DiagnosticAction,
+  DiagnosticItem,
+  DiagnosticsReport,
+  SupportBundleResult,
+} from './diagnostics.js';

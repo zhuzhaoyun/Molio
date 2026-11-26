@@ -38,6 +38,7 @@ import './styles/history.css';
 import './styles/graph.css';
 import './styles/account.css';
 import './styles/resources.css';
+import './styles/diagnostics.css';
 import './App.css';
 
 // Route-level code splitting: everything except HomePage (first screen) and
@@ -470,6 +471,7 @@ export default function App() {
         )}
         <KbChatSessionsPanel
           ref={kbChatPanelRef}
+          agentId={selectedAgent}
         />
         <UpdateNotification />
         <PreloadToast />

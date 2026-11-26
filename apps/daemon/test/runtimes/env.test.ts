@@ -347,6 +347,23 @@ describe('buildSpawnEnv', () => {
     });
   });
 
+  describe('MOLIO_API_BASE injection', () => {
+    it('MOLIO_API_BASE 指向 daemon 本地端口，缺省 3100', () => {
+      const savedPort = process.env['MOLIO_PORT'];
+      try {
+        delete process.env['MOLIO_PORT'];
+        const def = makeDef({ id: 'generic' });
+        assert.equal(buildSpawnEnv(def)['MOLIO_API_BASE'], 'http://localhost:3100');
+
+        process.env['MOLIO_PORT'] = '4555';
+        assert.equal(buildSpawnEnv(def)['MOLIO_API_BASE'], 'http://localhost:4555');
+      } finally {
+        if (savedPort === undefined) delete process.env['MOLIO_PORT'];
+        else process.env['MOLIO_PORT'] = savedPort;
+      }
+    });
+  });
+
   describe('PATH augmentation for Molio-installed CLIs', () => {
     // Bug: PreloadManager installs docling into ~/.molio/venv/bin, but the
     // agent process is spawned without a login shell, so ~/.molio/venv/bin
