@@ -1059,8 +1059,9 @@ const en: Record<string, string> = {
   'resources.pay.noBase': 'Payment is not enabled — contact us to purchase.',
   'resources.pay.download': 'Download pack',
   // ── Community market: publish wizard / my listings / vault entry (Task 10) ──
-  // 「发布到资源库」入口按钮与门禁已移除（2026-11-23），vault.publish* 文案键随之清理；
-  // 发布 tab 自身的文案（publish.*）保留——管线休眠，深链 ?panel=publish 仍在用。
+  // 「发布到资源库」按钮按权限显隐（2026-11-23 修正：仅管理员可见），vault.publish 恢复；
+  // 旧门禁分流的 publishRole* 文案不回来——分流 UI 已永久移除。
+  'vault.publish': 'Publish to market',
   // ── Vault list: inline ⋯ menu (copy ID / reveal / remove) ──
   'vault.listHeader': 'Vaults',
   'vault.listEmpty': 'No vaults yet',
