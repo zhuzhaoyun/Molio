@@ -46,8 +46,11 @@ test.describe('KB file panel collapse/expand', () => {
     await expect(spine).toContainText('e2e-panel-collapse');
     await expect(panel).toHaveClass(/kb-file-panel--collapsed/);
     await expect(page.locator('.kb-tree-scroll')).toBeHidden();
-    const collapsedBox = await panel.boundingBox();
-    expect(collapsedBox?.width ?? 99).toBeLessThan(40);
+    // 几何断言必须 poll：满载 runner 上一次性采样会打到折叠动画的过渡帧（CI 实抓
+    // 52.4px vs <40 红——本 spec 进 affected 池后与图谱重 spec 并跑，机器负载升高）
+    await expect
+      .poll(async () => (await panel.boundingBox())?.width ?? 99, { timeout: 5000 })
+      .toBeLessThan(40);
 
     // 折叠态切库：书脊库名是切库入口——点击打开仓库管理器，面板保持折叠
     const spineName = page.locator('[data-testid="kb-spine-name"]');
@@ -64,8 +67,10 @@ test.describe('KB file panel collapse/expand', () => {
     await expect(spine).toBeHidden();
     await expect(page.locator('[data-testid="kb-btn-panel-collapse"]')).toBeVisible();
     await expect(page.locator('.kb-tree-scroll')).toBeVisible();
-    const expandedBox = await panel.boundingBox();
-    expect(expandedBox?.width ?? 0).toBeGreaterThan(100);
+    // 同上：展开动画同理 poll（对称加固，别等它咬人）
+    await expect
+      .poll(async () => (await panel.boundingBox())?.width ?? 0, { timeout: 5000 })
+      .toBeGreaterThan(100);
   });
 
   test('collapsed state persists across reload', async ({ page }) => {

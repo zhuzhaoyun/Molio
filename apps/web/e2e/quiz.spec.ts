@@ -1153,7 +1153,9 @@ test.describe('Quiz interaction block', () => {
     await expect(card.locator('[data-testid="quiz-progress"]')).toHaveText('已作答 1/3');
     // 清空文本 → 回到未答；再输入正文 → 又算已答。
     await card.locator('[data-testid="quiz-subject-input"][data-question-id="q3"]').fill('');
-    await expect(card.locator('[data-testid="quiz-progress"]')).toHaveText('已作答 0/3');
+    // 满载 runner 上主线程可能冻结 >5s（CI 实抓：fill 后 5s 内 14 次采样全是陈旧的
+    // 1/3——与图谱重 spec 并跑的负载窗口），加宽到 15s 等冻结过去，不赌调度
+    await expect(card.locator('[data-testid="quiz-progress"]')).toHaveText('已作答 0/3', { timeout: 15_000 });
     await card.locator('[data-testid="quiz-subject-input"][data-question-id="q3"]').fill('证明过程……');
     await expect(card.locator('[data-testid="quiz-progress"]')).toHaveText('已作答 1/3');
   });
