@@ -6,7 +6,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import trash from 'trash';
-import type { TreeNode, FileContent, SearchResult } from '@molio/contracts';
+import type { TreeNode, FileContent } from '@molio/contracts';
 import { detectEncoding, decodeAll, decideReadStrategy, FileTooLargeError, ENCODING_SAMPLE_BYTES } from './encoding.js';
 // Pruning predicate + caps live in a dependency-free module so importing them
 // (e.g. from VaultWatcher) does not transitively load encoding.ts.
@@ -639,7 +639,7 @@ export function resolveCanonicalPath(
  * authentication (CORS allows any localhost origin), so this guard is the
  * primary boundary against path-traversal exfiltration.
  */
-function assertWithinVault(vaultPath: string, resolved: string): void {
+export function assertWithinVault(vaultPath: string, resolved: string): void {
   const vaultRoot = path.resolve(vaultPath);
   if (resolved !== vaultRoot && !resolved.startsWith(vaultRoot + path.sep)) {
     throw new Error('Path traversal not allowed');
@@ -1144,3 +1144,8 @@ const MIME_TYPES: Record<string, string> = {
   '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   '.xls': 'application/vnd.ms-excel',
 };
+
+/**
+ * 全文搜索已改走 FTS5 索引（vault-search.ts 的 searchVaultFiles，检索 P0 层 1）。
+ * 旧的 walk+includes 实现随 #329 下线；这里不再保留死代码。
+ */

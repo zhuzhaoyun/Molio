@@ -14,23 +14,18 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { SearchResult } from '@molio/contracts';
 import { getVault, listExternalRoots, type SqliteDb } from './db.js';
-import { resolveEntry, TEXT_EXTS } from './knowledge.js';
+import { resolveEntry, TEXT_EXTS, assertWithinVault } from './knowledge.js';
 import { isWithinRoot, safeRealpath } from './external-roots.js';
 import { isPrunedDirName, MAX_DIR_ENTRIES, MAX_TOTAL } from './vault-prune.js';
+import { VAULT_TREE_CHANGED_EVENT, VAULT_WATCH_STATE_CHANGED_EVENT } from './vault-watcher.js';
 
 export const MAX_INDEX_FILE_BYTES = 2 * 1024 * 1024;
-
-/** 与 knowledge.ts assertWithinVault 同款边界检查（不 import 它，避免拖入 trash/encoding）。 */
-function assertWithinVault(vaultPath: string, resolved: string): void {
-  const root = path.resolve(vaultPath);
-  if (resolved !== root && !resolved.startsWith(root + path.sep)) {
-    throw new Error('Path traversal not allowed');
-  }
-}
 
 function isIndexableExt(relPath: string): boolean {
   return TEXT_EXTS.includes(path.extname(relPath).toLowerCase());
 }
+
+export { isIndexableExt };
 
 /**
  * rowid 配对约定（2026-10-16 Windows 卡死事故后引入）：FTS 行的 rowid 恒等于
@@ -95,10 +90,13 @@ export function indexVaultFile(db: SqliteDb, vaultId: string, vaultPath: string,
 }
 
 export function removeVaultFile(db: SqliteDb, vaultId: string, relPath: string): void {
+  // 反斜杠路径归一成与索引一致（indexVaultFile 入口就这么做）；现调用方都传 `/`，
+  // 这是防御：万一日后有人传 Windows 形态进来，静默 no-op 比抛错更难查。
+  const norm = relPath.replace(/\\/g, '/');
   // 先查 state（主键 O(log n)）：没有 state 行就不可能有 fts 行（两者同一事务写/删，
   // 见配对约定）。直接返回——这条 O(1) 早退是 walk 里图片/PDF 触发的海量 no-op
   // 删除风暴的关键：旧实现两条按 UNINDEXED 列的 DELETE 每条都是 fts 全表扫描。
-  const rid = stateRowId(db, vaultId, relPath);
+  const rid = stateRowId(db, vaultId, norm);
   if (rid === undefined) return;
   const apply = db.transaction(() => {
     db.prepare('DELETE FROM vault_files_fts WHERE rowid = ?').run(rid);
@@ -255,34 +253,41 @@ export async function reindexVault(
  */
 const inflightBuilds = new WeakMap<SqliteDb, Map<string, Promise<void>>>();
 
-/** 该 vault 是否有正在跑的构建——搜索要先等它，别读半成品。 */
+/** 该 vault 是否有正在跑的字面构建——搜索要先等它，别读半成品。 */
 export function hasInflightBuild(db: SqliteDb, vaultId: string): Promise<void> | undefined {
-  return inflightBuilds.get(db)?.get(vaultId);
+  return getInflight(db, vaultId, 'fts');
+}
+
+/** 查某类构建的在跑 promise（vault-vec 等其它走同一单行道的层复用）。 */
+export function getInflight(db: SqliteDb, vaultId: string, buildKind: string): Promise<void> | undefined {
+  return inflightBuilds.get(db)?.get(`${buildKind}\u0000${vaultId}`);
 }
 
 /**
  * 单行道登记口：该 vault 上已有构建在跑就并入它，否则把 `run` 登记为本轮构建。
  * 所有会 walk 整库的入口都必须走这里（首搜建库 / sweep / 目录改名后重建 /
- * 灾难恢复重建），否则又会出现两个 walk 互相踩。
+ * 灾难恢复重建），否则又会出现两个 walk 互相踩。层 2 向量构建（vault-vec.ts）
+ * 同样整库 walk，共用这条单行道——令牌含 buildKind，字面与向量构建互不阻塞。
  *
  * 令牌取 vaultId 而非 (vaultId, path)：path 不是独立输入——所有调用方都从
  * vaults 行取（sweep 也每次重读），让它参与令牌反而会在「同一 vault 两个 path」
  * 这种异常态下放两个 walk 并行，正是要消灭的踩踏。宁可多等，不可并行。
  */
-function registerBuild(
-  db: SqliteDb, vaultId: string, run: () => Promise<unknown>,
+export function registerBuild(
+  db: SqliteDb, vaultId: string, buildKind: string, run: () => Promise<unknown>,
 ): Promise<void> {
+  const token = `${buildKind}\u0000${vaultId}`;
   let byVault = inflightBuilds.get(db);
   if (!byVault) {
     byVault = new Map<string, Promise<void>>();
     inflightBuilds.set(db, byVault);
   }
-  const running = byVault.get(vaultId);
+  const running = byVault.get(token);
   if (running) return running;
   const task = run().then(() => undefined);
-  byVault.set(vaultId, task);
+  byVault.set(token, task);
   // 无论成败都摘掉登记——失败要让后来的调用重新发起，而不是永远等一个已 reject 的 promise。
-  const done = (): void => { if (byVault.get(vaultId) === task) byVault.delete(vaultId); };
+  const done = (): void => { if (byVault.get(token) === task) byVault.delete(token); };
   void task.then(done, done);
   return task;
 }
@@ -291,8 +296,20 @@ function registerBuild(
 export function ensureVaultIndexed(
   db: SqliteDb, vaultId: string, vaultPath: string, opts: ReindexOpts = {},
 ): Promise<void> {
-  return registerBuild(db, vaultId, () => reindexVault(db, vaultId, vaultPath, opts));
+  return registerBuild(db, vaultId, 'fts', () => reindexVault(db, vaultId, vaultPath, opts));
 }
+
+/**
+ * 内存态「至少完整索引过一次」标记（按 db 实例隔离，与 inflightBuilds 同款语义）。
+ *
+ * 为什么需要：空 vault / 全不可索引文件的库，影子表一行都没有——没有这个标记，
+ * searchVaultFiles 里 `SELECT 1 FROM vault_files_state` 的判据每次都过不了，
+ * 每次搜索都触发一次整库 walk（NAS 挂载上就是每次一个 readdir 网络延迟）。
+ * 用内存态而非持久列足够：daemon 重启后 scheduleAll 启动巡检本来就会逐库 walk，
+ * 搜索侧多付的那一次只在重启后首轮；而清空状态的地方（rebuildVaultFtsAll）
+ * 必须同步摘标记，否则灾后到下次构建之间搜索会拿到错误的空结果。
+ */
+const seededVaults = new WeakMap<SqliteDb, Set<string>>();
 
 /**
  * 灾难恢复：清空全部 vault 的文件索引后按 vaults 表逐个重建。
@@ -310,7 +327,7 @@ export async function rebuildVaultFtsAll(db: SqliteDb, opts: ReindexOpts = {}): 
   for (const v of vaults) {
     try {
       await hasInflightBuild(db, v.id);
-      await registerBuild(db, v.id, async () => {
+      await registerBuild(db, v.id, 'fts', async () => {
         // 清空走 rowid 配对约定（fts 上按 vault_id DELETE 是全表扫描，见函数组头注释）
         const rids = db.prepare('SELECT rowid AS rid FROM vault_files_state WHERE vault_id = ?')
           .all(v.id) as Array<{ rid: number }>;
@@ -319,6 +336,8 @@ export async function rebuildVaultFtsAll(db: SqliteDb, opts: ReindexOpts = {}): 
           for (const { rid } of rids) delFts.run(rid);
           db.prepare('DELETE FROM vault_files_state WHERE vault_id = ?').run(v.id);
         })();
+        // 状态已清空：摘掉「索引过」标记，让下一轮搜索重新判空建库
+        seededVaults.get(db)?.delete(v.id);
         await reindexVault(db, v.id, v.path, opts);
       });
       n++;
@@ -351,11 +370,20 @@ export async function searchVaultFiles(
   if (!trimmed) return { results: [], truncated: false };
 
   // 有 in-flight 构建先等它：分片构建途中影子表已有行，光看 seeded 会查到半成品
-  // （静默漏结果）。该 vault 从未建过库才由本请求触发一次构建。
+  // （静默漏结果）。该 vault 从未建过库才由本请求触发一次构建；空/全不可索引库
+  // 建完影子表仍为空，靠 seededVaults 标记别在每次搜索时反复 walk（见其头注释）。
   const building = hasInflightBuild(db, vaultId);
   if (building) await building;
   else if (!db.prepare('SELECT 1 FROM vault_files_state WHERE vault_id = ? LIMIT 1').get(vaultId)) {
-    await ensureVaultIndexed(db, vaultId, vaultPath);
+    if (!seededVaults.get(db)?.has(vaultId)) {
+      await ensureVaultIndexed(db, vaultId, vaultPath);
+      let seeded = seededVaults.get(db);
+      if (!seeded) {
+        seeded = new Set<string>();
+        seededVaults.set(db, seeded);
+      }
+      seeded.add(vaultId);
+    }
   }
 
   const runQuery = (): Array<{ file_path: string; snip: string }> => {
@@ -379,29 +407,42 @@ export async function searchVaultFiles(
   };
 
   let rows = runQuery();
-  let retried = false;
+  // truncated 按剔除前的原始命中数判定：limit+1 条命中里若被剔掉几条，再拿
+  // 剩余数和 limit 比会漏报「还有更多」（30 条命中取 21、剔 2、limit=20 →
+  // 剩 19 条 <limit 报 false，实际还有 9 条没展示）。
+  let matched = rows.length;
+  // 惰性校验最多两轮：第一轮逐条校验；期间若有文件因外部修改被重索引，整榜
+  // 重查后**从头再校验一遍**（重查的 rows 是全新数组，不能沿用旧下标——旧实现
+  // 用旧 i 继续走新数组，新榜在旧长度之后的行逃过校验，脏行直通结果）。
+  // 只重试一次，防「改了又改」循环。
   const vaultRoot = path.resolve(vaultPath);
-  for (let i = rows.length - 1; i >= 0; i--) {
-    const rel = rows[i]!.file_path;
-    const resolved = path.resolve(path.join(vaultPath, rel));
-    if (resolved !== vaultRoot && !resolved.startsWith(vaultRoot + path.sep)) {
-      rows.splice(i, 1); // 索引被污染的防御：路径出库的直接剔掉
-      continue;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    let needsRequery = false;
+    for (let i = rows.length - 1; i >= 0; i--) {
+      const rel = rows[i]!.file_path;
+      const resolved = path.resolve(path.join(vaultPath, rel));
+      if (resolved !== vaultRoot && !resolved.startsWith(vaultRoot + path.sep)) {
+        rows.splice(i, 1); // 索引被污染的防御：路径出库的直接剔掉
+        continue;
+      }
+      let stat: fs.Stats;
+      try {
+        stat = fs.statSync(resolved);
+      } catch {
+        removeVaultFile(db, vaultId, rel); // 外部删除：出结果 + 出索引
+        rows.splice(i, 1);
+        continue;
+      }
+      const shadow = db.prepare('SELECT mtime, size FROM vault_files_state WHERE vault_id = ? AND file_path = ?')
+        .get(vaultId, rel) as { mtime: number; size: number } | undefined;
+      if (shadow && (shadow.mtime !== Math.floor(stat.mtimeMs) || shadow.size !== stat.size)) {
+        indexVaultFile(db, vaultId, vaultPath, rel); // 外部修改：重索引这一份
+        needsRequery = true; // 内容可能变了，整榜重查一次
+      }
     }
-    let stat: fs.Stats;
-    try {
-      stat = fs.statSync(resolved);
-    } catch {
-      removeVaultFile(db, vaultId, rel); // 外部删除：出结果 + 出索引
-      rows.splice(i, 1);
-      continue;
-    }
-    const shadow = db.prepare('SELECT mtime, size FROM vault_files_state WHERE vault_id = ? AND file_path = ?')
-      .get(vaultId, rel) as { mtime: number; size: number } | undefined;
-    if (shadow && (shadow.mtime !== Math.floor(stat.mtimeMs) || shadow.size !== stat.size)) {
-      indexVaultFile(db, vaultId, vaultPath, rel); // 外部修改：重索引这一份
-      if (!retried) { rows = runQuery(); retried = true; } // 内容可能变了，整榜重查一次
-    }
+    if (!needsRequery || attempt === 1) break;
+    rows = runQuery();
+    matched = rows.length;
   }
 
   const results = rows.slice(0, limit).map((r) => ({
@@ -409,7 +450,7 @@ export async function searchVaultFiles(
     fileName: r.file_path.split('/').pop() ?? r.file_path,
     snippet: r.snip.replace(/\s+/g, ' ').trim(),
   }));
-  return { results, truncated: rows.length > limit };
+  return { results, truncated: matched > limit };
 }
 
 /**
@@ -512,4 +553,19 @@ export class VaultIndexSweeper {
     this.timers.clear();
     this.dirty.clear();
   }
+}
+
+/**
+ * 把「库内容变了 → 排一次防抖 sweep」的接线收敛成可单测的函数。
+ * server.ts 模块加载时调用；这里的单测用 EventEmitter + 临时库直接验证
+ * 事件名与载荷传递，不必起整个 server（那会打开真实数据目录）。
+ */
+export function wireVaultSweeper(
+  watcher: { on(event: string, listener: (vaultId: string) => void): unknown },
+  sweeper: { scheduleVault(vaultId: string, extraDelayMs?: number): void },
+): void {
+  watcher.on(VAULT_TREE_CHANGED_EVENT, (vaultId: string) => sweeper.scheduleVault(vaultId));
+  // 监听重臂（watch() 先关旧实例再开新的，落盘事件可能在盲窗里丢）也要巡检一次：
+  // 就绪态翻转说明「信号曾经断过」，断窗里的改动没有 tree-changed 可依赖。
+  watcher.on(VAULT_WATCH_STATE_CHANGED_EVENT, (vaultId: string) => sweeper.scheduleVault(vaultId));
 }

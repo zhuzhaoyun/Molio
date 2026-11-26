@@ -165,6 +165,9 @@ export function SessionOutputPanel({ messages }: Props) {
   // refs = 展示清单；meta = 登记骨架（INDEX/log/hot，折叠展示）；omitted = 被过滤掉的
   // 引用（库外文件 / 隐藏目录 / 检索目录），面板要自己说明「少了什么」，否则同一屏里
   // 用户看到的引用标签比面板多、像面板漏了。
+  // 三个聚合各自完整遍历一次 messages——**有意不合并**：三者形状与消费 tab 不同，
+  // 单遍合并会把三个互不相干的口径拧进一个函数（回归风险 > 三次 O(n) 的开销，
+  // 消息量级上千也仍是毫秒级）。review 记录在案，非疏漏。
   const { refs: sourceRefs, meta: sourceMeta, media: sourceMedia, omitted: omittedSources } = useMemo(
     () => aggregateSessionSources(messages, activeVault?.path),
     [messages, activeVault?.path],
@@ -296,7 +299,7 @@ export function SessionOutputPanel({ messages }: Props) {
               <span aria-hidden>{'‹'}</span>
               <span>{t('output.previewBack')}</span>
             </button>
-            <span className="session-output-preview-filename" title={preview.target.path}>
+            <span className="session-output-preview-filename" data-testid="session-output-preview-filename" title={preview.target.path}>
               {preview.target.label}
             </span>
           </header>
@@ -379,7 +382,6 @@ export function SessionOutputPanel({ messages }: Props) {
                       className="session-output-item"
                       data-testid="session-output-source"
                       title={s.target}
-                      disabled={!vaultId}
                       onClick={() => { if (vaultId) openPreview('read', s.target, s.label); }}
                     >
                       <span className="session-output-item-icon" aria-hidden><FileIcon size={13} /></span>
@@ -407,7 +409,6 @@ export function SessionOutputPanel({ messages }: Props) {
                           className="session-output-item"
                           data-testid="session-output-meta-item"
                           title={s.target}
-                          disabled={!vaultId}
                           onClick={() => { if (vaultId) openPreview('read', s.target, s.label); }}
                         >
                           <span className="session-output-item-icon" aria-hidden><FileIcon size={13} /></span>

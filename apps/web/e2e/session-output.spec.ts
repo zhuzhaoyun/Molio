@@ -117,6 +117,12 @@ test.describe('Home 会话产出面板', () => {
     const urlGroup = panel.locator('[data-testid="session-output-sources-urls"]');
     await expect(urlGroup).toBeVisible();
     await expect(urlGroup).toContainText('网页链接 2');
+    // URL 行必须是真 <a>：新窗口打开（target=_blank）+ 原样 href——review 记录此前未断言
+    const urlRows = urlGroup.locator('a[data-testid="session-output-source-url"]');
+    await expect(urlRows).toHaveCount(2);
+    await expect(urlRows.filter({ hasText: 'ithome.com' })).toHaveAttribute('href', 'https://www.ithome.com/a');
+    await expect(urlRows.filter({ hasText: '36kr.com' })).toHaveAttribute('href', 'https://36kr.com/p/1');
+    await expect(urlRows.first()).toHaveAttribute('target', '_blank');
   });
 
   test('引用 tab：显示本会话读入的文件 + 计数', async ({ page }) => {
@@ -134,6 +140,39 @@ test.describe('Home 会话产出面板', () => {
       const sources = panel.locator('[data-testid="session-output-source"]');
       await expect(sources).toHaveCount(2); // r1 Read 要闻综述 + r2 Read 深度报道
       await expect(sources.filter({ hasText: '要闻综述' })).toHaveCount(1);
+    } finally {
+      await cleanupTempVault(vault);
+    }
+  });
+
+  /**
+   * 点击引用行 → dock 内预览打开（md 渲染）。真机验收（2026-10-20）人工覆盖过
+   * 该路径，但自动化一直缺失——review 记录的测试缺口之一。
+   * 前置：文件必须真实存在于 temp vault（mock 只回放事件，不落盘），预览的
+   * 内容拉取才拿得到正文。
+   */
+  test('引用 tab：点击文件行 → dock 内预览打开', async ({ page }) => {
+    const vault = await createTempVault('e2e-sources-preview');
+    try {
+      const { writeFileSync, mkdirSync } = await import('node:fs');
+      const { join } = await import('node:path');
+      mkdirSync(join(vault.path, 'wiki'), { recursive: true });
+      writeFileSync(join(vault.path, 'wiki', '要闻综述.md'), '# 要闻综述\n\n预览用正文', 'utf-8');
+      await page.addInitScript((id) => { localStorage.setItem('molio.activeVaultId', id); }, vault.id);
+      await mockChatRun(page, { script: buildAbsRun(vault.path) });
+      await gotoHome(page);
+      await sendMessage(page, '归档');
+      await expect(page.locator('[data-testid="work-timeline-summary"]')).toBeVisible({ timeout: 15_000 });
+      await page.locator('[data-testid="home-output-toggle"]').click();
+      const panel = page.locator('[data-testid="session-output-panel"]');
+
+      await panel.locator('[data-testid="session-output-tab-sources"]').click();
+      await panel.locator('[data-testid="session-output-source"]').filter({ hasText: '要闻综述' }).click();
+      await expect(panel.locator('[data-testid="session-output-preview-back"]')).toBeVisible();
+      await expect(panel.locator('[data-testid="session-output-preview-filename"]')).toContainText('要闻综述');
+      // 返回引用列表
+      await panel.locator('[data-testid="session-output-preview-back"]').click();
+      await expect(panel.locator('[data-testid="session-output-source"]')).toHaveCount(2);
     } finally {
       await cleanupTempVault(vault);
     }

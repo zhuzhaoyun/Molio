@@ -271,7 +271,7 @@ const en: Record<string, string> = {
   'output.tabChanges': 'Changes',
   'output.changesEmpty': 'No changes to show',
   'output.tabSources': 'Sources',
-  'output.sourcesEmpty': 'No files referenced yet in this session',
+  'output.sourcesEmpty': 'No in-vault files referenced yet in this session',
   'output.sourcesUrls': 'Web links {n}',
   'output.titleSources': 'Session sources',
   'output.statsSources': '{files} files referenced · {reads} reads',

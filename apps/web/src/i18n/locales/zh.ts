@@ -270,7 +270,7 @@ const zh: Record<string, string> = {
   'output.tabChanges': '变更',
   'output.changesEmpty': '没有可展示的变更',
   'output.tabSources': '引用',
-  'output.sourcesEmpty': '本次会话还没有引用过文件',
+  'output.sourcesEmpty': '本次会话还没有引用过知识库内的文件',
   'output.sourcesUrls': '网页链接 {n}',
   'output.titleSources': '会话引用',
   'output.statsSources': '引用 {files} 个文件 · 共 {reads} 次',

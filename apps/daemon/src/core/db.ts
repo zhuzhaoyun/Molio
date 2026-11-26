@@ -379,6 +379,23 @@ function migrate(db: SqliteDb): void {
     setKv(db, 'vault_fts_rowid_paired', '1');
   }
 
+  // Vault 文件语义向量（检索 P0 层 2）。一文件一向量（各块嵌入的均值池化，
+  // L2 归一）——§4.2 判定万文件暴力余弦毫秒级，不引入向量索引库。mtime/size
+  // 回显层 1 影子表的判变语义：变了才重算指纹。无触发器，更新入口在
+  // core/vault-vec.ts；向量不可增量修补，灾难恢复=删行重算。
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS vault_files_vec (
+      vault_id TEXT NOT NULL,
+      file_path TEXT NOT NULL,
+      model TEXT NOT NULL,
+      mtime INTEGER NOT NULL,
+      size INTEGER NOT NULL,
+      chunks INTEGER NOT NULL,
+      vector BLOB NOT NULL,
+      PRIMARY KEY (vault_id, file_path)
+    );
+  `);
+
   // 答题记录：一期只写不读（错题本/统计留到二期）。按 vault + 内容指纹索引，
   // 即使题目还没存成题库文件也能把同一份题关联起来。
   db.exec(`
