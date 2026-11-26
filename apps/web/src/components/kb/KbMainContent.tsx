@@ -1,3 +1,4 @@
+import { daemonFetch, isAccessInterruption } from '../../api/http';
 /**
  * Main content area — renders files based on type:
  * - Text (md/txt/html/json/yaml): doocs/md rendering with optional typeset mode
@@ -618,7 +619,7 @@ export function KbMainContent({
       if (!filePath) return;
 
       const apiUrl = `/api/knowledge/vaults/${vaultId}/resolve/${encodeURIComponent(filePath).replace(/%2F/g, '/')}`;
-      fetch(apiUrl)
+      daemonFetch(apiUrl)
         .then((res) => {
           if (res.status === 404) throw new Error('NOT_FOUND');
           // File exists — strip .md extension for tree-stem search
@@ -626,6 +627,7 @@ export function KbMainContent({
           onNavigateToFile(searchPath);
         })
         .catch((err) => {
+          if (isAccessInterruption(err)) return;
           if (err.message === 'NOT_FOUND') {
             window.alert(`文件 "${filePath}" 不存在`);
             return;

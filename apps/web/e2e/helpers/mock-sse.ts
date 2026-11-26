@@ -104,6 +104,8 @@ export interface MockRunOptions {
    *  spinner that's cleared by the next event). When unset, all frames are
    *  delivered at once — fine for tests that only check the final state. */
   frameDelay?: number;
+  /** Hold terminal frames until the test has exercised the running state. */
+  terminalGate?: Promise<void>;
   /** 已持久化的会话历史消息（DB 加载 / 重挂载恢复用）。默认 [] —— 避免真实 daemon
    *  对未知 conv 404 → onLoadError 关标签。响应结构对齐 daemon：`{ messages: [...] }`。 */
   persistedMessages?: Array<{ id: string; role: 'user' | 'assistant'; content: string; timestamp: number }>;
@@ -137,6 +139,7 @@ export async function mockChatRun(page: Page, opts: MockRunOptions = {}) {
   const runId = opts.runId ?? 'test-run-1';
   const convId = opts.conversationId ?? 'test-conv-1';
   const script = opts.script ?? SCRIPTS.simpleTextReply;
+  let replayOffset = 0;
 
   // Multi-turn POST signaling for secondTurnScripts: the SSE server streams each
   // second-turn script only after the corresponding queued-message POST arrives
@@ -213,6 +216,10 @@ export async function mockChatRun(page: Page, opts: MockRunOptions = {}) {
         let seq = 0;
         const streamScript = async (turn: readonly object[]) => {
           for (const evt of turn) {
+            const event = evt as { type?: string; label?: string };
+            if (opts.terminalGate && (event.type === 'turn_end' || (event.type === 'status' && ['completed', 'failed'].includes(event.label ?? '')))) {
+              await opts.terminalGate;
+            }
             seq += 1;
             res.write(sseFrame(seq, runId, evt));
             await new Promise((r) => setTimeout(r, opts.frameDelay));
@@ -267,7 +274,7 @@ export async function mockChatRun(page: Page, opts: MockRunOptions = {}) {
         return;
       }
       served = true;
-      const frames = script.map((evt, i) => sseFrame(i + 1, runId, evt)).join('');
+      const frames = script.map((evt, i) => sseFrame(replayOffset + i + 1, runId, evt)).join('');
       await route.fulfill({
         status: 200,
         contentType: 'text/event-stream',
@@ -283,6 +290,7 @@ export async function mockChatRun(page: Page, opts: MockRunOptions = {}) {
   // 3) POST /api/runs/:id/messages → multi-turn follow-up
   if (opts.multiTurn !== false) {
     await page.route(`**/api/runs/${runId}/messages`, async (route) => {
+      if (route.request().method() === 'POST') replayOffset += script.length;
       // With secondTurnScripts, signal the SSE server that this queued message
       // was dispatched, so it can stream the corresponding turn over the same
       // connection. Body is `{ message: "<text>" }` (matches api.sendMessage).

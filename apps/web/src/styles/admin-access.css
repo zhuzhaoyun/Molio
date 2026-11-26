@@ -1,0 +1,21 @@
+.admin-private-shell { display: contents; }
+.admin-private-shell[hidden] { display: none; }
+.admin-access-page, .admin-access-overlay { min-height: 100dvh; display: grid; place-items: center; padding: 24px 16px; background-color: var(--bg-primary, #faf9f6); color: var(--text-primary, #272523); }
+.admin-access-page { width: 100%; box-sizing: border-box; }
+.admin-access-card { width: min(100%, 380px); box-sizing: border-box; padding: 28px; border: 1px solid var(--border-color, #dedbd4); border-radius: 16px; background-color: var(--bg-secondary, #fff); box-shadow: 0 10px 32px #0000000a; }
+.admin-access-card h1 { font-size: 24px; margin: 8px 0; }
+.admin-access-card p { line-height: 1.6; overflow-wrap: anywhere; }
+.admin-access-brand { font-weight: 700; letter-spacing: .02em; }
+.admin-access-card label { display: block; margin: 18px 0 6px; }
+.admin-access-card input { box-sizing: border-box; width: 100%; min-height: 42px; }
+.admin-access-card button { min-height: 40px; cursor: pointer; }
+.admin-access-card button:disabled { cursor: wait; opacity: .6; }
+.admin-access-card [type=submit] { width: 100%; margin-top: 24px; }
+.admin-access-card [role=alert] { color: var(--danger, #b23a2e); }
+.admin-access-actions { display: flex; flex-wrap: wrap; gap: 12px; justify-content: flex-end; }
+.admin-access-overlay { position: fixed; inset: 0; z-index: 1000; background-color: #0006; }
+.admin-expiry-notice { position: fixed; top: 12px; left: 50%; transform: translateX(-50%); max-width: calc(100vw - 40px); padding: 10px 16px; border-radius: 8px; background-color: var(--bg-secondary, #fff); border: 1px solid var(--border-color, #ddd); z-index: 800; font-size: 14px; }
+.admin-access-card :focus-visible { outline: 2px solid var(--accent, #c96442); outline-offset: 3px; }
+
+.admin-stream-notice { display: flex; gap: 12px; align-items: center; justify-content: center; padding: 10px; font-size: 13px; color: var(--text-secondary); }
+.admin-kb-stream-notice { position: absolute; top: 8px; left: 50%; transform: translateX(-50%); z-index: 30; max-width: calc(100% - 24px); box-shadow: 0 4px 16px #0002; }

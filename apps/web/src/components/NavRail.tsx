@@ -9,6 +9,7 @@ import { useGraphViewActive } from '../stores/graphViewStore';
 import { onboardingStore } from '../stores/onboardingStore';
 import { AccountModal } from './account/AccountModal';
 import { DEFAULT_ROUTE } from '../routes';
+import { AdminSessionControls } from './access/AdminSessionControls';
 
 export function NavRail() {
   const { t } = useI18n();
@@ -313,6 +314,7 @@ export function NavRail() {
           </svg>
         </NavLink>
       </div>
+    <AdminSessionControls />
     </nav>
     <AccountModal
       show={accountOpen}

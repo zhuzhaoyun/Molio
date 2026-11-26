@@ -1,3 +1,4 @@
+import type { ManagedTransportState } from '../../api/managed-events';
 // apps/web/src/components/kb/KbChatSessionController.tsx
 //
 // 无 DOM 的会话 controller：持有该标签的 `useChatCore`（消息 / SSE 订阅 / 历史加载 /
@@ -27,6 +28,8 @@ export interface KbChatSessionApi {
 
 /** controller 交出去供 view 渲染的状态 + 动作集合（面板 / 全屏共用）。 */
 export interface KbChatSessionState {
+  transportState: ManagedTransportState;
+  retryTransport: () => void;
   messages: ChatMessage[];
   isRunning: boolean;
   activity: ActivityInfo | null;
@@ -300,6 +303,8 @@ export function KbChatSessionController({
   );
 
   const state = useMemo<KbChatSessionState>(() => ({
+    transportState: chat.transportState,
+    retryTransport: chat.retryTransport,
     messages: chat.messages,
     isRunning: chat.isRunning,
     activity: chat.activity ?? null,
@@ -315,7 +320,7 @@ export function KbChatSessionController({
     deleteMessages: (ids) => deleteMessagesRef.current(ids),
     buildSend,
   }), [
-    chat.messages, chat.isRunning, chat.activity, chat.conversationId, conversationVaultId, buildSend, session.mode,
+    chat.messages, chat.isRunning, chat.activity, chat.conversationId, conversationVaultId, chat.transportState, chat.retryTransport, buildSend, session.mode,
   ]);
 
   return <>{children(state)}</>;

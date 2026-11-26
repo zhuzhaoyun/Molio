@@ -4,7 +4,7 @@
 #
 # 构建：docker compose build
 # 运行：docker compose up -d
-# 访问：http://<NAS-IP>:3100
+# 访问：通过配置的 HTTPS 反向代理（见 docs/server-deployment.md）
 # ============================================================
 
 # ---- Stage 1: Build ----
@@ -86,10 +86,13 @@ RUN mkdir -p /home/molio/.molio /home/molio/.claude && \
 
 # entrypoint：以 root 启动，自动探测知识库目录属主（或 PUID/PGID 覆盖）对齐容器
 # 用户 + chown 命名卷，再降权到 molio
+COPY scripts/setup-server.mjs /app/scripts/setup-server.mjs
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
-ENV MOLIO_STATIC_DIR=/app/web \
+ENV MOLIO_ACCESS_MODE=server \
+    MOLIO_HOST=0.0.0.0 \
+    MOLIO_STATIC_DIR=/app/web \
     MOLIO_PORT=3100 \
     NODE_ENV=production
 
@@ -97,7 +100,7 @@ EXPOSE 3100
 
 # 健康检查（Node 24 内置 fetch）
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD node -e "fetch('http://localhost:3100/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
+    CMD node -e "fetch('http://127.0.0.1:3100/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
 
 # 注意：不再写死 USER molio。entrypoint 需要 root 权限做 usermod/chown，
 # 随后用 gosu 降权到 molio 执行 CMD —— 最终进程仍是非 root（满足 Claude Code 要求）。

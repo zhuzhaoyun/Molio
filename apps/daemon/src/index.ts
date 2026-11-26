@@ -1,7 +1,7 @@
 import { serve } from '@hono/node-server';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { app, db, runManager, weixinService, feishuService, vaultWatcher, preloadManager, authClient } from './server.js';
+import { app, db, runManager, weixinService, feishuService, vaultWatcher, preloadManager, authClient, accessConfig } from './server.js';
 import { initSkillLibrary } from './core/skills/builtin.js';
 import { reconcileAllVaultsAsync, cleanupLegacyGlobalSync } from './core/skills/vault-config.js';
 import { quarantineRetiredWithOverlay } from './core/skills/retire-guard.js';
@@ -252,7 +252,7 @@ function startServicesAfterListen(): void {
 }
 
 function startServer(): void {
-  const server = serve({ fetch: app.fetch, port }, () => {
+  const server = serve({ fetch: app.fetch, port, hostname: accessConfig.host }, () => {
     console.log(`Molio daemon listening on http://localhost:${port}`);
     console.log(`[startup] phase=listen atMs=${elapsedMs()}`);
     // 登录态恢复（读本地 token → 云端 refresh 验证 → 拉权益快照）必须在

@@ -179,6 +179,9 @@ export function FloatingChatButton({ agentId, onBuildWiki, onOpenSession }: Prop
   } | null>(null);
   // 拖完松手浏览器仍会派发 click——用这个标记吞掉，避免「拖完误开面板」
   const swallowClickRef = useRef(false);
+  // 关闭面板会立即重新挂载按钮。关闭按钮的 click 偶尔会在 DOM 更新后
+  // 被投递给新按钮；鼠标 click 必须先在这个按钮上发生 pointerdown。
+  const pointerPressRef = useRef(false);
   const style: React.CSSProperties | undefined = pos
     ? { left: derivedLeft(pos), top: derivedTop(pos) }
     : undefined;
@@ -225,6 +228,7 @@ export function FloatingChatButton({ agentId, onBuildWiki, onOpenSession }: Prop
 
   const onPointerDown = useCallback((e: React.PointerEvent<HTMLButtonElement>) => {
     if (e.button !== 0) return;
+    pointerPressRef.current = true;
     const el = btnRef.current;
     if (!el) return;
     e.preventDefault(); // 防图片原生拖拽/文本选择；click 仍会派发
@@ -277,6 +281,7 @@ export function FloatingChatButton({ agentId, onBuildWiki, onOpenSession }: Prop
   }, []);
 
   const onPointerCancel = useCallback(() => {
+    pointerPressRef.current = false;
     const d = dragRef.current;
     const el = btnRef.current;
     dragRef.current = null;
@@ -295,7 +300,10 @@ export function FloatingChatButton({ agentId, onBuildWiki, onOpenSession }: Prop
     }
   }, []);
 
-  const onClick = useCallback(() => {
+  const onClick = useCallback((e: React.MouseEvent<HTMLButtonElement>) => {
+    const hadPointerPress = pointerPressRef.current;
+    pointerPressRef.current = false;
+    if (e.detail > 0 && !hadPointerPress) return;
     if (swallowClickRef.current) { swallowClickRef.current = false; return; }
     dismissHint(); // 用户已经在操作按钮了，教学提示让位
     const p = posRef.current;

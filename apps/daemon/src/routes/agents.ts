@@ -21,7 +21,10 @@ import type { InstallEvent, ApiRetryInfo } from '@molio/contracts';
 /** Agent ids whose provider config Molio manages (native config files). */
 const PROVIDER_AGENTS = new Set(['codex', 'hermes']);
 
-export function agentsRoutes(runManager: RunManager): Hono {
+export function agentsRoutes(runManager: RunManager, dependencies: {
+  getAgentDef?: typeof getAgentDef;
+  installAgent?: typeof installAgent;
+} = {}): Hono {
   const app = new Hono();
 
   // GET / — list detected agents. Detection is async + TTL-cached + probed in
@@ -168,7 +171,7 @@ export function agentsRoutes(runManager: RunManager): Hono {
   // POST /:agentId/install — one-click install an agent via SSE
   app.post('/:agentId/install', async (c) => {
     const agentId = c.req.param('agentId');
-    const def = getAgentDef(agentId);
+    const def = (dependencies.getAgentDef ?? getAgentDef)(agentId);
 
     if (!def) {
       return c.json({ error: `Unknown agent: ${agentId}` }, 404);
@@ -195,7 +198,7 @@ export function agentsRoutes(runManager: RunManager): Hono {
       s.onAbort(() => ac.abort());
 
       try {
-        await installAgent({
+        await (dependencies.installAgent ?? installAgent)({
           agentId,
           signal: ac.signal,
           onEvent: (event: InstallEvent) => {

@@ -1,3 +1,4 @@
+import { daemonFetch } from '../../api/http';
 /**
  * 「我的」独立页面（/me）—— 账号模块从小弹窗升级为页面（页内 Tab，仿 SettingsPage）。
  *
@@ -42,7 +43,7 @@ export function AccountPage() {
   useEffect(() => {
     if (!loggedIn) { setIsMarketAdmin(false); return; }
     let alive = true;
-    fetch('/api/market/my')
+    daemonFetch('/api/market/my')
       .then((r) => (r.ok ? r.json() : null))
       .then((m: { isAdmin?: boolean } | null) => { if (alive) setIsMarketAdmin(m?.isAdmin === true); })
       .catch(() => { if (alive) setIsMarketAdmin(false); });

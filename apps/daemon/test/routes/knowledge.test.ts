@@ -78,6 +78,22 @@ describe('Knowledge routes — file operations', () => {
       }
     });
 
+    it('serves a cancellable byte-range web stream for raw files', async () => {
+      const relative = 'wiki/images/range.bin';
+      writeFileSync(join(vaultDir, relative), Buffer.alloc(256 * 1024, 0x5a));
+      const res = await app.request(`/api/knowledge/vaults/${vaultId}/raw/${relative}`, {
+        headers: { range: 'bytes=0-' },
+      });
+      assert.equal(res.status, 206);
+      assert.equal(res.headers.get('content-range'), 'bytes 0-262143/262144');
+      assert.ok(res.body);
+      const reader = res.body.getReader();
+      const first = await reader.read();
+      assert.equal(first.done, false);
+      assert.equal(first.value?.[0], 0x5a);
+      await reader.cancel();
+    });
+
     it('does not fall back by basename for wrong directories or vault escapes', async () => {
       for (const target of ['missing/图 (1).png', '../secret.png']) {
         const res = await app.request(`/api/knowledge/vaults/${vaultId}/raw/${encodeURIComponent(target)}`);

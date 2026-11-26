@@ -14,6 +14,7 @@ import { CappedBuffer } from './capped-buffer.js';
 import { createVaultRecency } from './vault-recency.js';
 import { createRendererReadiness } from './renderer-readiness.js';
 import { createRevealGate, createLoadWatchdog, APP_LOAD_REVEAL_TIMEOUT_MS, APP_LOAD_TIMEOUT_MS } from './window-reveal.js';
+import { desktopDaemonEnvironment } from './daemon-env.js';
 
 const errMsg = (err) => (err instanceof Error ? err.message : String(err));
 
@@ -174,7 +175,7 @@ async function startDaemonProduction() {
     // ELECTRON_RUN_AS_NODE=1 makes the Electron binary behave as a standard Node.js process,
     // eliminating the need for users to install Node.js separately.
     const daemonEnv = {
-      ...process.env,
+      ...desktopDaemonEnvironment(process.env),
       ELECTRON_RUN_AS_NODE: '1',
       MOLIO_PORT: String(DAEMON_PORT),
       MOLIO_STATIC_DIR: webStaticDir,

@@ -1,3 +1,4 @@
+import { daemonFetch } from '../api/http';
 /**
  * 市场资源目录运行时拉取 —— daemon 镜像 GET /api/market/listings（官方+用户同目录）。
  *
@@ -29,7 +30,7 @@ export function useMarketCatalog(): CatalogState & { refresh: () => void } {
       return;
     }
     try {
-      const res = await fetch('/api/market/listings' + (force ? '?refresh=1' : ''));
+      const res = await daemonFetch('/api/market/listings' + (force ? '?refresh=1' : ''));
       if (!res.ok) throw new Error(`market ${res.status}`);
       const body = (await res.json()) as { listings: MarketListing[]; stale?: boolean };
       memCache = { at: Date.now(), data: body.listings };

@@ -1,5 +1,7 @@
 // @molio/contracts — shared types for daemon, web, and desktop
 
+export type { AccessSession, AdminLoginRequest } from './access.js';
+
 export type {
   RuntimeAgentDef,
   RuntimeModelOption,

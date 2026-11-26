@@ -1,3 +1,4 @@
+import type { ManagedTransportState } from '../api/managed-events';
 import { useRef, useState, useEffect, useLayoutEffect, useCallback, useMemo, type ReactNode } from 'react';
 import { ChatComposer, buildAttachmentPrefix } from './ChatComposer';
 import type { PastedImage, FileRef } from './ChatComposer';
@@ -23,6 +24,8 @@ export interface ChatSessionViewProps {
   messages: ChatMessage[];
   isRunning: boolean;
   activity?: ActivityInfo | null;
+  transportState?: ManagedTransportState;
+  onRetryTransport?: () => void;
   conversationId?: string | null;
   /** 会话所属库（daemon 的 conversations.vault_id）——题卡取库的真相源。 */
   conversationVaultId?: string | null;
@@ -119,6 +122,7 @@ export function ChatSessionView({
   messages,
   isRunning,
   activity,
+  transportState, onRetryTransport,
   conversationId,
   conversationVaultId,
   onSend,
@@ -406,7 +410,7 @@ export function ChatSessionView({
       isRunning={isRunning}
       onSend={handleSend}
       onCancel={onCancel}
-      disabled={composerDisabled}
+      disabled={composerDisabled || (!!transportState && transportState !== 'open' && transportState !== 'closed')}
       disabledPlaceholder={composerDisabledPlaceholder}
       initialFileRefs={composerInitialFileRefs}
       onOpenConversation={onOpenConversation}
@@ -530,6 +534,10 @@ export function ChatSessionView({
       <ActivityTree activity={activity ?? null} />
 
       {/* 进度状态条: 只在 run 运行时显示 */}
+      {transportState && transportState !== 'open' && transportState !== 'closed' && <div className="admin-stream-notice" data-testid="chat-transport-status" role="status">
+        <span>{t(transportState === 'paused' ? 'adminAccess.streamPaused' : 'adminAccess.streamReconnecting')}</span>
+        <button type="button" data-testid="chat-transport-retry" onClick={onRetryTransport} disabled={transportState === 'checking'}>{t('adminAccess.retryStream')}</button>
+      </div>}
       <RunStatusBar messages={messages} isRunning={isRunning} />
 
       {/* Composer at the bottom — hidden in selection mode, replaced by the
