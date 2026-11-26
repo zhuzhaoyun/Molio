@@ -19,6 +19,24 @@ import * as path from 'path';
  */
 let vault: TempVault;
 
+/**
+ * 体检弹窗是**视口级**模态（portal 到 body 的 fixed 全屏遮罩）。宿主容器
+ * （如 KbChatSessionsPanel 的开合动画容器）带 transform 时，fixed 会被困进
+ * 宿主——弹窗依然「可见」但只占宿主一块（2026-11-26 用户实测的回归，两个
+ * 入口用例各钉一次定位基准）。
+ */
+function assertOverlayCoversViewport(
+  box: { x: number; y: number; width: number; height: number } | null,
+  viewport: { width: number; height: number } | null,
+): void {
+  expect(box).not.toBeNull();
+  const vp = viewport ?? { width: 1280, height: 720 };
+  expect(box!.x).toBeLessThan(50);
+  expect(box!.y).toBeLessThan(50);
+  expect(box!.width).toBeGreaterThan(vp.width - 100);
+  expect(box!.height).toBeGreaterThan(vp.height - 100);
+}
+
 test.describe('KB qa — implicit diagnose directive', () => {
   test.beforeAll(async () => {
     vault = await createTempVault('e2e-diagnose-directive');
@@ -142,6 +160,10 @@ test.describe('Molio 体检面板（听诊器入口）', () => {
 
     await page.locator('[data-testid="kb-btn-lint-wiki"]').click();
     await expect(page.locator('[data-testid="checkup-view-report"]')).toBeVisible();
+    // 弹窗必须以**视口**为定位基准（portal 到 body）：宿主容器带 transform 时
+    // fixed 会被困进宿主——可见但只占宿主一块（2026-11-26 用户实测的回归）。
+    const overlayBox = await page.locator('.kb-overlay.show').boundingBox();
+    assertOverlayCoversViewport(overlayBox, page.viewportSize());
     await expect(page.locator('[data-testid="checkup-verdict"]')).toHaveText('有 1 处问题需要处理');
     await expect(page.locator('[data-testid="checkup-verdict-note"]')).toHaveText('另有 1 处建议留意');
     await expect(page.locator('[data-testid="checkup-item"]')).toHaveCount(2);
@@ -318,5 +340,8 @@ test.describe('Molio 体检入口（悬浮按钮右键菜单）', () => {
     await page.locator('[data-testid="kb-chat-menu-checkup"]').click();
     await expect(page.locator('[data-testid="checkup-dialog"]')).toBeVisible();
     await expect(page.locator('[data-testid="checkup-verdict"]')).toBeVisible();
+    // 同上：可见 ≠ 定位正确——被困进悬浮面板容器的弹窗也是「可见」的。
+    const overlayBox = await page.locator('.kb-overlay.show').boundingBox();
+    assertOverlayCoversViewport(overlayBox, page.viewportSize());
   });
 });

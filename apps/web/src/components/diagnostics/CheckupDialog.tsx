@@ -3,6 +3,7 @@
 // 结果由 daemon 的 GET /api/diagnostics 产出（确定性代码，不是模型生成的猜测），
 // 面板只负责「先给结论、问题给步骤、正常项收进安静区」的排版。
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import type { DiagnosticsReport, DiagnosticItem } from '@molio/contracts';
 import { api } from '../../api/client';
@@ -203,7 +204,12 @@ export function CheckupDialog({
 
   const stepsLabel = t('checkup.stepsLabel');
 
-  return (
+  // portal 到 body：这是**视口级**模态（全屏遮罩 + 居中卡片）。宿主可能是带
+  // transform / overflow 的容器（KbChatSessionsPanel 的开合动画就有）——CSS 规定
+  // 祖先带 transform 时 fixed 的定位基准从视口变成那个祖先，遮罩会被困在宿主里
+  // （实测：悬浮菜单入口打开时弹窗渲染进对话面板，面板关着则整块不可见）。
+  // portal 后无论宿主是谁都按视口定位。
+  return createPortal(
     <div className={`kb-overlay ${open ? 'show' : ''}`} onClick={(e) => e.target === e.currentTarget && onClose()}>
       <div
         className="kb-modal checkup-dialog"
@@ -412,6 +418,7 @@ export function CheckupDialog({
           </div>
         )}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
