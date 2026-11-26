@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { createTempVault, cleanupTempVault, type TempVault } from './helpers/cleanup';
+import { ensureLoggedOut } from './helpers/auth';
 
 /**
  * @area kb-import
@@ -23,7 +24,10 @@ test.describe('KB file panel collapse/expand', () => {
   });
   test.afterAll(async () => { if (vault) await cleanupTempVault(vault); });
 
-  test('collapse button folds the panel into a spine rail; expand restores it', async ({ page }) => {
+  test('collapse button folds the panel into a spine rail; expand restores it', async ({ page, request }) => {
+    // 上架按钮断言要求「未登录」前提：daemon 会话是服务端全局的（见 helpers/auth），
+    // 必须显式登出，再进页面（authStore 首次拉取即拿到登出态，按钮全程不渲染）。
+    await ensureLoggedOut(request);
     await page.goto(`/knowledge?vault=${vault.id}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 15_000 });
 
@@ -31,6 +35,8 @@ test.describe('KB file panel collapse/expand', () => {
     const collapseBtn = page.locator('[data-testid="kb-btn-panel-collapse"]');
     await expect(collapseBtn).toBeVisible({ timeout: 10_000 });
     const panel = page.locator('.kb-file-panel');
+    // 本 spec 全程未登录 → 上架按钮按权限不渲染（门控显隐，无分流 UI）
+    await expect(page.locator('[data-testid="kb-btn-publish-vault"]')).toHaveCount(0);
     await expect(panel).not.toHaveClass(/kb-file-panel--collapsed/);
     await expect(page.locator('.kb-tree-scroll')).toBeVisible();
     const spine = page.locator('[data-testid="kb-panel-spine"]');

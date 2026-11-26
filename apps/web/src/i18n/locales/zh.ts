@@ -1064,8 +1064,9 @@ const zh: Record<string, string> = {
   'resources.pay.noBase': '支付服务未开通，请直接联系购买',
   'resources.pay.download': '下载资源包',
   // ── 社区资源市场：发布向导 / 我的上架 / 知识库入口（Task 10） ──
-  // 「发布到资源库」入口按钮与门禁已移除（2026-11-23），vault.publish* 文案键随之清理；
-  // 发布 tab 自身的文案（publish.*）保留——管线休眠，深链 ?panel=publish 仍在用。
+  // 「发布到资源库」按钮按权限显隐（2026-11-23 修正：仅管理员可见），vault.publish 恢复；
+  // 旧门禁分流的 publishRole* 文案不回来——分流 UI 已永久移除。
+  'vault.publish': '发布到资源库',
   // ── 知识库列表：行内 ⋯ 菜单（复制 ID / 定位文件 / 移除） ──
   'vault.listHeader': '全部知识库',
   'vault.listEmpty': '还没有知识库',

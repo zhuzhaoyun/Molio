@@ -60,6 +60,9 @@ interface KbFilePanelProps {
   treeError?: string | null;
   /** 重试拉树（错误条上的「重试」）。 */
   onRetryTree?: () => void;
+  /** 上架当前库到资源市场。**仅管理员渲染**——调用方按权限决定传不传
+   *  （未判定/非管理员不传，按钮不出现，没有任何分流 UI）。 */
+  onPublishVault?: () => void;
   children?: ReactNode;
 }
 
@@ -93,6 +96,7 @@ export const KbFilePanel = forwardRef<KbFilePanelHandle, KbFilePanelProps>(funct
   onMoveFile,
   treeError,
   onRetryTree,
+  onPublishVault,
   children,
 }, ref) {
   const { t } = useI18n();
@@ -637,8 +641,30 @@ export const KbFilePanel = forwardRef<KbFilePanelHandle, KbFilePanelProps>(funct
             </svg>
           )}
         </button>
-        {/* 目录栏折叠 — 原位置是「发布到资源库」按钮（资源发布未开放，点击只会被
-            门禁分流到官网联系页，2026-11-23 移除）。注意与左边「折叠全部/展开全部」
+        {/* 上架 — 仅管理员可见（权限门控渲染）：accent 描边胶囊的量级与导入的
+            无边框 accent 图标区分开。2026-11-23 修正：按钮曾因「非管理员点击被
+            分流到官网」整体移除，正解是按权限显隐（无权限者根本看不到，分流 UI
+            永久移除）。位置在折叠按钮左侧——边缘位留给「收起面板」这种视图控件，
+            内容动作靠内；顺带把两颗形近的折叠按钮（树/栏）隔开。 */}
+        {onPublishVault && (
+          <button
+            type="button"
+            className="kb-btn kb-btn-publish"
+            title={t('vault.publish')}
+            onClick={onPublishVault}
+            data-testid="kb-btn-publish-vault"
+          >
+            {/* upload — 与左侧导入的 folder-input 互为镜像：横向箭头进文件夹
+                （入库）、托盘向上箭头出库（上架）。 */}
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+              <polyline points="17 8 12 3 7 8" />
+              <line x1="12" y1="3" x2="12" y2="15" />
+            </svg>
+          </button>
+        )}
+        {/* 目录栏折叠 — 2026-11-23 从「发布到资源库」的原边缘槽位左移一格换入
+            （发布按钮同日恢复为管理员可见，见上）。注意与左边「折叠全部/展开全部」
             （管树节点）是两回事：这颗管目录栏本身。折叠后成「书脊」竖条
             （库名竖排），展开入口不丢。 */}
         <button
