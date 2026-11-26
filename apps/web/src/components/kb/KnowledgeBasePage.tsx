@@ -38,6 +38,8 @@ import { ImportConflictDialog } from './ImportConflictDialog';
 import { ContextMenu, type MenuItem } from './ContextMenu';
 import { useI18n } from '../../i18n';
 import { api } from '../../api/client';
+import { useAuthStatus } from '../../stores/authStore';
+import { useMarketRole } from '../../stores/marketRoleStore';
 import { BookIcon, ChatIcon, StethoscopeIcon } from '../icons';
 import { openInNewWindow } from '../../utils/openWindow';
 import { shouldReuseWindowOnVaultSwitch } from '../../utils/vaultSwitchWindow';
@@ -866,9 +868,18 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
     tabs.openTab({ id: PUBLISH_TAB_ID, type: 'publish', title: t('publish.tabTitle'), vaultId });
   }, [tabs, showToast, t]);
 
-  // 「发布到资源库」入口按钮已随门禁一并移除（资源发布未开放，2026-11-23）：
-  // 页内发布 tab 基础设施保留休眠（openPublishTab / 发布 pane / ?panel=publish 深链），
-  // 将来功能开放时恢复 UI 入口即可。
+  // 「发布到资源库」按钮按权限显隐（2026-11-23 修正）：旧版按钮对所有人渲染、
+  // 非管理员点击被分流到官网联系页——那正是「按钮很奇怪」的根源；现在未判定/
+  // 非管理员**不渲染按钮**，分流 UI 永久移除。身份判定走 marketRoleStore
+  // （daemon /api/market/role 本地即答，挂载自动判定）。发布管线本身不设门槛的
+  // 现状不变：按钮只是管理员的管理面入口；?panel=publish 深链保留（E2E 用）。
+  const auth = useAuthStatus();
+  const { role: marketRole } = useMarketRole();
+  const canPublishVault = auth?.loggedIn === true && marketRole === 'admin';
+  const handlePublishActive = useCallback(() => {
+    if (!activeVaultId) return;
+    openPublishTab(activeVaultId);
+  }, [activeVaultId, openPublishTab]);
 
   // ?panel=publish — 发布 tab 的深链入口。UI 上没有按钮了，market-community 的
   // 发布闭环 E2E 经这条深链进入发布管线；将来恢复 UI 入口时也落到 openPublishTab。
@@ -1522,6 +1533,7 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
         onMoveFile={handleMoveFile}
         treeError={kb.treeError}
         onRetryTree={() => { void handleRefreshTree(); }}
+        onPublishVault={canPublishVault ? handlePublishActive : undefined}
       >
         <div className="kb-resize-handle" onMouseDown={handleResizeStart} />
       </KbFilePanel>
