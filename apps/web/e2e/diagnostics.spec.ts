@@ -290,6 +290,8 @@ test.describe('Molio 体检面板（听诊器入口）', () => {
     await expect(confirmView).toContainText('运行日志');
     await expect(confirmView).toContainText('系统与版本信息');
     await expect(confirmView).toContainText('不包含对话内容');
+    // 确认页必须有联系支持的入口（二维码），否则「发给支持人员」就是一句死路文案
+    await expect(confirmView.locator('[data-testid="checkup-contact"]')).toBeVisible();
     expect(bundlePosts).toBe(0);
 
     // 确认后结果视图给出结论 + 文件路径（等结果出来再数请求，避免与路由拦截竞速）
@@ -297,6 +299,8 @@ test.describe('Molio 体检面板（听诊器入口）', () => {
     const resultView = page.locator('[data-testid="checkup-view-result"]');
     await expect(resultView).toContainText('支持包已生成');
     await expect(resultView).toContainText('C:\\Users\\demo\\Documents\\molio-support-20261124-150205.txt');
+    // 「发给支持人员」不能是死路文案：结果页同样要有联系入口
+    await expect(resultView.locator('[data-testid="checkup-contact"]')).toBeVisible();
     // 恰好发一次请求：不预取（上面 bundlePosts===0 已证）、不重复
     expect(bundlePosts).toBe(1);
     // 纯浏览器没有桌面桥：「在文件夹中显示」不渲染，而不是点了没反应

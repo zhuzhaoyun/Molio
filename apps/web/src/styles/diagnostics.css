@@ -226,6 +226,29 @@
 }
 .checkup-view-actions { display: flex; gap: 8px; margin-top: 14px; }
 
+/* ── 联系支持（用户群二维码）──
+   码图自带白底静区（裁掉了官网图上的「7 天内有效」角标），不另做底板：
+   暗色下白底图 + 细描边即可扫。说明行是安静的一行，不是 CTA。 */
+.checkup-contact {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 14px;
+}
+.checkup-contact-qr {
+  flex: none;
+  width: 84px;
+  height: 84px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.checkup-contact-caption {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--text-muted);
+}
+
 /* ── 无障碍 ── */
 .checkup-dialog .kb-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 @media (prefers-reduced-motion: reduce) {

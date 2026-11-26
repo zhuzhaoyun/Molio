@@ -96,6 +96,10 @@ export function CheckupDialog({
   // 支持包生成状态机：idle → working → done | failed
   const [bundle, setBundle] = useState<'idle' | 'working' | 'done' | 'failed'>('idle');
   const [bundlePath, setBundlePath] = useState<string | null>(null);
+  // 用户群二维码优先拉官网当前码（官网服务器端每周换图即可，App 不用发版）；
+  // 拉不到（离线）回退打包快照。快照是裁掉「7 天内有效」角标后的码身——
+  // 界面上不该展示一条永远过期的说明。注意：hook 必须在 `open` 早退之前。
+  const [qrRemoteFailed, setQrRemoteFailed] = useState(false);
 
   // 桌面桥在整个会话期不变（preload 注入一次），memo 一次即可
   const bridge = useMemo(() => readDesktopBridge(window), []);
@@ -204,6 +208,22 @@ export function CheckupDialog({
 
   const stepsLabel = t('checkup.stepsLabel');
 
+  // 联系支持块（确认页 + 生成结果两页共用）：「发给支持人员」不能是死路文案。
+  const renderSupportContact = () => (
+    <div className="checkup-contact" data-testid="checkup-contact">
+      <img
+        className="checkup-contact-qr"
+        data-testid="checkup-contact-qr"
+        src={qrRemoteFailed
+          ? `${import.meta.env.BASE_URL}images/qrcode.png`
+          : `https://molio.cn/images/qrcode.png?v=${new Date().toISOString().slice(0, 10)}`}
+        alt={t('checkup.contactAlt')}
+        onError={() => setQrRemoteFailed(true)}
+      />
+      <p className="checkup-contact-caption">{t('checkup.contactCaption')}</p>
+    </div>
+  );
+
   // portal 到 body：这是**视口级**模态（全屏遮罩 + 居中卡片）。宿主可能是带
   // transform / overflow 的容器（KbChatSessionsPanel 的开合动画就有）——CSS 规定
   // 祖先带 transform 时 fixed 的定位基准从视口变成那个祖先，遮罩会被困在宿主里
@@ -285,6 +305,7 @@ export function CheckupDialog({
                 <li>{t('checkup.bundleItemEnv')}</li>
               </ul>
               <p className="checkup-note">{t('checkup.bundleExcludes')}</p>
+              {renderSupportContact()}
             </div>
           )}
 
@@ -298,6 +319,7 @@ export function CheckupDialog({
                 </h3>
                 <div className="checkup-path">{bundlePath}</div>
                 <p className="checkup-verdict-note">{t('checkup.bundleDoneHint')}</p>
+                {renderSupportContact()}
                 {canReveal && (
                   <div className="checkup-view-actions">
                     <button
@@ -319,6 +341,7 @@ export function CheckupDialog({
                   <span>{t('checkup.bundleFailedTitle')}</span>
                 </h3>
                 <p className="checkup-verdict-note">{t('checkup.bundleFailedHint')}</p>
+                {renderSupportContact()}
                 {(bridge?.getLogPath && bridge?.openPath) && (
                   <div className="checkup-view-actions">
                     <button type="button" className="kb-btn" data-testid="checkup-open-log-folder" onClick={() => { void openLogFolder(); }}>

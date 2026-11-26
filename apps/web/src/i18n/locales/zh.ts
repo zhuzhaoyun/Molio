@@ -1240,6 +1240,8 @@ const zh: Record<string, string> = {
   'checkup.bundleFailedTitle': '支持包没有生成成功',
   'checkup.bundleFailedHint': '请打开日志文件夹，把里面的文件发给 Molio 支持人员。',
   'checkup.bundleBackToReport': '返回体检结果',
+  'checkup.contactCaption': '扫码加入用户群，联系 Molio 支持人员',
+  'checkup.contactAlt': 'Molio 用户交流群二维码',
 };
 
 export default zh;

@@ -47,6 +47,8 @@ describe('Molio 体检文案', () => {
     'checkup.bundleFailedTitle',
     'checkup.bundleFailedHint',
     'checkup.bundleBackToReport',
+    'checkup.contactCaption',
+    'checkup.contactAlt',
   ];
 
   it('每条文案中英双语', () => {

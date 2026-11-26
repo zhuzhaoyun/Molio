@@ -1235,6 +1235,8 @@ const en: Record<string, string> = {
   'checkup.bundleFailedTitle': 'The support bundle was not created',
   'checkup.bundleFailedHint': 'Please open the logs folder and send the files in it to Molio support.',
   'checkup.bundleBackToReport': 'Back to checkup results',
+  'checkup.contactCaption': 'Scan to join the user group and reach Molio support.',
+  'checkup.contactAlt': 'Molio user group QR code',
 };
 
 export default en;
