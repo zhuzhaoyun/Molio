@@ -681,7 +681,9 @@ test.describe('Skills custom instructions on LIBRARY rows', () => {
       await expect(page.getByTestId('custom-instructions-saved')).toBeVisible({ timeout: 10_000 });
       await page.keyboard.press('Escape');
       // Overlay badge appears on the library row (mirrors bundled rows).
-      await expect(page.getByTestId(`skill-custom-badge-${skill.id}`)).toBeVisible();
+      // 10s 而非默认 5s：徽章要等保存后的列表重拉落地（onSaved 的三个并发重拉之一），
+      // 共享 runner 被挤占时这一拉可以超过 5s——本地延迟 6s 复现：徽章只是迟到（~7.6s），不缺席。
+      await expect(page.getByTestId(`skill-custom-badge-${skill.id}`)).toBeVisible({ timeout: 10_000 });
 
       // Reopen → persisted.
       await page.getByTestId(`skill-custom-${skill.id}`).click();
