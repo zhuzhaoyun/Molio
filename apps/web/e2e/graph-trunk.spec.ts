@@ -132,8 +132,20 @@ async function gotoGraph(page: Page, id: string = vaultId): Promise<void> {
   await expect(page.locator('[data-testid="graph-canvas"] canvas')).toBeVisible({ timeout: 15000 });
 }
 
+/** 引擎快照等来 trunk 节点（首个 cN 簇 blob 在场）。指示器可见 ≠ 快照已就位——React 提交
+ *  指示器与 setTrunkData 落引擎之间有窗，慢机 nightly 一夜 4 条同签名速败实抓
+ *  （findBlobScreen → null / blobs[0] 读 .x 于 undefined）。一次性采样快照/坐标前统一先过这道闸。 */
+async function waitForTrunkNodes(page: Page): Promise<void> {
+  await page.waitForFunction(
+    () => !!window.__graphEngine?.getSnapshot()?.nodes.some((n) => /^c\d+$/.test(n.key)),
+    null,
+    { timeout: 8000, polling: 150 },
+  );
+}
+
 /** 从引擎快照找一个簇 blob（key 形如 cN）→ 屏幕坐标 + sim 坐标（收起回位断言用） */
 async function findBlobScreen(page: Page): Promise<{ sx: number; sy: number; key: string; bx: number; by: number } | null> {
+  await waitForTrunkNodes(page);
   return page.evaluate(() => {
     const eng = window.__graphEngine;
     const snap = eng?.getSnapshot();
@@ -241,8 +253,10 @@ test('切换持久化：trunk→full 后 reload 仍是全量；再点回枝干',
 
   await page.click('[data-testid="graph-view-mode-toggle"]');
   await expect(page.locator('[data-testid="graph-trunk-indicator"]')).toBeHidden({ timeout: 10000 });
-  const fullCount = await page.evaluate(() => window.__graphEngine?.getSnapshot()?.nodes.length ?? -1);
-  expect(fullCount).toBeGreaterThan(100); // 全量 511+ 节点（对照 trunk ≤45）
+  // 指示器隐藏 ≠ 引擎已换全量数据（同一落引擎窗口）——poll 等全量节点在场
+  await expect
+    .poll(() => page.evaluate(() => window.__graphEngine?.getSnapshot()?.nodes.length ?? -1), { timeout: 8000 })
+    .toBeGreaterThan(100); // 全量 511+ 节点（对照 trunk ≤45）
 
   // 落盘有 300ms 防抖；reload 后仍应保持全量（显式选择必须尊重——用户偏好规则）
   await page.waitForTimeout(600);
@@ -283,8 +297,10 @@ test('筛选偏离默认：开关置灰，图走全量（不静默留在 trunk�
   await orphans.uncheck();
   await expect(page.locator('[data-testid="graph-trunk-indicator"]')).toBeHidden({ timeout: 10000 });
   await expect(page.locator('[data-testid="graph-view-mode-toggle"]')).toBeDisabled();
-  const count = await page.evaluate(() => window.__graphEngine?.getSnapshot()?.nodes.length ?? -1);
-  expect(count).toBeGreaterThan(100); // 渲染的是全量
+  // 同上：fail-open 切全量也是异步落引擎——poll 等全量节点在场
+  await expect
+    .poll(() => page.evaluate(() => window.__graphEngine?.getSnapshot()?.nodes.length ?? -1), { timeout: 8000 })
+    .toBeGreaterThan(100); // 渲染的是全量
   // 还原（不污染后续用例）
   await orphans.check();
   await expect(page.locator('[data-testid="graph-trunk-indicator"]')).toBeVisible({ timeout: 10000 });
@@ -303,6 +319,7 @@ test('degenerate 库：横幅提示但仍渲染 trunk（不白屏不自动退全
 test('单击铁律：trunk 态点 hub 节点 = 打开文件', async ({ page }) => {
   await gotoGraph(page);
   await expect(page.locator('[data-testid="graph-trunk-indicator"]')).toBeVisible({ timeout: 20000 });
+  await waitForTrunkNodes(page);
   // 从 snapshot 找 hub（key 以 .md 结尾且非簇 id cN）→ 换算屏幕坐标点击
   const hubScreen = await page.evaluate(() => {
     const eng = window.__graphEngine;
@@ -464,6 +481,7 @@ test('展开后空闲红线（H2）：动画与批次停息后状态稳定，#41
 test('终审 #1：已展开簇的成员搜索只定位——收起再展开仍回簇位（位置缓存不被原点锚覆写）', async ({ page }) => {
   await gotoGraph(page);
   await expect(page.locator('[data-testid="graph-trunk-indicator"]')).toBeVisible({ timeout: 20000 });
+  await waitForTrunkNodes(page);
   // 挑离原点最远的簇 blob（判别度：腐化时成员会跳到原点锚）
   const blob = await page.evaluate(() => {
     const eng = window.__graphEngine;
@@ -567,6 +585,7 @@ test('终审 #2：收起后的簇不被后台刷新复活', async ({ page }) => 
 test('终审 #3：expand B → collapse B → expand A，A↔B 连接仍在（spoke 与展开态解耦）', async ({ page }) => {
   await gotoGraph(page);
   await expect(page.locator('[data-testid="graph-trunk-indicator"]')).toBeVisible({ timeout: 20000 });
+  await waitForTrunkNodes(page);
   // 拿两个簇 blob
   const blobs = await page.evaluate(() => {
     const eng = window.__graphEngine;
