@@ -49,6 +49,8 @@ export function makeDeps(overrides: Partial<DiagnosticsDeps> = {}): DiagnosticsD
     env: {},
     platform: 'win32',
     arch: 'x64',
+    // 测试机非 Windows：默认探不出 build 号（与生产行为一致），需要 build 号的用例显式覆写
+    windowsBuild: () => null,
     uptimeSec: () => 3725,
     listVaults: () => [{ id: 'v1', name: '示例', path: '/vaults/demo', fileCount: 3, createdAt: 0 }],
     pathExists: () => true,

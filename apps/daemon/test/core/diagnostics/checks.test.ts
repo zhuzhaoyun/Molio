@@ -213,7 +213,7 @@ describe('checkUpdateChannel', () => {
 
 describe('checkDaemonExits', () => {
   it('summary=null → skip，说明读不到日志', () => {
-    const item = checkDaemonExits(null, null, null, NOW, 3725);
+    const item = checkDaemonExits(null, null, null, null, NOW, 3725);
     assert.equal(item.code, 'daemon.exits');
     assert.equal(item.level, 'skip');
     assert.equal(item.title, '后台服务');
@@ -222,7 +222,7 @@ describe('checkDaemonExits', () => {
 
   it('24 小时内异常退出 → error，带最近时间、退出码与安全软件步骤', () => {
     const summary = makeSummary({ abnormal24h: 2, abnormal7d: 2, lastAbnormalAt: T_0905, lastAbnormalCodes: ['3758096392', '1'] });
-    const item = checkDaemonExits(summary, ['360 安全卫士', '火绒'], 'C:\\Program Files\\Molio', NOW, 7200);
+    const item = checkDaemonExits(summary, ['360 安全卫士', '火绒'], 'C:\\Program Files\\Molio', null, NOW, 7200);
     assert.equal(item.code, 'daemon.exits');
     assert.equal(item.level, 'error');
     assert.equal(item.title, '后台服务异常退出过');
@@ -230,6 +230,7 @@ describe('checkDaemonExits', () => {
     assert.equal(item.detail, '退出码：3758096392、1');
     assert.deepEqual(item.steps, [
       '您的电脑上装有 360 安全卫士、火绒，它可能把 Molio 误当成可疑程序。请把 Molio 的安装目录加入它的信任区（白名单）：C:\\Program Files\\Molio',
+      '如果 Molio 的文件已经被安全软件隔离过，退出安全软件并不会找回文件——请到安全软件的「隔离区／恢复区」里恢复，或重新安装一次 Molio',
       '然后重启 Molio，再试一次刚才失败的操作',
     ]);
     assert.deepEqual(item.actions, [{ code: 'restart-app', label: '重启 Molio' }]);
@@ -237,19 +238,33 @@ describe('checkDaemonExits', () => {
 
   it('24 小时内异常退出但无时间与安全软件 → 通用提示，不追加目录', () => {
     const summary = makeSummary({ abnormal24h: 1, abnormal7d: 1, lastAbnormalAt: null, lastAbnormalCodes: [] });
-    const item = checkDaemonExits(summary, null, null, NOW, 7200);
+    const item = checkDaemonExits(summary, null, null, null, NOW, 7200);
     assert.equal(item.level, 'error');
     assert.equal(item.summary, '最近 24 小时 Molio 的后台服务意外停止了 1 次');
     assert.ok(!('detail' in item));
     assert.deepEqual(item.steps, [
       '如果电脑上装有 360、火绒、电脑管家等安全软件，请把 Molio 的安装目录加入它们的信任区（白名单）',
+      '如果 Molio 的文件已经被安全软件隔离过，退出安全软件并不会找回文件——请到安全软件的「隔离区／恢复区」里恢复，或重新安装一次 Molio',
+      '然后重启 Molio，再试一次刚才失败的操作',
+    ]);
+  });
+
+  it('杀软步骤同时列安装目录与数据目录，并含隔离区恢复提示', () => {
+    // 2026-11-25 客户装机报障的教训：①一键安装的 AI 运行时（claude.exe，无数字签名）
+    // 落在数据目录，杀软同样会盯上，白名单必须覆盖两个目录；②已被隔离的文件退出
+    // 杀软不会自动恢复，必须去隔离区捞或重装
+    const summary = makeSummary({ abnormal24h: 1, abnormal7d: 1, lastAbnormalAt: null, lastAbnormalCodes: [] });
+    const item = checkDaemonExits(summary, ['火绒'], 'C:\\Users\\u\\AppData\\Local\\Programs\\Molio', 'C:\\Users\\u\\.molio', NOW, 7200);
+    assert.deepEqual(item.steps, [
+      '您的电脑上装有 火绒，它可能把 Molio 误当成可疑程序。请把 Molio 的安装目录与数据目录都加入它的信任区（白名单）：安装目录 C:\\Users\\u\\AppData\\Local\\Programs\\Molio；数据目录 C:\\Users\\u\\.molio（一键安装的 AI 运行时也在这里）',
+      '如果 Molio 的文件已经被安全软件隔离过，退出安全软件并不会找回文件——请到安全软件的「隔离区／恢复区」里恢复，或重新安装一次 Molio',
       '然后重启 Molio，再试一次刚才失败的操作',
     ]);
   });
 
   it('7 天窗口内退出 → warn，forced24h=0 时不追加强制结束子句', () => {
     const summary = makeSummary({ abnormal7d: 1 });
-    const item = checkDaemonExits(summary, null, null, NOW, 7200);
+    const item = checkDaemonExits(summary, null, null, null, NOW, 7200);
     assert.equal(item.level, 'warn');
     assert.equal(item.title, '后台服务退出过');
     assert.equal(item.summary, '过去 7 天后台服务意外停止了 1 次');
@@ -259,13 +274,13 @@ describe('checkDaemonExits', () => {
 
   it('只有强制结束 → warn，追加强制结束子句', () => {
     const summary = makeSummary({ forced24h: 2 });
-    const item = checkDaemonExits(summary, null, null, NOW, 7200);
+    const item = checkDaemonExits(summary, null, null, null, NOW, 7200);
     assert.equal(item.level, 'warn');
     assert.equal(item.summary, '过去 7 天后台服务意外停止了 0 次，关闭时无响应被强制结束 2 次');
   });
 
   it('全部正常 → ok', () => {
-    const item = checkDaemonExits(makeSummary(), null, null, NOW, 3600);
+    const item = checkDaemonExits(makeSummary(), null, null, null, NOW, 3600);
     assert.equal(item.level, 'ok');
     assert.equal(item.title, '后台服务');
     assert.equal(item.summary, '运行中 · 已运行 1 小时，没有异常退出的记录');

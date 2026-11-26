@@ -5,6 +5,7 @@ import path from 'node:path';
 import type Database from 'better-sqlite3';
 import type { AgentInfo, DiagnosticItem, DiagnosticsReport, Vault } from '@molio/contracts';
 import { listVaults } from '../db.js';
+import { getWindowsBuildNumber } from '../runtimes/install.js';
 import {
   parseDaemonExits,
   parseUpdaterStatus,
@@ -45,6 +46,8 @@ export interface DiagnosticsDeps {
   env: NodeJS.ProcessEnv;
   platform: NodeJS.Platform;
   arch: string;
+  /** Windows build 号探针（os.release 末段，如 "10.0.19045" → 19045）；非 Windows 或解析失败 → null */
+  windowsBuild: () => number | null;
   uptimeSec: () => number;
   listVaults: () => Vault[]; // 抛错 → []（DB 读不出时体检照常出，只是没有库条目）
   pathExists: (p: string) => boolean | null; // 抛错 → null
@@ -139,7 +142,7 @@ export async function runDiagnostics(deps: DiagnosticsDeps): Promise<Diagnostics
   const items: DiagnosticItem[] = [
     checkVersion(version),
     checkUpdateChannel(updaterStatus, version),
-    checkDaemonExits(exitSummary, security, installDir, now, uptime),
+    checkDaemonExits(exitSummary, security, installDir, dataDir, now, uptime),
     checkSecuritySoftware(security, deps.platform),
     checkAgents(agents),
     ...checkVaults(vaultProbes, deps.platform),
@@ -149,11 +152,24 @@ export async function runDiagnostics(deps: DiagnosticsDeps): Promise<Diagnostics
   return {
     generatedAt: now,
     version,
-    platform: `${deps.platform} ${deps.arch}`,
+    // 平台行带 Windows build 号：Molio（Electron 40）与 Claude Code（Bun）的最低
+    // 要求线同为 build 17763——老系统是「应用能跑但装不上运行时」类报障的高频根因，
+    // 支持人员拿到报告第一眼就要能看到它（2026-11-25 客户装机报障的教训）。
+    // 探测失败/非 Windows 不追加版本段，宁缺毋占位。
+    platform: `${deps.platform} ${deps.arch}${windowsBuildSuffix(deps.platform, deps.windowsBuild())}`,
     installDir,
     daemonUptimeSec: uptime,
     items: sortByLevel(items),
   };
+}
+
+/**
+ * 平台行的 Windows 版本段。只在拿到 build 号时追加；Windows 11（build ≥ 22000）
+ * 与 Windows 10（< 22000）分别标注——这条线正是报障归因最常查的一条。
+ */
+function windowsBuildSuffix(platform: NodeJS.Platform, build: number | null): string {
+  if (platform !== 'win32' || build === null) return '';
+  return ` · Windows ${build >= 22000 ? 11 : 10} 内部版本 ${build}`;
 }
 
 /** 两行：标题行 + 版本/平台/运行时长；版本取不到写「未知」 */
@@ -225,6 +241,7 @@ export function createDiagnosticsDeps(opts: {
     env: process.env,
     platform: process.platform,
     arch: process.arch,
+    windowsBuild: getWindowsBuildNumber,
     uptimeSec: () => Math.floor(process.uptime()),
     listVaults: () => listVaults(db),
     pathExists: (p) => {

@@ -66,6 +66,24 @@ describe('runDiagnostics 编排', () => {
     assert.equal((await runDiagnostics(makeDeps())).installDir, null);
   });
 
+  it('runDiagnostics: Windows 平台行带 build 号与版本名', async () => {
+    // LTSB 2016（build 14393）—— Molio 与 Claude Code 的最低要求线正是 17763，
+    // 报告不带 build 号时，支持人员看不出「系统过老」是根因
+    const r = await runDiagnostics(makeDeps({ windowsBuild: () => 14393 }));
+    assert.equal(r.platform, 'win32 x64 · Windows 10 内部版本 14393');
+
+    // 现代主力 build（22H2）
+    const r2 = await runDiagnostics(makeDeps({ windowsBuild: () => 19045 }));
+    assert.equal(r2.platform, 'win32 x64 · Windows 10 内部版本 19045');
+  });
+
+  it('runDiagnostics: build 探测失败或非 Windows 不追加版本段', async () => {
+    // 探测失败（os.release 解析不出）→ 退回纯平台串，不写「未知」占位
+    assert.equal((await runDiagnostics(makeDeps({ windowsBuild: () => null }))).platform, 'win32 x64');
+    // 非 Windows 平台同样只有平台串
+    assert.equal((await runDiagnostics(makeDeps({ platform: 'darwin', windowsBuild: () => null }))).platform, 'darwin x64');
+  });
+
   it('runDiagnostics: 同步探测自身抛错按 null 处理', async () => {
     const r = await runDiagnostics(makeDeps({ pathExists: () => { throw new Error('boom'); } }));
     assert.equal(r.items.find((i) => i.code === 'vault.missing'), undefined);

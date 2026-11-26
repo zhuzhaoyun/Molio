@@ -66,20 +66,41 @@ export function checkUpdateChannel(status: UpdaterLogStatus | null, currentVersi
   return { code: 'update.channel', level: 'ok', title: '自动更新', summary: `已是最新${timeSuffix}` };
 }
 
-// 安全软件相关步骤：有已知名单就点名，没有就给常见名单让用户自查
-function antivirusSteps(securitySoftware: string[] | null, installDir: string | null): string[] {
-  let first =
+// 安全软件相关步骤：有已知名单就点名，没有就给常见名单让用户自查。
+// 2026-11-25 客户装机报障的两条教训（都来自现场）：
+// ① 白名单必须同时覆盖安装目录与数据目录——数据目录里有一键安装的 AI 运行时
+//    （claude.exe 等，同样没有数字签名），杀软盯的不只是主程序；
+// ② 已被隔离的文件，退出杀软并不会自动恢复——必须去「隔离区／恢复区」里捞，
+//    否则用户「退了火绒还是不行」时会误判白名单没用。
+const QUARANTINE_STEP =
+  '如果 Molio 的文件已经被安全软件隔离过，退出安全软件并不会找回文件——请到安全软件的「隔离区／恢复区」里恢复，或重新安装一次 Molio';
+
+function whitelistDirs(installDir: string | null, dataDir: string | null): string {
+  // 单目录：句首已点名（安装目录／数据目录），后缀只给路径不重复标签；
+  // 双目录：分别标注，避免两个裸路径让用户分不清谁是谁
+  if (installDir && dataDir) {
+    return `：安装目录 ${installDir}；数据目录 ${dataDir}（一键安装的 AI 运行时也在这里）`;
+  }
+  const single = installDir ?? dataDir;
+  return single ? `：${single}` : '';
+}
+
+function antivirusSteps(securitySoftware: string[] | null, installDir: string | null, dataDir: string | null): string[] {
+  const dirs = whitelistDirs(installDir, dataDir);
+  const dirNoun =
+    installDir && dataDir ? '安装目录与数据目录都' : dataDir && !installDir ? '数据目录' : '安装目录';
+  const first =
     securitySoftware !== null && securitySoftware.length > 0
-      ? `您的电脑上装有 ${securitySoftware.join('、')}，它可能把 Molio 误当成可疑程序。请把 Molio 的安装目录加入它的信任区（白名单）`
-      : '如果电脑上装有 360、火绒、电脑管家等安全软件，请把 Molio 的安装目录加入它们的信任区（白名单）';
-  if (installDir) first += `：${installDir}`;
-  return [first, '然后重启 Molio，再试一次刚才失败的操作'];
+      ? `您的电脑上装有 ${securitySoftware.join('、')}，它可能把 Molio 误当成可疑程序。请把 Molio 的${dirNoun}加入它的信任区（白名单）${dirs}`
+      : `如果电脑上装有 360、火绒、电脑管家等安全软件，请把 Molio 的${dirNoun}加入它们的信任区（白名单）${dirs}`;
+  return [first, QUARANTINE_STEP, '然后重启 Molio，再试一次刚才失败的操作'];
 }
 
 export function checkDaemonExits(
   summary: DaemonExitSummary | null,
   securitySoftware: string[] | null,
   installDir: string | null,
+  dataDir: string | null,
   now: number,
   uptimeSec: number,
 ): DiagnosticItem {
@@ -100,7 +121,7 @@ export function checkDaemonExits(
       title: '后台服务异常退出过',
       summary: `最近 24 小时 Molio 的后台服务意外停止了 ${summary.abnormal24h} 次${timeSuffix}`,
       ...(summary.lastAbnormalCodes.length > 0 ? { detail: `退出码：${summary.lastAbnormalCodes.join('、')}` } : {}),
-      steps: antivirusSteps(securitySoftware, installDir),
+      steps: antivirusSteps(securitySoftware, installDir, dataDir),
       actions: [RESTART_APP],
     };
   }
@@ -111,7 +132,7 @@ export function checkDaemonExits(
       level: 'warn',
       title: '后台服务退出过',
       summary: `过去 7 天后台服务意外停止了 ${summary.abnormal7d} 次${forcedSuffix}`,
-      steps: antivirusSteps(securitySoftware, installDir),
+      steps: antivirusSteps(securitySoftware, installDir, dataDir),
       actions: [RESTART_APP],
     };
   }
