@@ -33,7 +33,7 @@ import { useSplitView } from '../../stores/splitViewStore';
 import { useCompanionFile } from '../../hooks/useCompanionFile';
 import { FilePicker } from '../FilePicker';
 import { ImportModal, CoseInstallPrompt, InputDialog, ConfirmDialog } from './KbModals';
-import { CheckupDialog } from '../diagnostics/CheckupDialog';
+import { setCheckupOpen } from '../../stores/checkupStore';
 import { ImportConflictDialog } from './ImportConflictDialog';
 import { ContextMenu, type MenuItem } from './ContextMenu';
 import { useI18n } from '../../i18n';
@@ -171,8 +171,6 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
   const [pendingUrlNav, setPendingUrlNav] = useState<UrlFileNavigation | null>(null);
   const [showOutline, setShowOutline] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
-  // Molio 体检面板（听诊器入口）：无 Wiki / 无 agent 也总能打开——体检查的是 Molio 自身
-  const [checkupOpen, setCheckupOpen] = useState(false);
   // 发布 tab 表单是否有已填内容（PublishForm 上报）——关 tab 前的放弃确认用
   const publishDirtyRef = useRef(false);
 
@@ -856,11 +854,6 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
     if (!agentId) return;
     panelRef.current?.runWikiOp({ mode: 'build' });
   }, [kb.activeVault, agentId]);
-  const handleLintWiki = useCallback(() => {
-    if (!kb.activeVault || !kb.wikiInitialized) return;
-    if (!agentId) return;
-    panelRef.current?.runWikiOp({ mode: 'lint' });
-  }, [kb.activeVault, kb.wikiInitialized, agentId]);
   // 发布当前知识库到资源库：打开/激活页内 publish tab（store per-vault，
   // id 固定即天然单例）。要求登录；未登录挂起登录意图，登录成功后续接打开。
   const openPublishTab = useCallback((vaultId: string) => {
@@ -1856,15 +1849,8 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
         onClose={() => kb.setShowCoseInstallPrompt(false)}
       />
 
-      {/* Molio 体检：听诊器按钮的确定性体检面板；Wiki 内容检查收进面板安静区（onWikiLint） */}
-      <CheckupDialog
-        open={checkupOpen}
-        onClose={() => setCheckupOpen(false)}
-        wikiInitialized={!!kb.activeVault && kb.wikiInitialized}
-        canRunAgent={!!agentId}
-        onWikiLint={() => { setCheckupOpen(false); handleLintWiki(); }}
-        onAskDoctor={(m) => { setCheckupOpen(false); panelRef.current?.askDoctor(m); }}
-      />
+      {/* Molio 体检弹窗实例在 KbChatSessionsPanel 的 portal 层（悬浮按钮右键菜单共享同一实例），
+          这里听诊器按钮只写全局开合 */}
 
       {/* Context menu */}
       {ctxMenu && (

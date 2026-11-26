@@ -471,6 +471,7 @@ export default function App() {
         )}
         <KbChatSessionsPanel
           ref={kbChatPanelRef}
+          agentId={selectedAgent}
         />
         <UpdateNotification />
         <PreloadToast />

@@ -306,3 +306,17 @@ test.describe('Molio 体检面板（听诊器入口）', () => {
     await expect(resultView).not.toContainText('boom');
   });
 });
+
+test.describe('Molio 体检入口（悬浮按钮右键菜单）', () => {
+  // 入口在悬浮按钮（任意非全屏页面可用），弹窗实例挂在 KbChatSessionsPanel 的 portal 层。
+  test('右键悬浮按钮 → Molio 体检 → 弹窗打开（无需先有知识库页上下文）', async ({ page }) => {
+    await mockDiagnostics(page);
+    await page.goto('/history');
+    const btn = page.locator('[data-testid="floating-chat-btn"]');
+    await expect(btn).toBeVisible({ timeout: 5_000 });
+    await btn.click({ button: 'right' });
+    await page.locator('[data-testid="kb-chat-menu-checkup"]').click();
+    await expect(page.locator('[data-testid="checkup-dialog"]')).toBeVisible();
+    await expect(page.locator('[data-testid="checkup-verdict"]')).toBeVisible();
+  });
+});
