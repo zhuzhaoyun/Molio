@@ -1,3 +1,5 @@
+import { accessController } from '../access/runtime';
+import type { ManagedEventSubscription, ManagedTransportState } from '../api/managed-events';
 /**
  * useChatCore — shared chat logic for all chat-based UIs.
  *
@@ -155,7 +157,9 @@ export function useChatCore(options: UseChatCoreOptions) {
   const stateRef = useRef(state);
   stateRef.current = state;
 
-  const esRef = useRef<EventSource | null>(null);
+  const esRef = useRef<ManagedEventSubscription | null>(null);
+  const [transportState, setTransportState] = useState<ManagedTransportState>('open');
+  const transportRef = useRef<ManagedTransportState>('open');
   const assistantIdRef = useRef<string | null>(null);
   // 排队 drain 后 assistantIdRef 被重定向到新气泡；上一轮的尾随事件（usage / turn_end）
   // 仍在旧连接上到达，须在「drain → 新气泡首个内容事件」窗口内丢弃，否则会污染新气泡或
@@ -239,6 +243,12 @@ export function useChatCore(options: UseChatCoreOptions) {
     const fallbackMs = (typeof window !== 'undefined' &&
       (window as any).__MOLIO_TEST_FALLBACK_TIMEOUT_MS__) || FALLBACK_IDLE_MS;
     fallbackTimerRef.current = setTimeout(() => {
+      const context = accessController.getContext();
+      if (!context) return;
+      if (context.mode === 'server') {
+        transportRef.current = 'paused'; setTransportState('paused'); clearWatchdog();
+        return;
+      }
       console.warn('[chat] idle fallback fired after ' + fallbackMs + 'ms — no SSE events received; force-unlocking. assistantId=' + (assistantIdRef.current ?? '(empty)'));
       setState((prev) => {
         if (!prev.isRunning) {
@@ -256,13 +266,14 @@ export function useChatCore(options: UseChatCoreOptions) {
       esRef.current?.close();
       esRef.current = null;
     }, fallbackMs);
-  }, []);
+  }, [clearWatchdog]);
 
   const closeEventSource = useCallback(() => {
     esRef.current?.close();
     esRef.current = null;
     clearFallbackTimer();
     clearWatchdog();
+    transportRef.current = 'open'; setTransportState('open');
     reconnectRef.current = null;
   }, [clearFallbackTimer, clearWatchdog]);
 
@@ -300,6 +311,8 @@ export function useChatCore(options: UseChatCoreOptions) {
     // --- SSE callbacks (named so the watchdog can re-subscribe with the same
     // callbacks + ?after=<lastSeq> on reconnect) ---
     const onEventCb = (event: AgentEvent, seq?: number) => {
+      if (!accessController.getContext()) return;
+      if (event.type === 'status' && event.label === 'completed') onComplete?.();
       const currentId = assistantIdRef.current;
       // DEBUG-level, dev only: fires per SSE event. In production this would
       // accumulate in Chromium's console buffer whenever DevTools is open —
@@ -343,8 +356,10 @@ export function useChatCore(options: UseChatCoreOptions) {
       // During watchdog reconnect, closing the OLD es fires its onDone here —
       // ignore it so we don't clear runId/isRunning mid-swap. Only the NEW es's
       // onDone (or a genuine daemon exit) should unlock.
-      if (reconnectingRef.current) return;
-      console.warn('[chat] SSE onDone (CLOSED) — force-unlocking. runId=' + runId);
+      if (reconnectingRef.current || !accessController.getContext()) return;
+      // In server mode onDone is authoritative only after a complete terminal replay.
+      transportRef.current = 'open'; setTransportState('open');
+      console.warn('[chat] SSE observation completed. runId=' + runId);
       clearWatchdog();
       reconnectRef.current = null;
       // 连接关闭 → 尾随窗口作废（防御：防止 stale 窗口污染后续 run）。
@@ -365,7 +380,13 @@ export function useChatCore(options: UseChatCoreOptions) {
       armWatchdog();
     };
 
-    const es = subscribeToRun(runId, onEventCb, undefined, onDoneCb, undefined, onKeepaliveCb);
+    const onTransport = (next: ManagedTransportState) => {
+      transportRef.current = next; setTransportState(next);
+      if (accessController.getContext()?.mode === 'local') return;
+      if (next !== 'open') { clearWatchdog(); clearFallbackTimer(); }
+      else if (stateRef.current.isRunning) { armWatchdog(); resetFallbackTimer(); }
+    };
+    const es = subscribeToRun(runId, onEventCb, undefined, onDoneCb, undefined, onKeepaliveCb, onTransport);
     esRef.current = es;
 
     // Idle fallback (10min) + watchdog (45s). The watchdog fires first on a
@@ -373,18 +394,6 @@ export function useChatCore(options: UseChatCoreOptions) {
     // is the older safety net for genuinely hung runs. Both re-armed per frame.
     armWatchdog();
     resetFallbackTimer();
-
-    if (onComplete) {
-      const origOnEvent = es.onmessage;
-      es.onmessage = (msg) => {
-        origOnEvent?.call(es, msg);
-        try {
-          const envelope = JSON.parse(msg.data);
-          const ev = envelope.event;
-          if (ev.type === 'status' && ev.label === 'completed') onComplete();
-        } catch { /* ignore parse errors */ }
-      };
-    }
 
     // Watchdog reconnect: re-subscribe to the SAME run with ?after=<lastSeq>
     // so daemon replays missed events (session/cache preserved, no createRun).
@@ -399,21 +408,10 @@ export function useChatCore(options: UseChatCoreOptions) {
       esRef.current = null;
       clearFallbackTimer();
       clearWatchdog();
-      const newEs = subscribeToRun(runId, onEventCb, undefined, onDoneCb, afterSeq, onKeepaliveCb);
+      const newEs = subscribeToRun(runId, onEventCb, undefined, onDoneCb, afterSeq, onKeepaliveCb, onTransport);
       esRef.current = newEs;
       armWatchdog();
       resetFallbackTimer();
-      if (onComplete) {
-        const orig = newEs.onmessage;
-        newEs.onmessage = (msg) => {
-          orig?.call(newEs, msg);
-          try {
-            const envelope = JSON.parse(msg.data);
-            const ev = envelope.event;
-            if (ev.type === 'status' && ev.label === 'completed') onComplete();
-          } catch { /* ignore */ }
-        };
-      }
       console.warn('[sse] watchdog reconnected runId=' + runId + ' afterSeq=' + afterSeq);
       reconnectingRef.current = false;
     };
@@ -425,7 +423,8 @@ export function useChatCore(options: UseChatCoreOptions) {
       if (attempt > MAX_RECONNECT) {
         console.warn('[sse] watchdog gave up after ' + MAX_RECONNECT + ' reconnects — onDone (next send → createRun)');
         reconnectRef.current = null;
-        onDoneCb();
+        if (accessController.getContext()?.mode === 'local') onDoneCb();
+        else { transportRef.current = 'paused'; setTransportState('paused'); clearWatchdog(); clearFallbackTimer(); }
         return;
       }
       const delay = wdMs * 2 ** (attempt - 1);
@@ -448,6 +447,8 @@ export function useChatCore(options: UseChatCoreOptions) {
     assistantMsg: ChatMessage,
     optimisticMessages: ChatMessage[],
   ) => {
+    const context = accessController.getContext();
+    if (!context || (context.mode === 'server' && transportRef.current !== 'open')) return;
     // Route incoming SSE events to the new assistant message.
     assistantIdRef.current = assistantMsg.id;
 
@@ -465,8 +466,18 @@ export function useChatCore(options: UseChatCoreOptions) {
         // forever. Events from this turn keep resetting it (idle semantics).
         resetFallbackTimer();
         return; // SSE is still active, events route via assistantIdRef
-      } catch {
-        // Multi-turn failed — fall through to new run
+      } catch (error) {
+        if (context.mode === 'server') {
+          // The write may have reached the runtime. Never replay the same
+          // intent as a new task, or treat a rejected write as task completion.
+          if (accessController.getContext()?.resources !== context.resources) return;
+          clearFallbackTimer(); clearWatchdog();
+          transportRef.current = 'paused'; setTransportState('paused');
+          setState(prev => ({ ...prev, messages: prev.messages.map(msg => msg.id === assistantMsg.id
+            ? { ...msg, streaming: false, error: error instanceof Error ? error.message : String(error) } : msg) }));
+          return;
+        }
+        // Local mode retains its existing multi-turn fallback.
       }
     }
 
@@ -503,6 +514,7 @@ export function useChatCore(options: UseChatCoreOptions) {
       });
       await attachRun(result.runId, result.conversationId ?? cur.conversationId, assistantMsg.id, optimisticMessages);
     } catch (err) {
+      if (accessController.getContext()?.resources !== context.resources) return;
       const errId = assistantMsg.id;
       setState((prev) => {
         const messages = prev.messages.map((msg) =>
@@ -513,7 +525,7 @@ export function useChatCore(options: UseChatCoreOptions) {
         return { ...prev, messages, isRunning: false };
       });
     }
-  }, [agentId, closeEventSource, createRun, attachRun, resetFallbackTimer]);
+  }, [agentId, closeEventSource, createRun, attachRun, resetFallbackTimer, clearFallbackTimer, clearWatchdog]);
 
   /**
    * Send a message. With `{ queueIfRunning: true }`, a send while `isRunning`
@@ -523,7 +535,8 @@ export function useChatCore(options: UseChatCoreOptions) {
    * they must reach the agent immediately.
    */
   const send = useCallback(async (text: string, opts?: { queueIfRunning?: boolean }) => {
-    if (!text.trim()) return;
+    const context = accessController.getContext();
+    if (!text.trim() || !context || (context.mode === 'server' && transportRef.current !== 'open')) return;
     const trimmed = text.trim();
     const cur = stateRef.current;
 
@@ -573,6 +586,8 @@ export function useChatCore(options: UseChatCoreOptions) {
   // drain 后立即 isRunning=true，effect 不会对同一条重复处理；多条排队逐 turn 下发；
   // 下发失败（createRun 抛错）→ 标 error、isRunning=false → 继续 drain 下一条。
   useEffect(() => {
+    const context = accessController.getContext();
+    if (!context || (context.mode === 'server' && transportRef.current !== 'open')) return;
     if (stateRef.current.isRunning) return;
     const first = stateRef.current.pendingQueue[0];
     if (!first) return;
@@ -602,7 +617,7 @@ export function useChatCore(options: UseChatCoreOptions) {
     void dispatchTurn(first.text, first.id, assistantMsg, optimistic);
     // 依赖用响应式 state 触发 effect；body 读 stateRef.current（与渲染闭包在 effect 运行时等价的已提交 state）。
     // 排队是纯前端语义：cancel/reset/setMessages 会清空 pendingQueue 并作废 queued 气泡（见 §6 设计）。
-  }, [state.isRunning, state.pendingQueue, dispatchTurn]);
+  }, [transportState, state.isRunning, state.pendingQueue, dispatchTurn]);
 
   const rewindAndResend = useCallback(async (newContent: string) => {
     if (!rewindResend) return;
@@ -799,8 +814,13 @@ export function useChatCore(options: UseChatCoreOptions) {
     }
   }, [state.conversationId]);
 
+  const retryTransport = useCallback(() => {
+    void accessController.revalidate('stream-error').then(() => { if (accessController.getContext()) esRef.current?.reconnect(); });
+  }, []);
+
   return {
     ...state,
+    transportState: accessController.getContext()?.mode === 'local' ? 'open' : transportState, retryTransport,
     send,
     resumeRun,
     submitToolResult,

@@ -155,37 +155,20 @@ Run Molio as a self-hosted web service on a NAS or server. A single container bu
 > - **The daemon runs inside the container and can only read/write directories mounted into it.** The desktop workflow of "pick any local folder as a knowledge base via a folder picker" does not apply here — the browser has no folder picker, so when you add a knowledge base you **type a container-internal path** (e.g. `/vaults/your-folder`, not the NAS host path).
 > - To expose folders as knowledge bases, mount them under `/vaults` in `docker-compose.yml` `volumes`. Your data still stays entirely yours (on your NAS) — only the access model changes, from "desktop app" to "browser + mounted volumes".
 
-**One-click install** (requires Docker + Docker Compose v2):
+**Server deployments require HTTPS and a separate administrator account.** Docker maps the daemon to host loopback by default. Build this repository revision, initialize the administrator, then use an existing HTTPS proxy or the supplied Caddy configuration.
 
 ```bash
-# China (recommended)
-curl -fsSL https://molio-releases.oss-cn-guangzhou.aliyuncs.com/script/install.sh | bash
-# Overseas
-curl -fsSL https://raw.githubusercontent.com/zhuzhaoyun/Molio/main/install.sh | bash
-# Offline (clone the repo first, then run the bundled script)
-bash install.sh
+cp .env.example .env
+docker build -t molio:main .
+printf '\nMOLIO_IMAGE=molio:main\n' >> .env
+node scripts/setup-server.mjs --config .env  # hidden password input; Node >=24
+# Initialization can also run inside the image; see the deployment guide.
+docker compose -f docker-compose.yml -f docker-compose.https.yml up -d
 ```
 
-The script asks for your knowledge-base directory and port, then pulls the image and starts the service. When it finishes, open `http://<your-server-ip>:3100`, then go to **Settings → Runtimes** to configure your AI model and API key. On first boot Molio **auto-creates a default knowledge base** on the mounted directory, so you land straight inside — no manual setup.
+Open the configured `MOLIO_PUBLIC_URL`, sign in as administrator, and configure your AI runtime. Use only the base compose file with an existing proxy. Use an image built from a revision containing this feature; repository changes do not automatically update published images or the OSS installer.
 
-**Manual install** (if you prefer plain `docker compose`):
-
-```bash
-git clone https://github.com/zhuzhaoyun/Molio.git && cd Molio
-cp .env.example .env      # AI model is configured later in the web UI
-docker compose up -d      # then open http://<your-server-ip>:3100
-```
-
-**Everyday commands** (run inside the install directory, default `~/molio`):
-
-```bash
-docker compose logs -f                          # follow logs
-docker compose restart                          # restart
-docker compose pull && docker compose up -d     # update to the latest image
-docker compose down                             # stop
-```
-
-> Set `MOLIO_VAULT_PATH` in `.env` to mount your existing documents folder into the container (at `/vaults`). See [`install.sh`](install.sh) and [`.env.example`](.env.example) for every option.
+See the [server deployment guide](docs/server-deployment.md) for the installer, initialization without host Node, non-interactive setup, backups, and password recovery.
 
 ### Development (from source)
 

@@ -51,6 +51,7 @@ process.env.MOLIO_CODEX_HOME = join(E2E_DATA_DIR, 'codex');
 const reuseServers = !isCI && process.env.MOLIO_E2E_REUSE_SERVERS === '1';
 
 export default defineConfig({
+  globalSetup: './e2e/fixtures/admin-web-build.ts',
   testDir: './e2e',
   fullyParallel: false,
   /* All E2E tests share the daemon process — serialise to avoid race conditions

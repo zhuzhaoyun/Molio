@@ -1,3 +1,4 @@
+import { daemonFetch, isAccessInterruption } from '../../api/http';
 /**
  * MdTypesetEditor — 3-column typeset mode (doocs/md pattern).
  *
@@ -60,13 +61,14 @@ export function MdTypesetEditor({
       if (!filePath) return;
 
       const apiUrl = `/api/knowledge/vaults/${vaultId}/resolve/${encodeURIComponent(filePath).replace(/%2F/g, '/')}`;
-      fetch(apiUrl)
+      daemonFetch(apiUrl)
         .then((res) => {
           if (res.status === 404) throw new Error('NOT_FOUND');
           const searchPath = filePath.replace(/\.md$/i, '');
           onNavigateToFile(searchPath);
         })
         .catch((err) => {
+          if (isAccessInterruption(err)) return;
           if (err.message === 'NOT_FOUND') {
             window.alert(`文件 "${filePath}" 不存在`);
             return;

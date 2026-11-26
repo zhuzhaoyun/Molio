@@ -62,6 +62,8 @@ const streamingServers: http.Server[] = [];
  * 用独立端口流式服务器（frameDelay）播完脚本。
  */
 async function mockTwoRuns(page: import('@playwright/test').Page) {
+  let releaseStreams!: () => void;
+  const streamsReleased = new Promise<void>((resolve) => { releaseStreams = resolve; });
   await page.route('**/api/runs', async (route) => {
     if (route.request().method() === 'POST') {
       const body = JSON.parse(route.request().postData() || '{}');
@@ -102,6 +104,9 @@ async function mockTwoRuns(page: import('@playwright/test').Page) {
       }
       (async () => {
         for (let i = 0; i < run.script.length; i++) {
+          // Keep both runs active until the test has navigated away and back.
+          // A fixed 500ms stream can finish while Playwright switches tabs.
+          if (i === 2) await streamsReleased;
           res.write(sseFrame(i + 1, run.runId, run.script[i]!));
           await new Promise((r) => setTimeout(r, run.frameDelay));
         }
@@ -141,6 +146,7 @@ async function mockTwoRuns(page: import('@playwright/test').Page) {
     route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ messages: [{ id: 'um1', role: 'user', content: RUN_1.userMessage, timestamp: Date.now() }] }) }));
   await page.route('**/api/conversations/conv-2/messages', (route) =>
     route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ messages: [{ id: 'um2', role: 'user', content: RUN_2.userMessage, timestamp: Date.now() }] }) }));
+  return releaseStreams;
 }
 
 function sessionMessages(page: import('@playwright/test').Page, index: number) {
@@ -166,39 +172,41 @@ test.describe('KB chat resume multi-session', () => {
   test.afterEach(async ({ page }) => { await unmockAll(page); });
 
   test('两个会话同时流式，切页返回后都恢复直播', async ({ page }) => {
-    await mockTwoRuns(page);
-    await page.goto(`/knowledge?vault=${vault.id}&file=doc.md`);
-    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+    const releaseStreams = await mockTwoRuns(page);
+    try {
+      await page.goto(`/knowledge?vault=${vault.id}&file=doc.md`);
+      await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
 
-    // 会话1：发送消息一 → 进入流式
-    await page.locator('[data-testid="kb-btn-ask"]').click();
-    const input1 = page.locator('[data-testid="kb-chat-panel"] [data-testid="composer-input"]:visible');
-    await input1.fill(RUN_1.userMessage);
-    await page.locator('[data-testid="composer-send"]').click();
-    await expect(page.locator('[data-testid="kb-chat-panel"] [data-testid="kb-chat-session-running"]'))
-      .toHaveCount(1, { timeout: 5_000 });
+      // 会话1：发送消息一 → 进入流式
+      await page.locator('[data-testid="kb-btn-ask"]').click();
+      const input1 = page.locator('[data-testid="kb-chat-panel"] [data-testid="composer-input"]:visible');
+      await input1.fill(RUN_1.userMessage);
+      await page.locator('[data-testid="composer-send"]').click();
+      await expect(page.locator('[data-testid="kb-chat-panel"] [data-testid="kb-chat-session-running"]'))
+        .toHaveCount(1, { timeout: 5_000 });
 
-    // 会话2：新建标签，发送消息二 → 两个会话同时流式
-    await page.locator('[data-testid="kb-chat-session-new"]').click();
-    await expect(page.locator('[data-testid="kb-chat-session-tab"]')).toHaveCount(2);
-    const input2 = page.locator('[data-testid="kb-chat-panel"] [data-testid="composer-input"]:visible');
-    await input2.fill(RUN_2.userMessage);
-    await page.locator('[data-testid="composer-send"]').click();
-    await expect(page.locator('[data-testid="kb-chat-panel"] [data-testid="kb-chat-session-running"]'))
-      .toHaveCount(2, { timeout: 5_000 });
-    await page.waitForTimeout(150); // 两 run 都 mid-stream（5 帧 × 100ms）
+      // 会话2：新建标签，发送消息二 → 两个会话同时流式
+      await page.locator('[data-testid="kb-chat-session-new"]').click();
+      await expect(page.locator('[data-testid="kb-chat-session-tab"]')).toHaveCount(2);
+      const input2 = page.locator('[data-testid="kb-chat-panel"] [data-testid="composer-input"]:visible');
+      await input2.fill(RUN_2.userMessage);
+      await page.locator('[data-testid="composer-send"]').click();
+      await expect(page.locator('[data-testid="kb-chat-panel"] [data-testid="kb-chat-session-running"]'))
+        .toHaveCount(2, { timeout: 5_000 });
 
-    // 切页离开（卸载 KB 页 → 两个会话的 SSE 都断开）→ 返回
-    await page.goto('/history');
-    await expect(page.locator('.history-shell')).toBeVisible({ timeout: 5_000 });
-    await page.goto(`/knowledge?vault=${vault.id}&file=doc.md`);
-    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+      // 切页离开（卸载 KB 页 → 两个会话的 SSE 都断开）→ 返回
+      await page.goto('/history');
+      await expect(page.locator('.history-shell')).toBeVisible({ timeout: 5_000 });
+      await page.goto(`/knowledge?vault=${vault.id}&file=doc.md`);
+      await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+      releaseStreams();
 
-    // 两个会话都必须在重挂载后恢复直播，最终各自拿到完整回复
-    // （会话1 非当前显示 —— 恢复 bug 会让它停在残缺回复/空助手消息）
-    await expect(sessionMessages(page, 0)).toContainText('第一条回复 完整内容。', { timeout: 10_000 });
-    await expect(sessionMessages(page, 1)).toContainText('第二条回复 完整内容。', { timeout: 10_000 });
-    // 回放结束后 run 被正确接管，running 指示消失（不是永久卡住）
-    await expect(page.locator('[data-testid="kb-chat-session-running"]')).toHaveCount(0, { timeout: 5_000 });
+      // 两个会话都必须在重挂载后恢复直播，最终各自拿到完整回复
+      // （会话1 非当前显示 —— 恢复 bug 会让它停在残缺回复/空助手消息）
+      await expect(sessionMessages(page, 0)).toContainText('第一条回复 完整内容。', { timeout: 10_000 });
+      await expect(sessionMessages(page, 1)).toContainText('第二条回复 完整内容。', { timeout: 10_000 });
+      // 回放结束后 run 被正确接管，running 指示消失（不是永久卡住）
+      await expect(page.locator('[data-testid="kb-chat-session-running"]')).toHaveCount(0, { timeout: 5_000 });
+    } finally { releaseStreams(); }
   });
 });

@@ -12,8 +12,10 @@
 #
 # 环境变量（可选）：
 #   MOLIO_HOME    安装目录，默认 ~/molio
-#   MOLIO_PORT    Web 端口，默认 3100
-#   NONINTERACTIVE=1  跳过交互，使用默认/已有配置
+#   MOLIO_PORT    daemon 回环映射端口，默认 3100
+#   MOLIO_IMAGE   包含 server 权限边界的镜像；本地已构建镜像可设 MOLIO_SKIP_PULL=1
+#   MOLIO_ENABLE_HTTPS=1  启用内置 Caddy；已有 HTTPS 反代无需启用
+#   NONINTERACTIVE=1  跳过交互，必须已有完整 HTTPS/管理员配置
 #   MOLIO_DOCKER_MIRROR  Docker 安装镜像源，默认 Aliyun（国内加速）；
 #                        海外用户可设为 official 使用官方源
 #
@@ -25,6 +27,7 @@
 #    必须同步更新本脚本中对应的 heredoc 内容。
 # ============================================================
 set -euo pipefail
+umask 077
 
 # ── 颜色 ──
 RED='\033[0;31m'
@@ -408,23 +411,35 @@ cat > docker-compose.yml << 'COMPOSE_EOF'
 #   服务器、NAS（群晖/威联通/铁威马/TrueNAS/Unraid）均可使用。
 #
 # 使用方式：
-#   1. cp .env.example .env  （AI 模型可留空，部署后在 Web 界面配置）
-#   2. docker compose up -d
-#   3. 浏览器打开 http://<IP>:3100 → 设置 → 运行时 → 配置 AI 模型
+#   1. cp .env.example .env
+#   2. 按 docs/server-deployment.md 初始化管理员和 HTTPS
+#   3. docker compose up -d （已有反向代理），或叠加 docker-compose.https.yml
+#   AI 模型可在 HTTPS 管理页面「设置 → 运行时」配置
+#
+# 本地开发构建（可选）：
+#   将下方 image 行注释掉，取消 build 行的注释，然后：
+#   docker compose up -d --build
 #
 # 知识库目录：
 #   在 .env 中设置 MOLIO_VAULT_PATH 指向宿主机上的文档目录，
 #   该目录挂载到 docker 内 /vaults。
-#   首次启动会自动创建默认知识库并指向 /vaults，打开 Web 即直接进入；
-#   后续再添加知识库时路径请填 docker 内路径 /vaults/文件夹名。
+#
+#   首次启动（还没有任何知识库）时会自动创建默认知识库并指向 /vaults，
+#   打开 Web 即直接进入，无需手动创建。后续再添加知识库时，路径请填
+#   docker 内路径 /vaults/你的文件夹名（不是宿主机路径）。
+#
+#   如需挂载多个目录，直接在 volumes 中添加更多映射：
+#     - /data/documents:/vaults/documents
+#     - /data/notes:/vaults/notes
 # ============================================================
 
 services:
   molio:
-    image: registry.cn-guangzhou.aliyuncs.com/zzykj/molio:latest
+    image: ${MOLIO_IMAGE:-registry.cn-guangzhou.aliyuncs.com/zzykj/molio:latest}
+    # build: .  # 本地开发构建时取消注释
     container_name: molio
     ports:
-      - "${MOLIO_PORT:-3100}:3100"
+      - "${MOLIO_BIND_ADDRESS:-127.0.0.1}:${MOLIO_PORT:-3100}:3100"
     volumes:
       # 应用数据持久化（SQLite 数据库 + 配置文件）
       - molio-data:/home/molio/.molio
@@ -435,7 +450,13 @@ services:
     # .env 中所有变量透传给容器（ANTHROPIC_*、CLAUDE_CODE_* 等）
     env_file: .env
     environment:
+      # 服务端口（docker 内部端口，一般不需要改）
       - MOLIO_PORT=3100
+      - MOLIO_ACCESS_MODE=server
+      - MOLIO_HOST=0.0.0.0
+      - MOLIO_PUBLIC_URL=${MOLIO_PUBLIC_URL:-}
+      - MOLIO_ADMIN_USERNAME=${MOLIO_ADMIN_USERNAME:-}
+      - MOLIO_ADMIN_PASSWORD_HASH=${MOLIO_ADMIN_PASSWORD_HASH:-}
     restart: unless-stopped
 
 volumes:
@@ -447,12 +468,29 @@ ok "docker-compose.yml 已就绪"
 # ── .env.example（始终释放，供参考）──
 cat > .env.example << 'ENV_EXAMPLE_EOF'
 # ============================================================
-# Molio Docker 部署环境变量（可选）
+# Molio Docker server 部署环境变量
 #
 # 推荐：AI 模型 / API Key 直接在 Web 界面「设置 → 运行时」中配置，
-#       无需编辑本文件。本文件主要用于高级用户 / 自动化部署。
+#       管理员与 HTTPS 配置为必填，推荐使用 setup-server.mjs 初始化。
 # 如确需用环境变量配置，复制为 .env 并填写：cp .env.example .env
 # ============================================================
+
+# ─── 管理员与 HTTPS（必填；运行 scripts/setup-server.mjs 自动填写） ───
+# MOLIO_ACCESS_MODE=server
+# MOLIO_HOST=0.0.0.0
+# 必须是反向代理对外提供的 HTTPS Origin，不可带业务路径：
+# MOLIO_PUBLIC_URL=https://wiki.example.com
+# MOLIO_ADMIN_USERNAME=admin
+# 使用初始化工具生成哈希，不在命令参数或文件中保存明文密码。
+# scrypt 哈希含 $，在 .env 中必须用单引号包裹，避免 Compose 插值。
+# MOLIO_ADMIN_PASSWORD_HASH='scrypt$32768$8$1$...'
+# 可选 Caddy 入口，与 PUBLIC_URL 的主机/端口一致：
+# MOLIO_SITE_ADDRESS=wiki.example.com
+# daemon 默认只向宿主机回环映射，由 HTTPS 反向代理提供外部访问：
+# MOLIO_BIND_ADDRESS=127.0.0.1
+# 镜像须包含管理员访问控制功能；可从当前源码构建为 molio:main。
+# MOLIO_IMAGE=molio:main
+# 初始化与恢复步骤：docs/server-deployment.md
 
 # ─── Claude Code 认证（可选，任选其一；也可在 Web 界面配置） ───
 
@@ -509,13 +547,153 @@ cat > .env.example << 'ENV_EXAMPLE_EOF'
 # MOLIO_AUTH_URL=https://auth.molio.cn
 ENV_EXAMPLE_EOF
 
+
+# HTTPS 模板与自包含管理员初始化工具（无需宿主机安装 Node）
+cat > docker-compose.https.yml << 'HTTPS_COMPOSE_EOF'
+# 可选的同机 HTTPS 入口：docker compose -f docker-compose.yml -f docker-compose.https.yml up -d
+# 域名应解析到此机器，80/443 端口可达；使用已有反代时无需此文件。
+services:
+  caddy:
+    image: caddy:2-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      MOLIO_SITE_ADDRESS: ${MOLIO_SITE_ADDRESS:?请先运行管理员初始化工具}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - molio-caddy-data:/data
+      - molio-caddy-config:/config
+    depends_on:
+      molio:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  molio-caddy-data:
+  molio-caddy-config:
+HTTPS_COMPOSE_EOF
+
+if [[ ! -f Caddyfile ]]; then
+cat > Caddyfile << 'CADDY_EOF'
+{$MOLIO_SITE_ADDRESS} {
+    reverse_proxy molio:3100 {
+        flush_interval -1
+    }
+}
+CADDY_EOF
+fi
+
+cat > .molio-setup-server.mjs << 'SERVER_SETUP_EOF'
+#!/usr/bin/env node
+import { scryptSync, randomBytes } from 'node:crypto';
+import { readFileSync, writeFileSync, renameSync, chmodSync, rmSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
+import readline from 'node:readline';
+
+export function parseEnv(text) {
+  const values = {};
+  for (const line of text.split(/\r?\n/)) {
+    const match = /^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$/.exec(line);
+    if (!match) continue;
+    let value = match[2];
+    if (value.startsWith("'") && value.endsWith("'")) value = value.slice(1, -1).replace(/\\'/g, "'");
+    else if (value.startsWith('"') && value.endsWith('"')) { try { value = JSON.parse(value).replace(/\$\$/g, '$'); } catch { throw new Error('环境配置引号无效'); } }
+    else value = value.replace(/\s+#.*$/, '');
+    values[match[1]] = value;
+  }
+  return values;
+}
+
+export function normalizeOrigin(value) {
+  let url;
+  try { url = new URL(value); } catch { throw new Error('请填写完整的 HTTPS 站点地址'); }
+  if (!/^https:\/\/[^/?#]+\/?$/i.test(value) || url.protocol !== 'https:' || url.username || url.password || url.pathname !== '/' || url.search || url.hash || /^https:\/\/[^/]*@/i.test(value)) {
+    throw new Error('站点必须是无账号、路径、查询参数的 HTTPS Origin');
+  }
+  return url.origin;
+}
+
+const hashPattern = /^scrypt\$32768\$8\$1\$[a-f0-9]{32}\$[a-f0-9]{128}$/;
+export function renderEnv(existing, values) {
+  const pending = new Map(Object.entries(values));
+  const quote = value => String(value).includes('\\')
+    ? JSON.stringify(String(value).replace(/\$/g, '$$$$'))
+    : `'${String(value).replace(/'/g, "\\'")}'`;
+  const lines = existing.split(/\r?\n/).filter(line => {
+    const key = /^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=/.exec(line)?.[1];
+    return !key || !pending.has(key);
+  });
+  while (lines.at(-1) === '') lines.pop();
+  return [...lines, '', '# Molio server access — generated by setup-server.mjs', ...[...pending].map(([key, value]) => `${key}=${quote(value)}`), ''].join('\n');
+}
+
+function readValue(prompt, secret = false) {
+  return new Promise((accept, reject) => {
+    let value = '';
+    process.stderr.write(prompt);
+    const onKey = (character, key) => {
+      if (key?.ctrl && (key.name === 'c' || key.name === 'd')) { cleanup(); reject(new Error('输入已取消')); }
+      else if (key?.name === 'return' || key?.name === 'enter') { cleanup(); process.stderr.write('\n'); accept(value); }
+      else if (key?.name === 'backspace') { if (value) { value = Array.from(value).slice(0, -1).join(''); if (!secret) process.stderr.write('\b \b'); } }
+      else if (character && !key?.ctrl && !key?.meta && !/[\x00-\x1f\x7f]/.test(character)) { value += character; if (!secret) process.stderr.write(character); }
+    };
+    function cleanup() { process.stdin.off('keypress', onKey); }
+    process.stdin.on('keypress', onKey);
+  });
+}
+
+export async function setup(argv = process.argv.slice(2)) {
+  const unknown = argv.filter((value, i) => value !== '--config' && argv[i - 1] !== '--config' && !['--non-interactive', '--reset-password', '--check'].includes(value));
+  if (unknown.length) throw new Error('不支持的参数；使用 --config、--non-interactive、--reset-password 或 --check');
+  const index = argv.indexOf('--config');
+  if (index >= 0 && (!argv[index + 1] || argv[index + 1].startsWith('--'))) throw new Error('--config 需要路径');
+  const file = resolve(index < 0 ? '.env' : argv[index + 1]);
+  let original = '';
+  try { original = readFileSync(file, 'utf8'); } catch (error) { if (error.code !== 'ENOENT') throw error; }
+  const existing = parseEnv(original);
+  const get = key => process.env[key] || existing[key] || '';
+  let publicUrl = get('MOLIO_PUBLIC_URL');
+  let username = get('MOLIO_ADMIN_USERNAME');
+  let hash = get('MOLIO_ADMIN_PASSWORD_HASH');
+  const interactive = !argv.includes('--non-interactive') && !argv.includes('--check') && process.stdin.isTTY;
+  const reset = argv.includes('--reset-password');
+  const previousRaw = process.stdin.isRaw;
+  if (interactive) { readline.emitKeypressEvents(process.stdin); process.stdin.setRawMode(true); process.stdin.resume(); }
+  try {
+    if (interactive && (!publicUrl || reset)) publicUrl = await readValue(`HTTPS 站点地址${publicUrl ? ` [${publicUrl}]` : ''}：`) || publicUrl;
+    publicUrl = normalizeOrigin(publicUrl);
+    if (interactive && (!username || reset)) username = await readValue(`管理员名 [${username || 'admin'}]：`) || username || 'admin';
+    username = username.trim();
+    if (!username || username.length > 128 || /[\r\n\x00]/.test(username)) throw new Error('需要有效管理员名（1–128 字符）');
+    if (interactive && (!hashPattern.test(hash) || reset)) {
+      const password = await readValue('管理员密码（至少 12 个字符，隐藏输入）：', true);
+      const confirmation = await readValue('再次输入密码：', true);
+      if (Array.from(password).length < 12 || Buffer.byteLength(password) > 1024 || password !== confirmation) throw new Error('密码长度无效或两次输入不一致');
+      const salt = randomBytes(16); const key = scryptSync(password, salt, 64, { N: 32768, r: 8, p: 1, maxmem: 64 * 1024 * 1024 });
+      hash = `scrypt$32768$8$1$${salt.toString('hex')}$${key.toString('hex')}`;
+    }
+    if (!hashPattern.test(hash) || (reset && !interactive)) throw new Error('需要有效密码哈希；请在终端交互初始化，非交互模式须提供 MOLIO_ADMIN_PASSWORD_HASH');
+    if (argv.includes('--check')) return console.log('server 配置校验通过');
+    const rendered = renderEnv(original, { MOLIO_ACCESS_MODE: 'server', MOLIO_HOST: '0.0.0.0', MOLIO_PUBLIC_URL: publicUrl, MOLIO_ADMIN_USERNAME: username, MOLIO_ADMIN_PASSWORD_HASH: hash, MOLIO_SITE_ADDRESS: new URL(publicUrl).host });
+    const temporary = `${file}.molio-setup-${randomBytes(6).toString('hex')}`;
+    try { writeFileSync(temporary, rendered, { mode: 0o600, flag: 'wx' }); renameSync(temporary, file); chmodSync(file, 0o600); }
+    finally { rmSync(temporary, { force: true }); }
+    console.log(`server 配置已写入 ${file}（权限 600）；站点：${publicUrl}`);
+  } finally { if (interactive) { process.stdin.setRawMode(Boolean(previousRaw)); process.stdin.pause(); } }
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) setup().catch(error => { console.error(error instanceof Error ? error.message : '管理员初始化失败'); process.exitCode = 1; });
+SERVER_SETUP_EOF
+
 # ============================================================
 # 4. 交互式配置（.env 已存在则跳过）
 #    AI 模型 / API Key 不在此配置——部署完成后在 Web 界面
 #    「设置 → 运行时」中配置；高级用户也可手动往 .env 加 ANTHROPIC_* 变量。
 # ============================================================
 if [[ -f .env ]]; then
-    ok ".env 已存在，跳过配置（如需重新配置，请删除 ${MOLIO_HOME}/.env 后重新运行）"
+    ok ".env 已存在，保留配置；启动前校验或补齐管理员设置"
 else
     echo ""
     info "首次安装，生成配置文件..."
@@ -524,13 +702,16 @@ else
     # 文件权限无需在此配置：容器启动时会自动读取 /vaults 目录的宿主机属主并对齐
     # （见 docker-entrypoint.sh），Linux/NAS 一键部署开箱即用。仅在多重挂载等特殊
     # 场景才需手动往 .env 加 PUID/PGID（见 .env.example）。
-    cat > .env << 'EOF'
-# Molio 配置 — 由 install.sh 自动生成
-# AI 模型 / API Key 请在 Web 界面「设置 → 运行时」中配置。
-# 高级用户也可在此文件手动添加 ANTHROPIC_* 环境变量（见 .env.example）。
-EOF
+    cp .env.example .env
+    chmod 600 .env
 
     ok ".env 已生成: ${MOLIO_HOME}/.env"
+fi
+
+# 显式选择的个人镜像必须持久化，避免下次重启回到上游默认镜像。
+if [[ -n "${MOLIO_IMAGE:-}" ]]; then
+    if [[ "$MOLIO_IMAGE" =~ [^a-zA-Z0-9_./:@-] ]]; then fail "MOLIO_IMAGE 格式无效"; fi
+    printf '\nMOLIO_IMAGE=%s\n' "$MOLIO_IMAGE" >> .env
 fi
 
 # ============================================================
@@ -541,10 +722,10 @@ if [[ -f .env ]]; then
     _v=$(grep -E '^MOLIO_VAULT_PATH=' .env 2>/dev/null | cut -d= -f2 || true)
     if [[ -n "$_v" ]]; then _VAULT_SHOW="$_v"; fi
 fi
-_PORT_SHOW="3100"
+_PORT_SHOW="${MOLIO_PORT:-3100}"
 if [[ -f .env ]]; then
     _p=$(grep -E '^MOLIO_PORT=' .env 2>/dev/null | cut -d= -f2 || true)
-    if [[ -n "$_p" ]]; then _PORT_SHOW="$_p"; fi
+    if [[ -n "$_p" && -z "${MOLIO_PORT:-}" ]]; then _PORT_SHOW="$_p"; fi
 fi
 
 echo ""
@@ -566,10 +747,55 @@ fi
 # ============================================================
 echo ""
 info "拉取最新镜像..."
-"${DOCKER_CMD[@]}" compose pull
+if [[ "${MOLIO_SKIP_PULL:-0}" != "1" ]]; then
+    "${DOCKER_CMD[@]}" compose -f docker-compose.yml pull
+fi
 
-info "启动 Molio..."
-"${DOCKER_CMD[@]}" compose up -d
+# 初始化在独立 Node 容器中执行，不启动 daemon、不把明文密码放入参数/日志。
+SETUP_BASE=("${DOCKER_CMD[@]}" compose -f docker-compose.yml run --rm --no-deps
+    --user "$(id -u):$(id -g)" --entrypoint node
+    --volume "${MOLIO_HOME}:/setup"
+    --volume "${MOLIO_HOME}/.molio-setup-server.mjs:/app/setup-server.mjs:ro")
+SETUP_ERROR=$(mktemp)
+if "${SETUP_BASE[@]}" -T molio /app/setup-server.mjs --config /setup/.env --non-interactive 2>"$SETUP_ERROR"; then
+    rm -f "$SETUP_ERROR"
+elif [[ "${NONINTERACTIVE:-}" != "1" ]] && { [[ -t 0 ]] || [[ -e /dev/tty ]]; }; then
+    rm -f "$SETUP_ERROR"
+    info "请配置 HTTPS 地址和独立管理员账号。密码隐藏输入。"
+    if [[ -t 0 ]]; then
+        "${SETUP_BASE[@]}" --interactive -T=false molio /app/setup-server.mjs --config /setup/.env
+    else
+        "${SETUP_BASE[@]}" --interactive -T=false molio /app/setup-server.mjs --config /setup/.env < /dev/tty
+    fi
+else
+    cat "$SETUP_ERROR" >&2; rm -f "$SETUP_ERROR"
+    fail "缺少有效 server 配置；请在 .env 填写 HTTPS 地址、管理员名和单引号包裹的 scrypt 哈希后重试。"
+fi
+
+COMPOSE_ARGS=(-f docker-compose.yml)
+HTTPS_DEFAULT="${MOLIO_ENABLE_HTTPS:-}"
+_existing_https=$(sed -n 's/^MOLIO_ENABLE_HTTPS=//p' .env | tail -1)
+if [[ -z "$HTTPS_DEFAULT" ]]; then HTTPS_DEFAULT="${_existing_https:-n}"; fi
+prompt_read ENABLE_HTTPS "使用内置 Caddy HTTPS 入口？已有反向代理请选择 n [y/n]" "$HTTPS_DEFAULT"
+if [[ "$ENABLE_HTTPS" =~ ^([Yy]|1)$ ]]; then
+    COMPOSE_ARGS+=(-f docker-compose.https.yml)
+    printf '\nMOLIO_ENABLE_HTTPS=1\n' >> .env
+else
+    printf '\nMOLIO_ENABLE_HTTPS=0\n' >> .env
+fi
+
+# 升级时旧入口可能仍在运行，必须先关闭，避免新镜像未验证即暴露。
+PROTECTED_COMPOSE=(-f docker-compose.yml -f docker-compose.https.yml)
+"${DOCKER_CMD[@]}" compose "${PROTECTED_COMPOSE[@]}" stop caddy
+cleanup_unverified_deployment() {
+    local status=$?
+    "${DOCKER_CMD[@]}" compose "${PROTECTED_COMPOSE[@]}" stop molio caddy || true
+    return "$status"
+}
+# 包含启动失败、健康超时、访问边界失败和 HTTPS 启动失败的退出路径。
+trap cleanup_unverified_deployment EXIT
+info "启动 Molio（先验证访问边界，再开启 HTTPS 入口）..."
+"${DOCKER_CMD[@]}" compose -f docker-compose.yml up -d molio
 
 # ============================================================
 # 7. 健康检查
@@ -578,7 +804,7 @@ PORT_VAL="${MOLIO_PORT:-3100}"
 # 从 .env 读取端口（如果有）
 if [[ -f .env ]]; then
     _p=$(grep -E '^MOLIO_PORT=' .env 2>/dev/null | cut -d= -f2 || true)
-    if [[ -n "$_p" ]]; then PORT_VAL="$_p"; fi
+    if [[ -n "$_p" && -z "${MOLIO_PORT:-}" ]]; then PORT_VAL="$_p"; fi
 fi
 
 info "等待服务就绪 (http://localhost:${PORT_VAL})..."
@@ -595,9 +821,20 @@ echo ""
 if $HEALTH_OK; then
     ok "Molio 启动成功！"
 else
-    warn "健康检查超时，服务可能仍在启动中。请稍后访问或查看日志："
-    echo -e "  ${DOCKER_HINT} -f ${MOLIO_HOME}/docker-compose.yml logs -f"
+    fail "健康检查超时。请查看 ${DOCKER_HINT} logs；尚未完成部署。"
 fi
+# 老镜像不具备访问控制时必须停止，不能报告为已安全部署。
+SESSION_STATUS=$(curl -sf "http://127.0.0.1:${PORT_VAL}/api/access/session" || true)
+MANAGEMENT_STATUS=$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:${PORT_VAL}/api/config" || true)
+if ! printf '%s' "$SESSION_STATUS" | grep -Eq '"mode"[[:space:]]*:[[:space:]]*"server"' || [[ "$MANAGEMENT_STATUS" != "401" ]]; then
+    fail "当前镜像未满足 server 访问控制，已停止服务。请使用包含本次改动的镜像（MOLIO_IMAGE），不能使用旧镜像开放外网。"
+fi
+
+if [[ "$ENABLE_HTTPS" =~ ^([Yy]|1)$ ]]; then
+    "${DOCKER_CMD[@]}" compose "${COMPOSE_ARGS[@]}" up -d
+fi
+
+trap - EXIT
 
 # 获取本机 IP 供提示
 LOCAL_IP=$(hostname -I 2>/dev/null | awk '{print $1}' || echo "<IP>")
@@ -607,7 +844,9 @@ echo -e "${BOLD}╔════════════════════�
 echo -e "${BOLD}║     Molio 安装完成！                ║${NC}"
 echo -e "${BOLD}╚══════════════════════════════════════╝${NC}"
 echo ""
-echo -e "  访问地址:  ${GREEN}http://${LOCAL_IP}:${PORT_VAL}${NC}"
+PUBLIC_URL_VAL=$(sed -n "s/^MOLIO_PUBLIC_URL='\\(.*\\)'$/\\1/p" .env | tail -1)
+echo -e "  访问地址:  ${GREEN}${PUBLIC_URL_VAL}${NC}"
+echo -e "  daemon 仅映射到本机回环；若未启用 Caddy，请让已有 HTTPS 反代转发到 127.0.0.1:${PORT_VAL}。"
 echo -e "  下一步:    ${YELLOW}打开上面地址 → 设置 → 运行时 → 配置 AI 模型 / API Key${NC}"
 echo ""
 # 知识库挂载目录：优先读 .env 中的 MOLIO_VAULT_PATH，否则用默认值
@@ -623,10 +862,12 @@ echo ""
 echo -e "  安装目录:  ${MOLIO_HOME}"
 echo -e "  配置文件:  ${MOLIO_HOME}/.env"
 echo ""
-echo -e "  常用命令:"
-echo -e "    查看日志:    cd ${MOLIO_HOME} && ${DOCKER_HINT} logs -f"
-echo -e "    重启服务:    cd ${MOLIO_HOME} && ${DOCKER_HINT} restart"
-echo -e "    更新版本:    cd ${MOLIO_HOME} && ${DOCKER_HINT} pull && ${DOCKER_HINT} up -d"
-echo -e "    停止服务:    cd ${MOLIO_HOME} && ${DOCKER_HINT} down"
-echo -e "    重新安装:    curl -fsSL https://molio-releases.oss-cn-guangzhou.aliyuncs.com/script/install.sh | bash"
+COMMAND_FILES="-f docker-compose.yml"
+if [[ "$ENABLE_HTTPS" =~ ^([Yy]|1)$ ]]; then COMMAND_FILES+=" -f docker-compose.https.yml"; fi
+echo -e "  常用命令（此部署的 compose 文件）：${COMMAND_FILES}"
+echo -e "    查看日志:    cd ${MOLIO_HOME} && ${DOCKER_HINT} ${COMMAND_FILES} logs -f"
+echo -e "    重启服务:    cd ${MOLIO_HOME} && ${DOCKER_HINT} ${COMMAND_FILES} restart"
+echo -e "    更新版本:    先备份，指定已验证的 MOLIO_IMAGE 后重新运行本次安装脚本（先关闭入口再校验）。"
+echo -e "    停止服务:    cd ${MOLIO_HOME} && ${DOCKER_HINT} ${COMMAND_FILES} down"
+echo -e "    重新安装:    使用包含 server 权限边界的同版本 install.sh；OSS 脚本须另行同步发布。"
 echo ""

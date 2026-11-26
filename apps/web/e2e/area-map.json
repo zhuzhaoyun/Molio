@@ -276,10 +276,33 @@
         "apps/web/src/api/client.*",
         "apps/daemon/src/core/auth/*",
         "apps/daemon/src/routes/auth.ts",
-        "apps/cloud/src/*"
+        "apps/cloud/src/*",
+        "apps/daemon/src/core/access/*",
+        "apps/daemon/src/routes/access.ts",
+        "apps/daemon/src/server.ts",
+        "apps/daemon/src/index.ts",
+        "apps/daemon/src/core/db.ts",
+        "apps/web/src/access/**",
+        "apps/web/src/components/access/**",
+        "apps/web/src/styles/admin-access.css",
+        "apps/web/src/api/http.ts",
+        "apps/web/src/api/managed-events.ts",
+        "apps/web/src/api/read-stream.ts",
+        "apps/web/src/api/run-events.ts",
+        "packages/contracts/src/access.ts",
+        "scripts/setup-server.mjs",
+        "scripts/create-admin-password.mjs",
+        "docker-compose*.yml",
+        "Caddyfile",
+        ".env.example",
+        "Dockerfile",
+        "install.sh"
       ],
       "specs": [
-        "auth"
+        "auth",
+        "admin-access-server",
+        "admin-access-ui",
+        "upstream-server-api"
       ]
     },
     "resources": {
@@ -351,6 +374,27 @@
       ],
       "specs": [
         "market-community"
+      ]
+    },
+    "public-wiki": {
+      "paths": [
+        "apps/web/src/components/public/**",
+        "apps/web/src/components/publication/**",
+        "apps/web/src/api/publication.ts",
+        "apps/web/src/main.tsx",
+        "apps/web/src/components/kb/KnowledgeBasePage.tsx",
+        "apps/web/src/components/kb/KbFilePanel.tsx",
+        "apps/web/src/i18n/locales/*.ts",
+        "apps/daemon/src/core/publication/**",
+        "apps/daemon/src/routes/public*.ts",
+        "apps/daemon/src/core/access/guard.ts",
+        "apps/web/src/components/NavRail.tsx",
+        "packages/contracts/src/publication.ts",
+        "apps/daemon/src/core/knowledge.ts"
+      ],
+      "specs": [
+        "publication-ui",
+        "publication-server"
       ]
     }
   },
@@ -778,6 +822,26 @@
     "kb-panel-collapse": {
       "priority": "P1",
       "file": "kb-panel-collapse.spec.ts"
+    },
+    "admin-access-server": {
+      "priority": "P1",
+      "file": "admin-access-server.spec.ts"
+    },
+    "admin-access-ui": {
+      "priority": "P0",
+      "file": "admin-access-ui.spec.ts"
+    },
+    "upstream-server-api": {
+      "priority": "P0",
+      "file": "upstream-server-api.spec.ts"
+    },
+    "publication-ui": {
+      "priority": "P1",
+      "file": "publication-ui.spec.ts"
+    },
+    "publication-server": {
+      "priority": "P1",
+      "file": "publication-server.spec.ts"
     }
   }
 }

@@ -1,3 +1,4 @@
+import { daemonFetch } from '../../api/http';
 import { useEffect, useState } from 'react';
 import type { MarketTaxonomy, MarketTaxon } from '@molio/contracts';
 import { useI18n } from '../../i18n';
@@ -16,7 +17,7 @@ export function TaxonomyFields({ categoryId, resourceTypeId, onChange, isAdmin }
   useEffect(() => {
     const controller = new AbortController();
     setError('');
-    fetch('/api/market/taxonomy', {signal:controller.signal}).then(async r => {
+    daemonFetch('/api/market/taxonomy', {signal:controller.signal}).then(async r => {
       if (!r.ok) throw new Error();
       const body = await r.json() as MarketTaxonomy;
       setData(body);
@@ -28,7 +29,7 @@ export function TaxonomyFields({ categoryId, resourceTypeId, onChange, isAdmin }
     const kind = newKind;
     setBusy(true); setError('');
     try {
-      const res = await fetch('/api/market/taxonomy', {method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify({kind,name:name.trim()})});
+      const res = await daemonFetch('/api/market/taxonomy', {method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify({kind,name:name.trim()})});
       if (!res.ok) throw new Error();
       const item = await res.json() as MarketTaxon;
       setData(current => {

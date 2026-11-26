@@ -5,9 +5,10 @@
 #   服务器、NAS（群晖/威联通/铁威马/TrueNAS/Unraid）均可使用。
 #
 # 使用方式：
-#   1. cp .env.example .env  （AI 模型可留空，部署后在 Web 界面配置）
-#   2. docker compose up -d
-#   3. 浏览器打开 http://<IP>:3100 → 设置 → 运行时 → 配置 AI 模型
+#   1. cp .env.example .env
+#   2. 按 docs/server-deployment.md 初始化管理员和 HTTPS
+#   3. docker compose up -d （已有反向代理），或叠加 docker-compose.https.yml
+#   AI 模型可在 HTTPS 管理页面「设置 → 运行时」配置
 #
 # 本地开发构建（可选）：
 #   将下方 image 行注释掉，取消 build 行的注释，然后：
@@ -28,11 +29,11 @@
 
 services:
   molio:
-    image: registry.cn-guangzhou.aliyuncs.com/zzykj/molio:latest
+    image: ${MOLIO_IMAGE:-registry.cn-guangzhou.aliyuncs.com/zzykj/molio:latest}
     # build: .  # 本地开发构建时取消注释
     container_name: molio
     ports:
-      - "${MOLIO_PORT:-3100}:3100"
+      - "${MOLIO_BIND_ADDRESS:-127.0.0.1}:${MOLIO_PORT:-3100}:3100"
     volumes:
       # 应用数据持久化（SQLite 数据库 + 配置文件）
       - molio-data:/home/molio/.molio
@@ -45,6 +46,11 @@ services:
     environment:
       # 服务端口（docker 内部端口，一般不需要改）
       - MOLIO_PORT=3100
+      - MOLIO_ACCESS_MODE=server
+      - MOLIO_HOST=0.0.0.0
+      - MOLIO_PUBLIC_URL=${MOLIO_PUBLIC_URL:-}
+      - MOLIO_ADMIN_USERNAME=${MOLIO_ADMIN_USERNAME:-}
+      - MOLIO_ADMIN_PASSWORD_HASH=${MOLIO_ADMIN_PASSWORD_HASH:-}
     restart: unless-stopped
 
 volumes:

@@ -1,3 +1,4 @@
+import { daemonFetch, isDaemonApiUrl } from '../../../api/http.ts';
 /**
  * 文档出图的 DOM 流水线：
  *   克隆离屏宿主 → 度量块坐标 → 分页/切片 → 每页序列化进 SVG → canvas 栅格化
@@ -185,7 +186,7 @@ export async function inlineImages(root: HTMLElement): Promise<void> {
       try {
         // 没有超时的话，一个挂起的请求会把导出按钮永久锁在 disabled——
         // 用户除了刷新页面没有别的出路。
-        const res = await fetch(src, {
+        const res = await (isDaemonApiUrl(src) ? daemonFetch : fetch)(src, {
           credentials: 'same-origin',
           signal: AbortSignal.timeout(10_000),
         });

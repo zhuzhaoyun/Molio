@@ -60,6 +60,7 @@ interface KbFilePanelProps {
   treeError?: string | null;
   /** 重试拉树（错误条上的「重试」）。 */
   onRetryTree?: () => void;
+  onOpenPublicWiki?: () => void;
   children?: ReactNode;
 }
 
@@ -93,6 +94,7 @@ export const KbFilePanel = forwardRef<KbFilePanelHandle, KbFilePanelProps>(funct
   onMoveFile,
   treeError,
   onRetryTree,
+  onOpenPublicWiki,
   children,
 }, ref) {
   const { t } = useI18n();
@@ -637,6 +639,9 @@ export const KbFilePanel = forwardRef<KbFilePanelHandle, KbFilePanelProps>(funct
             </svg>
           )}
         </button>
+        {onOpenPublicWiki && <button type="button" className="kb-btn" title="公开 Wiki" aria-label="公开 Wiki" data-testid="kb-btn-public-wiki" onClick={onOpenPublicWiki}>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg>
+        </button>}
         {/* 目录栏折叠 — 原位置是「发布到资源库」按钮（资源发布未开放，点击只会被
             门禁分流到官网联系页，2026-11-23 移除）。注意与左边「折叠全部/展开全部」
             （管树节点）是两回事：这颗管目录栏本身。折叠后成「书脊」竖条

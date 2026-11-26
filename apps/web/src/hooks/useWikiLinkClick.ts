@@ -1,3 +1,4 @@
+import { daemonFetch, isAccessInterruption } from '../api/http';
 import { useCallback, type MouseEvent } from 'react';
 import { useActiveVaultId } from '../stores/vaultStore';
 import { useFileNavigation } from './useFileNavigation';
@@ -25,7 +26,7 @@ export function useWikiLinkClick() {
 
       // Check file exists before navigating (dead link handling).
       const encoded = encodeURIComponent(filePath).replace(/%2F/g, '/');
-      fetch(`/api/knowledge/vaults/${activeVaultId}/resolve/${encoded}`)
+      daemonFetch(`/api/knowledge/vaults/${activeVaultId}/resolve/${encoded}`)
         .then((res) => {
           if (res.status === 404) {
             window.alert(`文件 "${filePath}" 不存在`);
@@ -33,7 +34,7 @@ export function useWikiLinkClick() {
           }
           openFile(activeVaultId, filePath);
         })
-        .catch(() => openFile(activeVaultId, filePath));
+        .catch((err) => { if (!isAccessInterruption(err)) openFile(activeVaultId, filePath); });
     },
     [activeVaultId, openFile],
   );

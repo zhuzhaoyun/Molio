@@ -9,6 +9,7 @@ import { useGraphViewActive } from '../stores/graphViewStore';
 import { onboardingStore } from '../stores/onboardingStore';
 import { AccountModal } from './account/AccountModal';
 import { DEFAULT_ROUTE } from '../routes';
+import { AdminSessionControls } from './access/AdminSessionControls';
 
 export function NavRail() {
   const { t } = useI18n();
@@ -137,6 +138,29 @@ export function NavRail() {
             <line x1="6" y1="8" x2="18" y2="8" />
           </svg>
         </button>
+
+        {/* Public Wiki — visitor view of the pages explicitly published from a vault. */}
+        <NavLink
+          to="/public/wiki"
+          data-view="public-wiki"
+          data-testid="nav-public-wiki"
+          className={({ isActive }) =>
+            `entry-nav-rail__btn ${isActive ? 'is-active' : ''}`
+          }
+          data-tooltip={t('nav.publicWiki')}
+        >
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v16H6.5A2.5 2.5 0 0 0 4 21.5z" />
+            <path d="M4 5.5v16M8 7h8M8 11h8" />
+          </svg>
+        </NavLink>
 
         {/* Resources — knowledge base packs (browse / pay / download) */}
         <NavLink
@@ -313,6 +337,7 @@ export function NavRail() {
           </svg>
         </NavLink>
       </div>
+    <AdminSessionControls />
     </nav>
     <AccountModal
       show={accountOpen}

@@ -1,3 +1,4 @@
+import { daemonFetch } from '../../api/http';
 /**
  * 资源主按钮动作分发（列表卡片与详情页共用）：付费 → 应用内微信支付弹窗；
  * 免费 → 市场 API 取签名 URL 打开。静态官方直链已退役，所有资源统一走市场 API。
@@ -25,7 +26,7 @@ export function startResourcePurchase(
     }
     if (entry.market) {
       // 免费资源：向市场 API 取签名下载链接再打开（登录门槛已在上方校验；401 兜底）
-      fetch(`/api/market/listings/${encodeURIComponent(entry.id)}/download`)
+      daemonFetch(`/api/market/listings/${encodeURIComponent(entry.id)}/download`)
         .then((r) => (r.ok ? r.json() : Promise.reject(new Error('download_denied'))))
         .then((body: { url: string }) => window.open(body.url, '_blank', 'noopener,noreferrer'))
         .catch(() => {

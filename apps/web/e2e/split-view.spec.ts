@@ -126,16 +126,67 @@ test.describe('KB split view', () => {
   });
 
   test('graph main tab hides companion (keep-alive), file tab restores it', async ({ page }) => {
+    const browserErrors: string[] = [];
+    const interactionEvents: string[] = [];
+    page.on('console', (message) => {
+      if (message.type() === 'error') browserErrors.push(message.text());
+    });
+    page.on('pageerror', (error) => browserErrors.push(error.message));
+
     await openAlpha(page);
     await splitViaContextMenu(page, 'tab-split-graph');
     await clickNav(page, 'graph');
     // 主视图=图谱全幅；副格隐藏但仍在 DOM（keep-alive，visibility:hidden）
     await expect(page.locator('.kb-pane--companion')).toHaveClass(/kb-pane--closed/);
+    await expect(page.locator('[data-testid="kb-graph-pane"] .graph-page')).toBeVisible({ timeout: 10_000 });
 
     // 回到文件：点树中 beta.md → 图谱标签不可回收 → 开新文件标签 → 副格恢复可见
     const beta = page.locator('.kb-tree-item').filter({ hasText: 'beta.md' });
+    await page.evaluate(() => {
+      (window as Window & { __splitViewEvents?: string[] }).__splitViewEvents = [];
+      document.addEventListener('click', (event) => {
+        const target = event.target instanceof Element ? event.target : null;
+        const treeItem = target?.closest('.kb-tree-item');
+        if (treeItem) {
+          (window as Window & { __splitViewEvents?: string[] }).__splitViewEvents?.push(
+            `${event.type}:${treeItem.textContent?.trim()}:${treeItem.className}`,
+          );
+        }
+      }, true);
+    });
     await beta.click();
-    await expect(page.locator('.kb-wtab.is-active')).toContainText('beta.md', { timeout: 5_000 });
+    try {
+      await expect(page.locator('.kb-wtab.is-active')).toContainText('beta.md', { timeout: 5_000 });
+    } catch (error) {
+      const tabs = await page.locator('.kb-wtab').evaluateAll((els) => els.map((el) => ({
+        text: el.textContent?.trim(),
+        testId: el.getAttribute('data-testid'),
+        className: el.className,
+      })));
+      interactionEvents.push(...await page.evaluate(() =>
+        (window as Window & { __splitViewEvents?: string[] }).__splitViewEvents ?? [],
+      ));
+      const diagnostic = {
+        tabCount: tabs.length,
+        tabs,
+        activeTabs: tabs.filter((tab) => tab.className.split(/\s+/).includes('is-active')),
+        betaTreeItemCount: await beta.count(),
+        betaTreeItem: await beta.first().evaluate((el) => ({
+          text: el.textContent?.trim(),
+          className: el.className,
+          rect: el.getBoundingClientRect().toJSON(),
+          pointerEvents: getComputedStyle(el).pointerEvents,
+        })),
+        interactionEvents,
+        browserErrors,
+      };
+      console.error('SPLIT_VIEW_DIAGNOSTIC', JSON.stringify(diagnostic));
+      await test.info().attach('split-view-failure-state', {
+        body: JSON.stringify(diagnostic, null, 2),
+        contentType: 'application/json',
+      });
+      throw error;
+    }
     await expect(page.locator('[data-testid="kb-companion-pane"]:not(.kb-pane--closed)')).toBeVisible();
   });
 });

@@ -1,3 +1,4 @@
+import { daemonFetch } from '../../api/http';
 /**
  * 发布表单 —— 双外壳共享组件（modal / page 两个 variant）：
  * - variant="modal"：overlay 弹窗（PublishWizard shim 沿用）。
@@ -79,7 +80,7 @@ export function PublishForm(props: PublishFormProps) {
   useEffect(() => {
     if (props.variant !== 'page') return;
     let alive = true;
-    fetch('/api/market/my')
+    daemonFetch('/api/market/my')
       .then((r) => (r.ok ? r.json() : null))
       .then((m: { listings?: MarketMyListing[] } | null) => {
         if (alive && m) setMyListings(m.listings ?? []);
@@ -138,7 +139,7 @@ export function PublishForm(props: PublishFormProps) {
   });
   useEffect(() => {
     let alive = true;
-    fetch('/api/market/my')
+    daemonFetch('/api/market/my')
       .then((r) => (r.ok ? r.json() : null))
       .then((m: { isAdmin?: boolean } | null) => { if (alive && m) setIsAdmin(!!m.isAdmin); })
       .catch(() => { /* 未登录/失败：视为非管理员（字段不展示） */ });
@@ -180,7 +181,7 @@ export function PublishForm(props: PublishFormProps) {
   const effectiveVaultId = props.vaultId ?? effectiveListing?.vaultId ?? '';
 
   const requestSuggestion = useCallback(async (ctrl: AbortController): Promise<MarketPublishSuggestion> => {
-    const res = await fetch('/api/market/publish-suggest', {
+    const res = await daemonFetch('/api/market/publish-suggest', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -248,7 +249,7 @@ export function PublishForm(props: PublishFormProps) {
     setContentSaveState('saving');
     setError(null);
     try {
-      const res = await fetch(`/api/market/listings/${effectiveUpdateListingId}/content`, {
+      const res = await daemonFetch(`/api/market/listings/${effectiveUpdateListingId}/content`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ content: clean }),
@@ -329,7 +330,7 @@ export function PublishForm(props: PublishFormProps) {
       ? `/api/market/listings/${effectiveUpdateListingId}/update`
       : '/api/market/publish';
     try {
-      const res = await fetch(url, { method: 'POST', body: form });
+      const res = await daemonFetch(url, { method: 'POST', body: form });
       if (!res.ok) {
         const body = (await res.json().catch(() => ({}))) as { error?: string };
         throw new Error(body.error ?? 'publish_failed');

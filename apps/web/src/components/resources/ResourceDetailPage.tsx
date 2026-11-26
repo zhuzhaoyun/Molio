@@ -1,3 +1,4 @@
+import { daemonFetch } from '../../api/http';
 /**
  * 资源详情页（/resources/:id）—— 对应官网 resource.html：
  * 面包屑返回 + head（图标/名称/价格/格式说明/tags）+ 左主栏（概述/效果预览灯箱/导入说明）
@@ -60,7 +61,7 @@ export function ResourceDetailPage() {
     }
     let alive = true;
     setLoading(true);
-    fetch(`/api/market/listings/${encodeURIComponent(id)}`)
+    daemonFetch(`/api/market/listings/${encodeURIComponent(id)}`)
       .then((r) => (r.ok ? r.json() : null))
       .then((m: MarketListing | null) => {
         if (!alive) return;

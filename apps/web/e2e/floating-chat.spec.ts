@@ -65,6 +65,22 @@ test.describe('Floating chat (方案 D)', () => {
     await expect(page.locator('[data-testid="floating-chat-btn"]')).toHaveCount(1);
   });
 
+  test('收起面板的点击不会误触刚重现的悬浮按钮', async ({ page }) => {
+    await mockChatRun(page);
+    await page.goto(`/knowledge?vault=${vault.id}&file=doc.md`);
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+    const btn = page.locator('[data-testid="floating-chat-btn"]');
+    const panel = page.locator('[data-testid="kb-chat-panel"]');
+    await btn.click();
+    await expect(panel).toBeVisible();
+    await page.locator('[data-testid="kb-chat-close"]').click();
+    await expect(panel).toHaveClass(/--closed/);
+    await expect(btn).toBeVisible();
+    // Allow any trailing click from the close action to reach its final target.
+    await page.waitForTimeout(100);
+    await expect(panel).toHaveClass(/--closed/);
+  });
+
   test('KB 页内 💬问答展开的是同一全局面板，按钮隐藏', async ({ page }) => {
     await mockChatRun(page);
     await page.goto(`/knowledge?vault=${vault.id}&file=doc.md`);
@@ -354,9 +370,8 @@ test.describe('Floating chat (方案 D)', () => {
     expect(await page.evaluate(() => (window as unknown as { __vtCalls: number }).__vtCalls)).toBeGreaterThanOrEqual(1);
     // 形变结束即摘名：常驻名字会让命名元素命中测试失效（拖拽/点击全哑），
     // 这个断言守住「结束必摘名」的清理契约
-    await page.waitForTimeout(450);
-    const vtName = await panel.evaluate((el) => getComputedStyle(el as HTMLElement).viewTransitionName);
-    expect(['none', '']).toContain(vtName);
+    await expect.poll(async () => panel.evaluate((el) => getComputedStyle(el as HTMLElement).viewTransitionName))
+      .toMatch(/^(none|)$/);
     await page.waitForTimeout(300); // 等形态过渡结束
     box = (await panel.boundingBox())!;
     // 悬浮：右缘距视口 24px，文档区恢复全宽（不再被让出）
@@ -866,7 +881,8 @@ test.describe('Floating chat (方案 D)', () => {
     const bb2 = (await btn.boundingBox())!;
     await page.mouse.move(bb2.x + 26, bb2.y + 26);
     await page.mouse.down();
-    await page.mouse.move(vw - 30, 300, { steps: 8 });
+    // 已贴右缘，纯水平位移可能不足 6px；用明确的斜向拖动，避免被当作点击打开面板。
+    await page.mouse.move(vw - 30, Math.max(40, bb2.y + 26 - 120), { steps: 8 });
     await page.mouse.up();
     await page.waitForTimeout(450);
     await expect(btn).toHaveClass(/floating-chat-btn--hidden/);
@@ -1207,18 +1223,12 @@ test.describe('Floating chat (方案 D)', () => {
   });
 
   test('悬浮按钮：构建在跑时菜单「构建Wiki」→ 三选一（与 KB 按钮同一互斥）', async ({ page }) => {
-    // 前提是「构建还在跑」——本用例连着做 3 次交互（菜单触发 → 收起面板 → 菜单再触发
-    // → 取消 → KB 按钮再触发），默认的 5 帧 × 400ms ≈ 2s 窗口在慢 CI 上不够用
-    // （2026-11-04 实测：本地 1.8s 过，CI 慢机上窗口先耗尽 → 三选一不弹）。
-    // 加长到 16 帧 ≈ 6.4s，让前提与机器速度解耦。
-    const delta = (t: string) => ({ type: 'text_delta', delta: t });
-    const longBuild = [
-      { type: 'status', label: 'running', model: 'claude-sonnet-4-5' },
-      ...Array.from({ length: 16 }, (_, i) => delta(i === 15 ? '构建完成-END' : '构建中 ')),
-      { type: 'turn_end', stopReason: 'end_turn' },
-      { type: 'usage', usage: { input_tokens: 10, output_tokens: 5, costUsd: 0.001 } },
-    ];
-    await mockChatRun(page, { frameDelay: 400, script: longBuild });
+    // Leave the simulated run non-terminal so the conflict is asserted while
+    // it is actually running, independent of UI action timing.
+    await mockChatRun(page, { frameDelay: 400, script: [
+      { type: 'status', label: 'running' },
+      { type: 'text_delta', delta: '正在构建' },
+    ] });
     await page.goto(`/knowledge?vault=${vault.id}&file=doc.md`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
     const btn = page.locator('[data-testid="floating-chat-btn"]');
@@ -1230,6 +1240,7 @@ test.describe('Floating chat (方案 D)', () => {
     await page.locator('[data-testid="kb-chat-menu-build"]').click();
     await expect(panel).toBeVisible();
     await expect(tabs).toHaveCount(1);
+    await expect(page.locator('[data-testid="kb-chat-session-running"]')).toHaveCount(1);
     await page.locator('[data-testid="kb-chat-close"]').click();
     await expect(btn).toBeVisible();
 

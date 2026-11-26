@@ -1,3 +1,4 @@
+import { daemonFetch } from '../../api/http';
 /**
  * Knowledge Base page — assembles file panel, main content, wiki chat panel, and modals.
  * Now with: workspace tab system + right-click context menu + inline rename.
@@ -39,6 +40,7 @@ import { useI18n } from '../../i18n';
 import { api } from '../../api/client';
 import { BookIcon, ChatIcon, StethoscopeIcon } from '../icons';
 import { openInNewWindow } from '../../utils/openWindow';
+import { PublicationPanel } from '../publication/PublicationPanel';
 import { shouldReuseWindowOnVaultSwitch } from '../../utils/vaultSwitchWindow';
 
 interface KnowledgeBasePageProps {
@@ -170,6 +172,7 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
   const [pendingUrlNav, setPendingUrlNav] = useState<UrlFileNavigation | null>(null);
   const [showOutline, setShowOutline] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
+  const [showPublicPublication, setShowPublicPublication] = useState(false);
   // 发布 tab 表单是否有已填内容（PublishForm 上报）——关 tab 前的放弃确认用
   const publishDirtyRef = useRef(false);
 
@@ -1501,6 +1504,10 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
 
   return (
     <div className="kb-shell">
+      {kb.transportState !== 'open' && kb.transportState !== 'closed' && <div className="admin-stream-notice admin-kb-stream-notice" data-testid="kb-transport-status" data-state={kb.transportState} role="status">
+        <span>{t(kb.transportState === 'paused' ? 'adminAccess.streamPaused' : 'adminAccess.streamReconnecting')}</span>
+        <button type="button" data-testid="kb-transport-retry" disabled={kb.transportState === 'checking'} onClick={kb.retryTransport}>{t('adminAccess.retryStream')}</button>
+      </div>}
       {/* File Panel */}
       <KbFilePanel
         ref={filePanelRef}
@@ -1526,9 +1533,13 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
         onMoveFile={handleMoveFile}
         treeError={kb.treeError}
         onRetryTree={() => { void handleRefreshTree(); }}
+        onOpenPublicWiki={() => setShowPublicPublication(true)}
       >
         <div className="kb-resize-handle" onMouseDown={handleResizeStart} />
       </KbFilePanel>
+      {showPublicPublication && activeVaultId && <div className="publication-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setShowPublicPublication(false); }}>
+        <PublicationPanel vaultId={activeVaultId} tree={kb.tree} onClose={() => setShowPublicPublication(false)} />
+      </div>}
 
       {/* Tab Bar + Main Content */}
       <div className="kb-main-wrapper">
