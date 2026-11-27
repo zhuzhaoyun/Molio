@@ -211,6 +211,27 @@ if (seedCoverage > 0) {
   console.log('seed: 无（预跑未完成或旧 daemon）');
 }
 
+// ── 社区层级口径（换核：Louvain + 递归分级）── 对 /api/graph 直接统计（幂等可重跑）
+{
+  const cg = await (await fetch(`${daemon}/api/graph/${vault.id}`)).json();
+  const cls = cg?.communities?.clusters ?? [];
+  const total = (cg?.nodes ?? []).length;
+  if (cls.length > 0 && total > 0) {
+    const withChildren = cls.filter((c) => Array.isArray(c.children));
+    const leaves = [];
+    for (const c of cls) {
+      if (c.children?.length) for (const ch of c.children) leaves.push(ch.size);
+      else leaves.push(c.size);
+    }
+    const maxShare = ((Math.max(...cls.map((c) => c.size)) / total) * 100).toFixed(1);
+    console.log(
+      `communities: L1=${cls.length} maxShare=${maxShare}% withChildren=${withChildren.length} leafMax=${Math.max(...leaves)} quality=${cg.communities.quality} crumb=${cg.communities.crumbCount}`,
+    );
+  } else {
+    console.log('communities: 无（trunk 未启用或旧 daemon）');
+  }
+}
+
 // ── H2 展开测量（--expand [clusterId]，缺省取 communities 最大簇）──
 if (expand) {
   // trunk 态就位（大库默认 trunk；等引擎推完数据）

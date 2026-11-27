@@ -31,7 +31,7 @@ import { existsSync } from 'node:fs';
 import type { GraphData, GraphPositions, TreeNode } from '@molio/contracts';
 import type { ExternalRootRef } from './external-roots.js';
 import type { VaultJobMessage } from './vault-worker-entry.js';
-import { DEFAULT_TRUNK_MIN_NODES } from './graph-communities.js';
+import { DEFAULT_TRUNK_MIN_NODES, CLUSTER_RECURSE_CAP } from './graph-communities.js';
 
 export type VaultJob =
   | {
@@ -40,6 +40,8 @@ export type VaultJob =
       externalRoots?: ExternalRootRef[];
       /** trunk 视图小库门（T1）：client 侧从 MOLIO_GRAPH_TRUNK_MIN_NODES 现读随消息传入 */
       trunkMinNodes?: number;
+      /** 递归分级门（换核 §四）：client 侧从 MOLIO_GRAPH_RECURSE_CAP 现读随消息传入 */
+      recurseCap?: number;
       __testBlockMs?: number;
     }
   | { kind: 'tree'; vaultPath: string; externalRoots?: ExternalRootRef[]; __testBlockMs?: number }
@@ -228,6 +230,18 @@ export function readTrunkMinNodesEnv(): number {
   return n <= 0 ? 0 : n;
 }
 
+/**
+ * 递归分级门（换核设计 §四）：MOLIO_GRAPH_RECURSE_CAP，未设/非法 →
+ * CLUSTER_RECURSE_CAP(300)。每次调用现读（同 readTrunkMinNodesEnv 的理由）。
+ */
+export function readClusterRecurseCapEnv(): number {
+  const raw = process.env.MOLIO_GRAPH_RECURSE_CAP;
+  if (raw === undefined || raw.trim() === '') return CLUSTER_RECURSE_CAP;
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return CLUSTER_RECURSE_CAP;
+  return n <= 0 ? 0 : n;
+}
+
 /** 全量图谱构建（整库扫描）——路由与 worker 的接缝。 */
 export function buildGraphInWorker(
   vaultPath: string,
@@ -238,6 +252,7 @@ export function buildGraphInWorker(
     vaultPath,
     externalRoots,
     trunkMinNodes: readTrunkMinNodesEnv(),
+    recurseCap: readClusterRecurseCapEnv(),
   });
 }
 
