@@ -23,6 +23,8 @@ export interface VaultJobMessage {
   externalRoots?: import('./external-roots.js').ExternalRootRef[];
   /** trunk 视图小库门（T1）：client 侧 readTrunkMinNodesEnv() 现读随消息传入 */
   trunkMinNodes?: number;
+  /** 递归分级门（换核 §四）：client 侧 readClusterRecurseCapEnv() 现读随消息传入 */
+  recurseCap?: number;
   /**
    * 测试钩子：干正事前空转这么久（毫秒），模拟一次长 CPU 构建。事件循环不被
    * 阻塞的保证靠它来断言——真实 vault 的扫描时长在 CI 上不可控。
@@ -160,7 +162,10 @@ async function runJob({ id, job }: { id: number; job: VaultJobMessage }): Promis
       // T1：communities 随图一起在 worker 线程算，一起进缓存/失效（不占请求线程）。
       // result 恒带 communities 字段（小库 = 空簇对象）；「字段缺失」语义留给旧缓存条目。
       const g = buildGraph(vaultPath, { externalRoots: job.externalRoots });
-      const result = { ...g, communities: detectCommunities(g, { minNodes: job.trunkMinNodes }) };
+      const result = {
+        ...g,
+        communities: detectCommunities(g, { minNodes: job.trunkMinNodes, recurseCap: job.recurseCap }),
+      };
       post({ id, ok: true, result });
       // H3：结果已回，本线程后台分片预跑布局种子（不阻塞下一任务——片间让路）
       schedulePrerun(vaultPath, g);

@@ -51,21 +51,26 @@ function makeTrunkVault(dir: string): void {
   writeFileSync(path.join(dir, '总目录.md'), '# 总目录\n\n索引页。\n');
 }
 
-/** 无结构随机链库（520 文件、纯随机出链 + hub）：LPA 聚出巨团 → quality=degenerate */
+/**
+ * 「真团巨库」（500-clique 核心 + 30 卫星 + hub）：换核（Louvain）后 degenerate 的
+ * 正确形状——团是真实单社区，最大簇份额 ~94% > 50% → quality=degenerate。
+ * 旧形状（520 随机链库）在 Louvain 下聚小社区、不再巨团（换核语义修正，非回归）。
+ */
 function makeDegenerateVault(dir: string): void {
-  let seed = 20261119;
-  const rnd = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 2 ** 32);
-  const ri = (excl: number) => Math.floor(rnd() * excl);
-  const n = 520;
-  const name = (i: number) => `散${String(i).padStart(5, '0')}`;
-  for (let i = 0; i < n; i++) {
-    const lines = [`# ${name(i)}`, ''];
-    for (let j = 0; j < 3; j++) {
-      const peer = ri(n);
-      if (peer !== i) lines.push(`- 关联 [[${name(peer)}]]`);
+  const core = 500;
+  const sats = 30;
+  const coreName = (i: number) => `团${String(i).padStart(4, '0')}`;
+  for (let i = 0; i < core; i++) {
+    const lines = [`# ${coreName(i)}`, ''];
+    for (let j = 0; j < core; j++) {
+      if (j !== i) lines.push(`- 关联 [[${coreName(j)}]]`);
     }
-    lines.push(`- 索引 [[总目录]]`, '', '占位。');
-    writeFileSync(path.join(dir, `${name(i)}.md`), lines.join('\n') + '\n');
+    lines.push('- 索引 [[总目录]]', '', '占位。');
+    writeFileSync(path.join(dir, `${coreName(i)}.md`), lines.join('\n') + '\n');
+  }
+  for (let s = 0; s < sats; s++) {
+    const lines = [`# 卫${String(s).padStart(3, '0')}`, '', `- 关联 [[${coreName((s * 17) % core)}]]`, '- 索引 [[总目录]]', '', '占位。'];
+    writeFileSync(path.join(dir, `卫${String(s).padStart(3, '0')}.md`), lines.join('\n') + '\n');
   }
   writeFileSync(path.join(dir, '总目录.md'), '# 总目录\n\n索引页。\n');
 }
@@ -370,9 +375,12 @@ test('点击簇团展开/收起（H2）：成员注入 + chip 收回 + blob 回�
   await expect
     .poll(() => expandedContains(page, blob!.key), { timeout: 5000 })
     .toBe(true);
-  // 成员注入：快照显著增长（簇大小由 LPA 决定，不精确等于目录的 85——首个用例的 ≤45 即此意）
+  // 成员注入：数据驱动口径（换核后簇大小由 Louvain 决定，不再锚定目录 85）——
+  // 展开后快照 ≈ before − 1（blob 撤）+ 簇 size（成员进，含流式批次）
+  const graphJson = await (await fetch(`${DAEMON_API}/graph/${vaultId}`)).json();
+  const clicked = (graphJson?.communities?.clusters ?? []).find((c: { id: string }) => c.id === blob!.key);
   const expandedCount = await page.evaluate(() => window.__graphEngine?.getSnapshot()?.nodes.length ?? -1);
-  expect(expandedCount).toBeGreaterThan(before + 15);
+  expect(expandedCount).toBeGreaterThan(before + Math.min(5, (clicked?.size ?? 6) - 1));
   // chip 收回：点 chip 屏幕坐标（canvas CSS px + boundingRect 偏移）→ 回 trunk 全 blob
   const chip = await page.evaluate(
     (k) => {
@@ -514,6 +522,11 @@ test('终审 #1：已展开簇的成员搜索只定位——收起再展开仍�
     .toBe(member);
   // 相机动画（focusNode 600ms）飞行途中采样 chip 屏幕坐标会打在旧位置——慢机 CI 实抓；
   // 先等视口稳定再取坐标点击（与流式完成的稳定性判据同款纪律，不赌固定 sleep）
+  await waitForViewportStable(page);
+  // 搜索聚焦（k=1.5 钉成员）后，远簇的质心 chip 可能被推出视口（Louvain 布局下实测
+  // c6 的 chip 落在视口右上外侧）——fit 全图保证 chip 可点，再取坐标。位置断言走
+  // sim 坐标（与视口无关），fit 不影响本用例的判别力。
+  await page.evaluate(() => window.__graphEngine?.fitView({ animate: false }));
   await waitForViewportStable(page);
   // 收起（chip）→ 再搜索（缓存重展开）：成员质心必须回到 blob 原位附近，而非原点
   const chip = await page.evaluate(
@@ -695,4 +708,109 @@ test('选择残留回归（终审 Important-2）：trunk 选中簇后切全量�
     .poll(() => page.evaluate(() => window.__graphEngine?.getTrunkMode()))
     .toBe(false);
   expect(await page.evaluate(() => window.__graphEngine?.getSelectedKey())).toBeNull();
+});
+
+// ─── 嵌套子域（换核设计 §五：形态 A + 下钻）───
+// 门控：本用例需要 daemon 以 MOLIO_GRAPH_TRUNK_MIN_NODES=0 MOLIO_GRAPH_RECURSE_CAP=8
+// 启动（小图 + 低递归门造 children；真实尺度 mergeable fixture 无法合成——团不并、
+// 环粘不住，见实现 ledger）。默认 e2e 运行不带 env → 跳过；手动/专项：
+//   MOLIO_GRAPH_TRUNK_MIN_NODES=0 MOLIO_GRAPH_RECURSE_CAP=8 pnpm --filter @molio/web exec playwright test graph-trunk -g 子域
+const childrenEnv = !!process.env.MOLIO_GRAPH_RECURSE_CAP;
+
+test('嵌套子域：容器+子域在场、点子域下钻、收起复原', async ({ page }) => {
+  test.skip(!childrenEnv, '需 MOLIO_GRAPH_TRUNK_MIN_NODES=0 MOLIO_GRAPH_RECURSE_CAP=8 启动 e2e daemon');
+  // fixture A 文件化：fa/fb 两 K5 桥 10 条 + fx 30-clique 膨胀器 → L1 [10, 30]，
+  // cap 8 → 10-簇 children [5,5]、30-clique 不可分无 children
+  const dir = mkdtempSync(path.join(tmpdir(), 'molio-e2e-graph-children-'));
+  const K5 = (folder: string, p: string) => {
+    mkdirSync(path.join(dir, folder), { recursive: true });
+    for (let i = 0; i < 5; i++) {
+      const links = Array.from({ length: 5 }, (_, j) => (j === i ? null : `[[${folder}/${p}${j}]]`)).filter(Boolean);
+      writeFileSync(path.join(dir, folder, `${p}${i}.md`), `# ${p}${i}\n\n${links.map((l) => `- ${l}`).join('\n')}\n`);
+    }
+  };
+  K5('fa', 'a');
+  K5('fb', 'b');
+  mkdirSync(path.join(dir, 'fx'), { recursive: true });
+  for (let i = 0; i < 30; i++) {
+    const links = Array.from({ length: 30 }, (_, j) => (j === i ? null : `[[fx/x${j}]]`)).filter(Boolean);
+    writeFileSync(path.join(dir, 'fx', `x${i}.md`), `# x${i}\n\n${links.map((l) => `- ${l}`).join('\n')}\n`);
+  }
+  // 桥：a_i—b_i 与 a_i—b_{(i+1)%5}（共 10 条）
+  for (let i = 0; i < 5; i++) {
+    const extra = [`[[fb/b${i}]]`, `[[fb/b${(i + 1) % 5}]]`].map((l) => `- ${l}`).join('\n');
+    writeFileSync(path.join(dir, 'fa', `a${i}.md`), `# a${i}\n\n${Array.from({ length: 5 }, (_, j) => (j === i ? null : `[[fa/a${j}]]`)).filter(Boolean).map((l) => `- ${l}`).join('\n')}\n${extra}\n`);
+  }
+  const vid = await createVault('e2e-graph-trunk-children', dir);
+  await gotoGraph(page, vid);
+  await expect(page.locator('[data-testid="graph-trunk-indicator"]')).toBeVisible({ timeout: 20000 });
+  await waitForTrunkNodes(page);
+
+  // ① 容器+子域在场：10-簇有 children [5,5]；30-clique 无
+  await expect
+    .poll(
+      async () => {
+        const v = await page.evaluate(() => window.__graphEngine?.getTrunkChildrenInfo() ?? []);
+        return v.length === 1 && v[0]!.children.length === 2 ? v : null;
+      },
+      { timeout: 10000 },
+    )
+    .toBeTruthy();
+  const childrenInfo = await page.evaluate(() => window.__graphEngine?.getTrunkChildrenInfo() ?? []);
+  const parent = childrenInfo[0]!;
+  expect(parent.children.map((c) => c.size).sort((a, b) => a - b)).toEqual([5, 5]);
+
+  // ② 点子域下钻：换算屏幕坐标（父 sim 坐标 + 子域偏移 → transform）
+  const child = parent.children[0]!;
+  const click = await page.evaluate(
+    ({ parentId, dx, dy }) => {
+      const eng = window.__graphEngine;
+      const snap = eng?.getSnapshot();
+      const node = snap?.nodes.find((n) => n.key === parentId);
+      if (!node) return null;
+      const rect = eng!.canvas.getBoundingClientRect();
+      const t = eng!.getViewport();
+      return {
+        sx: rect.left + (node.x + dx + rect.width / 2) * t.k + t.tx,
+        sy: rect.top + (node.y + dy + rect.height / 2) * t.k + t.ty,
+      };
+    },
+    { parentId: parent.id, dx: child.x, dy: child.y },
+  );
+  expect(click).toBeTruthy();
+  await page.mouse.click(click!.sx, click!.sy);
+  await expect
+    .poll(() => page.evaluate(() => window.__graphEngine?.getTrunkExpandedClusters() ?? []), { timeout: 15000 })
+    .toContain(parent.children[0]!.id);
+
+  // ③ 收起复原（终审 #5 硬化：chip 是展开的必然产物，等它出现即可；断言落到
+  // 引擎态——展开列表清空 + 节点数回落 trunk 基线 + 子域层重建）
+  await expect
+    .poll(() => page.evaluate(() => window.__graphEngine?.getTrunkCollapseChipPos('__any__') !== undefined), { timeout: 3000 })
+    .toBe(true); // 引擎 API 在场（真 chip 位置下一步取）
+  const chipPos = await page.evaluate((k) => {
+    const eng = window.__graphEngine;
+    const pos = eng?.getTrunkCollapseChipPos(k) ?? null;
+    if (!pos) return null;
+    const rect = eng!.canvas.getBoundingClientRect();
+    return { sx: rect.left + pos.sx, sy: rect.top + pos.sy };
+  }, parent.children[0]!.id);
+  expect(chipPos).toBeTruthy();
+  const baseline = await page.evaluate(() => window.__graphEngine?.getSnapshot()?.nodes.length ?? -1);
+  await page.mouse.click(chipPos!.sx, chipPos!.sy);
+  await expect
+    .poll(() => page.evaluate(() => window.__graphEngine?.getTrunkExpandedClusters() ?? []), { timeout: 10000 })
+    .toEqual([]);
+  await expect
+    .poll(() => page.evaluate(() => window.__graphEngine?.getSnapshot()?.nodes.length ?? -1), { timeout: 10000 })
+    .toBeLessThan(baseline); // 成员撤场回落（blob 回位 ±1）
+  await expect
+    .poll(
+      async () => {
+        const v = await page.evaluate(() => window.__graphEngine?.getTrunkChildrenInfo() ?? []);
+        return v.length === 1 && v[0]!.children.length === 2 ? v : null;
+      },
+      { timeout: 10000 },
+    )
+    .toBeTruthy(); // 子域层随 blob 复建
 });

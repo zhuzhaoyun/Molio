@@ -8,6 +8,14 @@ import {
   trunkEdgeWidth,
   trunkClusterColor,
   trunkExportMeta,
+  layoutChildClusters,
+  budgetChildLabels,
+  blendChildPlacements,
+  findClusterDeep,
+  flattenSearchableClusters,
+  topIdOf,
+  planChildCorrections,
+  type TrunkCluster,
 } from './trunkScene.ts';
 import { NODE_TYPE_COLORS } from './types.ts';
 
@@ -180,5 +188,179 @@ describe('渲染公式', () => {
     assert.equal(trunkExportMeta(s, '主题', '枢纽'), '主题 2 · 枢纽 1');
     assert.equal(trunkExportMeta(s, '主题', '枢纽', 1, '展開中'), '主题 2（展開中 1） · 枢纽 1');
     assert.equal(trunkExportMeta({ ...s, clusters: [] }, '主题', '枢纽', 1), '枢纽 1'); // 无簇段无括注
+  });
+});
+
+// ─── 嵌套子域（换核设计 §五：形态 A）───
+describe('嵌套子域（layoutChildClusters / budgetChildLabels / children 透传）', () => {
+  const mkChildren = (sizes: number[]): TrunkCluster[] =>
+    sizes.map((s, i) => ({ id: `c1.${i + 1}`, label: `子域${i + 1}`, size: s, memberIds: [] }));
+
+  it('⑧ 子域排布：确定性、两两不重叠、包络在父团内（构造性保证）', () => {
+    const children = mkChildren([50, 40, 30, 20, 10, 5, 3]);
+    const parentR = trunkBlobRadius(158);
+    const p1 = layoutChildClusters(children, parentR);
+    const p2 = layoutChildClusters(children, parentR);
+    assert.deepEqual([...p1.entries()], [...p2.entries()], '同输入两次逐字段相等');
+
+    const list = children.map((c) => ({ id: c.id, ...p1.get(c.id)! }));
+    for (const a of list) {
+      assert.ok(Math.hypot(a.x, a.y) + a.r <= parentR + 1e-9, `${a.id} 包络在父团内`);
+      for (const b of list) {
+        if (a.id >= b.id) continue;
+        const dist = Math.hypot(a.x - b.x, a.y - b.y);
+        assert.ok(dist >= a.r + b.r - 1e-9, `${a.id}/${b.id} 不重叠（dist=${dist.toFixed(2)}, r+r=${(a.r + b.r).toFixed(2)}）`);
+      }
+    }
+  });
+
+  it('⑨ 环缝重叠反例（终审 Important #4）：等大子域填满环时首尾不得重叠', () => {
+    // 「一大 + 一串等大」恰好填满一环 → 最后一个与环上第一个之间的闭合缝
+    // 必须校验（终审数值反例：s0/s6 重叠 3.58 单位）
+    const children = mkChildren([5, 4, 4, 4, 4, 4, 4, 4]);
+    const parentR = trunkBlobRadius(33);
+    const p = layoutChildClusters(children, parentR);
+    const list = children.map((c) => ({ id: c.id, ...p.get(c.id)! }));
+    for (const a of list) {
+      assert.ok(Math.hypot(a.x, a.y) + a.r <= parentR + 1e-9, `${a.id} 包络内`);
+      for (const b of list) {
+        if (a.id >= b.id) continue;
+        const dist = Math.hypot(a.x - b.x, a.y - b.y);
+        assert.ok(dist >= a.r + b.r - 1e-9, `${a.id}/${b.id} 不重叠（dist=${dist.toFixed(2)}, r+r=${(a.r + b.r).toFixed(2)}）`);
+      }
+    }
+  });
+
+  it('⑨b 单子域居中；空 children 返回空 Map', () => {
+    const one = layoutChildClusters(mkChildren([100]), 20);
+    assert.deepEqual(one.get('c1.1'), { x: 0, y: 0, r: 2 + Math.sqrt(100) });
+    assert.equal(layoutChildClusters([], 20).size, 0);
+  });
+
+  it('⑩ 标签预算：size 降序前 5 常显，其余 +K；同 size 按 id 稳定', () => {
+    const children = mkChildren([50, 40, 30, 20, 10, 5, 3, 2]);
+    const b = budgetChildLabels(children);
+    assert.deepEqual(b.visible, ['c1.1', 'c1.2', 'c1.3', 'c1.4', 'c1.5']);
+    assert.equal(b.overflow, 3);
+    // 同 size 平票按 id 字典序
+    const tie = budgetChildLabels(mkChildren([9, 9, 9, 9, 9, 9, 9]), 5);
+    assert.deepEqual(tie.visible, ['c1.1', 'c1.2', 'c1.3', 'c1.4', 'c1.5']);
+    assert.equal(tie.overflow, 2);
+    // ≤5 全显不溢出
+    assert.deepEqual(budgetChildLabels(mkChildren([5, 4, 3])), { visible: ['c1.1', 'c1.2', 'c1.3'], overflow: 0 });
+  });
+
+  it('⑪ children 透传：payload 带 children 进 scene（递归）；无 children 平面（fail-open）', () => {
+    const base = communitiesFixture();
+    const nested: GraphCommunities = {
+      ...base,
+      clusters: [
+        {
+          ...base.clusters[0]!,
+          children: [
+            { id: 'c1.1', label: 'fa/a·5', memberIds: ['topic-a/a1.md'], size: 1, children: [{ id: 'c1.1.1', label: 'x·1', memberIds: ['topic-a/a1.md'], size: 1 }] },
+            { id: 'c1.2', label: 'fb/b·1', memberIds: ['topic-a/a2.md'], size: 1 },
+          ],
+        },
+        base.clusters[1]!,
+      ],
+    };
+    const g = { ...graphFixture(), communities: nested };
+    const scene = buildTrunkScene(g)!;
+    assert.equal(scene.clusters[0]!.children?.length, 2);
+    assert.equal(scene.clusters[0]!.children![0]!.children![0]!.id, 'c1.1.1');
+    // 旧 payload（无 children）→ 全部平面
+    const flat = buildTrunkScene(graphFixture())!;
+    for (const c of flat.clusters) assert.equal(c.children, undefined);
+  });
+
+  it('⑫ findClusterDeep：嵌套 id 深解析（含孙代）；不存在 → null', () => {
+    const base = communitiesFixture();
+    const nested: GraphCommunities = {
+      ...base,
+      clusters: [
+        {
+          ...base.clusters[0]!,
+          children: [
+            { id: 'c1.1', label: 'a', memberIds: ['topic-a/a1.md'], size: 1, children: [{ id: 'c1.1.1', label: 'x', memberIds: ['topic-a/a1.md'], size: 1 }] },
+            { id: 'c1.2', label: 'b', memberIds: ['topic-a/a2.md'], size: 1 },
+          ],
+        },
+        base.clusters[1]!,
+      ],
+    };
+    const scene = buildTrunkScene({ ...graphFixture(), communities: nested })!;
+    assert.equal(findClusterDeep(scene.clusters, 'c1')!.label, '主题甲');
+    assert.equal(findClusterDeep(scene.clusters, 'c1.2')!.label, 'b');
+    assert.equal(findClusterDeep(scene.clusters, 'c1.1.1')!.label, 'x');
+    assert.equal(findClusterDeep(scene.clusters, 'c9'), null);
+  });
+
+  it('⑬ 质心校正：向质心混合后仍不重叠、包络内、确定性；空质心=保持基础排布', () => {
+    const children = mkChildren([50, 40, 30, 20, 10, 5, 3]);
+    const parentR = trunkBlobRadius(158);
+    // 质心故意挤在同一象限（校正最坏情形）
+    const centroids = new Map(children.map((c, i) => [c.id, { x: (i % 3) * 4 - 4, y: Math.floor(i / 3) * 4 - 4 }] as const));
+    const p1 = blendChildPlacements(children, parentR, centroids);
+    const p2 = blendChildPlacements(children, parentR, centroids);
+    assert.deepEqual([...p1.entries()], [...p2.entries()], '确定性');
+    const list = children.map((c) => ({ id: c.id, ...p1.get(c.id)! }));
+    for (const a of list) {
+      assert.ok(Math.hypot(a.x, a.y) + a.r <= parentR + 1e-9, `${a.id} 包络内`);
+      for (const b of list) {
+        if (a.id >= b.id) continue;
+        assert.ok(Math.hypot(a.x - b.x, a.y - b.y) >= a.r + b.r - 1e-6, `${a.id}/${b.id} 不重叠`);
+      }
+    }
+    // 空质心 → 与基础排布一致
+    const empty = blendChildPlacements(children, parentR, new Map());
+    assert.deepEqual([...empty.entries()], [...layoutChildClusters(children, parentR).entries()]);
+  });
+
+  it('⑭ 搜索拍平：子域以「父·子」标签进候选；无子域=仅顶层', () => {
+    const clusters: TrunkCluster[] = [
+      { id: 'c1', label: '工厂', size: 100, memberIds: [], children: [
+        { id: 'c1.1', label: 'V1.6', size: 60, memberIds: [] },
+        { id: 'c1.2', label: 'V1.5', size: 40, memberIds: [] },
+      ] },
+      { id: 'c2', label: '培训', size: 30, memberIds: [] },
+    ];
+    const flat = flattenSearchableClusters(clusters);
+    assert.deepEqual(
+      flat.map((x) => [x.id, x.label, x.size]),
+      [
+        ['c1', '工厂', 100],
+        ['c1.1', '工厂·V1.6', 60],
+        ['c1.2', '工厂·V1.5', 40],
+        ['c2', '培训', 30],
+      ],
+    );
+  });
+
+  it('⑮ topIdOf 归一 + 校正决策：展开在场 → null（不得撕扯展开动画，终审 #6）', () => {
+    assert.equal(topIdOf('c1'), 'c1');
+    assert.equal(topIdOf('c1.2'), 'c1');
+    assert.equal(topIdOf('c1.2.3'), 'c1');
+
+    const clusters: TrunkCluster[] = [
+      { id: 'c1', label: 'a', size: 2, memberIds: ['a.md', 'b.md'], children: [
+        { id: 'c1.1', label: 'x', size: 1, memberIds: ['a.md'] },
+        { id: 'c1.2', label: 'y', size: 1, memberIds: ['b.md'] },
+      ] },
+    ];
+    const positions = new Map([
+      ['a.md', { x: 10, y: 0 }],
+      ['b.md', { x: 0, y: 10 }],
+    ]);
+    // 展开在场 → null（Review Focus #3）；布局未就绪 → null
+    assert.equal(planChildCorrections(clusters, positions, 1), null);
+    assert.equal(planChildCorrections(clusters, null, 0), null);
+    // 正常路径：质心相对系（父心 (5,5) → 子域质心 (5,-5)/(-5,5)）
+    const plans = planChildCorrections(clusters, positions, 0)!;
+    assert.equal(plans.length, 1);
+    assert.deepEqual(plans[0]!.centroids.get('c1.1'), { x: 5, y: -5 });
+    assert.deepEqual(plans[0]!.centroids.get('c1.2'), { x: -5, y: 5 });
+    // 无子域 → null
+    assert.equal(planChildCorrections([{ id: 'c9', label: 'z', size: 1, memberIds: ['q.md'] }], positions, 0), null);
   });
 });

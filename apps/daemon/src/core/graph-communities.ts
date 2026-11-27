@@ -1,25 +1,25 @@
 /**
- * 知识图谱社区发现（trunk 视图 T1）——确定性 LPA + hub 保留 + trunk 聚合边。
+ * 知识图谱社区发现（trunk 视图 T1）——确定性 Louvain + hub 保留 + trunk 聚合边。
  *
  * 纯函数：吃 buildGraph 的产物（GraphData），吐 contracts 的 GraphCommunities。
- * 在图 worker 内随 buildGraph 一起跑（O(E)/迭代，23k 边毫秒级），随图一起进
- * VaultCache——communities 是派生数据，随图同生命周期（设计
- * docs/2026-11-15-graph-trunk-view-design.md §4.1）。
+ * 在图 worker 内随 buildGraph 一起跑（Louvain O(E)·轮数，40k 边毫秒级——spike
+ * 实测 20ms/6981 节点），随图一起进 VaultCache——communities 是派生数据，随图
+ * 同生命周期（设计 docs/2026-11-15-graph-trunk-view-design.md §4.1；换核设计
+ * docs/2026-11-27-graph-community-hierarchy-design.md）。
  *
  * **确定性是硬要求**（同图两次计算逐字段相等）：一切迭代都走排序后的数组；
- * LPA 投票平票用**固定种子随机**挑选（经典 LPA 语义——「取更小 label」会让
- * 全局最小 label 一轮洪水吞掉全部社区结构，2026-11-18 bench 校准发现，
- * 回归钉 test 10）；簇按成员最小 key 排序编号 c1..cn；聚合边端点按字典序
- * 规范化后排序。随机源只有固定种子 LCG ⇒ 确定性不变。
+ * Louvain 内核平票取社区最小原始 key（graph-louvain.ts）；簇按成员最小 key
+ * 排序编号 c1..cn；聚合边端点按字典序规范化后排序；内核不使用随机。
  *
- * hub 口径（2026-11-18 校准修订）：hub 边不进 LPA——hub 是跨社区的桥而非
- * 社区成员，让其投票会把全部社区冲成一个巨团；纯 hub 卫星（只连 hub 的节点）
- * 因此无社区结构，计入碎屑。hub 本身照旧不进任何 memberIds（§4.1 评审 #7）。
+ * hub 口径（2026-11-18 校准修订，换核后保持）：hub 边不进社区发现——hub 是
+ * 跨社区的桥而非社区成员，计入模块度会把全部社区冲成一个大簇；纯 hub 卫星
+ * （只连 hub 的节点）因此无社区结构，计入碎屑。hub 本身照旧不进任何
+ * memberIds（§4.1 评审 #7）。
  *
  * trunk 渲染预算：簇数 ≤ TRUNK_MAX_CLUSTERS，超出按尺寸保留前 N、其余整簇
  * 折入碎屑；cap 折叠占比过大时 quality=degenerate 如实告知。
  *
- * 数据口径（§4.1 评审 #7）：死链幻影（deadLink）与孤立节点不进 LPA 输入、
+ * 数据口径（§4.1 评审 #7）：死链幻影（deadLink）与孤立节点不进社区发现输入、
  * 不计入聚合边，只计入 crumbCount；簇 size/命名统计只数 memberIds。
  */
 
@@ -30,6 +30,7 @@ import type {
   GraphData,
   GraphNode,
 } from '@molio/contracts';
+import { louvainCommunities, type LouvainEdge } from './graph-louvain.js';
 
 /** 小库不启用 trunk 的默认节点数门（MOLIO_GRAPH_TRUNK_MIN_NODES 可覆盖，≤0 = 强制启用） */
 export const DEFAULT_TRUNK_MIN_NODES = 500;
@@ -45,13 +46,18 @@ export interface DetectCommunitiesOptions {
   hubThreshold?: number;
   /** 默认 5；低于则整簇计入 crumbCount */
   clusterMinSize?: number;
+  /** 递归分级门，默认 CLUSTER_RECURSE_CAP(300)；测试注入小值 */
+  recurseCap?: number;
+  /** 内部：递归分级深度（0=顶层）。递归自身用来守「深度 ≤2」，调用方勿设 */
+  recursionDepth?: number;
 }
-
-/** LPA 最大迭代轮数：23k 边毫秒级/轮，30 轮足够收敛（不收敛也输出当前划分） */
-const LPA_MAX_ROUNDS = 30;
 
 /** trunk 簇数量上限：渲染对象 = 簇 + hub，可读预算「几十」（设计 §4.2） */
 export const TRUNK_MAX_CLUSTERS = 40;
+/** 尘埃合并门：size < 此值的社区若与其他社区有边 → 并入边数最多的邻接社区（换核设计 §四） */
+export const DUST_MERGE_MIN = 5;
+/** 递归分级门：簇 size > 此值 → 诱导子图再切挂 children（深度 ≤2；换核设计 §四） */
+export const CLUSTER_RECURSE_CAP = 300;
 /** cap 折叠成员占非 hub 输入的比例超过此值 → quality degenerate（碎片化信号） */
 const CAP_FOLD_DEGENERATE_SHARE = 0.2;
 
@@ -98,59 +104,23 @@ export function detectCommunities(graph: GraphData, opts: DetectCommunitiesOptio
     if ((degree.get(k) ?? 0) >= hubThreshold) hubSet.add(k);
   }
 
-  // LPA 输入：真实、有边、非 hub 的节点。hub 边不进 LPA——hub 是跨社区的桥，
-  // 让它投票会以「平票洪水」把全部社区冲成一个巨团（校准实测：20 目录 → 1 团）；
-  // 纯 hub 卫星因此在邻接表里零邻居 → label 不动 → 单例组 → 走小簇碎屑路径。
+  // 社区发现输入：真实、有边、非 hub 的节点。hub 边不进社区发现——hub 是跨社区
+  // 的桥，计入模块度会把全部社区冲成一个大簇（校准实测：20 目录 → 1 团）；
+  // 纯 hub 卫星因此在输入里零邻居 → 各自成组 → 走小簇碎屑路径。
   const input = connected.filter((k) => !hubSet.has(k));
   const indexOf = new Map<string, number>(input.map((k, i) => [k, i]));
 
-  // 邻接表（索引域）
-  const neighbors: number[][] = input.map(() => []);
+  // 加权边（平行边累计权重——wikilink 重复引用天然加权，Louvain 模块度感知）
+  const louvainEdges: LouvainEdge[] = [];
   for (const e of graph.edges) {
     const si = indexOf.get(e.source);
     const ti = indexOf.get(e.target);
     if (si === undefined || ti === undefined || si === ti) continue;
-    neighbors[si]!.push(ti);
-    neighbors[ti]!.push(si);
+    louvainEdges.push({ source: e.source, target: e.target, weight: 1 });
   }
 
-  // LPA：初始 label = 输入序号；按 key 序（= 索引序）异步更新。
-  // 平票在并列最高频 label 里用固定种子随机挑：min 平票会让首轮变成
-  // 「全图采纳全局最小 label」的洪水（初始 label 全唯一时每个平票都发生），
-  // 本地多数派永远拿不到选票；种子化随机是经典 LPA 语义且确定性不变。
-  const labels = input.map((_, i) => i);
-  const tieBreak = seededRandom();
-  for (let round = 0; round < LPA_MAX_ROUNDS; round++) {
-    let changed = false;
-    for (let i = 0; i < labels.length; i++) {
-      const tally = new Map<number, number>();
-      for (const nb of neighbors[i]!) tally.set(labels[nb]!, (tally.get(labels[nb]!) ?? 0) + 1);
-      let maxCount = 0;
-      for (const c of tally.values()) if (c > maxCount) maxCount = c;
-      if (maxCount === 0) continue; // 零邻居（纯 hub 卫星）→ label 不动
-      const tops = [...tally.entries()]
-        .filter(([, c]) => c === maxCount)
-        .map(([l]) => l)
-        .sort((a, b) => a - b);
-      const best = tops[Math.floor(tieBreak() * tops.length)]!;
-      if (best !== labels[i]) {
-        labels[i] = best;
-        changed = true;
-      }
-    }
-    if (!changed) break;
-  }
-
-  // label → 成员组（key 升序），组间按最小 key 排序 → c1..cn 的编号基础
-  const byLabel = new Map<number, string[]>();
-  input.forEach((k, i) => {
-    const l = labels[i]!;
-    const bucket = byLabel.get(l);
-    if (bucket) bucket.push(k);
-    else byLabel.set(l, [k]);
-  });
-  const groups = [...byLabel.values()].map((members) => members.sort());
-  groups.sort((a, b) => (a[0]! < b[0]! ? -1 : 1));
+  // Louvain 划分（组内 key 升序、组间按最小 key 排序 → c1..cn 的编号基础）
+  const groups = mergeDust(louvainCommunities(input, louvainEdges), louvainEdges);
 
   // 小簇整簇计碎屑（hub 已不在输入里，无需再剔除）
   const candidates: string[][] = [];
@@ -209,6 +179,61 @@ export function detectCommunities(graph: GraphData, opts: DetectCommunitiesOptio
     if ((nameCounts.get(c.label) ?? 0) > 1) c.label = `${c.label}·${c.size}`;
   }
 
+  // 递归分级（换核设计 §四）：size > recurseCap 的簇对其诱导子图递归
+  // detectCommunities（**minNodes 覆盖为 0**——父级小库门会让 (CAP, minNodes)
+  // 区间的递归空手而归，builder check 抓出的坑），结果挂 children；深度 ≤2；
+  // 不可再分（<2 簇，含空）→ children 缺省。覆盖不变量：∪ children.memberIds ≡
+  // parent.memberIds——子级 hub/碎屑/cap 折叠成员一律进「其他·N」兜底子域
+  // （仅非空时存在），杜绝下钻后静默丢内容。children 不占 TRUNK_MAX_CLUSTERS
+  // 预算（执行序：cap 折叠后才递归）。子图分辨率效应（m2 变小）是切分动力。
+  const depth = opts.recursionDepth ?? 0;
+  const recurseCap = opts.recurseCap ?? CLUSTER_RECURSE_CAP;
+  if (depth < 2) {
+    for (const c of clusters) {
+      if (c.size <= recurseCap) continue;
+      const memberSet = new Set(c.memberIds);
+      const subNodes: GraphNode[] = [];
+      for (const k of c.memberIds) {
+        const n = nodeByKey.get(k);
+        if (n) subNodes.push(n);
+      }
+      const subEdges = graph.edges.filter((e) => memberSet.has(e.source) && memberSet.has(e.target));
+      const sub = detectCommunities(
+        { nodes: subNodes, edges: subEdges, deadLinks: [] },
+        { ...opts, minNodes: 0, recursionDepth: depth + 1 },
+      );
+      if (sub.clusters.length < 2) continue; // 不可再分（含空）→ children 缺省
+      const assigned = new Set(sub.clusters.flatMap((x) => x.memberIds));
+      const rest = c.memberIds.filter((k) => !assigned.has(k)).sort();
+      // id 整树重写（子调用的 c1/c2 命名空间映射到父域 c3.1/c3.2…，孙代 c3.1.1…）
+      const remapTree = (cl: GraphCluster, id: string): GraphCluster => ({
+        id,
+        label: cl.label,
+        memberIds: cl.memberIds,
+        size: cl.size,
+        ...(cl.children ? { children: cl.children.map((gc, i) => remapTree(gc, `${id}.${i + 1}`)) } : {}),
+      });
+      const children: GraphCluster[] = sub.clusters.map((sc, i) => ({
+        ...remapTree(sc, `${c.id}.${i + 1}`),
+        label: clusterName(sc.memberIds, nodeByKey, 2) ?? `子域 #${i + 1}`,
+      }));
+      if (rest.length > 0) {
+        children.push({
+          id: `${c.id}.${children.length + 1}`,
+          label: `其他·${rest.length}`,
+          memberIds: rest,
+          size: rest.length,
+        });
+      }
+      const childCounts = new Map<string, number>();
+      for (const ch of children) childCounts.set(ch.label, (childCounts.get(ch.label) ?? 0) + 1);
+      for (const ch of children) {
+        if ((childCounts.get(ch.label) ?? 0) > 1) ch.label = `${ch.label}·${ch.size}`;
+      }
+      c.children = children;
+    }
+  }
+
   // 退化：①最大簇吞掉 >50% 非 hub 输入节点（巨团）；②cap 折叠成员占比 >
   // CAP_FOLD_DEGENERATE_SHARE（碎片化——社区信号稀薄，trunk 只能呈现冰山一角）
   const nonHubTotal = input.length; // hub 已不在 LPA 输入里
@@ -222,10 +247,71 @@ export function detectCommunities(graph: GraphData, opts: DetectCommunitiesOptio
   return { clusters, hubIds: [...hubSet].sort(), links, crumbCount, quality };
 }
 
-/** 固定种子 LCG——LPA 平票随机挑 label 用。种子是常量 ⇒ 同图两次计算逐字段相等。 */
-function seededRandom(): () => number {
-  let s = 20261118;
-  return () => ((s = (s * 1664525 + 1013904223) >>> 0) / 2 ** 32);
+/**
+ * 尘埃合并（换核设计 §四）：size < DUST_MERGE_MIN 的社区若与其他社区有边 →
+ * 并入累计边权最大的邻接社区，平票取「最小成员 key」小的目标；**迭代到不动点**
+ * （dust→dust→大簇的链尾巴不漏）。无边尘埃原样返回（交由下游碎屑路径）。
+ * 语义对齐 LPA 时代的级联吸收——防 Louvain 长尾把 crumbCount 从「孤立点」
+ * 膨胀成「社区残骸」（spike 实测全图 ~1300 个 ≤2 组）。
+ *
+ * 确定性：每轮按组最小 key 排序后扫描、每轮只做一次合并后整轮重启；平票取
+ * 首个最大值（= 最小 key 组）。
+ */
+function mergeDust(groups: string[][], edges: ReadonlyArray<LouvainEdge>): string[][] {
+  // key → (邻接 key → 累计权重)
+  const neighborWeights = new Map<string, Map<string, number>>();
+  const bump = (a: string, b: string, w: number) => {
+    let m = neighborWeights.get(a);
+    if (!m) {
+      m = new Map<string, number>();
+      neighborWeights.set(a, m);
+    }
+    m.set(b, (m.get(b) ?? 0) + w);
+  };
+  for (const e of edges) {
+    bump(e.source, e.target, e.weight);
+    bump(e.target, e.source, e.weight);
+  }
+
+  let partitions = groups.map((g) => [...g]);
+  for (;;) {
+    partitions = partitions.filter((g) => g.length > 0).sort((a, b) => (a[0]! < b[0]! ? -1 : 1));
+    const groupOf = new Map<string, number>();
+    partitions.forEach((g, gi) => g.forEach((k) => groupOf.set(k, gi)));
+
+    let merged = false;
+    for (let gi = 0; gi < partitions.length && !merged; gi++) {
+      const g = partitions[gi]!;
+      if (g.length >= DUST_MERGE_MIN) continue;
+      const tally = new Map<number, number>();
+      for (const k of g) {
+        for (const [nb, w] of neighborWeights.get(k) ?? []) {
+          const tgi = groupOf.get(nb);
+          if (tgi === undefined || tgi === gi) continue;
+          tally.set(tgi, (tally.get(tgi) ?? 0) + w);
+        }
+      }
+      // 最大累计权重；平票显式取「目标组最小成员 key」小者（Map 插入序不可依赖）
+      let best = -1;
+      let bestW = 0;
+      let bestKey = '';
+      for (const [tgi, w] of tally) {
+        const tKey = partitions[tgi]![0]!;
+        if (w > bestW || (w === bestW && best >= 0 && tKey < bestKey)) {
+          bestW = w;
+          best = tgi;
+          bestKey = tKey;
+        }
+      }
+      if (best >= 0) {
+        partitions[best]!.push(...g);
+        partitions[best]!.sort();
+        partitions[gi] = [];
+        merged = true; // 整轮重启：下一轮以最新分组重算（不动点）
+      }
+    }
+    if (!merged) return partitions.filter((g) => g.length > 0);
+  }
 }
 
 /** 默认 hub 阈值：max(50, 5×P90(度数))；P90 线性插值。空输入 → 阈值 50。 */
@@ -241,11 +327,15 @@ function defaultHubThreshold(degrees: number[]): number {
 
 /**
  * 唯一命名则返回，否则 null（调用方退化到下一档）：
- * 顶层文件夹众数（path 首段，无 `/` 记 '' 桶；'' 赢=无文件夹结构 → null）
- * → nodeType 众数（并列/全无 → null）。
+ * 目录前缀众数（path 前 folderDepth 段；文件直接在浅目录时取可用的最深目录，
+ * 无目录记 '' 桶；'' 赢=无文件夹结构 → null）→ nodeType 众数（并列/全无 → null）。
+ * 一级 depth=1（顶层文件夹），子域 depth=2（如 molio-factory/V1.6）。
  */
-function clusterName(memberIds: string[], nodeByKey: Map<string, GraphNode>): string | null {
-  const folder = uniqueMajority(memberIds.map((k) => topFolder(nodeByKey.get(k)?.path ?? k)), '');
+function clusterName(memberIds: string[], nodeByKey: Map<string, GraphNode>, folderDepth = 1): string | null {
+  const folder = uniqueMajority(
+    memberIds.map((k) => prefixFolder(nodeByKey.get(k)?.path ?? k, folderDepth)),
+    '',
+  );
   if (folder !== null) return folder;
   const nodeTypes = memberIds
     .map((k) => nodeByKey.get(k)?.nodeType)
@@ -253,9 +343,11 @@ function clusterName(memberIds: string[], nodeByKey: Map<string, GraphNode>): st
   return uniqueMajority(nodeTypes, null);
 }
 
-function topFolder(path: string): string {
-  const i = path.indexOf('/');
-  return i === -1 ? '' : path.slice(0, i);
+/** path 的前 depth 级目录；可用的目录级数不足时取全部目录级，无目录 → '' */
+function prefixFolder(path: string, depth: number): string {
+  const segs = path.split('/');
+  const n = Math.min(depth, segs.length - 1);
+  return n <= 0 ? '' : segs.slice(0, n).join('/');
 }
 
 /** 众数唯一且不等于排除值 → 该值；并列/空/命中排除值 → null */

@@ -23,6 +23,8 @@ export interface TrunkCluster {
   label: string;
   size: number;
   memberIds: string[];
+  /** 子域（递归分级，深度 ≤2）：仅超上限大簇携带；旧 payload 缺省 = 平面渲染（fail-open） */
+  children?: TrunkCluster[];
 }
 
 export interface TrunkLink {
@@ -72,11 +74,269 @@ export function buildTrunkScene(graph: GraphData): TrunkScene | null {
 
   return {
     hubs,
-    clusters: c.clusters.map((x) => ({ id: x.id, label: x.label, size: x.size, memberIds: x.memberIds })),
+    clusters: c.clusters.map(function toTrunkCluster(x: {
+      id: string;
+      label: string;
+      size: number;
+      memberIds: string[];
+      children?: unknown;
+    }): TrunkCluster {
+      const base: TrunkCluster = { id: x.id, label: x.label, size: x.size, memberIds: x.memberIds };
+      if (Array.isArray(x.children)) base.children = x.children.map(toTrunkCluster);
+      return base;
+    }),
     links: c.links.map((l) => ({ source: l.source, target: l.target, weight: l.weight })),
     crumbCount: c.crumbCount,
     quality: c.quality,
   };
+}
+
+// ─── 嵌套子域（换核设计 §五：形态 A——确定性排布 + 标签预算）───
+
+/** 子域标签预算：按 size 降序前 5 常显，其余「+K」计数（hover 浮现完整名走 labelLod forceShow） */
+export const CHILD_LABEL_BUDGET = 5;
+
+export interface ChildLabelBudget {
+  /** 常显标签的子域 id（size 降序前 N，同 size 按 id 字典序稳定） */
+  visible: string[];
+  /** 未显示标签的子域数（渲染「+K」） */
+  overflow: number;
+}
+
+export function budgetChildLabels(children: readonly TrunkCluster[], max = CHILD_LABEL_BUDGET): ChildLabelBudget {
+  const sorted = [...children].sort((a, b) => (b.size - a.size || (a.id < b.id ? -1 : 1)));
+  const visible = sorted.slice(0, max).map((c) => c.id);
+  return { visible, overflow: Math.max(0, children.length - visible.length) };
+}
+
+/**
+ * 子域确定性排布（换核设计 §五：不进 TRUNK_FORCE，容器内静态相对布局，随父团平移）。
+ * 贪心环装：按 size 降序、首子居中、其余逐环外扩（同环按累计弧长步进角度），
+ * 超出父团可用半径则整体等比收缩——**构造性保证两两不重叠且包络在父团内**。
+ * 纯函数确定性：同输入两次调用逐字段相等。
+ */
+export interface ChildPlacement {
+  x: number;
+  y: number;
+  r: number;
+}
+
+const CHILD_GAP = 2;
+const CHILD_FILL = 0.82; // 可用半径 = 父团半径 × CHILD_FILL
+
+export function layoutChildClusters(
+  children: readonly TrunkCluster[],
+  parentRadius: number,
+): Map<string, ChildPlacement> {
+  const placed = new Map<string, ChildPlacement>();
+  if (children.length === 0 || parentRadius <= 0) return placed;
+
+  // 子域半径 ∝ √size（与 trunkBlobRadius 同构）
+  const radiusOf = (size: number): number => 2 + Math.sqrt(size);
+  const avail = parentRadius * CHILD_FILL;
+  const sorted = [...children].sort((a, b) => (b.size - a.size || (a.id < b.id ? -1 : 1)));
+
+  // 弦距 → 角步（两圆在半径 R 的环上不重叠所需的最小夹角）
+  const dTheta = (ra: number, rb: number, R: number): number =>
+    2 * Math.asin(Math.min(1, (ra + rb + CHILD_GAP) / (2 * R)));
+
+  const raw: Array<{ id: string; d: number; angle: number; r: number }> = [];
+  let ringR = 0; // 当前环半径（首子域在圆心，d=0）
+  let ringTheta = 0; // 当前环已占用角（累计 dTheta）
+  let ringMaxR = 0; // 当前环最大子域半径（定下一环径向起点）
+  let prevOnRing: { angle: number; r: number } | null = null;
+  let firstOnRing: { angle: number; r: number } | null = null; // 环闭合缝校验用
+  let ringIndex = 0;
+  for (const c of sorted) {
+    const r = radiusOf(c.size);
+    if (raw.length === 0) {
+      raw.push({ id: c.id, d: 0, angle: 0, r });
+      ringMaxR = r;
+      continue;
+    }
+    const need = prevOnRing ? dTheta(prevOnRing.r, r, ringR) : 0;
+    // 留环条件（终审 #4）：除与前一子的间距外，还必须给**环闭合缝**留出
+    // 「本子与环上第一个子域」的间距——否则等大串填满环时首尾重叠
+    const closeGap = firstOnRing ? dTheta(r, firstOnRing.r, ringR) : 0;
+    if (ringR === 0 || ringTheta + need + closeGap > 2 * Math.PI) {
+      // 开新环：径向与上一环外缘 + 本子域半径 + GAP 隔开
+      ringR = ringR === 0 ? ringMaxR + r + CHILD_GAP : ringR + ringMaxR + r + CHILD_GAP;
+      ringTheta = 0;
+      ringMaxR = 0;
+      ringIndex++;
+      prevOnRing = null;
+      firstOnRing = null;
+    }
+    const angle: number = prevOnRing ? prevOnRing.angle + dTheta(prevOnRing.r, r, ringR) : ringIndex * 1.1;
+    raw.push({ id: c.id, d: ringR, angle, r });
+    ringTheta += prevOnRing ? dTheta(prevOnRing.r, r, ringR) : 0;
+    if (!firstOnRing) firstOnRing = { angle, r };
+    ringMaxR = Math.max(ringMaxR, r);
+    prevOnRing = { angle, r };
+  }
+
+  // 包络超出父团可用半径 → 等比收缩（等比保不重叠与包络内）
+  const outer = raw.reduce((m, p) => Math.max(m, p.d + p.r), 0);
+  const scale = outer > avail ? avail / outer : 1;
+  for (const p of raw) {
+    placed.set(p.id, {
+      x: Math.cos(p.angle) * p.d * scale,
+      y: Math.sin(p.angle) * p.d * scale,
+      r: p.r * scale,
+    });
+  }
+  return placed;
+}
+
+/**
+ * 质心校正（换核设计 §五）：布局 worker 就绪后，把基础排布向「成员质心（父团相对系）」
+ * 混合 50%，再跑分离迭代修重叠、钳回父团可用圆内。幂等（每次都从基础排布重算，同输入
+ * 同输出）；无质心的子域保持基础排布。**一次校正**（调用方守一次性），不引入常驻动画。
+ */
+export function blendChildPlacements(
+  children: readonly TrunkCluster[],
+  parentRadius: number,
+  centroids: ReadonlyMap<string, { x: number; y: number }>,
+): Map<string, ChildPlacement> {
+  const base = layoutChildClusters(children, parentRadius);
+  if (children.length === 0 || centroids.size === 0) return base;
+  const avail = parentRadius * CHILD_FILL;
+
+  const pos = new Map<string, { x: number; y: number; r: number }>();
+  for (const c of children) {
+    const b = base.get(c.id);
+    if (!b) continue;
+    const g = centroids.get(c.id);
+    if (!g) {
+      pos.set(c.id, { ...b });
+      continue;
+    }
+    let x = (b.x + g.x) / 2;
+    let y = (b.y + g.y) / 2;
+    const d = Math.hypot(x, y);
+    const maxD = Math.max(0, avail - b.r);
+    if (d > maxD && d > 0) {
+      x = (x / d) * maxD;
+      y = (y / d) * maxD;
+    }
+    pos.set(c.id, { x, y, r: b.r });
+  }
+
+  const clampIn = (p: { x: number; y: number; r: number }): void => {
+    const d = Math.hypot(p.x, p.y);
+    const maxD = Math.max(0, avail - p.r);
+    if (d > maxD && d > 0) {
+      p.x = (p.x / d) * maxD;
+      p.y = (p.y / d) * maxD;
+    }
+  };
+  for (let iter = 0; iter < 8; iter++) {
+    const list = children.map((c) => pos.get(c.id)).filter((p): p is { x: number; y: number; r: number } => !!p);
+    for (let i = 0; i < list.length; i++) {
+      for (let j = i + 1; j < list.length; j++) {
+        const a = list[i]!;
+        const b = list[j]!;
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        const dist = Math.hypot(dx, dy) || 1e-9;
+        const min = a.r + b.r + CHILD_GAP;
+        if (dist >= min) continue;
+        const push = (min - dist) / 2;
+        const ux = dx / dist;
+        const uy = dy / dist;
+        a.x -= ux * push;
+        a.y -= uy * push;
+        b.x += ux * push;
+        b.y += uy * push;
+      }
+    }
+    for (const p of pos.values()) clampIn(p);
+  }
+
+  const out = new Map<string, ChildPlacement>();
+  for (const [id, p] of pos) out.set(id, { x: p.x, y: p.y, r: p.r });
+  return out;
+}
+
+/** 深 id 解析（c1 / c1.2 / c1.2.3）：顶层与全部后代里找；不存在 → null */
+export function findClusterDeep(clusters: readonly TrunkCluster[], id: string): TrunkCluster | null {
+  for (const c of clusters) {
+    if (c.id === id) return c;
+    if (c.children) {
+      const found = findClusterDeep(c.children, id);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
+/**
+ * 嵌套 id → 一级簇 id（'c1.2' → 'c1'；'c1' → 'c1'）。**blob 节点身份恒为一级 id**
+ * （终审 Critical #1/#2/#3 的单一修法：引擎/页面一律经此归一，不再手写 includes+slice）。
+ */
+export function topIdOf(clusterId: string): string {
+  const i = clusterId.indexOf('.');
+  return i === -1 ? clusterId : clusterId.slice(0, i);
+}
+
+// ─── 子域质心校正决策（换核设计 §五 + 终审 Important #6）───
+
+export interface ChildCorrectionPlan {
+  clusterId: string;
+  /** 子域 id → 成员质心（父团成员质心为原点的相对系） */
+  centroids: Map<string, { x: number; y: number }>;
+}
+
+/**
+ * 校正决策（纯函数，GraphPage effect 的判断内核）：布局就绪后的子域质心校正
+ * 该不该做、做什么。**展开在场 → null**（Review Focus #3：校正不得撕扯进行中的
+ * 展开动画）；布局未就绪/无子域 → null（兜底 = 保持确定性排布）。
+ */
+export function planChildCorrections(
+  clusters: readonly TrunkCluster[],
+  positions: ReadonlyMap<string, { x: number; y: number }> | null,
+  expandedCount: number,
+): ChildCorrectionPlan[] | null {
+  if (expandedCount > 0) return null;
+  if (!positions) return null;
+  const centroid = (keys: string[]): { x: number; y: number } | null => {
+    let sx = 0;
+    let sy = 0;
+    let n = 0;
+    for (const k of keys) {
+      const p = positions.get(k);
+      if (!p) continue;
+      sx += p.x;
+      sy += p.y;
+      n++;
+    }
+    return n > 0 ? { x: sx / n, y: sy / n } : null;
+  };
+  const plans: ChildCorrectionPlan[] = [];
+  for (const c of clusters) {
+    if (!c.children?.length) continue;
+    const parentC = centroid(c.memberIds);
+    if (!parentC) continue;
+    const centroids = new Map<string, { x: number; y: number }>();
+    for (const ch of c.children) {
+      const cc = centroid(ch.memberIds);
+      if (cc) centroids.set(ch.id, { x: cc.x - parentC.x, y: cc.y - parentC.y });
+    }
+    plans.push({ clusterId: c.id, centroids });
+  }
+  return plans.length > 0 ? plans : null;
+}
+
+/** 搜索候选拍平（换核设计 §五·搜索联动）：顶层 + 子域（标签「父·子」，id 为嵌套 id） */
+export function flattenSearchableClusters(
+  clusters: readonly TrunkCluster[],
+): Array<{ id: string; label: string; size: number }> {
+  const out: Array<{ id: string; label: string; size: number }> = [];
+  for (const c of clusters) {
+    out.push({ id: c.id, label: c.label, size: c.size });
+    for (const ch of c.children ?? []) out.push({ id: ch.id, label: `${c.label}·${ch.label}`, size: ch.size });
+  }
+  return out;
 }
 
 export type TrunkViewReason = 'ok' | 'off' | 'no-communities' | 'filters';
@@ -141,7 +401,8 @@ export function trunkExportMeta(
 ): string {
   const parts: string[] = [];
   if (scene.clusters.length > 0) {
-    // H2 混合场景（代拍 Q）：展开簇的 blob 不在画布上，计数后显式标注展开数——守「所见即所写」
+    // H2 混合场景（代拍 Q）：展开簇的 blob 不在画布上，计数后显式标注展开数——守「所见即所写」。
+    // 换核 v1 只数一级簇（子域不计数——嵌套形态下「簇 N」指顶层容器数；子域计数待用户反馈再定）
     parts.push(
       expandedCount > 0
         ? `${clusterLabel} ${scene.clusters.length}（${expandedLabel} ${expandedCount}）`

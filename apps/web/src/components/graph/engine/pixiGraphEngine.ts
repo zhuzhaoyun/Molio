@@ -51,7 +51,14 @@ import {
   trunkBlobRadius,
   trunkEdgeWidth,
   trunkClusterColor,
+  layoutChildClusters,
+  budgetChildLabels,
+  blendChildPlacements,
+  findClusterDeep,
+  topIdOf,
   type TrunkScene,
+  type ChildPlacement,
+  type TrunkCluster,
 } from '../trunkScene';
 import {
   clamp,
@@ -244,6 +251,8 @@ export class PixiGraphEngine {
   /** 收起 chip 顶层（在成员/标签之上——chip 是展开态的主出口，被盖住等于没有） */
   private chipsLayer!: Container<ContainerChild>;
   private nodesLayer!: Container<ContainerChild>;
+  /** 嵌套子域层（nodes 之上 labels 之下）：大簇内部子域 blob，随父团平移（换核设计 §五） */
+  private trunkChildrenLayer!: Container<ContainerChild>;
   private linkLayer!: Container<Graphics>;
   /** P0-2：全部边共用这一个 Graphics（替代 per-link Graphics，23k 边 23k→1 显示对象） */
   private edgesGfx!: Graphics;
@@ -340,6 +349,12 @@ export class PixiGraphEngine {
   private trunkPayloads = new Map<string, ExpansionPayload>();
   /** 收起 chip 显示对象（挂 chipsLayer 顶层；pointertap → onTrunkCollapseClick）+ 团心 sim 坐标（resize 重定位） */
   private trunkChips = new Map<string, { root: Container; centroid: { x: number; y: number } }>();
+  /**
+   * 嵌套子域层（换核设计 §五）：超上限大簇的子域 blob 集合（挂 trunkChildrenLayer，
+   * nodes 之上、labels 之下）。**不进 TRUNK_FORCE**——相对偏移由纯层 layoutChildClusters
+   * 定（确定性排布），renderFrame 里随父团节点平移；展开/场景重建时随 blob 销毁。
+   */
+  private trunkChildren = new Map<string, { root: Container; placements: Map<string, ChildPlacement> }>();
   /** 簇团单击的延迟派发定时器（双击取消窗） */
   private trunkClickDefer: ReturnType<typeof setTimeout> | null = null;
 
@@ -408,10 +423,12 @@ export class PixiGraphEngine {
 
     this.linkLayer = new Container<Graphics>({ zIndex: 1, isRenderGroup: true, sortableChildren: true });
     this.nodesLayer = new Container<Graphics>({ zIndex: 2, isRenderGroup: true });
+    // 嵌套子域层：与 nodes 同 zIndex、addChild 在后 → 盖在父团 blob 之上、labels 之下
+    this.trunkChildrenLayer = new Container<ContainerChild>({ zIndex: 2, isRenderGroup: true });
     this.labelsLayer = new Container<Text>({ zIndex: 3, isRenderGroup: true });
     // 收起 chip 独立顶层（H2 验收反馈：与成员同层时，后续批次的成员会盖住团心的 chip）
     this.chipsLayer = new Container<ContainerChild>({ zIndex: 4, isRenderGroup: true });
-    this.stage.addChild(this.linkLayer, this.nodesLayer, this.labelsLayer, this.chipsLayer);
+    this.stage.addChild(this.linkLayer, this.nodesLayer, this.trunkChildrenLayer, this.labelsLayer, this.chipsLayer);
 
     this.selectionGfx = new Graphics();
     this.nodesLayer.addChild(this.selectionGfx);
@@ -474,6 +491,8 @@ export class PixiGraphEngine {
     if (this.destroyed) return;
     this.trunkMode = false;
     this.pendingSeed = seed ?? null;
+    for (const entry of this.trunkChildren.values()) entry.root.destroy({ children: true });
+    this.trunkChildren.clear(); // 退出 trunk：子域层撤场
     this.buildAndRender(
       nodes,
       edges.map((e) => ({ ...e })),
@@ -516,6 +535,155 @@ export class PixiGraphEngine {
     ];
     const edges: EngineEdge[] = scene.links.map((l) => ({ source: l.source, target: l.target }));
     this.buildAndRender(nodes, edges, scene, opts?.preserveViewport ?? false);
+    this.rebuildTrunkChildren();
+  }
+
+  /**
+   * 重建嵌套子域层（换核设计 §五·形态 A）：大簇内部子域 blob——确定性排布
+   * （layoutChildClusters，贪心环装）+ 标签预算（top-5 常显 + 「+K」计数）。
+   * **不进 TRUNK_FORCE**：Container 原点钉在父团节点位置，renderFrame 随父平移。
+   * v1 非交互（下钻交互 Task 6 接线）；nodeScale 变更后随下次 setTrunkData 生效。
+   */
+  private rebuildTrunkChildren(): void {
+    for (const entry of this.trunkChildren.values()) entry.root.destroy({ children: true });
+    this.trunkChildren.clear();
+    const scene = this.trunkSceneRef;
+    if (!scene) return;
+    for (const cluster of scene.clusters) {
+      if (!cluster.children || cluster.children.length === 0) continue;
+      this.buildTrunkChildrenOf(cluster);
+    }
+    this.geometryDirty = true;
+  }
+
+  /** 单簇的子域层构建（rebuild 全量 / restoreBlobNode 收起回位单簇复用；placement 可注入校正结果） */
+  private buildTrunkChildrenOf(
+    cluster: TrunkCluster,
+    placementOverride?: ReadonlyMap<string, ChildPlacement>,
+  ): void {
+    if (!cluster.children || cluster.children.length === 0) return;
+    const parentR = trunkBlobRadius(cluster.size) * this.nodeScale;
+    const placement = placementOverride ?? layoutChildClusters(cluster.children, parentR);
+    const budget = budgetChildLabels(cluster.children);
+    // passive：root 自身不命中，但不剪枝子树——子域 Graphics 可点（下钻，换核设计 §五）
+    const root = new Container({ eventMode: 'passive' });
+    let overflowX = 0;
+    let overflowY = 0;
+    let overflowN = 0;
+    for (const child of cluster.children) {
+      const p = placement.get(child.id);
+      if (!p) continue;
+      const color = trunkClusterColor(child.id);
+      const g = new Graphics()
+        .ellipse(p.x, p.y, p.r, p.r)
+        .fill({ color, alpha: 0.3 })
+        .stroke({ width: 1, color, alpha: 0.8 });
+      g.eventMode = 'static';
+      g.hitArea = new Circle(p.x, p.y, Math.max(p.r, 6));
+      g.cursor = 'pointer';
+      const childId = child.id;
+      g.on('pointertap', () => {
+        if (!this.dragging) this.callbacks.onTrunkClusterClick?.(childId);
+      });
+      // 预算外子域 hover 浮现完整名（设计 §五克制规则②；预算内常显不重复挂）
+      if (!budget.visible.includes(child.id)) {
+        let hoverLabel: Text | null = null;
+        g.on('pointerover', () => {
+          if (hoverLabel) return;
+          hoverLabel = new Text({
+            eventMode: 'none',
+            text: child.label,
+            anchor: { x: 0.5, y: 0.5 },
+            style: { fontSize: 10, fill: this.theme.label, fontFamily: LABEL_FONT },
+            resolution: window.devicePixelRatio * 4,
+          });
+          hoverLabel.position.set(p.x, p.y);
+          root.addChild(hoverLabel);
+        });
+        g.on('pointerout', () => {
+          if (!hoverLabel) return;
+          hoverLabel.destroy();
+          hoverLabel = null;
+        });
+      }
+      root.addChild(g);
+      if (budget.visible.includes(child.id)) {
+        const t = new Text({
+          eventMode: 'none',
+          text: child.label,
+          anchor: { x: 0.5, y: 0.5 },
+          style: { fontSize: 10, fill: this.theme.label, fontFamily: LABEL_FONT },
+          resolution: window.devicePixelRatio * 4,
+        });
+        t.position.set(p.x, p.y);
+        root.addChild(t);
+      } else {
+        overflowX += p.x;
+        overflowY += p.y;
+        overflowN++;
+      }
+    }
+    if (overflowN > 0) {
+      const t = new Text({
+        eventMode: 'none',
+        text: `+${budget.overflow}`,
+        anchor: { x: 0.5, y: 0.5 },
+        style: { fontSize: 10, fill: this.theme.label, fontFamily: LABEL_FONT },
+        resolution: window.devicePixelRatio * 4,
+      });
+      t.position.set(overflowX / overflowN, overflowY / overflowN);
+      root.addChild(t);
+    }
+    this.trunkChildrenLayer.addChild(root);
+    this.trunkChildren.set(cluster.id, { root, placements: placement as Map<string, ChildPlacement> });
+  }
+
+  /**
+   * 子域质心校正（换核设计 §五）：布局 worker 就绪后**一次**调用——把确定性排布向
+   * 「成员质心（父团相对系）」混合（blendChildPlacements，含分离迭代与钳圆）。
+   * 幂等语义由调用方的一次性标志保证；引擎侧重建该簇子域层。
+   */
+  applyChildPlacementCorrection(clusterId: string, centroids: ReadonlyMap<string, { x: number; y: number }>): void {
+    if (this.destroyed || !this.trunkMode || !this.trunkSceneRef) return;
+    const cluster = findClusterDeep(this.trunkSceneRef.clusters, clusterId);
+    if (!cluster || !cluster.children?.length) return;
+    const parentR = trunkBlobRadius(cluster.size) * this.nodeScale;
+    const placement = blendChildPlacements(cluster.children, parentR, centroids);
+    this.removeTrunkChildrenOf(cluster.id);
+    this.buildTrunkChildrenOf(cluster, placement);
+    this.geometryDirty = true;
+  }
+
+  /** 销毁单簇子域层（展开时 blob 移除，子域随之撤场） */
+  private removeTrunkChildrenOf(clusterId: string): void {
+    const entry = this.trunkChildren.get(clusterId);
+    if (!entry) return;
+    this.trunkChildren.delete(clusterId);
+    entry.root.destroy({ children: true });
+  }
+
+  /** E2E/调试钩子：嵌套子域现状（父簇 id → 子域列表 + 当前落位）；无子域 → 空数组 */
+  getTrunkChildrenInfo(): Array<{
+    id: string;
+    children: Array<{ id: string; label: string; size: number; x: number; y: number; r: number }>;
+  }> {
+    if (!this.trunkSceneRef) return [];
+    const out: Array<{
+      id: string;
+      children: Array<{ id: string; label: string; size: number; x: number; y: number; r: number }>;
+    }> = [];
+    for (const c of this.trunkSceneRef.clusters) {
+      if (!c.children?.length) continue;
+      const placements = this.trunkChildren.get(c.id)?.placements;
+      out.push({
+        id: c.id,
+        children: c.children.map((ch) => {
+          const p = placements?.get(ch.id);
+          return { id: ch.id, label: ch.label, size: ch.size, x: p?.x ?? 0, y: p?.y ?? 0, r: p?.r ?? 0 };
+        }),
+      });
+    }
+    return out;
   }
 
   /**
@@ -534,13 +702,17 @@ export class PixiGraphEngine {
   ): boolean {
     if (this.destroyed || !this.trunkMode) return false;
     if (this.trunkCollapsing.has(clusterId)) return false; // 收起动画进行中
-    const blob = this.nodeById.get(clusterId);
+    // 嵌套 id（c1.2 子域下钻，换核设计 §五）：blob 节点身份恒为**一级 id**（topIdOf 归一），
+    // 展开态键（位置/payload/chip）用完整点击 id
+    const blobId = topIdOf(clusterId);
+    const blob = this.nodeById.get(blobId);
     if (!blob || !blob.trunkCluster) return false; // 不存在或已展开
     const centroid = { x: blob.x ?? 0, y: blob.y ?? 0 };
     this.trunkBlobPos.set(clusterId, centroid);
     this.trunkPayloads.set(clusterId, payload);
-    this.pruneEdgesBy((id) => id === clusterId); // 聚合边撤 + 其他簇指向本 blob 的 spoke（由本簇真实边取代）
-    this.removeSimNode(clusterId);
+    this.pruneEdgesBy((id) => id === blobId); // 聚合边撤 + 其他簇指向本 blob 的 spoke（由本簇真实边取代）
+    this.removeSimNode(blobId);
+    this.removeTrunkChildrenOf(blobId); // 子域层随 blob 撤场（收起回位时 restoreBlobNode 复建）
     this.addExpansionMembers(clusterId, payload, positions, batchKeys, centroid);
     this.addExpansionEdges(payload);
     this.addTrunkChip(clusterId, centroid);
@@ -582,7 +754,11 @@ export class PixiGraphEngine {
     if (this.trunkCollapsing.has(clusterId)) return false; // 收起动画进行中：重入会双份重建聚合边
     const members = this.trunkExpandedMembers.get(clusterId);
     const blobPos = this.trunkBlobPos.get(clusterId);
-    if (!members || !blobPos || !this.trunkSceneRef?.clusters.some((c) => c.id === clusterId)) return false;
+    // 嵌套 id 深解析（终审 Critical #1）：一级簇表查不到 c1.2 会把收起静默拒绝——下钻无出口
+    const clusterExists = this.trunkSceneRef
+      ? findClusterDeep(this.trunkSceneRef.clusters, clusterId) !== null
+      : false;
+    if (!members || !blobPos || !clusterExists) return false;
     if (this.motionMode) {
       this.applyCollapse(clusterId, members);
       return true;
@@ -747,7 +923,7 @@ export class PixiGraphEngine {
   }
 
   private addTrunkChip(clusterId: string, centroid: { x: number; y: number }): void {
-    const cluster = this.trunkSceneRef?.clusters.find((c) => c.id === clusterId);
+    const cluster = this.trunkSceneRef ? findClusterDeep(this.trunkSceneRef.clusters, clusterId) : null;
     const root = new Container({ interactive: true, eventMode: 'static' });
     root.hitArea = new Circle(0, 0, 18);
     root.cursor = 'pointer';
@@ -860,15 +1036,16 @@ export class PixiGraphEngine {
       const t = (l.target as SimNode).id;
       return s < t ? `${s}${TRUNK_PAIR_SEP}${t}` : `${t}${TRUNK_PAIR_SEP}${s}`;
     }));
+    const topId = topIdOf(clusterId); // 聚合边端点是一级簇 id（终审 Critical #2）
     for (const l of this.trunkSceneRef?.links ?? []) {
-      if (l.source !== clusterId && l.target !== clusterId) continue;
-      const other = l.source === clusterId ? l.target : l.source;
-      if (!this.nodeById.has(other) || other === clusterId) continue;
+      if (l.source !== topId && l.target !== topId) continue;
+      const other = l.source === topId ? l.target : l.source;
+      if (!this.nodeById.has(other) || other === topId) continue;
       const pair = clusterId < other ? `${clusterId}${TRUNK_PAIR_SEP}${other}` : `${other}${TRUNK_PAIR_SEP}${clusterId}`;
       if (seenPairs.has(pair)) continue;
       seenPairs.add(pair);
       const link: SimLink = {
-        source: this.nodeById.get(clusterId)!,
+        source: this.nodeById.get(topId)!,
         target: this.nodeById.get(other)!,
         trunkWeight: l.weight,
       };
@@ -885,12 +1062,14 @@ export class PixiGraphEngine {
 
   /** blob 回 trunkBlobPos 缓存位（不跳位）。已存在（动画路径提前恢复）→ null。 */
   private restoreBlobNode(clusterId: string): NodeRenderData | null {
-    if (this.nodeById.has(clusterId)) return null;
+    // 嵌套 id（子域下钻后收起）：blob 节点身份恢复为**一级 id**（expandTrunkCluster 的镜像）
+    const topId = clusterId.includes('.') ? clusterId.slice(0, clusterId.indexOf('.')) : clusterId;
+    if (this.nodeById.has(topId)) return null;
     const blobPos = this.trunkBlobPos.get(clusterId);
-    const cluster = this.trunkSceneRef?.clusters.find((c) => c.id === clusterId);
+    const cluster = this.trunkSceneRef ? findClusterDeep(this.trunkSceneRef.clusters, topId) : null;
     if (!blobPos || !cluster) return null;
     const blob: SimNode = {
-      id: clusterId,
+      id: topId,
       text: cluster.label,
       path: '',
       linkCount: 0,
@@ -901,9 +1080,10 @@ export class PixiGraphEngine {
       y: blobPos.y,
     };
     this.nodes.push(blob);
-    this.nodeById.set(clusterId, blob);
+    this.nodeById.set(topId, blob); // 键 = 一级 id（与 blob.id 同域；终审 Critical #2）
     const rd = this.makeNodeRenderData(blob);
     this.nodeRenderData.push(rd);
+    this.buildTrunkChildrenOf(cluster); // 收起回位：子域层随 blob 复建（展开时已销毁）
     return rd;
   }
 
@@ -2145,6 +2325,16 @@ export class PixiGraphEngine {
       // chip 跟随团心（resize 后 cx/cy 变化也能钉在簇上——deferred minor 归位）
       for (const chip of this.trunkChips.values()) {
         chip.root.position.set(chip.centroid.x + cx, chip.centroid.y + cy);
+      }
+      // 嵌套子域跟随父团节点（父被展开移除 → 隐藏；restoreBlobNode 复建后 Map 恢复）
+      for (const [parentId, entry] of this.trunkChildren) {
+        const node = this.nodeById.get(parentId);
+        if (!node || node.x == null || node.y == null) {
+          entry.root.visible = false;
+          continue;
+        }
+        entry.root.visible = true;
+        entry.root.position.set(node.x + cx, node.y + cy);
       }
       this.redrawEdges();
       this.edgesDirty = false;

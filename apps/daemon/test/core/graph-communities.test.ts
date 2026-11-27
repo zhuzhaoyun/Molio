@@ -278,4 +278,169 @@ describe('detectCommunities', () => {
     // 折叠端点不得产生聚合边（本 fixture 无跨团边，links 恒空）
     assert.deepEqual(c.links, []);
   });
+
+  it('14. 尘埃合并：有边小簇并入边数最多的邻接簇（平票取最小成员 key 侧）', () => {
+    // 5 团 A（a*）+ 5 团 B（b*）+ 3 团 C（c1-c3 三角）：C 以各 1 条边等权连 A、B
+    // ——C 内聚 3 边足以在 Louvain 自成社区，但 size 3 < 5 是尘埃；等权平票 →
+    // 并入最小成员 key 侧（A）。无边尘埃走碎屑由 test 5 钉。
+    const keysA = ['a1.md', 'a2.md', 'a3.md', 'a4.md', 'a5.md'];
+    const keysB = ['b1.md', 'b2.md', 'b3.md', 'b4.md', 'b5.md'];
+    const keysC = ['c1.md', 'c2.md', 'c3.md'];
+    const { nodes, edges } = twoCliques('topic-a', keysA, 'topic-b', keysB);
+    nodes.push(...keysC.map((k) => md(k, { folder: 'topic-c' })));
+    edges.push(...cliqueEdges(keysC.map((k) => `topic-c/${k}`)));
+    edges.push({ source: 'topic-a/a1.md', target: 'topic-c/c1.md' });
+    edges.push({ source: 'topic-b/b1.md', target: 'topic-c/c3.md' });
+    const c = detectCommunities(graph(nodes, edges), { minNodes: 0 });
+
+    assert.equal(c.clusters.length, 2, 'C 并入 A 后只剩两簇');
+    const withC = c.clusters.find((x) => x.memberIds.includes('topic-c/c1.md'))!;
+    assert.equal(withC.size, 8, 'A(5) + C(3)');
+    assert.ok(!c.clusters.some((x) => x.memberIds.includes('topic-b/b1.md') && x.memberIds.includes('topic-c/c1.md')), '平票不得并入 B');
+    assert.equal(c.crumbCount, 0, '有边尘埃不落碎屑');
+  });
+
+  it('15. 尘埃合并到不动点：链图小段级联合并（平票按字典序最小成员 key）', () => {
+    // 链 20 节点：Louvain 切 9 段（尺寸 2,2,2,2,3,2,2,2,3）。尘埃按组最小 key 序
+    // 扫描、平票取目标组最小成员 key——key 比较是**字典序**：'n12' < 'n7'，所以
+    // 段 [9,10,11] 的左右平票落右侧（n12 侧），n≥10 一侧级联合并；n1~n8 一侧
+    // 级联合并到 ≥5 停止 → 最终 [n1..n8] + [n9..n20] 两簇。
+    // LPA 同图给 2 簇 [13,7]（成员划分不同）——本钉继续充当换核分歧钉。
+    // quality degenerate：最大簇 12/20 = 60% > 50%（巨团触发器，非 cap 折叠）。
+    const n = 20;
+    const nodes = Array.from({ length: n }, (_, i) => md(`n${i + 1}.md`, { folder: 'dir' }));
+    const edges = Array.from({ length: n - 1 }, (_, i) => ({
+      source: `dir/n${i + 1}.md`,
+      target: `dir/n${i + 2}.md`,
+    }));
+    const c = detectCommunities(graph(nodes, edges), { minNodes: 0 });
+
+    assert.equal(c.clusters.length, 2);
+    assert.deepEqual(c.clusters.map((x) => x.size), [8, 12]);
+    assert.deepEqual(
+      c.clusters[0]!.memberIds,
+      Array.from({ length: 8 }, (_, i) => `dir/n${i + 1}.md`),
+    );
+    assert.deepEqual(
+      c.clusters[1]!.memberIds,
+      [...Array.from({ length: 11 }, (_, i) => `dir/n${i + 10}.md`), 'dir/n9.md'],
+    );
+    assert.deepEqual(c.clusters.map((x) => x.label), ['dir·8', 'dir·12']);
+    assert.equal(c.crumbCount, 0);
+    assert.equal(c.quality, 'degenerate');
+  });
+});
+
+// ─── 递归分级（Task 4，设计 §四）───
+// fixture 家族：K_n 团 + 桥。「桥强度 × 图尺度 m2」控制顶并/子切——
+// w10 桥的 K5 对：带 30-clique 膨胀器时顶并成 10（test 16），单独子图切回 [5,5]。
+
+function kClique(prefix: string, folder: string, n = 5): { nodes: GraphNode[]; edges: GraphEdge[] } {
+  const nodes = Array.from({ length: n }, (_, i) => md(`${prefix}${i}.md`, { folder }));
+  const edges: GraphEdge[] = [];
+  for (let i = 0; i < n; i++) {
+    for (let j = i + 1; j < n; j++) edges.push({ source: `${folder}/${prefix}${i}.md`, target: `${folder}/${prefix}${j}.md` });
+  }
+  return { nodes, edges };
+}
+
+/** 两个 K5 之间 w 条跨边（确定性：i—i 与 i—(i+1)%5） */
+function bridgeK5(edges: GraphEdge[], f1: string, p1: string, f2: string, p2: string, w: number): void {
+  for (let i = 0; i < Math.floor(w / 2); i++) {
+    edges.push({ source: `${f1}/${p1}${i}.md`, target: `${f2}/${p2}${i}.md` });
+    edges.push({ source: `${f1}/${p1}${i}.md`, target: `${f2}/${p2}${(i + 1) % 5}.md` });
+  }
+  if (w % 2) edges.push({ source: `${f1}/${p1}0.md`, target: `${f2}/${p2}2.md` });
+}
+
+/** fixture A：fa/fb 两 K5 桥 w10 + fx 30-clique 膨胀器 → L1 [10, 30]（子切 [5,5]） */
+function fixtureA() {
+  const a = kClique('a', 'fa');
+  const b = kClique('b', 'fb');
+  const inf = kClique('x', 'fx', 30);
+  const nodes = [...a.nodes, ...b.nodes, ...inf.nodes];
+  const edges = [...a.edges, ...b.edges, ...inf.edges];
+  bridgeK5(edges, 'fa', 'a', 'fb', 'b', 10);
+  return graph(nodes, edges);
+}
+
+describe('detectCommunities 递归分级', () => {
+  it('16. >CAP 簇挂 children（叶子 ≤CAP、id 父.序号、成员并集=父）；不可分簇保持单团', () => {
+    const c = detectCommunities(fixtureA(), { minNodes: 0, recurseCap: 8 });
+
+    assert.equal(c.clusters.length, 2);
+    const merged = c.clusters.find((x) => x.size === 10)!;
+    const big = c.clusters.find((x) => x.size === 30)!;
+    // 10 > cap 8 → children [5,5]
+    assert.deepEqual(merged.children?.map((x) => x.size), [5, 5]);
+    assert.deepEqual(merged.children?.map((x) => x.id), [`${merged.id}.1`, `${merged.id}.2`]);
+    const union = merged.children!.flatMap((x) => x.memberIds).sort();
+    assert.deepEqual(union, [...merged.memberIds].sort(), '覆盖不变量');
+    // 30-clique 不可再分 → children 缺省
+    assert.equal(big.children, undefined);
+  });
+
+  it('17. minNodes 覆盖钉：(CAP, minNodes) 区间的簇递归不空手（子图小于小库门）', () => {
+    // 顶层 minNodes 15：图 40 ≥ 15 正常跑；10-簇 > cap 8 但其子图 10 < 15——
+    // 递归若不覆盖 minNodes:0，子调用会被小库门挡回空 → children 缺省（builder check 抓出的坑）
+    const c = detectCommunities(fixtureA(), { minNodes: 15, recurseCap: 8 });
+    const merged = c.clusters.find((x) => x.size === 10)!;
+    assert.deepEqual(merged.children?.map((x) => x.size), [5, 5], '递归必须覆盖 minNodes: 0');
+  });
+
+  it('18. 深度上限：recursionDepth=2 注入 → >CAP 也不挂 children', () => {
+    const c = detectCommunities(fixtureA(), { minNodes: 0, recurseCap: 8, recursionDepth: 2 });
+    assert.equal(c.clusters.length, 2);
+    for (const cl of c.clusters) assert.equal(cl.children, undefined, '深度用尽 → 如实呈现大叶子');
+  });
+
+  it('19. 两级 happy path：children 之 children（孙代）存在且叶子 ≤CAP', () => {
+    // 4×K5：两对 w10 + 交接 w12 → L1 [20, 30]；sub(20)=[10,10]；孙代 [5,5]
+    const parts = ['fa', 'fb', 'fc', 'fd'].map((f, i) => kClique(String.fromCharCode(97 + i), f));
+    const inf = kClique('x', 'fx', 30);
+    const nodes = [...parts.flatMap((p) => p.nodes), ...inf.nodes];
+    const edges = [...parts.flatMap((p) => p.edges), ...inf.edges];
+    bridgeK5(edges, 'fa', 'a', 'fb', 'b', 10);
+    bridgeK5(edges, 'fc', 'c', 'fd', 'd', 10);
+    bridgeK5(edges, 'fa', 'a', 'fc', 'c', 12);
+    const c = detectCommunities(graph(nodes, edges), { minNodes: 0, recurseCap: 8 });
+
+    const merged = c.clusters.find((x) => x.size === 20)!;
+    assert.deepEqual(merged.children?.map((x) => x.size), [10, 10], '子代');
+    for (const child of merged.children!) {
+      assert.deepEqual(child.children?.map((x) => x.size), [5, 5], '孙代（深度 2 内允许）');
+    }
+  });
+
+  it('20. 覆盖不变量·子级 hub：H 进「其他·N」兜底子域，不出现在任何常规子域', () => {
+    // 12×K5 + H 以平行边×5 连每个成员（节点级增益压过 K5 内聚，星形粘合成 61 大簇）
+    // + 70-clique 膨胀器（度 69 → 顶阈值 max(50,5×P90≈345) → H(300) 非顶 hub）；
+    // 子图 61 节点 P90 ≈ 9 → 阈值 50 → H(300) 是子级 hub → 被子级排除 → 其他·1 兜底。
+    const blobs = Array.from({ length: 12 }, (_, i) => kClique('k', `f${String(i).padStart(2, '0')}`));
+    const inf = kClique('x', 'fx', 70);
+    const hubNode = md('hub.md', { folder: 'fh' });
+    const nodes = [...blobs.flatMap((x) => x.nodes), ...inf.nodes, hubNode];
+    const edges = [...blobs.flatMap((x) => x.edges), ...inf.edges];
+    blobs.forEach((_, i) => {
+      for (let j = 0; j < 5; j++) {
+        for (let r = 0; r < 5; r++) edges.push({ source: 'fh/hub.md', target: `f${String(i).padStart(2, '0')}/k${j}.md` });
+      }
+    });
+    const c = detectCommunities(graph(nodes, edges), { minNodes: 0, recurseCap: 8 });
+
+    assert.ok(!c.hubIds.includes('fh/hub.md'), 'H 不是顶 hub（膨胀器抬高 P90）');
+    const mega = c.clusters.find((x) => x.size === 61);
+    assert.ok(mega, 'H 粘合 12 团成 61 大簇');
+    const other = mega!.children!.find((x) => x.label.startsWith('其他'));
+    assert.ok(other, '存在「其他」兜底子域');
+    assert.equal(other!.size, 1);
+    assert.deepEqual(other!.memberIds, ['fh/hub.md']);
+    const union = mega!.children!.flatMap((x) => x.memberIds).sort();
+    assert.deepEqual(union, [...mega!.memberIds].sort(), '覆盖不变量：∪children ≡ parent');
+    for (const child of mega!.children!) {
+      if (child !== other) assert.ok(!child.memberIds.includes('fh/hub.md'), 'H 不进常规子域');
+    }
+    // 同图两次 deepEqual（children 逐字段确定性）
+    assert.deepEqual(c, detectCommunities(graph(nodes, edges), { minNodes: 0, recurseCap: 8 }));
+  });
 });

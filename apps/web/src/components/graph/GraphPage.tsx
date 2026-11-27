@@ -15,7 +15,15 @@ import { useActiveVault, useActiveVaultId, vaultStore } from '../../stores/vault
 import { navigationHistoryStore, useNavigationHistory } from '../../stores/navigationHistoryStore';
 import { useGraphSettings } from './useGraphSettings';
 import { graphFingerprint, refreshDebounceMs } from './refreshPolicy';
-import { buildTrunkScene, resolveTrunkView, trunkExportMeta, type TrunkScene } from './trunkScene';
+import {
+  buildTrunkScene,
+  resolveTrunkView,
+  trunkExportMeta,
+  flattenSearchableClusters,
+  topIdOf,
+  planChildCorrections,
+  type TrunkScene,
+} from './trunkScene';
 import {
   buildExpansion,
   computeMiniSim,
@@ -341,7 +349,8 @@ export function GraphPage({
     const first = batches[0];
     if (!first) return;
     const snap = engine.getSnapshot();
-    const blobPos = snap?.nodes.find((n) => n.key === clusterId);
+    // 嵌套 id 取心归一（终审 Critical #3）：快照键 = 一级簇 id，嵌套 id 直查必 miss → 落原点
+    const blobPos = snap?.nodes.find((n) => n.key === topIdOf(clusterId));
     const centroid = blobPos ? { x: blobPos.x, y: blobPos.y } : centroidOf(new Map());
 
     // 位置来源（评审 #3）：worker 全量布局就绪且覆盖该簇 → 质心对齐平移，全批即刻落位；
@@ -722,6 +731,38 @@ export function GraphPage({
     };
   }, [trunkView.active, trunkScene, companion, activeVaultId, graphData]);
 
+  // ── 子域质心校正（换核设计 §五）：布局 worker 就绪后一次校正大簇子域落位 ──
+  // 幂等（childCorrectedRef 一次性，随场景重置）；展开中跳过（评审 Review Focus #3：
+  // 校正不得撕扯进行中的展开动画）；未就绪=保持确定性排布（兜底）。
+  const childCorrectedRef = useRef(false);
+  useEffect(() => {
+    childCorrectedRef.current = false;
+  }, [trunkScene]);
+  useEffect(() => {
+    if (!trunkView.active || !trunkScene || !engine || companion) return;
+    if (childCorrectedRef.current) return;
+    if (!trunkScene.clusters.some((c) => c.children?.length)) return;
+    if (engine.getTrunkExpandedClusters().length > 0) return; // 展开中不校正
+    const layout = getLayoutService();
+    const apply = () => {
+      if (childCorrectedRef.current) return;
+      // 决策内核在纯层 planChildCorrections（展开在场→null 等口径有钉，终审 #6）
+      const plans = planChildCorrections(
+        trunkScene.clusters,
+        layout.getPositions(),
+        engine.getTrunkExpandedClusters().length,
+      );
+      if (!plans) return;
+      for (const plan of plans) engine.applyChildPlacementCorrection(plan.clusterId, plan.centroids);
+      childCorrectedRef.current = true;
+    };
+    if (layout.isReady()) {
+      apply();
+      return;
+    }
+    return layout.onReady(apply);
+  }, [trunkView.active, trunkScene, engine, companion]);
+
   // ── 外观/力度参数实时下发（不重建仿真布局）──
   useEffect(() => {
     engine?.setStyle({ theme: themeColors });
@@ -908,12 +949,13 @@ export function GraphPage({
               {searchOpen && (
                 <div className="graph-search-expand">
                   <GraphSearchBox
+                    clusters={trunkView.active && trunkScene ? flattenSearchableClusters(trunkScene.clusters) : undefined}
                     autoFocus
                     nodes={engineData.nodes}
-                    clusters={trunkView.active ? trunkScene?.clusters : undefined}
                     onSelectCluster={(id) => {
-                      // trunk 态命中簇名：就地高亮该簇（聚合边置顶），不切视图
-                      engineRef.current?.highlightTrunkCluster(id);
+                      // trunk 态命中簇名：就地高亮该簇（聚合边置顶），不切视图。
+                      // 子域命中 → v1 高亮其父容器（子域级高亮随下钻交互另细化）
+                      engineRef.current?.highlightTrunkCluster(topIdOf(id));
                     }}
                     onSelect={(key) => {
                       // trunk 态命中节点（H2 替换拍板 A）：命中簇成员 → 展开该簇 + 定位（留在
