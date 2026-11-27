@@ -21,6 +21,10 @@ git diff --submodule=log -- vendor/deepseek-harness
 
 如需选择特定版本，在子模块内执行 `git checkout --detach <tag-or-commit>`。在 Molio 侧适配插件后，将子模块指针和适配改动放入同一 PR。发行前用新用户目录安装构建产物，检查三个预装入口、知识库打开与图谱加载，并通过测试账号和支付测试环境验证市场发布、购买和导入。
 
+「文件入库」注册在 DSH 的输入框「＋」指令菜单（`/molio-ingest`），选择后通过 `conversation.input.dock` 挂载选库对话框，文件预览中的「在知识库中打开」使用 `sidebar.right.tab.document.actions`。注册入口在 [molio-chat-slots.tsx](../packages/dsh-plugin-molio/desktop/molio-chat-slots.tsx)。升级涉及聊天插件入口、插槽名或参数时，先核对这里。右侧文档预览通过 MolioMarkdownBody 包装 DSH 的 MarkdownBody，按打开文件所属库解析 Wiki 引用。聊天内的 Wiki 引用和 Windows 盘符处理仍在 [桌面构建适配脚本](../scripts/harness-desktop.mjs) 中接入 Markdown 渲染器。
+
+升级分支可先运行 `pnpm test:desktop`，在临时目录检验适配脚本对锁定版本的首次应用和重复应用。桌面开发环境构建就绪后，运行 `node distribution/test/desktop/harness/host-smoke.mjs`，用独立用户目录验证会话选库、入库草稿及知识库跳转。
+
 回退已合并的升级时，在 Molio 回退 PR 中一并恢复宿主指针和配套适配，再运行上述检出命令。
 
 ## 构建 Molio 预装版

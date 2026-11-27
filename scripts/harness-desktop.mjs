@@ -53,6 +53,9 @@ export function applyDesktop(hostRoot) {
     </div>}
     {!knowledgeSelected && renderSlot('main', {}, { entryKey: panelId ?? 'conversation' })}`);
   const markdown = join(hostRoot, 'packages/client/ui-primitives/src/markdown');
+  const decodePath = 'path = decodeURIComponent(destination)';
+  insert(join(markdown, 'file-link.ts'), decodePath,
+    decodePath + ".replace(/^\\/([a-z]:[\\\\/])/i, '$1')");
   copyFileSync(join(root, 'packages/dsh-plugin-molio/desktop/MolioWikiText.tsx'), join(markdown, 'MolioWikiText.tsx'));
   const render = join(markdown, 'render.tsx');
   copyFileSync(join(root, 'distribution/test/desktop/harness/wiki-links.client.spec.tsx'),
@@ -65,7 +68,31 @@ export function applyDesktop(hostRoot) {
   insert(delegate, '({ openExternalLink, openFile', '({ wikiCwd, openExternalLink, openFile');
   insert(delegate, '[openExternalLink, openFile', '[wikiCwd, openExternalLink, openFile');
   const chat = join(hostRoot, 'packages/client/ui-chat/src/client/chat/ChatView.tsx');
-  insert(chat, '<MarkdownDelegateProvider\n', '<MarkdownDelegateProvider\n              wikiCwd={cwd}\n');
+  copyFileSync(join(root, 'distribution/test/desktop/harness/session-target.client.spec.tsx'),
+    join(chat, '../../../../tests/session-target.client.spec.tsx'));
+  const chatSource = readFileSync(chat, 'utf8');
+  if (chatSource.includes('wikiCwd={cwd}')) writeFileSync(chat, chatSource.replace('wikiCwd={cwd}', 'wikiCwd={molioTarget.vault?.path}'));
+  insert(chat, '<MarkdownDelegateProvider\n', '<MarkdownDelegateProvider\n              wikiCwd={molioTarget.vault?.path}\n');
+  copyFileSync(join(root, 'packages/dsh-plugin-molio/desktop/MolioTarget.tsx'), join(chat, '../MolioTarget.tsx'));
+  insert(chat, "import { ChatAside }", "import { useMolioTarget } from './MolioTarget.tsx'\nimport { ChatAside }");
+  insert(chat, '  const directory = useSessions', '  const molioTarget = useMolioTarget(sessionId, cwd)\n  const directory = useSessions');
+  const documentMarkdown = join(hostRoot, 'packages/client/ui-sidebar-documentpreview/src/client/markdown');
+  copyFileSync(join(root, 'distribution/test/desktop/harness/preview-wiki.client.spec.tsx'), join(documentMarkdown, '../../../tests/preview-wiki.client.spec.tsx'));
+  copyFileSync(join(root, 'packages/dsh-plugin-molio/desktop/MolioMarkdownBody.tsx'), join(documentMarkdown, 'MolioMarkdownBody.tsx'));
+  insert(join(documentMarkdown, 'index.ts'), "import { MarkdownBody } from './MarkdownBody.tsx'",
+    "import { MolioMarkdownBody as MarkdownBody } from './MolioMarkdownBody.tsx'");
+  const client = join(hostRoot, 'packages/client/ui-chat/src/client');
+  const chatConfig = join(client, '../../tsconfig.client.json');
+  const config = JSON.parse(readFileSync(chatConfig, 'utf8'));
+  if (!config.references.some(ref => ref.path === '../ui-commands')) {
+    config.references.push({ path: '../ui-commands' });
+    writeFileSync(chatConfig, JSON.stringify(config, null, 2) + '\n');
+  }
+  for (const name of ['molio-chat-slots.tsx', 'MolioPreviewLocation.tsx']) {
+    copyFileSync(join(root, 'packages/dsh-plugin-molio/desktop', name), join(client, name));
+  }
+  insert(join(client, 'index.ts'), "export { apply, inject } from './apply.ts'",
+    "export { inject } from './apply.ts'\nexport { apply } from './molio-chat-slots.tsx'");
   const desktop = join(hostRoot, 'apps/desktop');
   const support = join(desktop, 'molio-support');
   mkdirSync(support, { recursive: true });

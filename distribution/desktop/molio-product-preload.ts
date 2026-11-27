@@ -6,6 +6,10 @@ type Draft = { path: string; prompt: string }
 // from main, so a stale renderer cannot acknowledge another window's request.
 export function installKnowledgeComposer() {
   contextBridge.exposeInMainWorld('molioNavigation', {
+    targets: (cwd: string) => ipcRenderer.invoke('molio:targets', cwd),
+    previewLocation: (file: string, open: boolean) => ipcRenderer.invoke('molio:preview-location', file, open),
+    ingestDraft: (vaultId: string) => ipcRenderer.invoke('molio:ingest-draft', vaultId),
+    resolveWiki: (cwd: string, page: string) => ipcRenderer.invoke('molio:wiki', cwd, page, true),
     openWiki: (cwd: string, page: string) => ipcRenderer.invoke('molio:wiki', cwd, page),
     listen: (callback: (url: string) => void) => {
       const handle = (_event: Electron.IpcRendererEvent, url: string) => callback(url)
