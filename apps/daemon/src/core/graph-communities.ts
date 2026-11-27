@@ -46,12 +46,18 @@ export interface DetectCommunitiesOptions {
   hubThreshold?: number;
   /** 默认 5；低于则整簇计入 crumbCount */
   clusterMinSize?: number;
+  /** 递归分级门，默认 CLUSTER_RECURSE_CAP(300)；测试注入小值 */
+  recurseCap?: number;
+  /** 内部：递归分级深度（0=顶层）。递归自身用来守「深度 ≤2」，调用方勿设 */
+  recursionDepth?: number;
 }
 
 /** trunk 簇数量上限：渲染对象 = 簇 + hub，可读预算「几十」（设计 §4.2） */
 export const TRUNK_MAX_CLUSTERS = 40;
 /** 尘埃合并门：size < 此值的社区若与其他社区有边 → 并入边数最多的邻接社区（换核设计 §四） */
 export const DUST_MERGE_MIN = 5;
+/** 递归分级门：簇 size > 此值 → 诱导子图再切挂 children（深度 ≤2；换核设计 §四） */
+export const CLUSTER_RECURSE_CAP = 300;
 /** cap 折叠成员占非 hub 输入的比例超过此值 → quality degenerate（碎片化信号） */
 const CAP_FOLD_DEGENERATE_SHARE = 0.2;
 
@@ -173,6 +179,61 @@ export function detectCommunities(graph: GraphData, opts: DetectCommunitiesOptio
     if ((nameCounts.get(c.label) ?? 0) > 1) c.label = `${c.label}·${c.size}`;
   }
 
+  // 递归分级（换核设计 §四）：size > recurseCap 的簇对其诱导子图递归
+  // detectCommunities（**minNodes 覆盖为 0**——父级小库门会让 (CAP, minNodes)
+  // 区间的递归空手而归，builder check 抓出的坑），结果挂 children；深度 ≤2；
+  // 不可再分（<2 簇，含空）→ children 缺省。覆盖不变量：∪ children.memberIds ≡
+  // parent.memberIds——子级 hub/碎屑/cap 折叠成员一律进「其他·N」兜底子域
+  // （仅非空时存在），杜绝下钻后静默丢内容。children 不占 TRUNK_MAX_CLUSTERS
+  // 预算（执行序：cap 折叠后才递归）。子图分辨率效应（m2 变小）是切分动力。
+  const depth = opts.recursionDepth ?? 0;
+  const recurseCap = opts.recurseCap ?? CLUSTER_RECURSE_CAP;
+  if (depth < 2) {
+    for (const c of clusters) {
+      if (c.size <= recurseCap) continue;
+      const memberSet = new Set(c.memberIds);
+      const subNodes: GraphNode[] = [];
+      for (const k of c.memberIds) {
+        const n = nodeByKey.get(k);
+        if (n) subNodes.push(n);
+      }
+      const subEdges = graph.edges.filter((e) => memberSet.has(e.source) && memberSet.has(e.target));
+      const sub = detectCommunities(
+        { nodes: subNodes, edges: subEdges, deadLinks: [] },
+        { ...opts, minNodes: 0, recursionDepth: depth + 1 },
+      );
+      if (sub.clusters.length < 2) continue; // 不可再分（含空）→ children 缺省
+      const assigned = new Set(sub.clusters.flatMap((x) => x.memberIds));
+      const rest = c.memberIds.filter((k) => !assigned.has(k)).sort();
+      // id 整树重写（子调用的 c1/c2 命名空间映射到父域 c3.1/c3.2…，孙代 c3.1.1…）
+      const remapTree = (cl: GraphCluster, id: string): GraphCluster => ({
+        id,
+        label: cl.label,
+        memberIds: cl.memberIds,
+        size: cl.size,
+        ...(cl.children ? { children: cl.children.map((gc, i) => remapTree(gc, `${id}.${i + 1}`)) } : {}),
+      });
+      const children: GraphCluster[] = sub.clusters.map((sc, i) => ({
+        ...remapTree(sc, `${c.id}.${i + 1}`),
+        label: clusterName(sc.memberIds, nodeByKey, 2) ?? `子域 #${i + 1}`,
+      }));
+      if (rest.length > 0) {
+        children.push({
+          id: `${c.id}.${children.length + 1}`,
+          label: `其他·${rest.length}`,
+          memberIds: rest,
+          size: rest.length,
+        });
+      }
+      const childCounts = new Map<string, number>();
+      for (const ch of children) childCounts.set(ch.label, (childCounts.get(ch.label) ?? 0) + 1);
+      for (const ch of children) {
+        if ((childCounts.get(ch.label) ?? 0) > 1) ch.label = `${ch.label}·${ch.size}`;
+      }
+      c.children = children;
+    }
+  }
+
   // 退化：①最大簇吞掉 >50% 非 hub 输入节点（巨团）；②cap 折叠成员占比 >
   // CAP_FOLD_DEGENERATE_SHARE（碎片化——社区信号稀薄，trunk 只能呈现冰山一角）
   const nonHubTotal = input.length; // hub 已不在 LPA 输入里
@@ -266,11 +327,15 @@ function defaultHubThreshold(degrees: number[]): number {
 
 /**
  * 唯一命名则返回，否则 null（调用方退化到下一档）：
- * 顶层文件夹众数（path 首段，无 `/` 记 '' 桶；'' 赢=无文件夹结构 → null）
- * → nodeType 众数（并列/全无 → null）。
+ * 目录前缀众数（path 前 folderDepth 段；文件直接在浅目录时取可用的最深目录，
+ * 无目录记 '' 桶；'' 赢=无文件夹结构 → null）→ nodeType 众数（并列/全无 → null）。
+ * 一级 depth=1（顶层文件夹），子域 depth=2（如 molio-factory/V1.6）。
  */
-function clusterName(memberIds: string[], nodeByKey: Map<string, GraphNode>): string | null {
-  const folder = uniqueMajority(memberIds.map((k) => topFolder(nodeByKey.get(k)?.path ?? k)), '');
+function clusterName(memberIds: string[], nodeByKey: Map<string, GraphNode>, folderDepth = 1): string | null {
+  const folder = uniqueMajority(
+    memberIds.map((k) => prefixFolder(nodeByKey.get(k)?.path ?? k, folderDepth)),
+    '',
+  );
   if (folder !== null) return folder;
   const nodeTypes = memberIds
     .map((k) => nodeByKey.get(k)?.nodeType)
@@ -278,9 +343,11 @@ function clusterName(memberIds: string[], nodeByKey: Map<string, GraphNode>): st
   return uniqueMajority(nodeTypes, null);
 }
 
-function topFolder(path: string): string {
-  const i = path.indexOf('/');
-  return i === -1 ? '' : path.slice(0, i);
+/** path 的前 depth 级目录；可用的目录级数不足时取全部目录级，无目录 → '' */
+function prefixFolder(path: string, depth: number): string {
+  const segs = path.split('/');
+  const n = Math.min(depth, segs.length - 1);
+  return n <= 0 ? '' : segs.slice(0, n).join('/');
 }
 
 /** 众数唯一且不等于排除值 → 该值；并列/空/命中排除值 → null */

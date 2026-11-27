@@ -200,14 +200,16 @@ export interface GraphData {
 
 /** trunk 对象 id 空间：簇 = "c1".."cn"（按成员最小 key 排序编号）；hub = 节点 key（相对路径，恒以 .md 结尾，无碰撞）。 */
 export interface GraphCluster {
-  /** "c1".."cn" */
+  /** 一级 "c1".."cn"；子域 "c3.c1"（父簇 id + "." + 序号，父簇内唯一） */
   id: string;
-  /** 簇名：成员主流顶层文件夹 → 主流 frontmatter type → 「簇 #n」；重名追加 ·size 消歧 */
+  /** 簇名：成员主流顶层文件夹 → 主流 frontmatter type → 「簇 #n」；重名追加 ·size 消歧。子域同规则但目录前缀取 2 级 */
   label: string;
-  /** 节点 key；hub 不在内，死链幻影/孤立/碎屑不在内 */
+  /** 节点 key；hub 不在内，死链幻影/孤立/碎屑不在内。有 children 时 ∪ children.memberIds ≡ 本簇 memberIds（覆盖不变量，「其他·N」兜底） */
   memberIds: string[];
   /** = memberIds.length */
   size: number;
+  /** 子域（递归分级，深度 ≤2）：仅 size > CLUSTER_RECURSE_CAP 的大簇携带；不可再分则缺省 */
+  children?: GraphCluster[];
 }
 
 /** trunk 聚合边：簇⇄簇 / 簇⇄hub / hub⇄hub；簇内边不计 */
