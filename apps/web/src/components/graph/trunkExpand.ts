@@ -12,6 +12,7 @@
  */
 import type { GraphData } from '@molio/contracts';
 import type { TrunkScene } from './trunkScene.ts';
+import { findClusterDeep } from './trunkScene.ts';
 import { DEFAULT_FORCE_PARAMS } from './types.ts';
 import { collideRadiusValue } from './engine/graphUtils.ts';
 import {
@@ -64,7 +65,9 @@ export function buildExpansion(
   clusterId: string,
   expandedIds: ReadonlySet<string>,
 ): ExpansionPayload | null {
-  const cluster = scene.clusters.find((c) => c.id === clusterId);
+  // 深解析（换核设计 §五·下钻）：嵌套 id（c1.2）展开其 memberIds；
+  // spokes 的 clusterOf 仍按**一级簇**归属（子域成员的 spoke 指向父容器——v1 已知边界）
+  const cluster = findClusterDeep(scene.clusters, clusterId);
   if (!cluster) return null;
 
   const hubKeys = new Set(scene.hubs.map((h) => h.key));
@@ -288,18 +291,28 @@ export function matchExpansionsOnRefresh(
   threshold = 0.8,
 ): RefreshMatch {
   const minKey = (ids: string[]) => ids.reduce((a, b) => (a < b ? a : b));
-  const prevById = new Map(prevScene.clusters.map((c) => [c.id, c] as const));
-  const newByMinKey = new Map(newScene.clusters.map((c) => [minKey(c.memberIds), c] as const));
+  // 深 id（换核设计 §五·刷新保态）：子域展开态同法按「最小成员 key」重匹配。
+  // **按深度分层**：父簇与其持有最小成员的子域 minKey 相同，不分层会让嵌套展开态
+  // 误挂到父簇（2026-11-28 RED 实测）。
+  interface DeepEntry {
+    c: TrunkScene['clusters'][number];
+    depth: number;
+  }
+  const deepList = (cs: readonly TrunkScene['clusters'][number][], depth = 0): DeepEntry[] =>
+    cs.flatMap((c) => [{ c, depth }, ...deepList(c.children ?? [], depth + 1)]);
+  const prevById = new Map(deepList(prevScene.clusters).map((e) => [e.c.id, e] as const));
+  const newByDepthMinKey = new Map(deepList(newScene.clusters).map((e) => [`${e.depth}:${minKey(e.c.memberIds)}`, e.c] as const));
 
   const keep: RefreshMatch['keep'] = [];
   const drop: string[] = [];
   for (const oldId of prevExpanded) {
-    const oldC = prevById.get(oldId);
-    if (!oldC) {
+    const prev = prevById.get(oldId);
+    if (!prev) {
       drop.push(oldId);
       continue;
     }
-    const newC = newByMinKey.get(minKey(oldC.memberIds));
+    const oldC = prev.c;
+    const newC = newByDepthMinKey.get(`${prev.depth}:${minKey(oldC.memberIds)}`);
     if (!newC) {
       drop.push(oldId);
       continue;

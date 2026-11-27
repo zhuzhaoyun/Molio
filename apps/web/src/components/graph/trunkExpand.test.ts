@@ -262,3 +262,71 @@ describe('collideRadiusValue（与引擎 collideRadius 同式，单一来源）'
     assert.equal(collideRadiusValue(1000), 100);
   });
 });
+
+// ─── 嵌套 id（换核设计 §五·下钻 + 刷新保态）───
+describe('嵌套子域展开（buildExpansion / matchExpansionsOnRefresh 深解析）', () => {
+  function nestedScene(): TrunkScene {
+    const g = fixtureGraph();
+    const nested = {
+      ...g,
+      communities: {
+        ...g.communities!,
+        clusters: [
+          {
+            ...g.communities!.clusters[0]!,
+            children: [
+              { id: 'c1.1', label: '甲·前半', memberIds: ['topic-a/a1.md', 'topic-a/a2.md', 'topic-a/a3.md'], size: 3 },
+              { id: 'c1.2', label: '甲·后半', memberIds: ['topic-a/a4.md', 'topic-a/a5.md', 'topic-a/a6.md'], size: 3 },
+            ],
+          },
+          g.communities!.clusters[1]!,
+        ],
+      },
+    } as GraphData;
+    return buildTrunkScene(nested)!;
+  }
+
+  it('嵌套 id 展开：memberNodes = 该子域成员；边界边产出指向父簇的 spoke（在场性由引擎裁决）', () => {
+    const scene = nestedScene();
+    const g = fixtureGraph();
+    const payload = buildExpansion(scene, g, 'c1.2', new Set());
+    assert.ok(payload);
+    assert.deepEqual(payload!.memberNodes.map((m) => m.key).sort(), ['topic-a/a4.md', 'topic-a/a5.md', 'topic-a/a6.md']);
+    // c1.2 成员（a4-a6）簇内边 2 条；子域切割边界 a3-a4 产出「真实边 + spoke(a4→c1 w1)」
+    // ——spoke 指向父簇 id，父 blob 已被子域展开撤场时由引擎端点在场性丢弃（v1 语义）
+    assert.deepEqual(payload!.edges, [
+      { source: 'topic-a/a4.md', target: 'topic-a/a5.md' },
+      { source: 'topic-a/a5.md', target: 'topic-a/a6.md' },
+      { source: 'topic-a/a3.md', target: 'topic-a/a4.md' },
+      { source: 'topic-a/a4.md', target: 'c1', weight: 1 },
+    ]);
+    // 不存在的嵌套 id → null
+    assert.equal(buildExpansion(scene, g, 'c1.9', new Set()), null);
+  });
+
+  it('子域成员的 spoke 指向父容器同级簇（v1 已知边界）：a1→c2 聚合 spoke 带权', () => {
+    const scene = nestedScene();
+    const g = fixtureGraph();
+    // c1.1 含 a1/a2（与 topic-b、总目录有跨对象边）
+    const payload = buildExpansion(scene, g, 'c1.1', new Set())!;
+    const spoke = payload.edges.find((e) => e.target === 'c2');
+    assert.ok(spoke, 'a1→b1/b2 的 spoke 指向一级簇 c2（非 c1.1 的兄弟子域）');
+    assert.equal(spoke!.source, 'topic-a/a1.md');
+    assert.equal(spoke!.weight, 2, '两条跨簇真实边聚合成一根带权 spoke');
+    const cross = payload.edges.filter((e) => e.source === 'topic-a/a1.md' && e.target === 'topic-b/b1.md');
+    assert.equal(cross.length, 1, '跨簇真实边双产出');
+  });
+
+  it('刷新重匹配覆盖嵌套展开态：同成员子域 keep、漂移超阈 drop', () => {
+    const prev = nestedScene();
+    const keepNew = nestedScene(); // 同形状
+    const m1 = matchExpansionsOnRefresh(prev, keepNew, ['c1.1']);
+    assert.deepEqual(m1, { keep: [{ oldId: 'c1.1', newId: 'c1.1' }], drop: [] });
+
+    // 成员面目全非（<80% 重合）→ drop
+    const drifted = nestedScene();
+    drifted.clusters[0]!.children![0]!.memberIds = ['topic-a/a4.md', 'topic-a/a5.md', 'topic-b/b1.md'];
+    const m2 = matchExpansionsOnRefresh(prev, drifted, ['c1.1']);
+    assert.deepEqual(m2, { keep: [], drop: ['c1.1'] });
+  });
+});

@@ -53,7 +53,11 @@ import {
   trunkClusterColor,
   layoutChildClusters,
   budgetChildLabels,
+  blendChildPlacements,
+  findClusterDeep,
   type TrunkScene,
+  type ChildPlacement,
+  type TrunkCluster,
 } from '../trunkScene';
 import {
   clamp,
@@ -551,13 +555,17 @@ export class PixiGraphEngine {
     this.geometryDirty = true;
   }
 
-  /** 单簇的子域层构建（rebuild 全量 / restoreBlobNode 收起回位单簇复用） */
-  private buildTrunkChildrenOf(cluster: TrunkScene['clusters'][number]): void {
+  /** 单簇的子域层构建（rebuild 全量 / restoreBlobNode 收起回位单簇复用；placement 可注入校正结果） */
+  private buildTrunkChildrenOf(
+    cluster: TrunkCluster,
+    placementOverride?: ReadonlyMap<string, ChildPlacement>,
+  ): void {
     if (!cluster.children || cluster.children.length === 0) return;
     const parentR = trunkBlobRadius(cluster.size) * this.nodeScale;
-    const placement = layoutChildClusters(cluster.children, parentR);
+    const placement = placementOverride ?? layoutChildClusters(cluster.children, parentR);
     const budget = budgetChildLabels(cluster.children);
-    const root = new Container({ eventMode: 'none' });
+    // passive：root 自身不命中，但不剪枝子树——子域 Graphics 可点（下钻，换核设计 §五）
+    const root = new Container({ eventMode: 'passive' });
     let overflowX = 0;
     let overflowY = 0;
     let overflowN = 0;
@@ -565,14 +573,21 @@ export class PixiGraphEngine {
       const p = placement.get(child.id);
       if (!p) continue;
       const color = trunkClusterColor(child.id);
-      root.addChild(
-        new Graphics()
-          .ellipse(p.x, p.y, p.r, p.r)
-          .fill({ color, alpha: 0.3 })
-          .stroke({ width: 1, color, alpha: 0.8 }),
-      );
+      const g = new Graphics()
+        .ellipse(p.x, p.y, p.r, p.r)
+        .fill({ color, alpha: 0.3 })
+        .stroke({ width: 1, color, alpha: 0.8 });
+      g.eventMode = 'static';
+      g.hitArea = new Circle(p.x, p.y, Math.max(p.r, 6));
+      g.cursor = 'pointer';
+      const childId = child.id;
+      g.on('pointertap', () => {
+        if (!this.dragging) this.callbacks.onTrunkClusterClick?.(childId);
+      });
+      root.addChild(g);
       if (budget.visible.includes(child.id)) {
         const t = new Text({
+          eventMode: 'none',
           text: child.label,
           anchor: { x: 0.5, y: 0.5 },
           style: { fontSize: 10, fill: this.theme.label, fontFamily: LABEL_FONT },
@@ -588,6 +603,7 @@ export class PixiGraphEngine {
     }
     if (overflowN > 0) {
       const t = new Text({
+        eventMode: 'none',
         text: `+${budget.overflow}`,
         anchor: { x: 0.5, y: 0.5 },
         style: { fontSize: 10, fill: this.theme.label, fontFamily: LABEL_FONT },
@@ -598,6 +614,22 @@ export class PixiGraphEngine {
     }
     this.trunkChildrenLayer.addChild(root);
     this.trunkChildren.set(cluster.id, root);
+  }
+
+  /**
+   * 子域质心校正（换核设计 §五）：布局 worker 就绪后**一次**调用——把确定性排布向
+   * 「成员质心（父团相对系）」混合（blendChildPlacements，含分离迭代与钳圆）。
+   * 幂等语义由调用方的一次性标志保证；引擎侧重建该簇子域层。
+   */
+  applyChildPlacementCorrection(clusterId: string, centroids: ReadonlyMap<string, { x: number; y: number }>): void {
+    if (this.destroyed || !this.trunkMode || !this.trunkSceneRef) return;
+    const cluster = findClusterDeep(this.trunkSceneRef.clusters, clusterId);
+    if (!cluster || !cluster.children?.length) return;
+    const parentR = trunkBlobRadius(cluster.size) * this.nodeScale;
+    const placement = blendChildPlacements(cluster.children, parentR, centroids);
+    this.removeTrunkChildrenOf(cluster.id);
+    this.buildTrunkChildrenOf(cluster, placement);
+    this.geometryDirty = true;
   }
 
   /** 销毁单簇子域层（展开时 blob 移除，子域随之撤场） */
@@ -624,14 +656,17 @@ export class PixiGraphEngine {
   ): boolean {
     if (this.destroyed || !this.trunkMode) return false;
     if (this.trunkCollapsing.has(clusterId)) return false; // 收起动画进行中
-    const blob = this.nodeById.get(clusterId);
+    // 嵌套 id（c1.2 子域下钻，换核设计 §五）：blob 节点身份恒为**一级 id**，
+    // 展开态键（位置/payload/chip）用完整点击 id
+    const blobId = clusterId.includes('.') ? clusterId.slice(0, clusterId.indexOf('.')) : clusterId;
+    const blob = this.nodeById.get(blobId);
     if (!blob || !blob.trunkCluster) return false; // 不存在或已展开
     const centroid = { x: blob.x ?? 0, y: blob.y ?? 0 };
     this.trunkBlobPos.set(clusterId, centroid);
     this.trunkPayloads.set(clusterId, payload);
-    this.pruneEdgesBy((id) => id === clusterId); // 聚合边撤 + 其他簇指向本 blob 的 spoke（由本簇真实边取代）
-    this.removeSimNode(clusterId);
-    this.removeTrunkChildrenOf(clusterId); // 子域层随 blob 撤场（收起回位时 restoreBlobNode 复建）
+    this.pruneEdgesBy((id) => id === blobId); // 聚合边撤 + 其他簇指向本 blob 的 spoke（由本簇真实边取代）
+    this.removeSimNode(blobId);
+    this.removeTrunkChildrenOf(blobId); // 子域层随 blob 撤场（收起回位时 restoreBlobNode 复建）
     this.addExpansionMembers(clusterId, payload, positions, batchKeys, centroid);
     this.addExpansionEdges(payload);
     this.addTrunkChip(clusterId, centroid);
@@ -838,7 +873,7 @@ export class PixiGraphEngine {
   }
 
   private addTrunkChip(clusterId: string, centroid: { x: number; y: number }): void {
-    const cluster = this.trunkSceneRef?.clusters.find((c) => c.id === clusterId);
+    const cluster = this.trunkSceneRef ? findClusterDeep(this.trunkSceneRef.clusters, clusterId) : null;
     const root = new Container({ interactive: true, eventMode: 'static' });
     root.hitArea = new Circle(0, 0, 18);
     root.cursor = 'pointer';
@@ -976,12 +1011,14 @@ export class PixiGraphEngine {
 
   /** blob 回 trunkBlobPos 缓存位（不跳位）。已存在（动画路径提前恢复）→ null。 */
   private restoreBlobNode(clusterId: string): NodeRenderData | null {
-    if (this.nodeById.has(clusterId)) return null;
+    // 嵌套 id（子域下钻后收起）：blob 节点身份恢复为**一级 id**（expandTrunkCluster 的镜像）
+    const topId = clusterId.includes('.') ? clusterId.slice(0, clusterId.indexOf('.')) : clusterId;
+    if (this.nodeById.has(topId)) return null;
     const blobPos = this.trunkBlobPos.get(clusterId);
-    const cluster = this.trunkSceneRef?.clusters.find((c) => c.id === clusterId);
+    const cluster = this.trunkSceneRef ? findClusterDeep(this.trunkSceneRef.clusters, topId) : null;
     if (!blobPos || !cluster) return null;
     const blob: SimNode = {
-      id: clusterId,
+      id: topId,
       text: cluster.label,
       path: '',
       linkCount: 0,

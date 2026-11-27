@@ -182,6 +182,100 @@ export function layoutChildClusters(
   return placed;
 }
 
+/**
+ * 质心校正（换核设计 §五）：布局 worker 就绪后，把基础排布向「成员质心（父团相对系）」
+ * 混合 50%，再跑分离迭代修重叠、钳回父团可用圆内。幂等（每次都从基础排布重算，同输入
+ * 同输出）；无质心的子域保持基础排布。**一次校正**（调用方守一次性），不引入常驻动画。
+ */
+export function blendChildPlacements(
+  children: readonly TrunkCluster[],
+  parentRadius: number,
+  centroids: ReadonlyMap<string, { x: number; y: number }>,
+): Map<string, ChildPlacement> {
+  const base = layoutChildClusters(children, parentRadius);
+  if (children.length === 0 || centroids.size === 0) return base;
+  const avail = parentRadius * CHILD_FILL;
+
+  const pos = new Map<string, { x: number; y: number; r: number }>();
+  for (const c of children) {
+    const b = base.get(c.id);
+    if (!b) continue;
+    const g = centroids.get(c.id);
+    if (!g) {
+      pos.set(c.id, { ...b });
+      continue;
+    }
+    let x = (b.x + g.x) / 2;
+    let y = (b.y + g.y) / 2;
+    const d = Math.hypot(x, y);
+    const maxD = Math.max(0, avail - b.r);
+    if (d > maxD && d > 0) {
+      x = (x / d) * maxD;
+      y = (y / d) * maxD;
+    }
+    pos.set(c.id, { x, y, r: b.r });
+  }
+
+  const clampIn = (p: { x: number; y: number; r: number }): void => {
+    const d = Math.hypot(p.x, p.y);
+    const maxD = Math.max(0, avail - p.r);
+    if (d > maxD && d > 0) {
+      p.x = (p.x / d) * maxD;
+      p.y = (p.y / d) * maxD;
+    }
+  };
+  for (let iter = 0; iter < 8; iter++) {
+    const list = children.map((c) => pos.get(c.id)).filter((p): p is { x: number; y: number; r: number } => !!p);
+    for (let i = 0; i < list.length; i++) {
+      for (let j = i + 1; j < list.length; j++) {
+        const a = list[i]!;
+        const b = list[j]!;
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        const dist = Math.hypot(dx, dy) || 1e-9;
+        const min = a.r + b.r + CHILD_GAP;
+        if (dist >= min) continue;
+        const push = (min - dist) / 2;
+        const ux = dx / dist;
+        const uy = dy / dist;
+        a.x -= ux * push;
+        a.y -= uy * push;
+        b.x += ux * push;
+        b.y += uy * push;
+      }
+    }
+    for (const p of pos.values()) clampIn(p);
+  }
+
+  const out = new Map<string, ChildPlacement>();
+  for (const [id, p] of pos) out.set(id, { x: p.x, y: p.y, r: p.r });
+  return out;
+}
+
+/** 深 id 解析（c1 / c1.2 / c1.2.3）：顶层与全部后代里找；不存在 → null */
+export function findClusterDeep(clusters: readonly TrunkCluster[], id: string): TrunkCluster | null {
+  for (const c of clusters) {
+    if (c.id === id) return c;
+    if (c.children) {
+      const found = findClusterDeep(c.children, id);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
+/** 搜索候选拍平（换核设计 §五·搜索联动）：顶层 + 子域（标签「父·子」，id 为嵌套 id） */
+export function flattenSearchableClusters(
+  clusters: readonly TrunkCluster[],
+): Array<{ id: string; label: string; size: number }> {
+  const out: Array<{ id: string; label: string; size: number }> = [];
+  for (const c of clusters) {
+    out.push({ id: c.id, label: c.label, size: c.size });
+    for (const ch of c.children ?? []) out.push({ id: ch.id, label: `${c.label}·${ch.label}`, size: ch.size });
+  }
+  return out;
+}
+
 export type TrunkViewReason = 'ok' | 'off' | 'no-communities' | 'filters';
 
 export interface TrunkViewInput {

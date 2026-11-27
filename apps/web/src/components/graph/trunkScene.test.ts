@@ -10,6 +10,9 @@ import {
   trunkExportMeta,
   layoutChildClusters,
   budgetChildLabels,
+  blendChildPlacements,
+  findClusterDeep,
+  flattenSearchableClusters,
   type TrunkCluster,
 } from './trunkScene.ts';
 import { NODE_TYPE_COLORS } from './types.ts';
@@ -250,5 +253,68 @@ describe('嵌套子域（layoutChildClusters / budgetChildLabels / children 透�
     // 旧 payload（无 children）→ 全部平面
     const flat = buildTrunkScene(graphFixture())!;
     for (const c of flat.clusters) assert.equal(c.children, undefined);
+  });
+
+  it('⑫ findClusterDeep：嵌套 id 深解析（含孙代）；不存在 → null', () => {
+    const base = communitiesFixture();
+    const nested: GraphCommunities = {
+      ...base,
+      clusters: [
+        {
+          ...base.clusters[0]!,
+          children: [
+            { id: 'c1.1', label: 'a', memberIds: ['topic-a/a1.md'], size: 1, children: [{ id: 'c1.1.1', label: 'x', memberIds: ['topic-a/a1.md'], size: 1 }] },
+            { id: 'c1.2', label: 'b', memberIds: ['topic-a/a2.md'], size: 1 },
+          ],
+        },
+        base.clusters[1]!,
+      ],
+    };
+    const scene = buildTrunkScene({ ...graphFixture(), communities: nested })!;
+    assert.equal(findClusterDeep(scene.clusters, 'c1')!.label, '主题甲');
+    assert.equal(findClusterDeep(scene.clusters, 'c1.2')!.label, 'b');
+    assert.equal(findClusterDeep(scene.clusters, 'c1.1.1')!.label, 'x');
+    assert.equal(findClusterDeep(scene.clusters, 'c9'), null);
+  });
+
+  it('⑬ 质心校正：向质心混合后仍不重叠、包络内、确定性；空质心=保持基础排布', () => {
+    const children = mkChildren([50, 40, 30, 20, 10, 5, 3]);
+    const parentR = trunkBlobRadius(158);
+    // 质心故意挤在同一象限（校正最坏情形）
+    const centroids = new Map(children.map((c, i) => [c.id, { x: (i % 3) * 4 - 4, y: Math.floor(i / 3) * 4 - 4 }] as const));
+    const p1 = blendChildPlacements(children, parentR, centroids);
+    const p2 = blendChildPlacements(children, parentR, centroids);
+    assert.deepEqual([...p1.entries()], [...p2.entries()], '确定性');
+    const list = children.map((c) => ({ id: c.id, ...p1.get(c.id)! }));
+    for (const a of list) {
+      assert.ok(Math.hypot(a.x, a.y) + a.r <= parentR + 1e-9, `${a.id} 包络内`);
+      for (const b of list) {
+        if (a.id >= b.id) continue;
+        assert.ok(Math.hypot(a.x - b.x, a.y - b.y) >= a.r + b.r - 1e-6, `${a.id}/${b.id} 不重叠`);
+      }
+    }
+    // 空质心 → 与基础排布一致
+    const empty = blendChildPlacements(children, parentR, new Map());
+    assert.deepEqual([...empty.entries()], [...layoutChildClusters(children, parentR).entries()]);
+  });
+
+  it('⑭ 搜索拍平：子域以「父·子」标签进候选；无子域=仅顶层', () => {
+    const clusters: TrunkCluster[] = [
+      { id: 'c1', label: '工厂', size: 100, memberIds: [], children: [
+        { id: 'c1.1', label: 'V1.6', size: 60, memberIds: [] },
+        { id: 'c1.2', label: 'V1.5', size: 40, memberIds: [] },
+      ] },
+      { id: 'c2', label: '培训', size: 30, memberIds: [] },
+    ];
+    const flat = flattenSearchableClusters(clusters);
+    assert.deepEqual(
+      flat.map((x) => [x.id, x.label, x.size]),
+      [
+        ['c1', '工厂', 100],
+        ['c1.1', '工厂·V1.6', 60],
+        ['c1.2', '工厂·V1.5', 40],
+        ['c2', '培训', 30],
+      ],
+    );
   });
 });
