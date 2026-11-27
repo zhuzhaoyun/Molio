@@ -16,6 +16,8 @@ export function capturingContext(): CapturingContext {
   const registered: ToolDefinition[] = [];
   const disposers: Array<() => void> = [];
   const ctx = {
+    effect() {},
+    inject() {},
     tools: {
       register(def: ToolDefinition) {
         registered.push(def);

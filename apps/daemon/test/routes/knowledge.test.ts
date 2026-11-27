@@ -53,11 +53,12 @@ describe('Knowledge routes — file operations', () => {
   describe('GET /vaults', () => {
     it('lists picker metadata without counting files', async () => {
       const res = await app.request('/api/knowledge/vaults', { headers: { Prefer: 'return=minimal' } });
-      const body = await res.json();
-      assert.equal(body.vaults[0].id, vaultId);
-      assert.equal('fileCount' in body.vaults[0], false);
-      const full = await (await app.request('/api/knowledge/vaults')).json();
-      assert.equal(typeof full.vaults[0].fileCount, 'number');
+      type Listing = { vaults: Array<{ id: string; fileCount?: number }> };
+      const body = await res.json() as Listing;
+      assert.equal(body.vaults[0]?.id, vaultId);
+      assert.ok(body.vaults[0] && !('fileCount' in body.vaults[0]));
+      const full = await (await app.request('/api/knowledge/vaults')).json() as Listing;
+      assert.equal(typeof full.vaults[0]?.fileCount, 'number');
     });
     it('should list vaults', async () => {
       const res = await app.request('/api/knowledge/vaults');

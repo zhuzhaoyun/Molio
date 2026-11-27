@@ -1,8 +1,5 @@
 <div align="center">
 
-
-
-
 # 📚 Molio
 
 **Give AI your personal knowledge base. Local-first, and every byte stays yours.**
@@ -18,10 +15,6 @@
 [![npm: dsh-plugin-molio — DeepSeek Harness plugin](https://img.shields.io/npm/v/dsh-plugin-molio?style=flat-square&label=dsh%20plugin&color=blue)](https://www.npmjs.com/package/dsh-plugin-molio)
 
 </div>
-
-桌面预装版以 deepseek-harness 为宿主。开发启动、插件目录、打包及上游更新见 [预装版维护说明](docs/harness-upstream.md)。原独立 Electron 桌面端的说明适用于历史版本。
-
-The preinstalled Molio Harness desktop edition includes the knowledge base, graph, and resource marketplace. [Build and update instructions](docs/harness-upstream.md).
 
 ---
 
@@ -269,13 +262,8 @@ Tools: `molio_status`, `kb_vaults`, `kb_tree`, `kb_read`, `kb_search`, `kb_ask_s
 
 ### 🧩 DeepSeek Harness (dsh) plugin
 
-Molio's knowledge base is also available as a read-only plugin for DeepSeek Harness (dsh), so dsh agents can search and read your local Molio vaults during a conversation:
+Molio for DSH adds the knowledge base, knowledge graph and resource library to the official DSH app. Chat and document previews support Obsidian wiki links. The plugin starts its bundled local service on demand. [dsh-plugin-molio](packages/dsh-plugin-molio/README.md)
 
-```bash
-dsh plugin add dsh-plugin-molio
-```
-
-It exposes 5 read-only tools (`molio_status`, `molio_kb_vaults`, `molio_kb_tree`, `molio_kb_search`, `molio_kb_read`) backed by the local Molio daemon HTTP API. Requires a running Molio service (desktop app or Docker). Details: [`packages/dsh-plugin-molio/README.md`](packages/dsh-plugin-molio/README.md) · [npm: dsh-plugin-molio](https://www.npmjs.com/package/dsh-plugin-molio)
 
 ## 🏗️ Architecture
 

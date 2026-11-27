@@ -10,18 +10,16 @@
     "dev": "pnpm build:contracts && concurrently \"pnpm --filter @molio/daemon dev\" \"pnpm --filter @molio/web dev\" --names daemon,web --prefix-colors auto",
     "dev:daemon": "pnpm build:contracts && pnpm --filter @molio/daemon dev",
     "dev:web": "pnpm build:contracts && pnpm --filter @molio/web dev",
-    "dev:desktop": "corepack pnpm --dir .harness-build/host start:desktop",
+    "dev:desktop": "pnpm build:contracts && concurrently \"pnpm --filter @molio/daemon dev\" \"pnpm --filter @molio/web dev\" \"pnpm --filter @molio/desktop dev\" --names daemon,web,desktop --prefix-colors auto",
     "dev:cloud": "pnpm build:contracts && pnpm --filter @molio/cloud dev",
     "build": "pnpm -r build",
-    "build:desktop": "node scripts/build-harness.mjs --app",
-    "package": "node scripts/build-harness.mjs",
-    "package:dir": "node scripts/build-harness.mjs --dir",
-    "desktop:run": "pnpm build:desktop && pnpm dev:desktop",
-    "test": "pnpm --filter @molio/cloud test && pnpm --filter @molio/daemon test && pnpm --filter @molio/cli test && pnpm --filter dsh-plugin-molio test && pnpm test:desktop && pnpm --filter @molio/web test && node --test \"apps/landing-page/test/*.test.mjs\"",
+    "build:desktop": "pnpm --filter @molio/desktop build",
+    "package": "pnpm build && pnpm --filter @molio/desktop package",
+    "package:dir": "pnpm build && pnpm --filter @molio/desktop package:dir",
+    "desktop:run": "pnpm build && pnpm --filter @molio/desktop run:unpacked",
+    "test": "pnpm --filter @molio/cloud test && pnpm --filter @molio/daemon test && pnpm --filter @molio/cli test && pnpm --filter dsh-plugin-molio test && pnpm --filter @molio/desktop test && pnpm --filter @molio/web test && node --test \"apps/landing-page/test/*.test.mjs\"",
     "test:e2e": "pnpm --filter @molio/web test:e2e",
-    "typecheck": "pnpm -r typecheck",
-    "build:harness": "node scripts/build-harness.mjs",
-    "test:desktop": "node --test \"distribution/test/desktop/harness/*.test.js\""
+    "typecheck": "pnpm -r typecheck"
   },
   "engines": {
     "node": ">=24.0.0"
@@ -29,7 +27,7 @@
   "devDependencies": {
     "@types/node": "^24.0.0",
     "concurrently": "^10.0.1",
-    "typescript": "^5.8.3",
-    "esbuild": "0.25.0"
+    "esbuild": "0.25.0",
+    "typescript": "^5.8.3"
   }
 }

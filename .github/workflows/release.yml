@@ -1,64 +1,414 @@
-name: Molio Harness preinstalled release
+name: Release
+
 on:
-  workflow_dispatch:
   push:
-    tags: ['harness-v*']
+    tags:
+      - "v*"
+      - "!v*-dirty*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "版本号 (如 0.2.0-beta.1)"
+        required: true
+        type: string
+
 permissions:
-  contents: read
+  contents: write
+  id-token: write
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
-  build:
+  # ── Smoke test: build unpacked app → launch → verify daemon + UI ──
+  smoke-test:
+    name: Smoke test (${{ matrix.label }})
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-2022, macos-latest]
+        include:
+          - os: windows-2022
+            platform: win
+            arch-flag: ""
+            label: "Windows x64"
+          - os: macos-latest
+            platform: mac
+            arch-flag: "--arm64"
+            label: "macOS arm64"
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 120
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        env:
+          # CI runners are outside China — use the official npm registry instead of
+          # npmmirror.com to avoid CDN routing issues (e.g. app-builder-bin timeouts).
+          npm_config_registry: https://registry.npmjs.org
+        run: pnpm install --frozen-lockfile
+
+      - name: Build all packages
+        run: pnpm build
+
+      - name: Build unpacked app
+        working-directory: apps/desktop
+        run: npx electron-builder --${{ matrix.platform }} ${{ matrix.arch-flag }} --dir
+
+      # ── Windows smoke test ──
+      - name: Launch app and verify (Windows)
+        if: matrix.platform == 'win'
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem -Path "apps/desktop/dist/win-unpacked" -Filter "*.exe" | Select-Object -First 1
+          if (-not $exe) { throw "No .exe found in win-unpacked" }
+          Write-Host "Launching: $($exe.FullName)"
+
+          $proc = Start-Process -FilePath $exe.FullName -PassThru -RedirectStandardOutput "$env:TEMP\daemon-stdout.log" -RedirectStandardError "$env:TEMP\daemon-stderr.log"
+          Write-Host "PID: $($proc.Id)"
+
+          try {
+            # Wait for daemon (port 3100)
+            Write-Host "Waiting for daemon (http://localhost:3100/api/health)..."
+            $healthy = $false
+            for ($i = 0; $i -lt 45; $i++) {
+              Start-Sleep -Seconds 1
+              try {
+                $r = Invoke-WebRequest -Uri "http://localhost:3100/api/health" -TimeoutSec 2 -UseBasicParsing -ErrorAction Stop
+                if ($r.StatusCode -eq 200) {
+                  Write-Host "✅ Daemon healthy (attempt $($i+1)s)"
+                  $healthy = $true
+                  break
+                }
+              } catch {}
+            }
+            if (-not $healthy) {
+              Write-Host "❌ Daemon did not respond within 45s"
+              if (Test-Path "$env:TEMP\daemon-stdout.log") { Write-Host "--- stdout ---"; Get-Content "$env:TEMP\daemon-stdout.log" -Tail 30 }
+              if (Test-Path "$env:TEMP\daemon-stderr.log") { Write-Host "--- stderr ---"; Get-Content "$env:TEMP\daemon-stderr.log" -Tail 30 }
+              throw "Smoke test failed: daemon unreachable"
+            }
+
+            # Verify web UI served from daemon
+            Write-Host "Checking web UI (http://localhost:3100/)..."
+            $web = Invoke-WebRequest -Uri "http://localhost:3100/" -TimeoutSec 10 -UseBasicParsing
+            if ($web.Content -notmatch 'root|app|molio') {
+              Write-Host "Response (first 500 chars): $($web.Content.Substring(0, [Math]::Min(500, $web.Content.Length)))"
+              throw "Web UI did not load — HTML missing expected content"
+            }
+            Write-Host "✅ Web UI loaded"
+
+            # Verify static assets (JS/CSS bundles)
+            $assetCheck = Invoke-WebRequest -Uri "http://localhost:3100/" -TimeoutSec 10 -UseBasicParsing
+            $hasJs = $assetCheck.Content -match '\.js'
+            $hasCss = $assetCheck.Content -match '\.css'
+            Write-Host "✅ Static assets referenced (JS: $hasJs, CSS: $hasCss)"
+
+          } finally {
+            Write-Host "Stopping app..."
+            Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+            Start-Sleep -Seconds 2
+          }
+
+      - name: Upload daemon logs on failure
+        if: failure() && matrix.platform == 'win'
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-test-logs-${{ matrix.platform }}
+          path: |
+            ${{ runner.temp }}/daemon-stdout.log
+            ${{ runner.temp }}/daemon-stderr.log
+          retention-days: 7
+
+      # ── macOS smoke test ──
+      - name: Launch app and verify (macOS)
+        if: matrix.platform == 'mac'
+        shell: bash
+        run: |
+          APP_PATH="apps/desktop/dist/mac-arm64/Molio.app/Contents/MacOS/Molio"
+          if [ ! -f "$APP_PATH" ]; then
+            echo "❌ App binary not found at $APP_PATH"
+            find apps/desktop/dist/ -name "Molio" -type f 2>/dev/null || true
+            exit 1
+          fi
+
+          echo "Launching: $APP_PATH"
+          "$APP_PATH" > /tmp/daemon-stdout.log 2>&1 &
+          APP_PID=$!
+          echo "PID: $APP_PID"
+
+          cleanup() {
+            echo "Stopping app..."
+            kill "$APP_PID" 2>/dev/null || true
+            sleep 2
+            kill -9 "$APP_PID" 2>/dev/null || true
+          }
+          trap cleanup EXIT
+
+          # Wait for daemon
+          echo "Waiting for daemon (http://localhost:3100/api/health)..."
+          for i in $(seq 1 45); do
+            if curl -sf http://localhost:3100/api/health > /dev/null 2>&1; then
+              echo "✅ Daemon healthy (attempt ${i}s)"
+              break
+            fi
+            if [ "$i" -eq 45 ]; then
+              echo "❌ Daemon did not respond within 45s"
+              echo "--- stdout/stderr (last 30 lines) ---"
+              tail -30 /tmp/daemon-stdout.log 2>/dev/null || true
+              exit 1
+            fi
+            sleep 1
+          done
+
+          # Verify web UI
+          echo "Checking web UI (http://localhost:3100/)..."
+          if curl -sf http://localhost:3100/ | grep -qiE 'root|app|molio'; then
+            echo "✅ Web UI loaded"
+          else
+            echo "❌ Web UI did not load"
+            curl -sf http://localhost:3100/ | head -20 || true
+            exit 1
+          fi
+
+      - name: Upload daemon logs on failure (macOS)
+        if: failure() && matrix.platform == 'mac'
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-test-logs-${{ matrix.platform }}
+          path: /tmp/daemon-stdout.log
+          retention-days: 7
+
+  # ── Build & publish (only if smoke test passes) ──────────────────
+  build:
+    needs: smoke-test
+    strategy:
+      fail-fast: false
+      # Publish one platform at a time. Every matrix entry runs
+      # `electron-builder --publish always`, which creates the GitHub release
+      # itself and rejects with "422 already_exists" if it already exists — so
+      # running the entries in parallel makes them race on the same release.
+      # v0.3.59 (run 36685374706) lost that race: the macOS job's create landed
+      # 1s after the Windows job's release went public, failing the job and
+      # skipping the OSS upload. Guarded by test/release-workflow-publish-race.
+      max-parallel: 1
+      matrix:
+        include:
+          - os: windows-2022
+            platform: win
+            arch-flag: ""
+            label: "Windows x64"
+          - os: macos-latest
+            platform: mac
+            arch-flag: "--arm64"
+            label: "macOS arm64"
+
+    name: Build ${{ matrix.label }}
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
         with:
-          submodules: recursive
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 24.22.3
-      - run: corepack pnpm install --frozen-lockfile
-      - run: corepack pnpm package
-      - name: Verify Windows preinstall
-        if: runner.os == 'Windows'
-        shell: pwsh
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        env:
+          npm_config_registry: https://registry.npmjs.org
+        run: pnpm install --frozen-lockfile
+
+      - name: Build all packages
+        run: pnpm build
+
+      - name: Derive version
+        id: version
+        shell: bash
         run: |
-          $exe = Get-ChildItem .harness-build/host/apps/desktop/.desktop-build/targets/win-x64 -Recurse -Filter 'Molio Harness.exe' | Select-Object -First 1
-          if (!$exe) { throw 'Missing packaged application' }
-          apps/cloud/node_modules/.bin/tsx distribution/test/desktop/harness/bundle-smoke.mts $exe.FullName
-      - uses: actions/upload-artifact@v4
-        with:
-          name: installer-${{ runner.os }}
-          if-no-files-found: error
-          include-hidden-files: true
-          path: |
-            .harness-build/host/apps/desktop/.desktop-build/targets/*/unsigned-artifacts/*.exe
-            .harness-build/host/apps/desktop/.desktop-build/targets/*/unsigned-artifacts/*.dmg
-            .harness-build/host/apps/desktop/.desktop-build/targets/*/unsigned-artifacts/*.zip
-  publish:
-    if: startsWith(github.ref, 'refs/tags/harness-v')
+          if [ -n "${{ inputs.version }}" ]; then
+            version=$(echo "${{ inputs.version }}" | xargs)
+          else
+            raw=$(git describe --tags --always --dirty 2>/dev/null || echo "dev")
+            version=${raw#v}
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Package Desktop installer
+        working-directory: apps/desktop
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # macOS: enable ad-hoc signing so ShipIt (electron-updater's install
+          # helper) can validate the code signature. Without this, pre-signed
+          # Electron Framework binaries conflict with our unsigned binary,
+          # causing "code signature did not pass validation" on install.
+          # Note: ad-hoc signing does NOT satisfy Gatekeeper — users still need
+          # to right-click → Open on first launch.
+          CSC_IDENTITY_AUTO_DISCOVERY: "${{ matrix.platform != 'win' }}"
+        run: npx electron-builder --${{ matrix.platform }} ${{ matrix.arch-flag }} --publish always "--config.extraMetadata.version=${{ steps.version.outputs.version }}"
+
+      - name: Verify update manifest exists
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          TAG="v${VERSION}"
+
+          # Poll for release assets with exponential backoff
+          # (GitHub may take a moment to finish uploading after electron-builder exits)
+          echo "Checking release assets for ${TAG}..."
+          ASSETS=""
+          for i in 1 2 3 4 5; do
+            ASSETS=$(gh release view "${TAG}" --repo "${{ github.repository }}" --json assets --jq '.assets[].name' 2>/dev/null || echo "")
+            if [ -n "$ASSETS" ]; then break; fi
+            DELAY=$(( i * 5 ))
+            echo "  attempt ${i}: no assets yet, retrying in ${DELAY}s..."
+            sleep "${DELAY}"
+          done
+
+          if [ -z "$ASSETS" ]; then
+            echo "::error::No assets found in release ${TAG}"
+            exit 1
+          fi
+
+          echo "Release assets:"
+          echo "$ASSETS"
+
+          # Verify platform-specific update manifest exists
+          if [ "${{ matrix.platform }}" = "win" ]; then
+            MANIFEST="latest.yml"
+          elif [ "${{ matrix.platform }}" = "mac" ]; then
+            MANIFEST="latest-mac.yml"
+          else
+            MANIFEST="latest-linux.yml"
+          fi
+
+          if echo "$ASSETS" | grep -q "^${MANIFEST}$"; then
+            echo "✓ Update manifest '${MANIFEST}' found — auto-update will detect v${VERSION}"
+          else
+            echo "::error::Update manifest '${MANIFEST}' NOT found in release ${TAG}. Auto-update will NOT detect this version!"
+            exit 1
+          fi
+
+          # Validate manifest content: version must match.
+          # Use `gh release download` instead of curl because the download URL
+          # changes to "untagged-xxxx" when a tag is force-pushed (GitHub
+          # detaches the release). gh CLI resolves via API — always correct.
+          if [ "${{ matrix.platform }}" = "win" ]; then
+            MANIFEST="latest.yml"
+            echo "Downloading ${MANIFEST} to verify version..."
+            MANIFEST_CONTENT=""
+            for i in 1 2 3 4 5; do
+              rm -f "/tmp/${MANIFEST}"
+              gh release download "${TAG}" --repo "${{ github.repository }}" \
+                --pattern "${MANIFEST}" --dir /tmp --clobber 2>/dev/null || true
+              if [ -f "/tmp/${MANIFEST}" ]; then
+                MANIFEST_CONTENT=$(cat "/tmp/${MANIFEST}")
+                echo "  attempt ${i}: downloaded manifest"
+                break
+              fi
+              DELAY=$(( i * 5 ))
+              echo "  attempt ${i}: download not ready, retrying in ${DELAY}s..."
+              sleep "${DELAY}"
+            done
+            if echo "$MANIFEST_CONTENT" | grep -q "version: ${VERSION}"; then
+              echo "✓ Manifest version matches ${VERSION}"
+            else
+              echo "::error::Manifest version does not match ${VERSION}. Content:"
+              echo "${MANIFEST_CONTENT:-empty}"
+              exit 1
+            fi
+          fi
+
+      # ── Add macOS Gatekeeper notice to release body ──
+      - name: Add macOS Gatekeeper notice to release body
+        if: matrix.platform == 'mac' && ! cancelled()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          TAG="v${{ steps.version.outputs.version }}"
+          NOTICE="## ⚠️ macOS 用户必读
+
+          如果打开 Molio 时提示"已损坏，无法打开"或"无法验证开发者"，
+          这是 macOS Gatekeeper 对未公证应用的正常拦截（Apple 公证需要 \$99/年的 Apple Developer Program）。
+          **应用本身没有安全问题**，请按以下方法解决：
+
+          ### 方法一（推荐）：右键打开
+          在 Finder 中 **右键** 点击 Molio.app → 选择 **"打开"** → 在弹出的对话框中再次点击 **"打开"**。
+          只需操作一次，以后可直接双击打开。
+
+          ### 方法二：移除隔离标记
+          打开终端，运行以下命令（请将路径替换为你的 Molio.app 实际位置）：
+          \`\`\`bash
+          # 如果装在 /Applications：
+          sudo xattr -rd com.apple.quarantine /Applications/Molio.app
+
+          # 如果解压在 ~/Downloads：
+          xattr -rd com.apple.quarantine ~/Downloads/Molio.app
+          \`\`\`
+
+          > **提示**：如果从 ZIP 解压后首次打开仍被拦截，请前往 **系统设置 → 隐私与安全性** ，
+          > 在页面底部找到 Molio 并点击"仍要打开"。
+
+          ---
+          "
+
+          # Get current body, prepend notice, update
+          BODY=$(gh release view "${TAG}" --repo "${{ github.repository }}" --json body --jq '.body' 2>/dev/null || echo "")
+          if echo "$BODY" | grep -q "macOS 用户必读\|Gatekeeper"; then
+            echo "✓ Release body already has macOS notice — skipping"
+          else
+            echo "Prepending macOS notice to release body..."
+            gh release edit "${TAG}" --repo "${{ github.repository }}" --notes "${NOTICE}${BODY}"
+            echo "✓ macOS notice added to release body"
+          fi
+
+  # ── Upload release assets to Alibaba Cloud OSS (China mirror) ──
+  upload-oss:
+    name: Upload to Alibaba Cloud OSS
     needs: build
-    permissions:
-      contents: write
-      id-token: write
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
         with:
-          pattern: installer-*
-          path: artifacts
-          merge-multiple: true
-      - name: Publish versioned installers
-        env:
-          GH_TOKEN: ${{ github.token }}
+          fetch-depth: 0
+
+      - name: Derive version
+        id: version
+        shell: bash
         run: |
-          mkdir release-assets
-          find artifacts -type f -exec cp {} release-assets/ \;
-          gh release create "$GITHUB_REF_NAME" --verify-tag --latest=false --generate-notes release-assets/*
+          if [ -n "${{ inputs.version }}" ]; then
+            version=$(echo "${{ inputs.version }}" | xargs)
+          else
+            raw=$(git describe --tags --always --dirty 2>/dev/null || echo "dev")
+            version=${raw#v}
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Download release assets from GitHub
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="v${{ steps.version.outputs.version }}"
+          echo "Downloading assets from ${TAG}..."
+          gh release download "${TAG}" --dir ./release-assets --skip-existing
+          echo "Downloaded files:"
+          ls -la ./release-assets/
+
       - name: Install ossutil
         run: |
           curl -fsSL https://gosspublic.alicdn.com/ossutil/install.sh | sudo bash
@@ -87,7 +437,7 @@ jobs:
             --session-name "github-actions-${{ github.run_id }}" \
             > /tmp/sts_output.json
           CREDENTIALS=$(cat /tmp/sts_output.json)
-
+          echo "STS response: $CREDENTIALS"
           echo "::endgroup::"
 
           # Extract credentials
@@ -97,7 +447,7 @@ jobs:
 
           if [ -z "$AK_ID" ] || [ "$AK_ID" = "null" ]; then
             echo "❌ Failed to extract credentials from STS response"
-
+            echo "Raw response: $CREDENTIALS"
             exit 1
           fi
           echo "✅ STS credentials obtained"
@@ -116,5 +466,65 @@ jobs:
           OSS_BUCKET: ${{ vars.OSS_BUCKET }}
           OSS_ENDPOINT: ${{ vars.OSS_ENDPOINT }}
         run: |
-          export TAG="$GITHUB_REF_NAME"
+          VERSION="${{ steps.version.outputs.version }}"
+          TAG="v${VERSION}"
+          export TAG
+
+          # Transfers are parallel inside the script and it exits non-zero if any
+          # of them fails, so a partial upload aborts the step before the channel
+          # pointers below are rewritten. See the script header for why parallel.
           bash scripts/upload-release-assets.sh ./release-assets
+
+          # Determine update channel: stable → "latest", prerelease → prerelease type
+          # electron-updater looks for <channel>.yml / <channel>-mac.yml / <channel>-linux.yml
+          # Stable versions update the "latest" channel; prerelease versions update their own channel.
+          if echo "${VERSION}" | grep -qiE '(test|beta|alpha|rc|dirty)'; then
+            CHANNEL=$(echo "${VERSION}" | grep -oiE '(beta|alpha|rc)' | head -1 || echo "beta")
+            echo "📌 Prerelease detected — channel: ${CHANNEL}"
+          else
+            CHANNEL="latest"
+            echo "{\"version\":\"${VERSION}\",\"updatedAt\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" > /tmp/latest.json
+            ossutil cp /tmp/latest.json oss://${{ vars.OSS_BUCKET }}/releases/latest.json \
+              --endpoint=${{ vars.OSS_ENDPOINT }} \
+              -i "${OSS_ACCESS_KEY_ID}" \
+              -k "${OSS_ACCESS_KEY_SECRET}" \
+              -t "${OSS_SECURITY_TOKEN}" \
+              --meta Cache-Control:no-cache \
+              --force
+            echo "✅ Updated latest.json to ${VERSION}"
+          fi
+
+          # Copy platform manifests from version dir to root for electron-updater generic provider.
+          # The yml's url/path fields are relative filenames, but files live under releases/<tag>/.
+          # We must prepend the tag directory so electron-updater resolves the correct download URL.
+          # Source manifests are always named latest*.yml in the versioned dir; we rename them
+          # to match the channel (e.g. latest-mac.yml → beta-mac.yml for beta channel).
+          for MANIFEST_SRC_NAME in latest.yml latest-mac.yml latest-linux.yml; do
+            MANIFEST_SRC="oss://${{ vars.OSS_BUCKET }}/releases/${TAG}/${MANIFEST_SRC_NAME}"
+
+            # Download from versioned directory — skip gracefully if platform not built
+            ossutil cp "${MANIFEST_SRC}" /tmp/manifest-raw.yml \
+              --endpoint=${{ vars.OSS_ENDPOINT }} \
+              -i "${OSS_ACCESS_KEY_ID}" \
+              -k "${OSS_ACCESS_KEY_SECRET}" \
+              -t "${OSS_SECURITY_TOKEN}" \
+              --force 2>/dev/null || continue
+
+            # Prefix relative url/path with version directory
+            sed -i "s|url: |url: ${TAG}/|g; s|path: |path: ${TAG}/|g" /tmp/manifest-raw.yml
+
+            # Map source name to channel name (latest.yml → beta.yml, latest-mac.yml → beta-mac.yml)
+            MANIFEST_DST_NAME=$(echo "${MANIFEST_SRC_NAME}" | sed "s/^latest/${CHANNEL}/")
+
+            ossutil cp /tmp/manifest-raw.yml "oss://${{ vars.OSS_BUCKET }}/releases/${MANIFEST_DST_NAME}" \
+              --endpoint=${{ vars.OSS_ENDPOINT }} \
+              -i "${OSS_ACCESS_KEY_ID}" \
+              -k "${OSS_ACCESS_KEY_SECRET}" \
+              -t "${OSS_SECURITY_TOKEN}" \
+              --meta Cache-Control:no-cache \
+              --force
+
+            echo "✅ Updated ${MANIFEST_DST_NAME} (paths prefixed with ${TAG}/)"
+          done
+
+          echo "✅ Uploaded ${TAG} to oss://${{ vars.OSS_BUCKET }}/releases/${TAG}/"

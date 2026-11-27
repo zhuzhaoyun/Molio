@@ -1,8 +1,5 @@
 # Molio — 让你的积累，在 AI 时代持续产生价值
 
-桌面预装版以 deepseek-harness 为宿主。开发启动、插件目录、打包及上游更新见 [预装版维护说明](docs/harness-upstream.md)。原独立 Electron 桌面端的说明适用于历史版本。
-
-
 本地优先应用：把 AI runtime（Claude Code / Codex 等）接到你的本地知识库上，AI 读你的积累做研究、写作、问答，产出回写入库、沉淀为资产；排版与多平台发布只是产出出口之一。
 1. 管理本地知识库（类 Obsidian + LLM Wiki），支持 weknora 知识库
 2. 调用 Claude Code / Codex 等 AI runtime 基于知识库做研究、写作、咨询等
@@ -14,12 +11,12 @@
 
 ```
 packages/
-  dsh-plugin-molio/ — DSH 知识工具和桌面插件
   contracts/    @molio/contracts  — shared types (AgentEvent, RunInfo, API types, SSE, auth)
-  dsh-plugin-molio/  dsh-plugin-molio — DeepSeek Harness (dsh) 插件：5 个只读 KB 工具直连 daemon HTTP API，零运行时依赖，独立发布 npm
+  dsh-plugin-molio/  dsh-plugin-molio — DeepSeek Harness (dsh) 插件：知识库、图谱、资源市场和对话引用，独立发布 npm
 apps/
   daemon/       @molio/daemon    — Hono HTTP server, RunManager, SSE transport (→ apps/daemon/CLAUDE.md)
   web/          @molio/web       — Vite + React web UI, consuming daemon SSE (→ apps/web/CLAUDE.md)
+  desktop/      @molio/desktop   — Electron shell (→ apps/desktop/CLAUDE.md)
   cloud/        @molio/cloud     — 云端认证服务（用户模块；邮箱验证码登录，独立部署，不进应用镜像）(→ apps/cloud/CLAUDE.md)
   cli/          @molio/cli       — 知识库能力 CLI + MCP server（供 WorkBuddy/千问等外部桌面 agent 只读调用）(→ apps/cli/CLAUDE.md)
 ```
@@ -30,7 +27,7 @@ apps/
 pnpm dev          # daemon (tsx watch :3100) + web (vite :5173)
 pnpm dev:daemon   # daemon only
 pnpm dev:web      # web only
-pnpm dev:desktop  # 启动已构建的 DSH 预装版
+pnpm dev:desktop  # daemon + web + electron (需确保 5173/3100 端口未被占用)
 pnpm dev:cloud    # cloud auth service only (tsx :3200, 无 DATABASE_URL 自动内存模式)
 pnpm build        # build all packages
 pnpm test         # run cloud + daemon + desktop + web tests (node:test)
@@ -41,7 +38,7 @@ pnpm typecheck    # typecheck all packages
 ### Desktop 构建与运行
 
 ```bash
-pnpm desktop:run    # 构建并启动 DSH 开发桌面
+pnpm desktop:run    # 一键构建 + 生成未打包版本 (win-unpacked)，可直接运行 exe
 pnpm package:dir    # 仅生成未打包目录 (不生成安装包)
 pnpm package        # 完整打包
 ```
@@ -83,7 +80,7 @@ Molio Chrome 扩展保存剪藏时通过 `molio://` 唤起桌面端。协议约�
 - `molio://open/file/<filePath>`：只知道文件相对路径时，由 Web 端使用当前/默认 vault 解析
 - `molio://launch`：只用于打开应用，不应作为剪藏保存后的文件定位主路径
 
-桌面端只负责解析协议并导航到 `/knowledge?...`；Web 端负责等待目标 vault 的文件树加载完成，再选中文件。扩展可能先发出文件打开意图再完成写入，因此 Web 端文件读取允许一次短重试。改这条链路时要同时检查 `molio-connect/background.js`、`distribution/desktop/molio-desktop.ts`、`apps/web/src/components/kb/KnowledgeBasePage.tsx` 和 `apps/web/src/hooks/useKnowledge.ts`。
+桌面端只负责解析协议并导航到 `/knowledge?...`；Web 端负责等待目标 vault 的文件树加载完成，再选中文件。扩展可能先发出文件打开意图再完成写入，因此 Web 端文件读取允许一次短重试。改这条链路时要同时检查 `molio-connect/background.js`、`apps/desktop/src/main.js`、`apps/web/src/components/kb/KnowledgeBasePage.tsx` 和 `apps/web/src/hooks/useKnowledge.ts`。
 
 主进程按「渲染进程就绪标志」在两条投递路径间二选一：**就绪 → 页内 IPC**（React Router 跳转，不重载、不丢状态）；**未就绪 → 整页 `loadURL` 兜底**（冷启动 / daemon 错误页 / 渲染进程已死）。因此**该标志的清除条件是这条链路的命门**：只允许被「主框架 + 非同文档」的真实文档替换（`did-start-navigation` 的 `isMainFrame && !isSameDocument`）、窗口关闭、渲染进程崩溃清除。
 
@@ -116,7 +113,7 @@ const child = spawn(binary, args, {
 | 错误来源 | 测试位置 | 测试框架 |
 |---------|---------|---------|
 | daemon bug | `apps/daemon/test/<module>/xxx.test.ts` | node:test |
-| desktop bug | `distribution/test/desktop/harness/xxx.test.js` | node:test |
+| desktop bug | `apps/desktop/test/<module>/xxx.test.js` | node:test |
 | web bug | `apps/web/e2e/xxx.spec.ts` | Playwright |
 | cloud bug | `apps/cloud/test/xxx.test.ts` | node:test |
 
@@ -180,11 +177,11 @@ apps/daemon/src/core/RunManager.ts, conversations/run-starter.ts, db.ts
 
 | 层 | 工具 | 位置 | 触发时机 |
 |---|---|---|---|
-| Unit | `node:test` | `apps/daemon/test/**`, `distribution/test/desktop/harness/**`, `apps/web/test/**` + `apps/web/src/**/*.test.ts` | 每次 PR (win + mac) |
+| Unit | `node:test` | `apps/daemon/test/**`, `apps/desktop/test/**`, `apps/web/test/**` + `apps/web/src/**/*.test.ts` | 每次 PR (win + mac) |
 | E2E | Playwright | `apps/web/e2e/*.spec.ts` | 每次 PR (ubuntu) — affected + P0 |
 | E2E Full | Playwright | 同上 | nightly 03:00 UTC + manual |
 | Desktop E2E | Playwright (Electron) | `apps/desktop/e2e/specs/**` | nightly 03:00 UTC + manual（e2e.yml `desktop-e2e` job, windows-2022；每 spec 独占 app 生命周期 + 3100 端口，不进 PR 快检） |
-| Release Smoke | inline (release.yml) | `win-unpacked/Molio Harness.exe` 等 | tag 触发 |
+| Release Smoke | inline (release.yml) | `apps/desktop/dist/win-unpacked` 等 | tag 触发 |
 | Impact Analysis | grep + area-map | `scripts/codegraph-impact.mjs` | PR opened/synchronize/reopened |
 
 ### E2E 优先级与 area 标签
@@ -347,4 +344,5 @@ CI 中通过 `grep -qiE '(test|beta|alpha|rc|dirty)'` 判断是否为预发布�
 
 **@molio/cli 独立发布**：tag `cli-v*`（如 `cli-v0.1.0`）触发 `cli-publish.yml` 发布 npm 包，与桌面端 `v*` tag 互不干扰。详见 `apps/cli/CLAUDE.md` 的「npm 发布」节。
 
-**dsh-plugin-molio 独立发布**：tag `dsh-plugin-v*`（如 `dsh-plugin-v0.1.0`）触发 `dsh-plugin-publish.yml` 发布 npm 包（非 scoped 包名 `dsh-plugin-molio`，供 `dsh plugin add` 安装）。插件是 DeepSeek Harness (dsh) 生态的只读知识库插件，改动后发版前建议用本机 dsh 真机回归一次（装 tgz 进测试 profile 实调工具）。
+**dsh-plugin-molio 独立发布**：tag `dsh-plugin-v*`（如 `dsh-plugin-v0.1.0`）触发 `dsh-plugin-publish.yml` 发布 npm 包（非 scoped 包名 `dsh-plugin-molio`，供 `dsh plugin add` 安装）。插件是 DeepSeek Harness (dsh) 生态的独立知识库插件，改动后发版前建议用本机 dsh 真机回归一次（装 tgz 进测试 profile 实调工具）。
+DSH 独立插件位于 `packages/dsh-plugin-molio`，构建、安装和测试见 [插件说明](packages/dsh-plugin-molio/README.md)。原生桌面端位于 `apps/desktop`。

@@ -1,0 +1,134 @@
+{
+  "name": "@molio/desktop",
+  "version": "0.3.30",
+  "description": "Molio - AI writing & knowledge management platform",
+  "author": "Molio Team",
+  "type": "module",
+  "private": true,
+  "main": "src/main.js",
+  "scripts": {
+    "dev": "electron .",
+    "prepare": "node scripts/prepare-resources.mjs",
+    "build": "pnpm --filter @molio/desktop^... build && node scripts/prepare-resources.mjs",
+    "package": "node scripts/package.mjs",
+    "package:win": "node scripts/package.mjs --win",
+    "package:mac": "node scripts/package.mjs --mac",
+    "package:linux": "node scripts/package.mjs --linux",
+    "package:dir": "node scripts/package.mjs --win --dir",
+    "run:unpacked": "node scripts/package.mjs --win --dir && echo 'Run: ./dist/win-unpacked/墨流 Molio.exe'",
+    "typecheck": "echo 'desktop: no TS to check'",
+    "test": "node --test \"test/**/*.test.js\"",
+    "test:e2e": "npx playwright test --config e2e/playwright.config.ts",
+    "test:e2e:headed": "npx playwright test --config e2e/playwright.config.ts --headed"
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.3"
+  },
+  "devDependencies": {
+    "@arms/rum-electron": "^0.0.7",
+    "@molio/contracts": "workspace:*",
+    "@molio/daemon": "workspace:*",
+    "@molio/web": "workspace:*",
+    "@playwright/test": "^1.50.0",
+    "electron": "^40.0.0",
+    "electron-builder": "^25.1.8",
+    "esbuild": "^0.25.0",
+    "rcedit": "^5.0.2"
+  },
+  "build": {
+    "appId": "com.molio.desktop",
+    "productName": "Molio",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "src/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "resources",
+        "to": ".",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "asarUnpack": [
+      "**/*.node"
+    ],
+    "forceCodeSigning": false,
+    "afterPack": "scripts/fix-exe-metadata.mjs",
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "signAndEditExecutable": false
+    },
+    "nsis": {
+      "artifactName": "${productName}-Setup-${version}-windows.${ext}",
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "deleteAppDataOnUninstall": false
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "arm64"
+          ]
+        }
+      ],
+      "category": "public.app-category.productivity"
+    },
+    "dmg": {
+      "artifactName": "${productName}-${version}-mac-${arch}.${ext}"
+    },
+    "linux": {
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "deb",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "category": "Office"
+    },
+    "appImage": {
+      "artifactName": "${productName}-${version}-linux-${arch}.${ext}"
+    },
+    "deb": {
+      "artifactName": "${productName}_${version}_linux_${arch}.${ext}"
+    },
+    "publish": [
+      {
+        "provider": "generic",
+        "url": "https://molio-releases.oss-cn-guangzhou.aliyuncs.com/releases/"
+      },
+      {
+        "provider": "github",
+        "owner": "zhuzhaoyun",
+        "repo": "Molio",
+        "releaseType": "release"
+      }
+    ]
+  }
+}

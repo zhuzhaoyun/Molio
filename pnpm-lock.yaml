@@ -17,6 +17,9 @@ importers:
       concurrently:
         specifier: ^10.0.1
         version: 10.0.3
+      esbuild:
+        specifier: 0.25.0
+        version: 0.25.0
       typescript:
         specifier: ^5.8.3
         version: 5.8.3
@@ -294,7 +297,14 @@ importers:
         version: 12.10.0
 
   packages/dsh-plugin-molio:
+    dependencies:
+      trash:
+        specifier: ^10.1.1
+        version: 10.1.1
     devDependencies:
+      yaml:
+        specifier: ^2.9.1
+        version: 2.9.1
       '@deepseek-ai/cordis':
         specifier: 4.0.4
         version: 4.0.4

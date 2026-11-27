@@ -16,8 +16,6 @@
 
 </div>
 
-Molio Harness 桌面预装版内置知识库、图谱和完整资源市场。构建与升级步骤见[预装版说明](docs/harness-upstream.md)。
-
 ---
 
 你的积累不止一种形态：散落在笔记、文档和聊天记录里的经验与方法，也有整本书、带图表的 PDF、成堆的行业资料。它们大多以 AI 读不下去的形态存在，于是每一次对话，都从零开始。
@@ -264,13 +262,8 @@ pi install npm:@molio/cli                        # Pi：自动注册 server + �
 
 ### 🧩 DeepSeek Harness (dsh) 插件
 
-Molio 知识库同时封装为 DeepSeek Harness (dsh) 的只读插件，dsh agent 可在对话中直接搜索、读取你本机的 Molio 知识库：
+独立插件为官方 DSH 添加知识库、知识图谱和资源市场。对话和右侧预览支持 Obsidian 双链，插件按需启动内置的本地知识库服务。 [dsh-plugin-molio](packages/dsh-plugin-molio/README.md)
 
-```bash
-dsh plugin add dsh-plugin-molio
-```
-
-提供 5 个只读工具（`molio_status`、`molio_kb_vaults`、`molio_kb_tree`、`molio_kb_search`、`molio_kb_read`），数据经本机 Molio daemon HTTP API 获取，需 Molio 服务（桌面端或 Docker）处于运行状态。详见 [`packages/dsh-plugin-molio/README.md`](packages/dsh-plugin-molio/README.md) · [npm: dsh-plugin-molio](https://www.npmjs.com/package/dsh-plugin-molio)
 
 ## 🏗️ 项目架构
 

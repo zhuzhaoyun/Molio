@@ -340,8 +340,13 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
     if (harnessMode) {
       if (!kb.activeVault) return;
       const open = window.__electron__?.openKnowledgeConversation;
+      const parentOrigin = window.location.ancestorOrigins?.[0] || (document.referrer && new URL(document.referrer).origin);
+      if (!open && window.parent !== window && parentOrigin && parentOrigin !== 'null') {
+        window.parent.postMessage({ type: 'molio-draft', context: { mode, vaultId: kb.activeVault.id, ...context } }, parentOrigin);
+        return;
+      }
       if (!open) {
-        showToast('请在 Molio Harness 桌面端打开知识库对话');
+        showToast('请在 DSH 中打开 Molio 插件');
         return;
       }
       void open({ mode, vaultId: kb.activeVault.id, vaultPath: kb.activeVault.path, ...context })
