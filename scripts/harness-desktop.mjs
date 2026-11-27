@@ -151,6 +151,9 @@ export function applyDesktop(hostRoot) {
   insert(sidebarIndex, "import { SidebarRoot }", "import { registerMolioPanel } from './MolioSidebar.tsx'\nimport { SidebarRoot }");
   insert(sidebarIndex, '  const panelPins =', '  registerMolioPanel(ctx)\n  const panelPins =');
   const browserGuests = join(desktop, 'src/browser-guests.ts');
+  // The host's aggregate client tests compile browser-guests and its desktop imports.
+  insert(join(hostRoot, 'tsconfig.client.json'), '    "apps/desktop/src/browser-guests.ts",',
+    '    "apps/desktop/src/browser-guests.ts",\n    "apps/desktop/src/molio-desktop.ts",\n    "apps/desktop/src/molio-compose.ts",\n    "apps/desktop/src/molio-clipper.ts",');
   insert(browserGuests, "import { randomUUID }", "import { attachMolioPanel, bindMolioPanel } from './molio-desktop.js'\nimport { randomUUID }");
   insert(browserGuests, "      const id = typeof params.src", `      try {
         if (attachMolioPanel(owner, preferences, params)) return
