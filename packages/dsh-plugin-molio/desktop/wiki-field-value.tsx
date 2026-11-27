@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import { isScalar, isSeq } from 'yaml'
-import { MolioWikiText } from '@deepseek-ai/dsh-client-ui-primitives'
+import { MolioWikiText } from './MolioWikiText.tsx'
 
 /** Render YAML string values and string lists containing Obsidian references. */
 export function wikiFieldValue(node: unknown, original: string): ReactNode {

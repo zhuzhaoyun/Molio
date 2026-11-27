@@ -26,3 +26,17 @@ it.each([true, false])('opens Chinese wiki references in the conversation vault 
   await vi.waitFor(() => expect(openFile.mock.calls).toEqual([["/vault/八王之乱.md"], ["/vault/wiki/entities/贾后.md"]]))
   expect(screen.queryAllByRole('link')).toHaveLength(2)
 })
+
+it.each([true, false])('renders a backtick-wrapped reference in chat prose (streaming=%s)', async streaming => {
+  const openFile = vi.fn()
+  const resolveWiki = vi.fn(async () => ({ path: '/vault/AI原生创业指南.md' }))
+  vi.stubGlobal('molioNavigation', { resolveWiki })
+  const text = "No `[[产品市场契合]]` page exists — I'll repoint those links to `[[AI原生创业指南]]`.\n\n`echo [[示例]]`\n\n```md\n[[示例]]\n```"
+  render(<MarkdownDelegateProvider wikiInlineCode wikiCwd="/vault" openFile={openFile}>
+    <MarkdownText text={text} streaming={streaming}/>
+  </MarkdownDelegateProvider>)
+  expect(screen.getByRole('link', { name: '产品市场契合' })).toBeDefined()
+  fireEvent.click(screen.getByRole('link', { name: 'AI原生创业指南' }))
+  await vi.waitFor(() => expect(openFile).toHaveBeenCalledWith('/vault/AI原生创业指南.md'))
+  expect(screen.getAllByRole('link')).toHaveLength(2)
+})

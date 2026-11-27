@@ -63,6 +63,14 @@ export function applyDesktop(hostRoot) {
   insert(render, "import { FenceCodeBlock", "import { MolioWikiText } from './MolioWikiText.tsx'\nimport { FenceCodeBlock");
   insert(render, "case 'text':\n      return node.value", "case 'text':\n      return !context.inLink && node.value.includes('[[') ? <MolioWikiText key={key} text={node.value} /> : node.value");
   const delegate = join(markdown, 'MarkdownDelegate.tsx');
+  insert(render, '      const href = inlineCodeHttpUrl(value)', `      if (!context.inLink && /^(?:\\[\\[[^\\[\\]|#\\r\\n]+(?:#[^\\[\\]|\\r\\n]*)?(?:\\|[^\\[\\]\\r\\n]+)?\\]\\])$/u.test(value)) {
+        return <MolioWikiText key={key} text={value} inlineCode />
+      }
+      const href = inlineCodeHttpUrl(value)`);
+  insert(delegate, '  readonly renderCode?:', '  readonly wikiInlineCode?: boolean | undefined\n  readonly renderCode?:');
+  insert(delegate, '  renderCode,\n}:', '  wikiInlineCode,\n  renderCode,\n}:');
+  insert(delegate, 'getTriggerProps, renderCode })', 'getTriggerProps, wikiInlineCode, renderCode })');
+  insert(delegate, 'getTriggerProps, renderCode])', 'getTriggerProps, wikiInlineCode, renderCode])');
   insert(delegate, 'export interface MarkdownDelegate {', 'export interface MarkdownDelegate {\n  readonly wikiCwd?: string | undefined');
   insert(delegate, '  children,\n  openExternalLink,', '  children,\n  wikiCwd,\n  openExternalLink,');
   insert(delegate, '({ openExternalLink, openFile', '({ wikiCwd, openExternalLink, openFile');
@@ -73,11 +81,15 @@ export function applyDesktop(hostRoot) {
   const chatSource = readFileSync(chat, 'utf8');
   if (chatSource.includes('wikiCwd={cwd}')) writeFileSync(chat, chatSource.replace('wikiCwd={cwd}', 'wikiCwd={molioTarget.vault?.path}'));
   insert(chat, '<MarkdownDelegateProvider\n', '<MarkdownDelegateProvider\n              wikiCwd={molioTarget.vault?.path}\n');
+  insert(chat, '              getTriggerProps={getMarkdownTriggerProps}', '              wikiInlineCode\n              getTriggerProps={getMarkdownTriggerProps}');
   copyFileSync(join(root, 'packages/dsh-plugin-molio/desktop/MolioTarget.tsx'), join(chat, '../MolioTarget.tsx'));
   insert(chat, "import { ChatAside }", "import { useMolioTarget } from './MolioTarget.tsx'\nimport { ChatAside }");
   insert(chat, '  const directory = useSessions', '  const molioTarget = useMolioTarget(sessionId, cwd)\n  const directory = useSessions');
   const documentMarkdown = join(hostRoot, 'packages/client/ui-sidebar-documentpreview/src/client/markdown');
-  insert(join(markdown, '../index.ts'), 'export { MarkdownDelegateProvider,', "export { MolioWikiText } from './markdown/MolioWikiText.tsx'\nexport { MarkdownDelegateProvider,");
+  // Preview plugins can load alongside an older shell. Bundle the field renderer
+  // locally and consume only the host's existing shared Markdown delegate hook.
+  writeFileSync(join(documentMarkdown, 'MolioWikiText.tsx'), readFileSync(join(markdown, 'MolioWikiText.tsx'), 'utf8')
+    .replace("'./MarkdownDelegate.tsx'", "'@deepseek-ai/dsh-client-ui-primitives'"));
   const fields = join(documentMarkdown, 'frontmatter-fields.tsx');
   copyFileSync(join(root, 'packages/dsh-plugin-molio/desktop/wiki-field-value.tsx'), join(documentMarkdown, 'wiki-field-value.tsx'));
   insert(fields, "import css from", "import { wikiFieldValue } from './wiki-field-value.tsx'\nimport css from");
