@@ -24,7 +24,7 @@ export function fileAddress(session, path) {
 export function decorateWiki(root, selector, open, allowCode = false) {
   const decorations = new Map();
   function scan(element) {
-    if (!element?.isConnected) return;
+    if (!element?.isConnected || (!element.closest(selector) && !element.querySelector(selector))) return;
     const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
     const nodes = [];
     while (walker.nextNode()) nodes.push(walker.currentNode);

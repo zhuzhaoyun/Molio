@@ -12,7 +12,7 @@ dsh plugin --profile web add /path/to/dsh-plugin-molio-0.2.0.tgz
 
 重新启动该 profile，在「知识库」里添加本机知识库目录。「知识图谱」显示笔记之间的引用，「资源市场」用于浏览和导入资源。对话的「＋」菜单中选择「文件入库」，选择目标知识库和来源，再确认草稿。知识库内的工作区按路径匹配，其他工作区可按会话选库。
 
-对话回答和右侧 Obsidian 预览支持笔记双链和别名。预览顶部展开 YAML 属性，点击属性或正文中的笔记引用即可继续阅读。插件的只读工具包括 `molio_status`、`molio_kb_vaults`、`molio_kb_tree`、`molio_kb_search` 和 `molio_kb_read`。
+对话回答和右侧 Obsidian 预览支持笔记双链和别名。预览顶部展开 YAML 属性，点击属性或正文中的笔记引用即可继续阅读。右侧工具栏的「在知识库中打开」会定位到原笔记。插件的只读工具包括 `molio_status`、`molio_kb_vaults`、`molio_kb_tree`、`molio_kb_search` 和 `molio_kb_read`。
 
 已有独立部署时，可用 `MOLIO_DAEMON_URL` 或 `MOLIO_PORT` 指定服务。三个界面入口需要该地址同时提供 Molio Web 页面和 API。内置服务面向在同一台机器上运行的浏览器和 DSH 宿主。
 
@@ -30,3 +30,5 @@ npm pack
 ```
 
 生成的 tgz 包含宿主入口、DSH 浏览器入口、Molio 页面、知识库服务和内置技能。构建使用 DSH 公开的客户端插槽，直接在官方 DSH 中运行。插件通过 `dsh-plugin-v*` 标签独立发布。原生 Molio 桌面版沿用自己的构建和发布命令。
+
+在临时 DSH profile 中安装打包产物并启动 DSH Web 后，将该实例的本地启动 URL 传入环境变量 `MOLIO_DSH_SMOKE_URL`，在仓库根目录运行 `node --test packages/dsh-plugin-molio/test/official-host.mjs` 可验证三个模块、会话草稿、双链和右侧跳转。
