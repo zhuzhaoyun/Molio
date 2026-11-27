@@ -232,7 +232,8 @@ export function readTrunkMinNodesEnv(): number {
 
 /**
  * 递归分级门（换核设计 §四）：MOLIO_GRAPH_RECURSE_CAP，未设/非法 →
- * CLUSTER_RECURSE_CAP(300)。每次调用现读（同 readTrunkMinNodesEnv 的理由）。
+ * CLUSTER_RECURSE_CAP(300)；≤0 视为 0 = 所有簇都递归（E2E 造 fixture 用，
+ * 与 readTrunkMinNodesEnv 的「≤0=强制启用」同款语义）。每次调用现读。
  */
 export function readClusterRecurseCapEnv(): number {
   const raw = process.env.MOLIO_GRAPH_RECURSE_CAP;

@@ -783,14 +783,34 @@ test('嵌套子域：容器+子域在场、点子域下钻、收起复原', asyn
     .poll(() => page.evaluate(() => window.__graphEngine?.getTrunkExpandedClusters() ?? []), { timeout: 15000 })
     .toContain(parent.children[0]!.id);
 
-  // ③ 收起复原：子域层回来
-  const chip = page.locator('.trunk-collapse-chip').first();
-  if (await chip.isVisible({ timeout: 3000 }).catch(() => false)) {
-    await chip.click();
-    await expect
-      .poll(async () => (await page.evaluate(() => window.__graphEngine?.getTrunkChildrenInfo() ?? [])).length, {
-        timeout: 10000,
-      })
-      .toBe(1);
-  }
+  // ③ 收起复原（终审 #5 硬化：chip 是展开的必然产物，等它出现即可；断言落到
+  // 引擎态——展开列表清空 + 节点数回落 trunk 基线 + 子域层重建）
+  await expect
+    .poll(() => page.evaluate(() => window.__graphEngine?.getTrunkCollapseChipPos('__any__') !== undefined), { timeout: 3000 })
+    .toBe(true); // 引擎 API 在场（真 chip 位置下一步取）
+  const chipPos = await page.evaluate((k) => {
+    const eng = window.__graphEngine;
+    const pos = eng?.getTrunkCollapseChipPos(k) ?? null;
+    if (!pos) return null;
+    const rect = eng!.canvas.getBoundingClientRect();
+    return { sx: rect.left + pos.sx, sy: rect.top + pos.sy };
+  }, parent.children[0]!.id);
+  expect(chipPos).toBeTruthy();
+  const baseline = await page.evaluate(() => window.__graphEngine?.getSnapshot()?.nodes.length ?? -1);
+  await page.mouse.click(chipPos!.sx, chipPos!.sy);
+  await expect
+    .poll(() => page.evaluate(() => window.__graphEngine?.getTrunkExpandedClusters() ?? []), { timeout: 10000 })
+    .toEqual([]);
+  await expect
+    .poll(() => page.evaluate(() => window.__graphEngine?.getSnapshot()?.nodes.length ?? -1), { timeout: 10000 })
+    .toBeLessThan(baseline); // 成员撤场回落（blob 回位 ±1）
+  await expect
+    .poll(
+      async () => {
+        const v = await page.evaluate(() => window.__graphEngine?.getTrunkChildrenInfo() ?? []);
+        return v.length === 1 && v[0]!.children.length === 2 ? v : null;
+      },
+      { timeout: 10000 },
+    )
+    .toBeTruthy(); // 子域层随 blob 复建
 });

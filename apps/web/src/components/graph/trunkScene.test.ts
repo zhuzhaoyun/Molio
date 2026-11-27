@@ -13,6 +13,8 @@ import {
   blendChildPlacements,
   findClusterDeep,
   flattenSearchableClusters,
+  topIdOf,
+  planChildCorrections,
   type TrunkCluster,
 } from './trunkScene.ts';
 import { NODE_TYPE_COLORS } from './types.ts';
@@ -212,7 +214,24 @@ describe('嵌套子域（layoutChildClusters / budgetChildLabels / children 透�
     }
   });
 
-  it('⑨ 单子域居中；空 children 返回空 Map', () => {
+  it('⑨ 环缝重叠反例（终审 Important #4）：等大子域填满环时首尾不得重叠', () => {
+    // 「一大 + 一串等大」恰好填满一环 → 最后一个与环上第一个之间的闭合缝
+    // 必须校验（终审数值反例：s0/s6 重叠 3.58 单位）
+    const children = mkChildren([5, 4, 4, 4, 4, 4, 4, 4]);
+    const parentR = trunkBlobRadius(33);
+    const p = layoutChildClusters(children, parentR);
+    const list = children.map((c) => ({ id: c.id, ...p.get(c.id)! }));
+    for (const a of list) {
+      assert.ok(Math.hypot(a.x, a.y) + a.r <= parentR + 1e-9, `${a.id} 包络内`);
+      for (const b of list) {
+        if (a.id >= b.id) continue;
+        const dist = Math.hypot(a.x - b.x, a.y - b.y);
+        assert.ok(dist >= a.r + b.r - 1e-9, `${a.id}/${b.id} 不重叠（dist=${dist.toFixed(2)}, r+r=${(a.r + b.r).toFixed(2)}）`);
+      }
+    }
+  });
+
+  it('⑨b 单子域居中；空 children 返回空 Map', () => {
     const one = layoutChildClusters(mkChildren([100]), 20);
     assert.deepEqual(one.get('c1.1'), { x: 0, y: 0, r: 2 + Math.sqrt(100) });
     assert.equal(layoutChildClusters([], 20).size, 0);
@@ -316,5 +335,32 @@ describe('嵌套子域（layoutChildClusters / budgetChildLabels / children 透�
         ['c2', '培训', 30],
       ],
     );
+  });
+
+  it('⑮ topIdOf 归一 + 校正决策：展开在场 → null（不得撕扯展开动画，终审 #6）', () => {
+    assert.equal(topIdOf('c1'), 'c1');
+    assert.equal(topIdOf('c1.2'), 'c1');
+    assert.equal(topIdOf('c1.2.3'), 'c1');
+
+    const clusters: TrunkCluster[] = [
+      { id: 'c1', label: 'a', size: 2, memberIds: ['a.md', 'b.md'], children: [
+        { id: 'c1.1', label: 'x', size: 1, memberIds: ['a.md'] },
+        { id: 'c1.2', label: 'y', size: 1, memberIds: ['b.md'] },
+      ] },
+    ];
+    const positions = new Map([
+      ['a.md', { x: 10, y: 0 }],
+      ['b.md', { x: 0, y: 10 }],
+    ]);
+    // 展开在场 → null（Review Focus #3）；布局未就绪 → null
+    assert.equal(planChildCorrections(clusters, positions, 1), null);
+    assert.equal(planChildCorrections(clusters, null, 0), null);
+    // 正常路径：质心相对系（父心 (5,5) → 子域质心 (5,-5)/(-5,5)）
+    const plans = planChildCorrections(clusters, positions, 0)!;
+    assert.equal(plans.length, 1);
+    assert.deepEqual(plans[0]!.centroids.get('c1.1'), { x: 5, y: -5 });
+    assert.deepEqual(plans[0]!.centroids.get('c1.2'), { x: -5, y: 5 });
+    // 无子域 → null
+    assert.equal(planChildCorrections([{ id: 'c9', label: 'z', size: 1, memberIds: ['q.md'] }], positions, 0), null);
   });
 });

@@ -15,7 +15,15 @@ import { useActiveVault, useActiveVaultId, vaultStore } from '../../stores/vault
 import { navigationHistoryStore, useNavigationHistory } from '../../stores/navigationHistoryStore';
 import { useGraphSettings } from './useGraphSettings';
 import { graphFingerprint, refreshDebounceMs } from './refreshPolicy';
-import { buildTrunkScene, resolveTrunkView, trunkExportMeta, flattenSearchableClusters, type TrunkScene } from './trunkScene';
+import {
+  buildTrunkScene,
+  resolveTrunkView,
+  trunkExportMeta,
+  flattenSearchableClusters,
+  topIdOf,
+  planChildCorrections,
+  type TrunkScene,
+} from './trunkScene';
 import {
   buildExpansion,
   computeMiniSim,
@@ -341,7 +349,8 @@ export function GraphPage({
     const first = batches[0];
     if (!first) return;
     const snap = engine.getSnapshot();
-    const blobPos = snap?.nodes.find((n) => n.key === clusterId);
+    // 嵌套 id 取心归一（终审 Critical #3）：快照键 = 一级簇 id，嵌套 id 直查必 miss → 落原点
+    const blobPos = snap?.nodes.find((n) => n.key === topIdOf(clusterId));
     const centroid = blobPos ? { x: blobPos.x, y: blobPos.y } : centroidOf(new Map());
 
     // 位置来源（评审 #3）：worker 全量布局就绪且覆盖该簇 → 质心对齐平移，全批即刻落位；
@@ -737,23 +746,14 @@ export function GraphPage({
     const layout = getLayoutService();
     const apply = () => {
       if (childCorrectedRef.current) return;
-      if (engine.getTrunkExpandedClusters().length > 0) return;
-      const pos = layout.getPositions();
-      if (!pos) return;
-      for (const c of trunkScene.clusters) {
-        if (!c.children?.length) continue;
-        const parentIds = c.memberIds.filter((k) => pos.has(k));
-        if (parentIds.length === 0) continue;
-        const parentC = centroidOf(new Map(parentIds.map((k) => [k, pos.get(k)!] as const)));
-        const centroids = new Map<string, { x: number; y: number }>();
-        for (const ch of c.children) {
-          const ids = ch.memberIds.filter((k) => pos.has(k));
-          if (ids.length === 0) continue;
-          const cc = centroidOf(new Map(ids.map((k) => [k, pos.get(k)!] as const)));
-          centroids.set(ch.id, { x: cc.x - parentC.x, y: cc.y - parentC.y });
-        }
-        engine.applyChildPlacementCorrection(c.id, centroids);
-      }
+      // 决策内核在纯层 planChildCorrections（展开在场→null 等口径有钉，终审 #6）
+      const plans = planChildCorrections(
+        trunkScene.clusters,
+        layout.getPositions(),
+        engine.getTrunkExpandedClusters().length,
+      );
+      if (!plans) return;
+      for (const plan of plans) engine.applyChildPlacementCorrection(plan.clusterId, plan.centroids);
       childCorrectedRef.current = true;
     };
     if (layout.isReady()) {
@@ -955,8 +955,7 @@ export function GraphPage({
                     onSelectCluster={(id) => {
                       // trunk 态命中簇名：就地高亮该簇（聚合边置顶），不切视图。
                       // 子域命中 → v1 高亮其父容器（子域级高亮随下钻交互另细化）
-                      const topId = id.includes('.') ? id.slice(0, id.indexOf('.')) : id;
-                      engineRef.current?.highlightTrunkCluster(topId);
+                      engineRef.current?.highlightTrunkCluster(topIdOf(id));
                     }}
                     onSelect={(key) => {
                       // trunk 态命中节点（H2 替换拍板 A）：命中簇成员 → 展开该簇 + 定位（留在

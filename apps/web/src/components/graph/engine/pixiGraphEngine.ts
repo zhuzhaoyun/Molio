@@ -55,6 +55,7 @@ import {
   budgetChildLabels,
   blendChildPlacements,
   findClusterDeep,
+  topIdOf,
   type TrunkScene,
   type ChildPlacement,
   type TrunkCluster,
@@ -490,7 +491,7 @@ export class PixiGraphEngine {
     if (this.destroyed) return;
     this.trunkMode = false;
     this.pendingSeed = seed ?? null;
-for (const entry of this.trunkChildren.values()) entry.root.destroy({ children: true });
+    for (const entry of this.trunkChildren.values()) entry.root.destroy({ children: true });
     this.trunkChildren.clear(); // 退出 trunk：子域层撤场
     this.buildAndRender(
       nodes,
@@ -544,7 +545,7 @@ for (const entry of this.trunkChildren.values()) entry.root.destroy({ children: 
    * v1 非交互（下钻交互 Task 6 接线）；nodeScale 变更后随下次 setTrunkData 生效。
    */
   private rebuildTrunkChildren(): void {
-for (const entry of this.trunkChildren.values()) entry.root.destroy({ children: true });
+    for (const entry of this.trunkChildren.values()) entry.root.destroy({ children: true });
     this.trunkChildren.clear();
     const scene = this.trunkSceneRef;
     if (!scene) return;
@@ -584,6 +585,27 @@ for (const entry of this.trunkChildren.values()) entry.root.destroy({ children: 
       g.on('pointertap', () => {
         if (!this.dragging) this.callbacks.onTrunkClusterClick?.(childId);
       });
+      // 预算外子域 hover 浮现完整名（设计 §五克制规则②；预算内常显不重复挂）
+      if (!budget.visible.includes(child.id)) {
+        let hoverLabel: Text | null = null;
+        g.on('pointerover', () => {
+          if (hoverLabel) return;
+          hoverLabel = new Text({
+            eventMode: 'none',
+            text: child.label,
+            anchor: { x: 0.5, y: 0.5 },
+            style: { fontSize: 10, fill: this.theme.label, fontFamily: LABEL_FONT },
+            resolution: window.devicePixelRatio * 4,
+          });
+          hoverLabel.position.set(p.x, p.y);
+          root.addChild(hoverLabel);
+        });
+        g.on('pointerout', () => {
+          if (!hoverLabel) return;
+          hoverLabel.destroy();
+          hoverLabel = null;
+        });
+      }
       root.addChild(g);
       if (budget.visible.includes(child.id)) {
         const t = new Text({
@@ -680,9 +702,9 @@ for (const entry of this.trunkChildren.values()) entry.root.destroy({ children: 
   ): boolean {
     if (this.destroyed || !this.trunkMode) return false;
     if (this.trunkCollapsing.has(clusterId)) return false; // 收起动画进行中
-    // 嵌套 id（c1.2 子域下钻，换核设计 §五）：blob 节点身份恒为**一级 id**，
+    // 嵌套 id（c1.2 子域下钻，换核设计 §五）：blob 节点身份恒为**一级 id**（topIdOf 归一），
     // 展开态键（位置/payload/chip）用完整点击 id
-    const blobId = clusterId.includes('.') ? clusterId.slice(0, clusterId.indexOf('.')) : clusterId;
+    const blobId = topIdOf(clusterId);
     const blob = this.nodeById.get(blobId);
     if (!blob || !blob.trunkCluster) return false; // 不存在或已展开
     const centroid = { x: blob.x ?? 0, y: blob.y ?? 0 };
@@ -732,7 +754,11 @@ for (const entry of this.trunkChildren.values()) entry.root.destroy({ children: 
     if (this.trunkCollapsing.has(clusterId)) return false; // 收起动画进行中：重入会双份重建聚合边
     const members = this.trunkExpandedMembers.get(clusterId);
     const blobPos = this.trunkBlobPos.get(clusterId);
-    if (!members || !blobPos || !this.trunkSceneRef?.clusters.some((c) => c.id === clusterId)) return false;
+    // 嵌套 id 深解析（终审 Critical #1）：一级簇表查不到 c1.2 会把收起静默拒绝——下钻无出口
+    const clusterExists = this.trunkSceneRef
+      ? findClusterDeep(this.trunkSceneRef.clusters, clusterId) !== null
+      : false;
+    if (!members || !blobPos || !clusterExists) return false;
     if (this.motionMode) {
       this.applyCollapse(clusterId, members);
       return true;
@@ -1010,15 +1036,16 @@ for (const entry of this.trunkChildren.values()) entry.root.destroy({ children: 
       const t = (l.target as SimNode).id;
       return s < t ? `${s}${TRUNK_PAIR_SEP}${t}` : `${t}${TRUNK_PAIR_SEP}${s}`;
     }));
+    const topId = topIdOf(clusterId); // 聚合边端点是一级簇 id（终审 Critical #2）
     for (const l of this.trunkSceneRef?.links ?? []) {
-      if (l.source !== clusterId && l.target !== clusterId) continue;
-      const other = l.source === clusterId ? l.target : l.source;
-      if (!this.nodeById.has(other) || other === clusterId) continue;
+      if (l.source !== topId && l.target !== topId) continue;
+      const other = l.source === topId ? l.target : l.source;
+      if (!this.nodeById.has(other) || other === topId) continue;
       const pair = clusterId < other ? `${clusterId}${TRUNK_PAIR_SEP}${other}` : `${other}${TRUNK_PAIR_SEP}${clusterId}`;
       if (seenPairs.has(pair)) continue;
       seenPairs.add(pair);
       const link: SimLink = {
-        source: this.nodeById.get(clusterId)!,
+        source: this.nodeById.get(topId)!,
         target: this.nodeById.get(other)!,
         trunkWeight: l.weight,
       };
@@ -1053,7 +1080,7 @@ for (const entry of this.trunkChildren.values()) entry.root.destroy({ children: 
       y: blobPos.y,
     };
     this.nodes.push(blob);
-    this.nodeById.set(clusterId, blob);
+    this.nodeById.set(topId, blob); // 键 = 一级 id（与 blob.id 同域；终审 Critical #2）
     const rd = this.makeNodeRenderData(blob);
     this.nodeRenderData.push(rd);
     this.buildTrunkChildrenOf(cluster); // 收起回位：子域层随 blob 复建（展开时已销毁）

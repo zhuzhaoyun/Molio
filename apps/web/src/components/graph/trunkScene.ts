@@ -145,6 +145,7 @@ export function layoutChildClusters(
   let ringTheta = 0; // 当前环已占用角（累计 dTheta）
   let ringMaxR = 0; // 当前环最大子域半径（定下一环径向起点）
   let prevOnRing: { angle: number; r: number } | null = null;
+  let firstOnRing: { angle: number; r: number } | null = null; // 环闭合缝校验用
   let ringIndex = 0;
   for (const c of sorted) {
     const r = radiusOf(c.size);
@@ -154,17 +155,22 @@ export function layoutChildClusters(
       continue;
     }
     const need = prevOnRing ? dTheta(prevOnRing.r, r, ringR) : 0;
-    if (ringR === 0 || ringTheta + need > 2 * Math.PI) {
+    // 留环条件（终审 #4）：除与前一子的间距外，还必须给**环闭合缝**留出
+    // 「本子与环上第一个子域」的间距——否则等大串填满环时首尾重叠
+    const closeGap = firstOnRing ? dTheta(r, firstOnRing.r, ringR) : 0;
+    if (ringR === 0 || ringTheta + need + closeGap > 2 * Math.PI) {
       // 开新环：径向与上一环外缘 + 本子域半径 + GAP 隔开
       ringR = ringR === 0 ? ringMaxR + r + CHILD_GAP : ringR + ringMaxR + r + CHILD_GAP;
       ringTheta = 0;
       ringMaxR = 0;
       ringIndex++;
       prevOnRing = null;
+      firstOnRing = null;
     }
     const angle: number = prevOnRing ? prevOnRing.angle + dTheta(prevOnRing.r, r, ringR) : ringIndex * 1.1;
     raw.push({ id: c.id, d: ringR, angle, r });
     ringTheta += prevOnRing ? dTheta(prevOnRing.r, r, ringR) : 0;
+    if (!firstOnRing) firstOnRing = { angle, r };
     ringMaxR = Math.max(ringMaxR, r);
     prevOnRing = { angle, r };
   }
@@ -262,6 +268,63 @@ export function findClusterDeep(clusters: readonly TrunkCluster[], id: string): 
     }
   }
   return null;
+}
+
+/**
+ * 嵌套 id → 一级簇 id（'c1.2' → 'c1'；'c1' → 'c1'）。**blob 节点身份恒为一级 id**
+ * （终审 Critical #1/#2/#3 的单一修法：引擎/页面一律经此归一，不再手写 includes+slice）。
+ */
+export function topIdOf(clusterId: string): string {
+  const i = clusterId.indexOf('.');
+  return i === -1 ? clusterId : clusterId.slice(0, i);
+}
+
+// ─── 子域质心校正决策（换核设计 §五 + 终审 Important #6）───
+
+export interface ChildCorrectionPlan {
+  clusterId: string;
+  /** 子域 id → 成员质心（父团成员质心为原点的相对系） */
+  centroids: Map<string, { x: number; y: number }>;
+}
+
+/**
+ * 校正决策（纯函数，GraphPage effect 的判断内核）：布局就绪后的子域质心校正
+ * 该不该做、做什么。**展开在场 → null**（Review Focus #3：校正不得撕扯进行中的
+ * 展开动画）；布局未就绪/无子域 → null（兜底 = 保持确定性排布）。
+ */
+export function planChildCorrections(
+  clusters: readonly TrunkCluster[],
+  positions: ReadonlyMap<string, { x: number; y: number }> | null,
+  expandedCount: number,
+): ChildCorrectionPlan[] | null {
+  if (expandedCount > 0) return null;
+  if (!positions) return null;
+  const centroid = (keys: string[]): { x: number; y: number } | null => {
+    let sx = 0;
+    let sy = 0;
+    let n = 0;
+    for (const k of keys) {
+      const p = positions.get(k);
+      if (!p) continue;
+      sx += p.x;
+      sy += p.y;
+      n++;
+    }
+    return n > 0 ? { x: sx / n, y: sy / n } : null;
+  };
+  const plans: ChildCorrectionPlan[] = [];
+  for (const c of clusters) {
+    if (!c.children?.length) continue;
+    const parentC = centroid(c.memberIds);
+    if (!parentC) continue;
+    const centroids = new Map<string, { x: number; y: number }>();
+    for (const ch of c.children) {
+      const cc = centroid(ch.memberIds);
+      if (cc) centroids.set(ch.id, { x: cc.x - parentC.x, y: cc.y - parentC.y });
+    }
+    plans.push({ clusterId: c.id, centroids });
+  }
+  return plans.length > 0 ? plans : null;
 }
 
 /** 搜索候选拍平（换核设计 §五·搜索联动）：顶层 + 子域（标签「父·子」，id 为嵌套 id） */
