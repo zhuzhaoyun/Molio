@@ -1,25 +1,25 @@
 /**
- * 知识图谱社区发现（trunk 视图 T1）——确定性 LPA + hub 保留 + trunk 聚合边。
+ * 知识图谱社区发现（trunk 视图 T1）——确定性 Louvain + hub 保留 + trunk 聚合边。
  *
  * 纯函数：吃 buildGraph 的产物（GraphData），吐 contracts 的 GraphCommunities。
- * 在图 worker 内随 buildGraph 一起跑（O(E)/迭代，23k 边毫秒级），随图一起进
- * VaultCache——communities 是派生数据，随图同生命周期（设计
- * docs/2026-11-15-graph-trunk-view-design.md §4.1）。
+ * 在图 worker 内随 buildGraph 一起跑（Louvain O(E)·轮数，40k 边毫秒级——spike
+ * 实测 20ms/6981 节点），随图一起进 VaultCache——communities 是派生数据，随图
+ * 同生命周期（设计 docs/2026-11-15-graph-trunk-view-design.md §4.1；换核设计
+ * docs/2026-11-27-graph-community-hierarchy-design.md）。
  *
  * **确定性是硬要求**（同图两次计算逐字段相等）：一切迭代都走排序后的数组；
- * LPA 投票平票用**固定种子随机**挑选（经典 LPA 语义——「取更小 label」会让
- * 全局最小 label 一轮洪水吞掉全部社区结构，2026-11-18 bench 校准发现，
- * 回归钉 test 10）；簇按成员最小 key 排序编号 c1..cn；聚合边端点按字典序
- * 规范化后排序。随机源只有固定种子 LCG ⇒ 确定性不变。
+ * Louvain 内核平票取社区最小原始 key（graph-louvain.ts）；簇按成员最小 key
+ * 排序编号 c1..cn；聚合边端点按字典序规范化后排序；内核不使用随机。
  *
- * hub 口径（2026-11-18 校准修订）：hub 边不进 LPA——hub 是跨社区的桥而非
- * 社区成员，让其投票会把全部社区冲成一个巨团；纯 hub 卫星（只连 hub 的节点）
- * 因此无社区结构，计入碎屑。hub 本身照旧不进任何 memberIds（§4.1 评审 #7）。
+ * hub 口径（2026-11-18 校准修订，换核后保持）：hub 边不进社区发现——hub 是
+ * 跨社区的桥而非社区成员，计入模块度会把全部社区冲成一个大簇；纯 hub 卫星
+ * （只连 hub 的节点）因此无社区结构，计入碎屑。hub 本身照旧不进任何
+ * memberIds（§4.1 评审 #7）。
  *
  * trunk 渲染预算：簇数 ≤ TRUNK_MAX_CLUSTERS，超出按尺寸保留前 N、其余整簇
  * 折入碎屑；cap 折叠占比过大时 quality=degenerate 如实告知。
  *
- * 数据口径（§4.1 评审 #7）：死链幻影（deadLink）与孤立节点不进 LPA 输入、
+ * 数据口径（§4.1 评审 #7）：死链幻影（deadLink）与孤立节点不进社区发现输入、
  * 不计入聚合边，只计入 crumbCount；簇 size/命名统计只数 memberIds。
  */
 
@@ -30,7 +30,7 @@ import type {
   GraphData,
   GraphNode,
 } from '@molio/contracts';
-import { seededRandom } from './graph-louvain.js';
+import { louvainCommunities, type LouvainEdge } from './graph-louvain.js';
 
 /** 小库不启用 trunk 的默认节点数门（MOLIO_GRAPH_TRUNK_MIN_NODES 可覆盖，≤0 = 强制启用） */
 export const DEFAULT_TRUNK_MIN_NODES = 500;
@@ -47,9 +47,6 @@ export interface DetectCommunitiesOptions {
   /** 默认 5；低于则整簇计入 crumbCount */
   clusterMinSize?: number;
 }
-
-/** LPA 最大迭代轮数：23k 边毫秒级/轮，30 轮足够收敛（不收敛也输出当前划分） */
-const LPA_MAX_ROUNDS = 30;
 
 /** trunk 簇数量上限：渲染对象 = 簇 + hub，可读预算「几十」（设计 §4.2） */
 export const TRUNK_MAX_CLUSTERS = 40;
@@ -99,59 +96,23 @@ export function detectCommunities(graph: GraphData, opts: DetectCommunitiesOptio
     if ((degree.get(k) ?? 0) >= hubThreshold) hubSet.add(k);
   }
 
-  // LPA 输入：真实、有边、非 hub 的节点。hub 边不进 LPA——hub 是跨社区的桥，
-  // 让它投票会以「平票洪水」把全部社区冲成一个巨团（校准实测：20 目录 → 1 团）；
-  // 纯 hub 卫星因此在邻接表里零邻居 → label 不动 → 单例组 → 走小簇碎屑路径。
+  // 社区发现输入：真实、有边、非 hub 的节点。hub 边不进社区发现——hub 是跨社区
+  // 的桥，计入模块度会把全部社区冲成一个大簇（校准实测：20 目录 → 1 团）；
+  // 纯 hub 卫星因此在输入里零邻居 → 各自成组 → 走小簇碎屑路径。
   const input = connected.filter((k) => !hubSet.has(k));
   const indexOf = new Map<string, number>(input.map((k, i) => [k, i]));
 
-  // 邻接表（索引域）
-  const neighbors: number[][] = input.map(() => []);
+  // 加权边（平行边累计权重——wikilink 重复引用天然加权，Louvain 模块度感知）
+  const louvainEdges: LouvainEdge[] = [];
   for (const e of graph.edges) {
     const si = indexOf.get(e.source);
     const ti = indexOf.get(e.target);
     if (si === undefined || ti === undefined || si === ti) continue;
-    neighbors[si]!.push(ti);
-    neighbors[ti]!.push(si);
+    louvainEdges.push({ source: e.source, target: e.target, weight: 1 });
   }
 
-  // LPA：初始 label = 输入序号；按 key 序（= 索引序）异步更新。
-  // 平票在并列最高频 label 里用固定种子随机挑：min 平票会让首轮变成
-  // 「全图采纳全局最小 label」的洪水（初始 label 全唯一时每个平票都发生），
-  // 本地多数派永远拿不到选票；种子化随机是经典 LPA 语义且确定性不变。
-  const labels = input.map((_, i) => i);
-  const tieBreak = seededRandom();
-  for (let round = 0; round < LPA_MAX_ROUNDS; round++) {
-    let changed = false;
-    for (let i = 0; i < labels.length; i++) {
-      const tally = new Map<number, number>();
-      for (const nb of neighbors[i]!) tally.set(labels[nb]!, (tally.get(labels[nb]!) ?? 0) + 1);
-      let maxCount = 0;
-      for (const c of tally.values()) if (c > maxCount) maxCount = c;
-      if (maxCount === 0) continue; // 零邻居（纯 hub 卫星）→ label 不动
-      const tops = [...tally.entries()]
-        .filter(([, c]) => c === maxCount)
-        .map(([l]) => l)
-        .sort((a, b) => a - b);
-      const best = tops[Math.floor(tieBreak() * tops.length)]!;
-      if (best !== labels[i]) {
-        labels[i] = best;
-        changed = true;
-      }
-    }
-    if (!changed) break;
-  }
-
-  // label → 成员组（key 升序），组间按最小 key 排序 → c1..cn 的编号基础
-  const byLabel = new Map<number, string[]>();
-  input.forEach((k, i) => {
-    const l = labels[i]!;
-    const bucket = byLabel.get(l);
-    if (bucket) bucket.push(k);
-    else byLabel.set(l, [k]);
-  });
-  const groups = [...byLabel.values()].map((members) => members.sort());
-  groups.sort((a, b) => (a[0]! < b[0]! ? -1 : 1));
+  // Louvain 划分（组内 key 升序、组间按最小 key 排序 → c1..cn 的编号基础）
+  const groups = louvainCommunities(input, louvainEdges);
 
   // 小簇整簇计碎屑（hub 已不在输入里，无需再剔除）
   const candidates: string[][] = [];

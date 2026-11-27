@@ -278,4 +278,24 @@ describe('detectCommunities', () => {
     // 折叠端点不得产生聚合边（本 fixture 无跨团边，links 恒空）
     assert.deepEqual(c.links, []);
   });
+
+  it('13. 换核 RED 钉：链图上 Louvain 切成 2-3 节点小段（LPA 会洪水成两大段）', () => {
+    // 链 = 无社区结构的病态形状，是两内核的确定性分歧点（2026-11-27 scratch 实测：
+    // LPA 2 簇 [13,7]，Louvain 9 组 2~3 节点）。默认 clusterMinSize=5 下 Louvain 的
+    // 小段全部落碎屑 → 0 簇 + 全量碎屑 + degenerate。
+    // 【演进预告】Task 3 尘埃合并后，带边小段会并入邻接主簇、本 fixture 期望将
+    // 随尘埃合并语义更新——本钉子守的是「内核确实是 Louvain」这一事实。
+    const n = 20;
+    const nodes = Array.from({ length: n }, (_, i) => md(`n${i + 1}.md`, { folder: 'dir' }));
+    const edges = Array.from({ length: n - 1 }, (_, i) => ({
+      source: `dir/n${i + 1}.md`,
+      target: `dir/n${i + 2}.md`,
+    }));
+    const c = detectCommunities(graph(nodes, edges), { minNodes: 0 });
+
+    assert.equal(c.clusters.length, 0, 'Louvain 链切分全 <5 → 无簇（LPA 会给出 2 簇）');
+    assert.equal(c.crumbCount, 20);
+    // 小簇碎屑 ≠ cap 折叠：degenerate 只看 cap 折叠占比，此处 quality 仍 ok
+    assert.equal(c.quality, 'ok');
+  });
 });
