@@ -23,6 +23,8 @@ export interface TrunkCluster {
   label: string;
   size: number;
   memberIds: string[];
+  /** 子域（递归分级，深度 ≤2）：仅超上限大簇携带；旧 payload 缺省 = 平面渲染（fail-open） */
+  children?: TrunkCluster[];
 }
 
 export interface TrunkLink {
@@ -72,11 +74,112 @@ export function buildTrunkScene(graph: GraphData): TrunkScene | null {
 
   return {
     hubs,
-    clusters: c.clusters.map((x) => ({ id: x.id, label: x.label, size: x.size, memberIds: x.memberIds })),
+    clusters: c.clusters.map(function toTrunkCluster(x: {
+      id: string;
+      label: string;
+      size: number;
+      memberIds: string[];
+      children?: unknown;
+    }): TrunkCluster {
+      const base: TrunkCluster = { id: x.id, label: x.label, size: x.size, memberIds: x.memberIds };
+      if (Array.isArray(x.children)) base.children = x.children.map(toTrunkCluster);
+      return base;
+    }),
     links: c.links.map((l) => ({ source: l.source, target: l.target, weight: l.weight })),
     crumbCount: c.crumbCount,
     quality: c.quality,
   };
+}
+
+// ─── 嵌套子域（换核设计 §五：形态 A——确定性排布 + 标签预算）───
+
+/** 子域标签预算：按 size 降序前 5 常显，其余「+K」计数（hover 浮现完整名走 labelLod forceShow） */
+export const CHILD_LABEL_BUDGET = 5;
+
+export interface ChildLabelBudget {
+  /** 常显标签的子域 id（size 降序前 N，同 size 按 id 字典序稳定） */
+  visible: string[];
+  /** 未显示标签的子域数（渲染「+K」） */
+  overflow: number;
+}
+
+export function budgetChildLabels(children: readonly TrunkCluster[], max = CHILD_LABEL_BUDGET): ChildLabelBudget {
+  const sorted = [...children].sort((a, b) => (b.size - a.size || (a.id < b.id ? -1 : 1)));
+  const visible = sorted.slice(0, max).map((c) => c.id);
+  return { visible, overflow: Math.max(0, children.length - visible.length) };
+}
+
+/**
+ * 子域确定性排布（换核设计 §五：不进 TRUNK_FORCE，容器内静态相对布局，随父团平移）。
+ * 贪心环装：按 size 降序、首子居中、其余逐环外扩（同环按累计弧长步进角度），
+ * 超出父团可用半径则整体等比收缩——**构造性保证两两不重叠且包络在父团内**。
+ * 纯函数确定性：同输入两次调用逐字段相等。
+ */
+export interface ChildPlacement {
+  x: number;
+  y: number;
+  r: number;
+}
+
+const CHILD_GAP = 2;
+const CHILD_FILL = 0.82; // 可用半径 = 父团半径 × CHILD_FILL
+
+export function layoutChildClusters(
+  children: readonly TrunkCluster[],
+  parentRadius: number,
+): Map<string, ChildPlacement> {
+  const placed = new Map<string, ChildPlacement>();
+  if (children.length === 0 || parentRadius <= 0) return placed;
+
+  // 子域半径 ∝ √size（与 trunkBlobRadius 同构）
+  const radiusOf = (size: number): number => 2 + Math.sqrt(size);
+  const avail = parentRadius * CHILD_FILL;
+  const sorted = [...children].sort((a, b) => (b.size - a.size || (a.id < b.id ? -1 : 1)));
+
+  // 弦距 → 角步（两圆在半径 R 的环上不重叠所需的最小夹角）
+  const dTheta = (ra: number, rb: number, R: number): number =>
+    2 * Math.asin(Math.min(1, (ra + rb + CHILD_GAP) / (2 * R)));
+
+  const raw: Array<{ id: string; d: number; angle: number; r: number }> = [];
+  let ringR = 0; // 当前环半径（首子域在圆心，d=0）
+  let ringTheta = 0; // 当前环已占用角（累计 dTheta）
+  let ringMaxR = 0; // 当前环最大子域半径（定下一环径向起点）
+  let prevOnRing: { angle: number; r: number } | null = null;
+  let ringIndex = 0;
+  for (const c of sorted) {
+    const r = radiusOf(c.size);
+    if (raw.length === 0) {
+      raw.push({ id: c.id, d: 0, angle: 0, r });
+      ringMaxR = r;
+      continue;
+    }
+    const need = prevOnRing ? dTheta(prevOnRing.r, r, ringR) : 0;
+    if (ringR === 0 || ringTheta + need > 2 * Math.PI) {
+      // 开新环：径向与上一环外缘 + 本子域半径 + GAP 隔开
+      ringR = ringR === 0 ? ringMaxR + r + CHILD_GAP : ringR + ringMaxR + r + CHILD_GAP;
+      ringTheta = 0;
+      ringMaxR = 0;
+      ringIndex++;
+      prevOnRing = null;
+    }
+    const angle: number = prevOnRing ? prevOnRing.angle + dTheta(prevOnRing.r, r, ringR) : ringIndex * 1.1;
+    raw.push({ id: c.id, d: ringR, angle, r });
+    ringTheta += prevOnRing ? dTheta(prevOnRing.r, r, ringR) : 0;
+    ringMaxR = Math.max(ringMaxR, r);
+    prevOnRing = { angle, r };
+  }
+
+  // 包络超出父团可用半径 → 等比收缩（等比保不重叠与包络内）
+  const outer = raw.reduce((m, p) => Math.max(m, p.d + p.r), 0);
+  const scale = outer > avail ? avail / outer : 1;
+  for (const p of raw) {
+    placed.set(p.id, {
+      x: Math.cos(p.angle) * p.d * scale,
+      y: Math.sin(p.angle) * p.d * scale,
+      r: p.r * scale,
+    });
+  }
+  return placed;
 }
 
 export type TrunkViewReason = 'ok' | 'off' | 'no-communities' | 'filters';
@@ -141,7 +244,8 @@ export function trunkExportMeta(
 ): string {
   const parts: string[] = [];
   if (scene.clusters.length > 0) {
-    // H2 混合场景（代拍 Q）：展开簇的 blob 不在画布上，计数后显式标注展开数——守「所见即所写」
+    // H2 混合场景（代拍 Q）：展开簇的 blob 不在画布上，计数后显式标注展开数——守「所见即所写」。
+    // 换核 v1 只数一级簇（子域不计数——嵌套形态下「簇 N」指顶层容器数；子域计数待用户反馈再定）
     parts.push(
       expandedCount > 0
         ? `${clusterLabel} ${scene.clusters.length}（${expandedLabel} ${expandedCount}）`

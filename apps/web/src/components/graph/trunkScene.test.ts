@@ -8,6 +8,9 @@ import {
   trunkEdgeWidth,
   trunkClusterColor,
   trunkExportMeta,
+  layoutChildClusters,
+  budgetChildLabels,
+  type TrunkCluster,
 } from './trunkScene.ts';
 import { NODE_TYPE_COLORS } from './types.ts';
 
@@ -180,5 +183,72 @@ describe('渲染公式', () => {
     assert.equal(trunkExportMeta(s, '主题', '枢纽'), '主题 2 · 枢纽 1');
     assert.equal(trunkExportMeta(s, '主题', '枢纽', 1, '展開中'), '主题 2（展開中 1） · 枢纽 1');
     assert.equal(trunkExportMeta({ ...s, clusters: [] }, '主题', '枢纽', 1), '枢纽 1'); // 无簇段无括注
+  });
+});
+
+// ─── 嵌套子域（换核设计 §五：形态 A）───
+describe('嵌套子域（layoutChildClusters / budgetChildLabels / children 透传）', () => {
+  const mkChildren = (sizes: number[]): TrunkCluster[] =>
+    sizes.map((s, i) => ({ id: `c1.${i + 1}`, label: `子域${i + 1}`, size: s, memberIds: [] }));
+
+  it('⑧ 子域排布：确定性、两两不重叠、包络在父团内（构造性保证）', () => {
+    const children = mkChildren([50, 40, 30, 20, 10, 5, 3]);
+    const parentR = trunkBlobRadius(158);
+    const p1 = layoutChildClusters(children, parentR);
+    const p2 = layoutChildClusters(children, parentR);
+    assert.deepEqual([...p1.entries()], [...p2.entries()], '同输入两次逐字段相等');
+
+    const list = children.map((c) => ({ id: c.id, ...p1.get(c.id)! }));
+    for (const a of list) {
+      assert.ok(Math.hypot(a.x, a.y) + a.r <= parentR + 1e-9, `${a.id} 包络在父团内`);
+      for (const b of list) {
+        if (a.id >= b.id) continue;
+        const dist = Math.hypot(a.x - b.x, a.y - b.y);
+        assert.ok(dist >= a.r + b.r - 1e-9, `${a.id}/${b.id} 不重叠（dist=${dist.toFixed(2)}, r+r=${(a.r + b.r).toFixed(2)}）`);
+      }
+    }
+  });
+
+  it('⑨ 单子域居中；空 children 返回空 Map', () => {
+    const one = layoutChildClusters(mkChildren([100]), 20);
+    assert.deepEqual(one.get('c1.1'), { x: 0, y: 0, r: 2 + Math.sqrt(100) });
+    assert.equal(layoutChildClusters([], 20).size, 0);
+  });
+
+  it('⑩ 标签预算：size 降序前 5 常显，其余 +K；同 size 按 id 稳定', () => {
+    const children = mkChildren([50, 40, 30, 20, 10, 5, 3, 2]);
+    const b = budgetChildLabels(children);
+    assert.deepEqual(b.visible, ['c1.1', 'c1.2', 'c1.3', 'c1.4', 'c1.5']);
+    assert.equal(b.overflow, 3);
+    // 同 size 平票按 id 字典序
+    const tie = budgetChildLabels(mkChildren([9, 9, 9, 9, 9, 9, 9]), 5);
+    assert.deepEqual(tie.visible, ['c1.1', 'c1.2', 'c1.3', 'c1.4', 'c1.5']);
+    assert.equal(tie.overflow, 2);
+    // ≤5 全显不溢出
+    assert.deepEqual(budgetChildLabels(mkChildren([5, 4, 3])), { visible: ['c1.1', 'c1.2', 'c1.3'], overflow: 0 });
+  });
+
+  it('⑪ children 透传：payload 带 children 进 scene（递归）；无 children 平面（fail-open）', () => {
+    const base = communitiesFixture();
+    const nested: GraphCommunities = {
+      ...base,
+      clusters: [
+        {
+          ...base.clusters[0]!,
+          children: [
+            { id: 'c1.1', label: 'fa/a·5', memberIds: ['topic-a/a1.md'], size: 1, children: [{ id: 'c1.1.1', label: 'x·1', memberIds: ['topic-a/a1.md'], size: 1 }] },
+            { id: 'c1.2', label: 'fb/b·1', memberIds: ['topic-a/a2.md'], size: 1 },
+          ],
+        },
+        base.clusters[1]!,
+      ],
+    };
+    const g = { ...graphFixture(), communities: nested };
+    const scene = buildTrunkScene(g)!;
+    assert.equal(scene.clusters[0]!.children?.length, 2);
+    assert.equal(scene.clusters[0]!.children![0]!.children![0]!.id, 'c1.1.1');
+    // 旧 payload（无 children）→ 全部平面
+    const flat = buildTrunkScene(graphFixture())!;
+    for (const c of flat.clusters) assert.equal(c.children, undefined);
   });
 });

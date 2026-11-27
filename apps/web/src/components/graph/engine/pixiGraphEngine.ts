@@ -51,6 +51,8 @@ import {
   trunkBlobRadius,
   trunkEdgeWidth,
   trunkClusterColor,
+  layoutChildClusters,
+  budgetChildLabels,
   type TrunkScene,
 } from '../trunkScene';
 import {
@@ -244,6 +246,8 @@ export class PixiGraphEngine {
   /** 收起 chip 顶层（在成员/标签之上——chip 是展开态的主出口，被盖住等于没有） */
   private chipsLayer!: Container<ContainerChild>;
   private nodesLayer!: Container<ContainerChild>;
+  /** 嵌套子域层（nodes 之上 labels 之下）：大簇内部子域 blob，随父团平移（换核设计 §五） */
+  private trunkChildrenLayer!: Container<ContainerChild>;
   private linkLayer!: Container<Graphics>;
   /** P0-2：全部边共用这一个 Graphics（替代 per-link Graphics，23k 边 23k→1 显示对象） */
   private edgesGfx!: Graphics;
@@ -340,6 +344,12 @@ export class PixiGraphEngine {
   private trunkPayloads = new Map<string, ExpansionPayload>();
   /** 收起 chip 显示对象（挂 chipsLayer 顶层；pointertap → onTrunkCollapseClick）+ 团心 sim 坐标（resize 重定位） */
   private trunkChips = new Map<string, { root: Container; centroid: { x: number; y: number } }>();
+  /**
+   * 嵌套子域层（换核设计 §五）：超上限大簇的子域 blob 集合（挂 trunkChildrenLayer，
+   * nodes 之上、labels 之下）。**不进 TRUNK_FORCE**——相对偏移由纯层 layoutChildClusters
+   * 定（确定性排布），renderFrame 里随父团节点平移；展开/场景重建时随 blob 销毁。
+   */
+  private trunkChildren = new Map<string, Container>();
   /** 簇团单击的延迟派发定时器（双击取消窗） */
   private trunkClickDefer: ReturnType<typeof setTimeout> | null = null;
 
@@ -408,10 +418,12 @@ export class PixiGraphEngine {
 
     this.linkLayer = new Container<Graphics>({ zIndex: 1, isRenderGroup: true, sortableChildren: true });
     this.nodesLayer = new Container<Graphics>({ zIndex: 2, isRenderGroup: true });
+    // 嵌套子域层：与 nodes 同 zIndex、addChild 在后 → 盖在父团 blob 之上、labels 之下
+    this.trunkChildrenLayer = new Container<ContainerChild>({ zIndex: 2, isRenderGroup: true });
     this.labelsLayer = new Container<Text>({ zIndex: 3, isRenderGroup: true });
     // 收起 chip 独立顶层（H2 验收反馈：与成员同层时，后续批次的成员会盖住团心的 chip）
     this.chipsLayer = new Container<ContainerChild>({ zIndex: 4, isRenderGroup: true });
-    this.stage.addChild(this.linkLayer, this.nodesLayer, this.labelsLayer, this.chipsLayer);
+    this.stage.addChild(this.linkLayer, this.nodesLayer, this.trunkChildrenLayer, this.labelsLayer, this.chipsLayer);
 
     this.selectionGfx = new Graphics();
     this.nodesLayer.addChild(this.selectionGfx);
@@ -474,6 +486,8 @@ export class PixiGraphEngine {
     if (this.destroyed) return;
     this.trunkMode = false;
     this.pendingSeed = seed ?? null;
+    for (const root of this.trunkChildren.values()) root.destroy({ children: true });
+    this.trunkChildren.clear(); // 退出 trunk：子域层撤场
     this.buildAndRender(
       nodes,
       edges.map((e) => ({ ...e })),
@@ -516,6 +530,82 @@ export class PixiGraphEngine {
     ];
     const edges: EngineEdge[] = scene.links.map((l) => ({ source: l.source, target: l.target }));
     this.buildAndRender(nodes, edges, scene, opts?.preserveViewport ?? false);
+    this.rebuildTrunkChildren();
+  }
+
+  /**
+   * 重建嵌套子域层（换核设计 §五·形态 A）：大簇内部子域 blob——确定性排布
+   * （layoutChildClusters，贪心环装）+ 标签预算（top-5 常显 + 「+K」计数）。
+   * **不进 TRUNK_FORCE**：Container 原点钉在父团节点位置，renderFrame 随父平移。
+   * v1 非交互（下钻交互 Task 6 接线）；nodeScale 变更后随下次 setTrunkData 生效。
+   */
+  private rebuildTrunkChildren(): void {
+    for (const root of this.trunkChildren.values()) root.destroy({ children: true });
+    this.trunkChildren.clear();
+    const scene = this.trunkSceneRef;
+    if (!scene) return;
+    for (const cluster of scene.clusters) {
+      if (!cluster.children || cluster.children.length === 0) continue;
+      this.buildTrunkChildrenOf(cluster);
+    }
+    this.geometryDirty = true;
+  }
+
+  /** 单簇的子域层构建（rebuild 全量 / restoreBlobNode 收起回位单簇复用） */
+  private buildTrunkChildrenOf(cluster: TrunkScene['clusters'][number]): void {
+    if (!cluster.children || cluster.children.length === 0) return;
+    const parentR = trunkBlobRadius(cluster.size) * this.nodeScale;
+    const placement = layoutChildClusters(cluster.children, parentR);
+    const budget = budgetChildLabels(cluster.children);
+    const root = new Container({ eventMode: 'none' });
+    let overflowX = 0;
+    let overflowY = 0;
+    let overflowN = 0;
+    for (const child of cluster.children) {
+      const p = placement.get(child.id);
+      if (!p) continue;
+      const color = trunkClusterColor(child.id);
+      root.addChild(
+        new Graphics()
+          .ellipse(p.x, p.y, p.r, p.r)
+          .fill({ color, alpha: 0.3 })
+          .stroke({ width: 1, color, alpha: 0.8 }),
+      );
+      if (budget.visible.includes(child.id)) {
+        const t = new Text({
+          text: child.label,
+          anchor: { x: 0.5, y: 0.5 },
+          style: { fontSize: 10, fill: this.theme.label, fontFamily: LABEL_FONT },
+          resolution: window.devicePixelRatio * 4,
+        });
+        t.position.set(p.x, p.y);
+        root.addChild(t);
+      } else {
+        overflowX += p.x;
+        overflowY += p.y;
+        overflowN++;
+      }
+    }
+    if (overflowN > 0) {
+      const t = new Text({
+        text: `+${budget.overflow}`,
+        anchor: { x: 0.5, y: 0.5 },
+        style: { fontSize: 10, fill: this.theme.label, fontFamily: LABEL_FONT },
+        resolution: window.devicePixelRatio * 4,
+      });
+      t.position.set(overflowX / overflowN, overflowY / overflowN);
+      root.addChild(t);
+    }
+    this.trunkChildrenLayer.addChild(root);
+    this.trunkChildren.set(cluster.id, root);
+  }
+
+  /** 销毁单簇子域层（展开时 blob 移除，子域随之撤场） */
+  private removeTrunkChildrenOf(clusterId: string): void {
+    const root = this.trunkChildren.get(clusterId);
+    if (!root) return;
+    this.trunkChildren.delete(clusterId);
+    root.destroy({ children: true });
   }
 
   /**
@@ -541,6 +631,7 @@ export class PixiGraphEngine {
     this.trunkPayloads.set(clusterId, payload);
     this.pruneEdgesBy((id) => id === clusterId); // 聚合边撤 + 其他簇指向本 blob 的 spoke（由本簇真实边取代）
     this.removeSimNode(clusterId);
+    this.removeTrunkChildrenOf(clusterId); // 子域层随 blob 撤场（收起回位时 restoreBlobNode 复建）
     this.addExpansionMembers(clusterId, payload, positions, batchKeys, centroid);
     this.addExpansionEdges(payload);
     this.addTrunkChip(clusterId, centroid);
@@ -904,6 +995,7 @@ export class PixiGraphEngine {
     this.nodeById.set(clusterId, blob);
     const rd = this.makeNodeRenderData(blob);
     this.nodeRenderData.push(rd);
+    this.buildTrunkChildrenOf(cluster); // 收起回位：子域层随 blob 复建（展开时已销毁）
     return rd;
   }
 
@@ -2145,6 +2237,16 @@ export class PixiGraphEngine {
       // chip 跟随团心（resize 后 cx/cy 变化也能钉在簇上——deferred minor 归位）
       for (const chip of this.trunkChips.values()) {
         chip.root.position.set(chip.centroid.x + cx, chip.centroid.y + cy);
+      }
+      // 嵌套子域跟随父团节点（父被展开移除 → 隐藏；restoreBlobNode 复建后 Map 恢复）
+      for (const [parentId, root] of this.trunkChildren) {
+        const node = this.nodeById.get(parentId);
+        if (!node || node.x == null || node.y == null) {
+          root.visible = false;
+          continue;
+        }
+        root.visible = true;
+        root.position.set(node.x + cx, node.y + cy);
       }
       this.redrawEdges();
       this.edgesDirty = false;
