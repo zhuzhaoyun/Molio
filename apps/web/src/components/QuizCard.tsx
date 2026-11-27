@@ -309,6 +309,12 @@ function QuizBody({
   // 否则会把上一条 quiz 的选择写进新键。
   useEffect(() => {
     if (!storageKey) return;
+    // 同 key 守卫（PR #439 CI 实抓的缺陷类）：消息终结/重渲染若使 key 走了
+    // A→null→A 的翻转往返（指纹重算窗口），无条件恢复会用 localStorage 里
+    // 的陈旧草稿覆写内存态——清空丢失、进度卡死在旧值（截图铁证：textarea
+    // 复活 '√'、进度钉死 1/3）。key 值没变 = 内存态就是最新真相，只管放行
+    // 让写 effect 把它落盘。
+    if (restoredKeyRef.current === storageKey) return;
     restoredKeyRef.current = null;
     setSelections({});
     setSubmitted(false);
