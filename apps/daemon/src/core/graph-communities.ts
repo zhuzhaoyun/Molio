@@ -50,6 +50,8 @@ export interface DetectCommunitiesOptions {
 
 /** trunk 簇数量上限：渲染对象 = 簇 + hub，可读预算「几十」（设计 §4.2） */
 export const TRUNK_MAX_CLUSTERS = 40;
+/** 尘埃合并门：size < 此值的社区若与其他社区有边 → 并入边数最多的邻接社区（换核设计 §四） */
+export const DUST_MERGE_MIN = 5;
 /** cap 折叠成员占非 hub 输入的比例超过此值 → quality degenerate（碎片化信号） */
 const CAP_FOLD_DEGENERATE_SHARE = 0.2;
 
@@ -112,7 +114,7 @@ export function detectCommunities(graph: GraphData, opts: DetectCommunitiesOptio
   }
 
   // Louvain 划分（组内 key 升序、组间按最小 key 排序 → c1..cn 的编号基础）
-  const groups = louvainCommunities(input, louvainEdges);
+  const groups = mergeDust(louvainCommunities(input, louvainEdges), louvainEdges);
 
   // 小簇整簇计碎屑（hub 已不在输入里，无需再剔除）
   const candidates: string[][] = [];
@@ -182,6 +184,73 @@ export function detectCommunities(graph: GraphData, opts: DetectCommunitiesOptio
   const quality: GraphCommunities['quality'] = degenerate ? 'degenerate' : 'ok';
 
   return { clusters, hubIds: [...hubSet].sort(), links, crumbCount, quality };
+}
+
+/**
+ * 尘埃合并（换核设计 §四）：size < DUST_MERGE_MIN 的社区若与其他社区有边 →
+ * 并入累计边权最大的邻接社区，平票取「最小成员 key」小的目标；**迭代到不动点**
+ * （dust→dust→大簇的链尾巴不漏）。无边尘埃原样返回（交由下游碎屑路径）。
+ * 语义对齐 LPA 时代的级联吸收——防 Louvain 长尾把 crumbCount 从「孤立点」
+ * 膨胀成「社区残骸」（spike 实测全图 ~1300 个 ≤2 组）。
+ *
+ * 确定性：每轮按组最小 key 排序后扫描、每轮只做一次合并后整轮重启；平票取
+ * 首个最大值（= 最小 key 组）。
+ */
+function mergeDust(groups: string[][], edges: ReadonlyArray<LouvainEdge>): string[][] {
+  // key → (邻接 key → 累计权重)
+  const neighborWeights = new Map<string, Map<string, number>>();
+  const bump = (a: string, b: string, w: number) => {
+    let m = neighborWeights.get(a);
+    if (!m) {
+      m = new Map<string, number>();
+      neighborWeights.set(a, m);
+    }
+    m.set(b, (m.get(b) ?? 0) + w);
+  };
+  for (const e of edges) {
+    bump(e.source, e.target, e.weight);
+    bump(e.target, e.source, e.weight);
+  }
+
+  let partitions = groups.map((g) => [...g]);
+  for (;;) {
+    partitions = partitions.filter((g) => g.length > 0).sort((a, b) => (a[0]! < b[0]! ? -1 : 1));
+    const groupOf = new Map<string, number>();
+    partitions.forEach((g, gi) => g.forEach((k) => groupOf.set(k, gi)));
+
+    let merged = false;
+    for (let gi = 0; gi < partitions.length && !merged; gi++) {
+      const g = partitions[gi]!;
+      if (g.length >= DUST_MERGE_MIN) continue;
+      const tally = new Map<number, number>();
+      for (const k of g) {
+        for (const [nb, w] of neighborWeights.get(k) ?? []) {
+          const tgi = groupOf.get(nb);
+          if (tgi === undefined || tgi === gi) continue;
+          tally.set(tgi, (tally.get(tgi) ?? 0) + w);
+        }
+      }
+      // 最大累计权重；平票显式取「目标组最小成员 key」小者（Map 插入序不可依赖）
+      let best = -1;
+      let bestW = 0;
+      let bestKey = '';
+      for (const [tgi, w] of tally) {
+        const tKey = partitions[tgi]![0]!;
+        if (w > bestW || (w === bestW && best >= 0 && tKey < bestKey)) {
+          bestW = w;
+          best = tgi;
+          bestKey = tKey;
+        }
+      }
+      if (best >= 0) {
+        partitions[best]!.push(...g);
+        partitions[best]!.sort();
+        partitions[gi] = [];
+        merged = true; // 整轮重启：下一轮以最新分组重算（不动点）
+      }
+    }
+    if (!merged) return partitions.filter((g) => g.length > 0);
+  }
 }
 
 /** 默认 hub 阈值：max(50, 5×P90(度数))；P90 线性插值。空输入 → 阈值 50。 */

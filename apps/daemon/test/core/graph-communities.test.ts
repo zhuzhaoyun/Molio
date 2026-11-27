@@ -279,12 +279,34 @@ describe('detectCommunities', () => {
     assert.deepEqual(c.links, []);
   });
 
-  it('13. 换核 RED 钉：链图上 Louvain 切成 2-3 节点小段（LPA 会洪水成两大段）', () => {
-    // 链 = 无社区结构的病态形状，是两内核的确定性分歧点（2026-11-27 scratch 实测：
-    // LPA 2 簇 [13,7]，Louvain 9 组 2~3 节点）。默认 clusterMinSize=5 下 Louvain 的
-    // 小段全部落碎屑 → 0 簇 + 全量碎屑 + degenerate。
-    // 【演进预告】Task 3 尘埃合并后，带边小段会并入邻接主簇、本 fixture 期望将
-    // 随尘埃合并语义更新——本钉子守的是「内核确实是 Louvain」这一事实。
+  it('14. 尘埃合并：有边小簇并入边数最多的邻接簇（平票取最小成员 key 侧）', () => {
+    // 5 团 A（a*）+ 5 团 B（b*）+ 3 团 C（c1-c3 三角）：C 以各 1 条边等权连 A、B
+    // ——C 内聚 3 边足以在 Louvain 自成社区，但 size 3 < 5 是尘埃；等权平票 →
+    // 并入最小成员 key 侧（A）。无边尘埃走碎屑由 test 5 钉。
+    const keysA = ['a1.md', 'a2.md', 'a3.md', 'a4.md', 'a5.md'];
+    const keysB = ['b1.md', 'b2.md', 'b3.md', 'b4.md', 'b5.md'];
+    const keysC = ['c1.md', 'c2.md', 'c3.md'];
+    const { nodes, edges } = twoCliques('topic-a', keysA, 'topic-b', keysB);
+    nodes.push(...keysC.map((k) => md(k, { folder: 'topic-c' })));
+    edges.push(...cliqueEdges(keysC.map((k) => `topic-c/${k}`)));
+    edges.push({ source: 'topic-a/a1.md', target: 'topic-c/c1.md' });
+    edges.push({ source: 'topic-b/b1.md', target: 'topic-c/c3.md' });
+    const c = detectCommunities(graph(nodes, edges), { minNodes: 0 });
+
+    assert.equal(c.clusters.length, 2, 'C 并入 A 后只剩两簇');
+    const withC = c.clusters.find((x) => x.memberIds.includes('topic-c/c1.md'))!;
+    assert.equal(withC.size, 8, 'A(5) + C(3)');
+    assert.ok(!c.clusters.some((x) => x.memberIds.includes('topic-b/b1.md') && x.memberIds.includes('topic-c/c1.md')), '平票不得并入 B');
+    assert.equal(c.crumbCount, 0, '有边尘埃不落碎屑');
+  });
+
+  it('15. 尘埃合并到不动点：链图小段级联合并（平票按字典序最小成员 key）', () => {
+    // 链 20 节点：Louvain 切 9 段（尺寸 2,2,2,2,3,2,2,2,3）。尘埃按组最小 key 序
+    // 扫描、平票取目标组最小成员 key——key 比较是**字典序**：'n12' < 'n7'，所以
+    // 段 [9,10,11] 的左右平票落右侧（n12 侧），n≥10 一侧级联合并；n1~n8 一侧
+    // 级联合并到 ≥5 停止 → 最终 [n1..n8] + [n9..n20] 两簇。
+    // LPA 同图给 2 簇 [13,7]（成员划分不同）——本钉继续充当换核分歧钉。
+    // quality degenerate：最大簇 12/20 = 60% > 50%（巨团触发器，非 cap 折叠）。
     const n = 20;
     const nodes = Array.from({ length: n }, (_, i) => md(`n${i + 1}.md`, { folder: 'dir' }));
     const edges = Array.from({ length: n - 1 }, (_, i) => ({
@@ -293,9 +315,18 @@ describe('detectCommunities', () => {
     }));
     const c = detectCommunities(graph(nodes, edges), { minNodes: 0 });
 
-    assert.equal(c.clusters.length, 0, 'Louvain 链切分全 <5 → 无簇（LPA 会给出 2 簇）');
-    assert.equal(c.crumbCount, 20);
-    // 小簇碎屑 ≠ cap 折叠：degenerate 只看 cap 折叠占比，此处 quality 仍 ok
-    assert.equal(c.quality, 'ok');
+    assert.equal(c.clusters.length, 2);
+    assert.deepEqual(c.clusters.map((x) => x.size), [8, 12]);
+    assert.deepEqual(
+      c.clusters[0]!.memberIds,
+      Array.from({ length: 8 }, (_, i) => `dir/n${i + 1}.md`),
+    );
+    assert.deepEqual(
+      c.clusters[1]!.memberIds,
+      [...Array.from({ length: 11 }, (_, i) => `dir/n${i + 10}.md`), 'dir/n9.md'],
+    );
+    assert.deepEqual(c.clusters.map((x) => x.label), ['dir·8', 'dir·12']);
+    assert.equal(c.crumbCount, 0);
+    assert.equal(c.quality, 'degenerate');
   });
 });
