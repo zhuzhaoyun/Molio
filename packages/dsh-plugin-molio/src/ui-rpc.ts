@@ -26,6 +26,10 @@ export function registerInterface(ctx: Context, endpoint: () => Promise<string>)
           return rel !== '..' && !rel.startsWith('..' + sep) && !isAbsolute(rel);
         }).sort((a, b) => b.path.length - a.path.length)[0];
         if (method === 'targets') return Response.json({ value: { vaults, inferred: containing && containing.id } });
+        if (method === 'location') {
+          const value = containing ? { vault: containing.id, file: relative(containing.path, cwd).split(sep).join('/') } : null;
+          return Response.json({ value });
+        }
         if (method !== 'resolve') throw new Error('未知操作');
         const vault = typeof payload.vaultId === 'string' ? vaults.find(v => v.id === payload.vaultId) : containing;
         if (!vault) throw new Error('请先在文件入库菜单中选择知识库');

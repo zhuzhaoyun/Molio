@@ -3,7 +3,7 @@ import { parse } from 'yaml';
 import { MarkdownText, IconFolderOpenOutlineRegular, IconBranchOutlineRegular, IconAppsAddOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives';
 import { decorateWiki, fileAddress } from './wiki.mjs';
 
-export const inject = ['slots', 'connection', 'sidebarRight', 'sessions', 'documentPreviews', 'workspaces', 'uiWorkspace', 'conversation'];
+export const inject = ['slots', 'connection', 'sidebarRight', 'sessions', 'documentPreviews', 'workspaces', 'uiWorkspace', 'conversation', 'layout'];
 const pages = [
   ['knowledge', '知识库', '/knowledge?panel=files', IconFolderOpenOutlineRegular],
   ['graph', '知识图谱', '/knowledge?panel=graph', IconBranchOutlineRegular],
@@ -35,12 +35,35 @@ export function apply(ctx) {
   function register(name, options, component) {
     ctx.slots.inject(name, () => ctx.slots.register({ name, ...options }, component));
   }
+  const navigation = new EventTarget();
+  let knowledgeRoute = pages[0][2];
+  register('sidebar.right.tab.document.actions', { id: 'molio-open-in-vault' }, function OpenInVault({ absolutePath }) {
+    const [location, setLocation] = useState(null);
+    useEffect(() => {
+      let live = true;
+      setLocation(null);
+      if (absolutePath) call('location', { cwd: absolutePath }).then(value => { if (live) setLocation(value); }).catch(() => {});
+      return () => { live = false; };
+    }, [absolutePath]);
+    return location && <button type="button" onClick={() => {
+      knowledgeRoute = '/knowledge?' + new URLSearchParams(location);
+      navigation.dispatchEvent(new Event('open'));
+      ctx.layout.selectPanel('molio-knowledge');
+    }}>在知识库中打开</button>;
+  });
   for (const [id, title, route, Icon] of pages) {
     register('sidebar.panellist', { id: 'molio-' + id, label: () => title }, Icon);
     register('main', { key: 'molio-' + id }, function Panel() {
       const [origin, setOrigin] = useState('');
       const [error, setError] = useState('');
       const frame = useRef(null);
+      const [currentRoute, setRoute] = useState(id === 'knowledge' ? knowledgeRoute : route);
+      useEffect(() => {
+        if (id !== 'knowledge') return;
+        const navigate = () => setRoute(knowledgeRoute);
+        navigation.addEventListener('open', navigate);
+        return () => navigation.removeEventListener('open', navigate);
+      }, []);
       useEffect(() => {
         let live = true;
         call('endpoint').then(url => live && setOrigin(new URL(url).origin), err => live && setError(err.message));
@@ -65,7 +88,7 @@ export function apply(ctx) {
         return () => window.removeEventListener('message', receive);
       }, [origin]);
       if (error) return <p role="alert">{error}</p>;
-      return origin && <iframe ref={frame} title={title} src={origin + route} style={{ width: '100%', height: '100%', flex: 1, border: 0 }} />;
+      return origin && <iframe ref={frame} title={title} src={origin + currentRoute} style={{ width: '100%', height: '100%', flex: 1, border: 0 }} />;
     });
   }
   const preview = 'dsh-plugin-molio/obsidian';
