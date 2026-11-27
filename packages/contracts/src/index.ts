@@ -257,6 +257,17 @@ export type { MarketTaxon, MarketTaxonomy } from './market.js';
 export { marketCatalogView } from './catalog.js';
 export type { CatalogQuery } from './catalog.js';
 
+// 图谱布局配方（H3 种子）——常量/纯函数/类型，零运行时依赖
+export {
+  GRAPH_LAYOUT_RECIPE,
+  collideRadiusValue,
+  autoLinkStrength,
+  REFINE_ALPHA_FULL,
+  REFINE_ALPHA_PARTIAL,
+  REFINE_ALPHA_DECAY,
+  REFINE_COVERAGE,
+} from './graph-layout.js';
+export type { GraphPositions } from './graph-layout.js';
 // Molio Doctor 自助诊断
 export type {
   DiagnosticLevel,

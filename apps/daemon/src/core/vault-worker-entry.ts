@@ -13,9 +13,11 @@ import { parentPort } from 'node:worker_threads';
 import { buildGraph } from './graph-build.js';
 import { buildAnnotatedTree } from './tree-build.js';
 import { detectCommunities } from './graph-communities.js';
+import { createPrerun, stepPrerun, inheritOverlap, type PrerunState } from './graph-prerun.js';
+import type { GraphData, GraphPositions } from '@molio/contracts';
 
 export interface VaultJobMessage {
-  kind: 'graph' | 'tree' | '__test-crash' | '__test-hang';
+  kind: 'graph' | 'tree' | 'positions' | '__test-crash' | '__test-hang';
   vaultPath?: string;
   /** 外部素材根（#255）——路由侧解析自 db 随 job 传入，worker 线程不碰 db。 */
   externalRoots?: import('./external-roots.js').ExternalRootRef[];
@@ -33,6 +35,90 @@ export interface VaultJobReply {
   ok: boolean;
   result?: unknown;
   error?: string;
+}
+
+// ── H3：PositionStore + 后台分片预跑（docs/2026-11-25-graph-h3-seeded-positions-design.md §3.1）──
+// Store 住 worker 线程内存：跨主线程 GraphCache 的失效/TTL 存活（图缓存删了位置还在，
+// 增量继承才有得继承）；只被「key 重叠 <0.5 的重建」整体重置或 LRU 挤出。
+const PRERUN_CHUNK_TICKS = 40;
+const POSITION_STORE_LRU = 8;
+const positionStore = new Map<string, Map<string, { x: number; y: number }>>();
+/** 待预跑图（vaultPath → 最新一份）。同 vault 再建图 = 覆盖旧跑（新图作废旧状态）。 */
+const pendingPrerun = new Map<string, GraphData>();
+let activePrerun: { vaultPath: string; state: PrerunState } | null = null;
+let prerunLoopRunning = false;
+
+function buildDegrees(g: GraphData): Map<string, number> {
+  const adj = new Map<string, Set<string>>();
+  for (const e of g.edges) {
+    if (e.source === e.target) continue;
+    if (!adj.has(e.source)) adj.set(e.source, new Set());
+    if (!adj.has(e.target)) adj.set(e.target, new Set());
+    adj.get(e.source)!.add(e.target);
+    adj.get(e.target)!.add(e.source);
+  }
+  const deg = new Map<string, number>();
+  for (const n of g.nodes) deg.set(n.key, adj.get(n.key)?.size ?? 0);
+  return deg;
+}
+
+function startPrerunState(vaultPath: string, g: GraphData): { vaultPath: string; state: PrerunState } {
+  const keys = g.nodes.map((n) => n.key);
+  const store = positionStore.get(vaultPath);
+  if (store && inheritOverlap(keys, store) < 0.5) positionStore.delete(vaultPath); // 大换血 → 清空重跑
+  return {
+    vaultPath,
+    state: createPrerun(keys, g.edges, buildDegrees(g), positionStore.get(vaultPath)),
+  };
+}
+
+function storePositions(vaultPath: string, positions: GraphPositions): void {
+  positionStore.delete(vaultPath); // LRU touch：删了重插到尾
+  positionStore.set(vaultPath, new Map(positions.map(([k, x, y]) => [k, { x, y }])));
+  while (positionStore.size > POSITION_STORE_LRU) {
+    const oldest = positionStore.keys().next();
+    if (oldest.done) break;
+    positionStore.delete(oldest.value);
+  }
+}
+
+function schedulePrerun(vaultPath: string, g: GraphData): void {
+  pendingPrerun.set(vaultPath, g);
+  if (prerunLoopRunning) return;
+  prerunLoopRunning = true;
+  void prerunLoop();
+}
+
+/** 分片跑预跑：每片同步 ≤CHUNK ticks，片间 setImmediate 让路——排队的图任务
+ *  （另一 vault 的建图/positions 查询）在让路点先服务，预跑随后续跑（可抢占）。 */
+async function prerunLoop(): Promise<void> {
+  try {
+    for (;;) {
+      if (activePrerun && pendingPrerun.has(activePrerun.vaultPath)) {
+        const g = pendingPrerun.get(activePrerun.vaultPath)!;
+        pendingPrerun.delete(activePrerun.vaultPath);
+        activePrerun = startPrerunState(activePrerun.vaultPath, g); // 新图作废旧状态
+      } else if (!activePrerun) {
+        const next = pendingPrerun.entries().next();
+        if (next.done) break;
+        const [vp, g] = next.value;
+        pendingPrerun.delete(vp);
+        activePrerun = startPrerunState(vp, g);
+      }
+      const r = stepPrerun(activePrerun.state, PRERUN_CHUNK_TICKS);
+      if (r.done) {
+        storePositions(activePrerun.vaultPath, r.positions);
+        activePrerun = null;
+      }
+      await new Promise<void>((res) => setImmediate(res));
+    }
+  } catch (err) {
+    // 预跑是 best-effort：异常只丢弃本轮，绝不影响任务通道
+    console.warn('[vault-worker] prerun failed:', err instanceof Error ? err.message : err);
+    activePrerun = null;
+  } finally {
+    prerunLoopRunning = false;
+  }
 }
 
 const port = parentPort;
@@ -74,11 +160,20 @@ async function runJob({ id, job }: { id: number; job: VaultJobMessage }): Promis
       // T1：communities 随图一起在 worker 线程算，一起进缓存/失效（不占请求线程）。
       // result 恒带 communities 字段（小库 = 空簇对象）；「字段缺失」语义留给旧缓存条目。
       const g = buildGraph(vaultPath, { externalRoots: job.externalRoots });
-      post({
-        id,
-        ok: true,
-        result: { ...g, communities: detectCommunities(g, { minNodes: job.trunkMinNodes }) },
-      });
+      const result = { ...g, communities: detectCommunities(g, { minNodes: job.trunkMinNodes }) };
+      post({ id, ok: true, result });
+      // H3：结果已回，本线程后台分片预跑布局种子（不阻塞下一任务——片间让路）
+      schedulePrerun(vaultPath, g);
+      return;
+    }
+    if (job.kind === 'positions') {
+      const store = positionStore.get(vaultPath);
+      if (!store) {
+        post({ id, ok: true, result: null });
+        return;
+      }
+      const positions: GraphPositions = [...store].map(([k, p]) => [k, p.x, p.y]);
+      post({ id, ok: true, result: positions });
       return;
     }
     if (job.kind === 'tree') {

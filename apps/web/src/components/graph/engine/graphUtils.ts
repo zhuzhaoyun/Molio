@@ -5,6 +5,8 @@
  * fit 视口变换、缓动与数值钳制。引擎只做胶水调用，逻辑以此文件为准。
  */
 
+import { GRAPH_LAYOUT_RECIPE, autoLinkStrength } from '@molio/contracts';
+
 export interface EdgeLike {
   source: string;
   target: string;
@@ -48,7 +50,7 @@ export function dedupeEdges(edges: EdgeLike[], nodeExists: (key: string) => bool
  * 其 683 条 1/min(deg)=1 的强弹簧会在任何拖拽扰动下把 hub 甩飞（实测 3350u 瞬移）。
  * 用 1/√max 把这种超级 hub 的连线收敛到弱约束，不让单个节点成为「力放大镜」。
  */
-export const SUPER_HUB_DEGREE = 60;
+export const SUPER_HUB_DEGREE = GRAPH_LAYOUT_RECIPE.superHubDegree;
 
 /**
  * d3 forceLink 默认强度公式：1 / min(deg_source, deg_target)。
@@ -61,13 +63,9 @@ export const SUPER_HUB_DEGREE = 60;
 export function makeAutoLinkStrength(
   adjacency: ReadonlyMap<string, ReadonlySet<string>>,
 ): (l: { sourceKey: string; targetKey: string }) => number {
-  return (l) => {
-    const ds = Math.max(adjacency.get(l.sourceKey)?.size ?? 1, 1);
-    const dt = Math.max(adjacency.get(l.targetKey)?.size ?? 1, 1);
-    const hi = Math.max(ds, dt);
-    if (hi > SUPER_HUB_DEGREE) return 1 / Math.sqrt(hi);
-    return 1 / Math.min(ds, dt);
-  };
+  // 公式本体在 contracts.autoLinkStrength（daemon 预跑共用同一语义）
+  return (l) =>
+    autoLinkStrength(adjacency.get(l.sourceKey)?.size ?? 1, adjacency.get(l.targetKey)?.size ?? 1);
 }
 
 export interface Bounds {
@@ -217,14 +215,13 @@ export function tileIsolatedNodes(
   return out;
 }
 
-// ── collide 半径公式（单一来源；引擎 collideRadius 与 mini-sim（trunkExpand.ts）共用）──
+// ── collide 半径公式（单一来源 = @molio/contracts；引擎 collideRadius 与 mini-sim（trunkExpand.ts）共用）──
 
 /** collide 半径 = 绘制半径 × MULT + PAD（远看均布、放大后彼此分离），封顶 COLLIDE_MAX。 */
-export const COLLIDE_RADIUS_MULT = 5;
-export const COLLIDE_PAD = 4;
-export const COLLIDE_MAX = 100;
+export const COLLIDE_RADIUS_MULT = GRAPH_LAYOUT_RECIPE.collideMult;
+export const COLLIDE_PAD = GRAPH_LAYOUT_RECIPE.collidePad;
+export const COLLIDE_MAX = GRAPH_LAYOUT_RECIPE.collideMax;
 
-/** 纯函数形式（引擎侧按 SimNode 取 d.radius 后调用；trunkExpand 的 mini-sim 直接用）。 */
-export function collideRadiusValue(radius: number): number {
-  return Math.min(radius * COLLIDE_RADIUS_MULT + COLLIDE_PAD, COLLIDE_MAX);
-}
+/** 纯函数形式（引擎侧按 SimNode 取 d.radius 后调用；trunkExpand 的 mini-sim 直接用）。
+ *  实现自 H3 起在 contracts（daemon 预跑共用）；此处 re-export 保持既有导入点不变。 */
+export { collideRadiusValue } from '@molio/contracts';

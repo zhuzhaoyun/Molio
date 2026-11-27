@@ -190,7 +190,13 @@
       "paths": [
         "apps/web/src/components/graph/**",
         "apps/web/src/styles/graph.css",
-        "apps/daemon/src/routes/graph.ts"
+        "apps/daemon/src/routes/graph.ts",
+        "apps/daemon/src/core/graph-build.ts",
+        "apps/daemon/src/core/graph-cache.ts",
+        "apps/daemon/src/core/graph-communities.ts",
+        "apps/daemon/src/core/graph-prerun.ts",
+        "apps/daemon/src/core/vault-worker.ts",
+        "apps/daemon/src/core/vault-worker-entry.ts"
       ],
       "specs": [
         "graph",
@@ -200,7 +206,8 @@
         "graph-camera",
         "graph-live-refresh",
         "graph-resize-flash",
-        "graph-trunk"
+        "graph-trunk",
+        "graph-seed"
       ]
     },
     "navigation": {
@@ -792,6 +799,10 @@
     "kb-panel-collapse": {
       "priority": "P1",
       "file": "kb-panel-collapse.spec.ts"
+    },
+    "graph-seed": {
+      "priority": "P1",
+      "file": "graph-seed.spec.ts"
     },
     "diagnostics": {
       "priority": "P1",

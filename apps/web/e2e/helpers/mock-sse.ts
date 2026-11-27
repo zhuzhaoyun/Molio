@@ -213,6 +213,10 @@ export async function mockChatRun(page: Page, opts: MockRunOptions = {}) {
         let seq = 0;
         const streamScript = async (turn: readonly object[]) => {
           for (const evt of turn) {
+            // 逐帧延迟（帧前暂停）：测「事件晚到落在用户操作窗口内」的竞态——
+            // 如 turn_end 带 delayMs = 消息终结晚于草稿编辑（quiz storageKey 翻转复活）。
+            const lead = (evt as { delayMs?: number }).delayMs;
+            if (lead) await new Promise((r) => setTimeout(r, lead));
             seq += 1;
             res.write(sseFrame(seq, runId, evt));
             await new Promise((r) => setTimeout(r, opts.frameDelay));

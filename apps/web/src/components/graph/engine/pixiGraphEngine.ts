@@ -45,6 +45,8 @@ import { drag, type D3DragEvent } from 'd3-drag';
 import { zoom, zoomIdentity, type ZoomBehavior, type ZoomTransform } from 'd3-zoom';
 import { Group, Tween } from '@tweenjs/tween.js';
 import { NODE_TYPE_COLORS, type ForceParams, type ThemeColors } from '../types';
+import { GRAPH_LAYOUT_RECIPE, autoLinkStrength } from '@molio/contracts';
+import { planSeedRefine } from '../seedPolicy';
 import {
   trunkBlobRadius,
   trunkEdgeWidth,
@@ -185,8 +187,8 @@ const HOVER_LINGER_MS = 150;
 const CLICK_MOVE_TOLERANCE = 4;
 /** 位移场安装阈值：mousedown 不装位移场，位移超过该值（canvas CSS px）才装（=单击零力零运动） */
 const DRAG_THRESHOLD = 4;
-/** collide 迭代：静止时 3（质量优先），位移场期降到 1（拖拽降质） */
-const COLLIDE_ITERATIONS = 3;
+/** collide 迭代：静止时 3（质量优先），位移场期降到 1（拖拽降质）。值自 contracts recipe（H3 单一来源）。 */
+const COLLIDE_ITERATIONS = GRAPH_LAYOUT_RECIPE.collideIterations;
 /** 标签 LOD（H2 统一规则 labelLod.ts）：屏幕直径阈值 + 同屏可见总数上限（防汤，代拍 B） */
 const LABEL_MIN_SCREEN_DIAMETER = 8;
 const LABEL_MAX_ONSCREEN = 60;
@@ -201,11 +203,11 @@ const FIT_PADDING = 80;
 const EXPORT_MARGIN_SCREEN = 48;
 /** 出图：目标输出长边（device px）；不卡死，实际受 1:1 下限与 4096 上限夹逼 */
 const EXPORT_TARGET_LONG_EDGE = 2000;
-/** v6 配方：forceX/Y 谐波约束强度 —— 让长弹簧向心屈服，整体紧凑、局部由 collide 撑开 */
-const CONTAIN_STRENGTH = 0.06;
+/** v6 配方：forceX/Y 谐波约束强度 —— 让长弹簧向心屈服，整体紧凑、局部由 collide 撑开。值自 contracts recipe（H3 单一来源） */
+const CONTAIN_STRENGTH = GRAPH_LAYOUT_RECIPE.containStrength;
 // collide 半径公式（×5+4 封顶 100）与 COLLIDE_PAD 已移 graphUtils（单一来源，mini-sim/worker 共用）
-/** manyBody 电荷分母下限：d<DISTANCE_MIN 时按 DISTANCE_MIN 计，封顶 1/d² 电荷爆（拖拽级联的节点瞬时重叠加速） */
-const DISTANCE_MIN = 20;
+/** manyBody 电荷分母下限：d<DISTANCE_MIN 时按 DISTANCE_MIN 计，封顶 1/d² 电荷爆（拖拽级联的节点瞬时重叠加速）。值自 contracts recipe（H3 单一来源） */
+const DISTANCE_MIN = GRAPH_LAYOUT_RECIPE.distanceMin;
 /** 位移场期 collide 迭代降到 1（拖拽降质：collide 是每 tick 最大 CPU 成本） */
 const COLLIDE_ITERATIONS_MOTION = 1;
 /** 拖拽期 link 强度倍率：调软防「被拖 hub 的 683 条弹簧把整图拽向内收缩」，松手恢复全强度 */
@@ -294,6 +296,8 @@ export class PixiGraphEngine {
    *  刷新（库变了）要继承——否则「只加了一个文件、整个布局重炸」；换 vault 不能继承——
    *  两个库的图没有可比性，沿用旧坐标会让新库长成旧库的形状。 */
   private inheritPositions = true;
+  /** H3 布局种子（daemon 预跑 positions）：仅全量模式消费，setData 注入、trunk 不吃。 */
+  private pendingSeed: Map<string, { x: number; y: number }> | null = null;
   private hasUserInteracted = false;
   private hasFitFirstLayout = false;
   private refitTimer: ReturnType<typeof setTimeout> | null = null;
@@ -466,9 +470,10 @@ export class PixiGraphEngine {
     }
   }
 
-  setData(nodes: EngineNode[], edges: EngineEdge[]): void {
+  setData(nodes: EngineNode[], edges: EngineEdge[], seed?: Map<string, { x: number; y: number }>): void {
     if (this.destroyed) return;
     this.trunkMode = false;
+    this.pendingSeed = seed ?? null;
     this.buildAndRender(
       nodes,
       edges.map((e) => ({ ...e })),
@@ -485,6 +490,7 @@ export class PixiGraphEngine {
   setTrunkData(scene: TrunkScene, opts?: { preserveViewport?: boolean }): void {
     if (this.destroyed) return;
     this.trunkMode = true;
+    this.pendingSeed = null;
     this.trunkSceneRef = scene;
     // 场景重建 = 展开态清零（刷新保态由宿主 matchExpansionsOnRefresh 后重注入；chip 随层销毁）
     this.trunkBlobPos.clear();
@@ -943,8 +949,11 @@ export class PixiGraphEngine {
 
     const nodeById = new Map<string, SimNode>();
     const simNodes: SimNode[] = [];
+    // H3 布局种子只在全量模式生效（trunk 是固定配方的另一套世界）
+    const seed = trunk === null ? this.pendingSeed : null;
     for (const n of nodes) {
       const prev = prevNodes?.get(n.key);
+      const seeded = seed?.get(n.key);
       simNodes.push({
         id: n.key,
         text: n.label,
@@ -955,12 +964,12 @@ export class PixiGraphEngine {
         trunkCluster: n.trunkCluster,
         radius: this.radiusOf(n),
         rank: 0,
-        // 老节点从原位继续仿真（刷新只微调，不重炸）；新节点不给坐标，
-        // 交给 d3 默认的 phyllotaxis 散布，自然长在既有布局之外。
-        x: prev?.x,
-        y: prev?.y,
-        vx: prev?.vx,
-        vy: prev?.vy,
+        // 老节点从原位继续仿真（刷新只微调，不重炸）；新节点优先吃布局种子
+        // （daemon 预跑的近终态坐标——「出生定形」），无种子才交给 d3 默认散布。
+        x: prev?.x ?? seeded?.x,
+        y: prev?.y ?? seeded?.y,
+        vx: prev?.vx ?? (seeded ? 0 : undefined),
+        vy: prev?.vy ?? (seeded ? 0 : undefined),
       });
     }
     for (const n of simNodes) nodeById.set(n.id, n);
@@ -1463,6 +1472,20 @@ export class PixiGraphEngine {
       .force('x', forceX<SimNode>(0).strength(CONTAIN_STRENGTH))
       .force('y', forceY<SimNode>(0).strength(CONTAIN_STRENGTH))
       .force('collide', forceCollide<SimNode>().radius(collideRadius).iterations(COLLIDE_ITERATIONS));
+    // H3 播种精修档：种子覆盖率 × 配方完好性决定起跑温度（seedPolicy 三档）。
+    // 全量种子+默认配方+nodeScale=1 → α=0.1 低温（出生定形）；部分 → 0.3；
+    // 改过力参/nodeScale≠1/无种子 → 现状 α=1。trunk 用 TRUNK_FORCE 固定配方，不吃种子。
+    if (!this.trunkMode) {
+      let seedCount = 0;
+      if (this.pendingSeed) for (const n of this.nodes) if (this.pendingSeed.has(n.id)) seedCount++;
+      const policy = planSeedRefine({
+        seedCount,
+        nodeCount: this.nodes.length,
+        forces: this.forces,
+        nodeScale: this.nodeScale,
+      });
+      sim.alpha(policy.alpha).alphaDecay(policy.alphaDecay);
+    }
     // 仿真收敛后布局范围才稳定 —— 若用户未交互过，重新 fit 一次，
     // 避免「早期小范围 fit 的缩放」看「后期大范围布局」导致放大叠团的错觉。
     // 若宿主注册了 pendingReframe（scope 切换：局部图 ⇄ 全量图），优先执行它
@@ -2158,15 +2181,11 @@ function makeTweenNode(group: Group): TweenNode {
 
 /** d3 forceLink 默认强度：1/min(度数source, 度数target)；但当一边是超级 hub（度数>阈值）时按 1/√max 大幅减弱 */
 function defaultLinkStrength(adjacency: ReadonlyMap<string, ReadonlySet<string>>) {
+  // 公式本体在 contracts.autoLinkStrength（H3 单一来源：daemon 预跑共用同一语义）
   return (l: SimLink) => {
     const s = l.source as SimNode;
     const t = l.target as SimNode;
-    const ds = Math.max(adjacency.get(s.id)?.size ?? 1, 1);
-    const dt = Math.max(adjacency.get(t.id)?.size ?? 1, 1);
-    const hi = Math.max(ds, dt);
-    if (hi > SUPER_HUB_DEGREE) return 1 / Math.sqrt(hi);
-    return 1 / Math.min(ds, dt);
-    // 与 graphUtils.makeAutoLinkStrength 保持一致（单一来源 SUPER_HUB_DEGREE）
+    return autoLinkStrength(adjacency.get(s.id)?.size ?? 1, adjacency.get(t.id)?.size ?? 1);
   };
 }
 

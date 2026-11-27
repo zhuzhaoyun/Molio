@@ -1153,9 +1153,44 @@ test.describe('Quiz interaction block', () => {
     await expect(card.locator('[data-testid="quiz-progress"]')).toHaveText('已作答 1/3');
     // 清空文本 → 回到未答；再输入正文 → 又算已答。
     await card.locator('[data-testid="quiz-subject-input"][data-question-id="q3"]').fill('');
-    await expect(card.locator('[data-testid="quiz-progress"]')).toHaveText('已作答 0/3');
+    // 满载 runner 上主线程可能冻结 >5s（CI 实抓：fill 后 5s 内 14 次采样全是陈旧的
+    // 1/3——与图谱重 spec 并跑的负载窗口），加宽到 15s 等冻结过去，不赌调度
+    await expect(card.locator('[data-testid="quiz-progress"]')).toHaveText('已作答 0/3', { timeout: 15_000 });
     await card.locator('[data-testid="quiz-subject-input"][data-question-id="q3"]').fill('证明过程……');
     await expect(card.locator('[data-testid="quiz-progress"]')).toHaveText('已作答 1/3');
+  });
+
+  test('draft clear survives stream finalization（storageKey 翻转不得复活陈旧草稿）', async ({ page }) => {
+    // 根因（PR #439 CI 实抓）：消息终结（turn_end）重建消息对象 → quiz prop 新身份
+    // → 指纹 effect（deps [quiz]）重跑 setFingerprint(null) → storageKey 翻 null
+    // → 清空的写 effect 被门控跳过（localStorage 仍是 '√'）→ 指纹解析回来 key 翻回
+    // → 恢复 effect 无条件重跑 → 从 localStorage 复活 '√' → 进度卡死 1/3。
+    // 复现 = turn_end 延迟到「插符号持久化之后、清空写盘之前」的窗口（delayMs）。
+    await mockChatRun(page, { runId: 'run-1', conversationId: 'conv-1', script: [
+      { type: 'status', label: 'running' },
+      { type: 'text_delta', delta: MIXED_QUIZ },
+      { type: 'turn_end', stopReason: 'end_turn', delayMs: 2000 },
+    ] });
+    await gotoHome(page);
+    await sendMessage(page, '出混合题');
+
+    const card = page.locator('[data-testid="quiz-card"]');
+    await expect(card).toBeVisible({ timeout: 10_000 });
+    const subjectRow = card.locator('[data-testid="quiz-question"][data-question-id="q3"]');
+    await expect(subjectRow.locator('[data-testid="quiz-subject-input"]')).toBeVisible();
+
+    // 插符号（走持久化路径）→ 清空（落在 turn_end 触发的 key 翻转窗口内）
+    await subjectRow.locator('[data-testid="quiz-subject-symbol"]').click();
+    await expect(subjectRow.locator('[data-testid="quiz-subject-symbol-tray"]')).toBeVisible();
+    await subjectRow.locator('[data-testid="quiz-symbol-btn"][data-char="√"]').click();
+    await expect(card.locator('[data-testid="quiz-progress"]')).toHaveText('已作答 1/3');
+    await card.locator('[data-testid="quiz-subject-input"][data-question-id="q3"]').fill('');
+    await expect(card.locator('[data-testid="quiz-progress"]')).toHaveText('已作答 0/3');
+
+    // turn_end 落地（终结→指纹重算→key 翻转往返）后：清空必须存活
+    await page.waitForTimeout(2500);
+    await expect(card.locator('[data-testid="quiz-progress"]')).toHaveText('已作答 0/3');
+    await expect(card.locator('[data-testid="quiz-subject-input"][data-question-id="q3"]')).toHaveValue('');
   });
 
   test('subject-only quiz renders a submit button gated on drafts', async ({ page }) => {

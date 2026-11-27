@@ -14,7 +14,7 @@ import { projectRoutes } from './routes/projects.js';
 import { knowledgeRoutes } from './routes/knowledge.js';
 import { publishRoutes, cleanupAllBridges } from './routes/publish.js';
 import { proxyRoutes } from './routes/proxy.js';
-import { graphRoutes } from './routes/graph.js';
+import { graphRoutes, makeGraphWarmer } from './routes/graph.js';
 import { weixinRoutes } from './routes/weixin.js';
 import { feishuRoutes } from './routes/feishu.js';
 import { maintenanceRoutes } from './routes/maintenance.js';
@@ -31,6 +31,7 @@ import { ConversationService } from './core/conversations/service.js';
 import { VaultWatcher, VAULT_TREE_CHANGED_EVENT, VAULT_WATCH_STATE_CHANGED_EVENT } from './core/vault-watcher.js';
 import { VaultIndexSweeper } from './core/vault-search.js';
 import { GraphCache } from './core/graph-cache.js';
+import { listExternalRoots } from './core/db.js';
 import { TreeCache } from './core/tree-cache.js';
 import { disposeVaultWorkers } from './core/vault-worker.js';
 import { createPreloadManager } from './core/preload-manager.js';
@@ -136,7 +137,14 @@ app.route('/api/config', configRoutes({
 app.route('/api/skills', skillsRoutes(db, runManager));
 app.route('/api/conversations', conversationRoutes(db, runManager, conversationService));
 app.route('/api/projects', projectRoutes(db));
-app.route('/api/knowledge', knowledgeRoutes(db, runManager, vaultWatcher, treeCache, (vaultId) => vaultWatcher.isReady(vaultId)));
+// H3：树请求 = vault 被触碰 → 提前建图 + worker 布局预跑（错过窗口的图谱 GET 回退现状）
+const graphWarmer = makeGraphWarmer(graphCache, (vaultId) => vaultWatcher.isReady(vaultId));
+app.route(
+  '/api/knowledge',
+  knowledgeRoutes(db, runManager, vaultWatcher, treeCache, (vaultId) => vaultWatcher.isReady(vaultId), (vault) => {
+    void graphWarmer(vault, listExternalRoots(db, vault.id).map((r) => ({ label: r.label, target: r.target })));
+  }),
+);
 app.route('/api/publish', publishRoutes());
 app.route('/api/proxy', proxyRoutes());
 app.route('/api/graph', graphRoutes(db, graphCache, (vaultId) => vaultWatcher.isReady(vaultId)));

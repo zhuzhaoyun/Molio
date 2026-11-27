@@ -57,6 +57,8 @@ export interface ThemeColors {
 //   collide 半径 = 绘制半径×5+4（引擎内置）撑开局部 → spacingRatio ~5，\r
 //   远看均布、放大后节点彼此分离，与 Obsidian 缩放行为一致。\r
 // 节点半径 = (2 + sqrt(度数)) * 2 * nodeScale，collide iterations 3。\r
+/** 力参默认值。与 contracts 的 GRAPH_LAYOUT_RECIPE 逐项一致（H3 单一来源防漂移——
+ * graph-layout-contracts.test.ts 钉住；用户可改，改后浏览器不再走低温精修档）。 */
 export const DEFAULT_FORCE_PARAMS: ForceParams = {
   centerStrength: 0.2,
   repelStrength: -120,

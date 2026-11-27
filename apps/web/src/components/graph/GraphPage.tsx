@@ -647,7 +647,13 @@ export function GraphPage({
     // 离开 trunk（开关/筛选/scope/换库）：展开态清（代拍 I：会话瞬态不持久化）
     if (wasTrunk || expandedRef.current.size > 0) expandedRef.current.clear();
     prevTrunkSceneRef.current = null;
-    engine.setData(engineData.nodes, engineData.edges);
+    // H3 布局种子：daemon 预跑的近终态坐标（全量图端点 best-effort 携带，缺失=现状）。
+    // 引擎按当前可见节点集求交（种子覆盖率进 seedPolicy 的三档温度判定）。
+    const seedMap =
+      graphData?.positions && graphData.positions.length > 0
+        ? new Map(graphData.positions.map(([k, x, y]) => [k, { x, y }]))
+        : undefined;
+    engine.setData(engineData.nodes, engineData.edges, seedMap);
     if (wasTrunk) engine.fitView({ animate: false }); // trunk→full：旧视口对着几十个对象的布局，无意义
 
     // ── 取景：对照副格 → 整张子图 fit；file → 圆心居中放大；dir → 子图 fit；全量图 → 整图 fit ──

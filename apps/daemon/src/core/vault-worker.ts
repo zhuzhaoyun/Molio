@@ -25,8 +25,10 @@
  */
 
 import { Worker } from 'node:worker_threads';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { existsSync } from 'node:fs';
-import type { GraphData, TreeNode } from '@molio/contracts';
+import type { GraphData, GraphPositions, TreeNode } from '@molio/contracts';
 import type { ExternalRootRef } from './external-roots.js';
 import type { VaultJobMessage } from './vault-worker-entry.js';
 import { DEFAULT_TRUNK_MIN_NODES } from './graph-communities.js';
@@ -41,6 +43,7 @@ export type VaultJob =
       __testBlockMs?: number;
     }
   | { kind: 'tree'; vaultPath: string; externalRoots?: ExternalRootRef[]; __testBlockMs?: number }
+  | { kind: 'positions'; vaultPath: string }
   | { kind: '__test-crash' }
   | { kind: '__test-hang' };
 
@@ -98,6 +101,47 @@ export class VaultWorkerClient {
         worker.postMessage({ id, job: job satisfies VaultJobMessage });
       } catch (err) {
         this.settle(id, err instanceof Error ? err : new Error(String(err)));
+      }
+    });
+  }
+
+  /**
+   * 软探测（终审 Important-1）：独立短超时的 best-effort 请求。超时只作废本次
+   * 等待并 resolve null——**绝不 terminate/reset 线程**（种子是附加数据，不能把
+   * 缓存命中的 GET 拴在 worker 健康度上：worker 被长构建占住/慢盘挂起时，硬等
+   * 会拖满 3 分钟任务超时并触发 reset，连累别的库在途构建）。迟到回包由
+   * settle 的 pending 缺失检查静默丢弃；崩溃 reset 的 reject 也转 null。
+   */
+  softRequest<T>(job: VaultJob, timeoutMs: number): Promise<T | null> {
+    let worker: Worker;
+    try {
+      worker = this.ensureWorker();
+    } catch {
+      return Promise.resolve(null);
+    }
+    const id = this.nextId++;
+    return new Promise<T | null>((resolve) => {
+      const timer = setTimeout(() => {
+        this.pending.delete(id);
+        if (this.pending.size === 0) this.worker?.unref();
+        resolve(null);
+      }, timeoutMs);
+      this.pending.set(id, {
+        resolve: (value) => {
+          clearTimeout(timer);
+          resolve(value as T);
+        },
+        reject: () => {
+          clearTimeout(timer);
+          resolve(null);
+        },
+        timer,
+      });
+      worker.ref();
+      try {
+        worker.postMessage({ id, job: job satisfies VaultJob });
+      } catch {
+        this.settle(id, errLike('post failed'));
       }
     });
   }
@@ -163,6 +207,10 @@ export class VaultWorkerClient {
   }
 }
 
+function errLike(msg: string): Error {
+  return new Error(msg);
+}
+
 // 一个进程各一条线程，懒启动。构造本身没有副作用（不会起线程）。
 const graphClient = new VaultWorkerClient();
 const treeClient = new VaultWorkerClient();
@@ -199,6 +247,32 @@ export function buildTreeInWorker(
   externalRoots: ExternalRootRef[] = [],
 ): Promise<TreeNode[]> {
   return treeClient.request<TreeNode[]>({ kind: 'tree', vaultPath, externalRoots });
+}
+
+/** positions 软探测超时：正常 worker 空闲/分片让路时毫秒级应答；被长构建占住时
+ *  放弃种子（回 null）也不硬等——GET 必须快（终审 Important-1）。 */
+const POSITIONS_PROBE_TIMEOUT_MS = 1500;
+
+/** H3：读某 vault 的布局种子（worker PositionStore）。无库存（预跑未完成/线程刚重建/
+ *  worker 忙到软超时）→ null。覆盖率由路由侧按当前图节点数计算——worker 只知预跑时
+ *  的口径，路由才有当前图。 */
+export function getGraphPositions(vaultPath: string): Promise<GraphPositions | null> {
+  return graphClient.softRequest<GraphPositions | null>({ kind: 'positions', vaultPath }, POSITIONS_PROBE_TIMEOUT_MS);
+}
+
+/** 测试钩子：占住共享图线程 busy-wait 指定毫秒（路径不存在，收场时 reject 无害）——
+ *  验证 positions 软探测在 worker 被占时快速回 null 且不 terminate 线程。 */
+export function blockGraphWorkerForTest(blockMs: number): Promise<never> {
+  return graphClient.request<never>({
+    kind: 'graph',
+    vaultPath: join(tmpdir(), `molio-block-${Date.now()}-${Math.random()}`),
+    __testBlockMs: blockMs,
+  });
+}
+
+/** 测试钩子：往共享图线程发一个会崩的任务（崩溃自愈路径端到端验证用）。 */
+export function crashGraphWorkerForTest(): Promise<never> {
+  return graphClient.request<never>({ kind: '__test-crash' });
 }
 
 /** 关停用：结束两条扫描线程（优雅退出时调用；进程退出也会带走它们）。 */
