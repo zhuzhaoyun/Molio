@@ -51,3 +51,16 @@ export function revealInFolder(vaultPath: string, rawPath: string): boolean {
   });
   return true;
 }
+
+/**
+ * 同上，但路径已经是绝对路径（支持包等非 vault 产物，daemon 直接返回绝对路径），
+ * 不做 vault 前缀拼装。与 revealInFolder 共用同一个桥；无桥或失败返回 false（不抛错）。
+ */
+export function revealAbsolutePath(absPath: string): boolean {
+  const bridge = revealBridge();
+  if (!bridge) return false;
+  bridge.showItemInFolder(absPath).catch((err: unknown) => {
+    console.warn('[reveal] showItemInFolder failed:', err);
+  });
+  return true;
+}

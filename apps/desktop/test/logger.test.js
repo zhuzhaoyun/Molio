@@ -10,7 +10,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, readFileSync, writeFileSync, rmSync, existsSync, statSync } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { log, getLogPath, setLogDir, _reset } from '../src/logger.js';
+import { log, getLogPath, getLogDir, setLogDir, _reset } from '../src/logger.js';
 
 let tmpDir;
 
@@ -75,6 +75,10 @@ describe('getLogPath()', () => {
     assert.ok(logPath.startsWith(tmpDir), `log path ${logPath} should be inside ${tmpDir}`);
     assert.ok(logPath.endsWith('updater.log'));
   });
+});
+
+describe('getLogDir()', () => {
+  it('getLogDir 在写入任何日志之前就返回日志目录', () => assert.equal(getLogDir(), tmpDir));
 });
 
 describe('log rotation', () => {

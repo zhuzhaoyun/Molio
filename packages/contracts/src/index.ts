@@ -268,3 +268,12 @@ export {
   REFINE_COVERAGE,
 } from './graph-layout.js';
 export type { GraphPositions } from './graph-layout.js';
+// Molio Doctor 自助诊断
+export type {
+  DiagnosticLevel,
+  DiagnosticActionCode,
+  DiagnosticAction,
+  DiagnosticItem,
+  DiagnosticsReport,
+  SupportBundleResult,
+} from './diagnostics.js';

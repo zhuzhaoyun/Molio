@@ -1,6 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { deriveChatTitle, stripLeadingRefs, stripWikiQueryTrigger, WIKI_QUERY_TRIGGER } from './kbChatPrompts.ts';
+import {
+  deriveChatTitle, stripLeadingRefs, stripWikiQueryTrigger, WIKI_QUERY_TRIGGER,
+  DIAGNOSE_DIRECTIVE, wrapDiagnoseDirective, stripDiagnoseDirective,
+} from './kbChatPrompts.ts';
 
 // 发送时 composer 会把文档引用 chip 还原成 `@path` 再展开成 `[📄 name](path)`，
 // 贴在用户正文前面。标签标题必须只描述用户的问题（2026-10-22 实测：
@@ -90,3 +93,17 @@ test('stripWikiQueryTrigger: 普通消息原样返回', () => {
   assert.equal(stripWikiQueryTrigger('你好'), '你好');
   assert.equal(stripWikiQueryTrigger('请问（知识库问答）是什么'), '请问（知识库问答）是什么');
 });
+
+// ── 隐式诊断指令（故障抱怨自动带体检流程，见 utils/diagnoseIntent.ts）──
+
+test('wrapDiagnoseDirective: 指令在前、用户原话在后，指令独占一行', () => {
+  assert.equal(wrapDiagnoseDirective('知识图谱打不开'), `${DIAGNOSE_DIRECTIVE}\n知识图谱打不开`);
+  assert.ok(!DIAGNOSE_DIRECTIVE.includes('\n'));
+});
+
+test('stripDiagnoseDirective: 只剥行首的现行指令', () => {
+  assert.equal(stripDiagnoseDirective(wrapDiagnoseDirective('x')), 'x');
+  assert.equal(stripDiagnoseDirective('提到（Molio 诊断：…）的正文'), '提到（Molio 诊断：…）的正文');
+});
+
+test('会话标题取到的是用户原话', () => assert.equal(deriveChatTitle(wrapDiagnoseDirective('知识图谱打不开')), '知识图谱打不开'));

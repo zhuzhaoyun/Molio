@@ -58,6 +58,38 @@ export function stripWikiQueryTrigger(text: string): string {
   return text;
 }
 
+/**
+ * 隐式诊断指令：用户在 KB 问答里抱怨 Molio 自身故障（判定见 utils/diagnoseIntent.ts）
+ * 时，包在首条用户消息前面，让 agent 先跑只读体检（GET /api/diagnostics?format=text）
+ * 再回答，而不是凭通用知识猜测。
+ *
+ * 约束：
+ * - 必须独占一行且在用户原话之前——会话标题取首条消息的末行（deriveChatTitle），
+ *   指令绝不可能是最后一行，标题才始终是用户自己的话。
+ * - 前缀让 agent 自行判断「是不是在说 Molio 出问题」，拿不准先向用户确认——
+ *   分类器只保守拦截，仍会有擦边消息漏进来，不能让指令本身变成劫持（#369 教训）。
+ * - 显式声明「全程只读」：agent 跑在 --dangerously-skip-permissions 下，且知识库
+ *   .claude/CLAUDE.md 有「缺工具自动安装」常驻规则，不声明的话体检可能顺手装软件。
+ * - 只在 web 侧注入（应用内建 run），微信/飞书渠道不经过这里。
+ */
+export const DIAGNOSE_DIRECTIVE =
+  '（Molio 诊断：用户可能在说 Molio 这个应用自身出了问题。先判断——如果不是，忽略本段、按普通对话回答，不要提起诊断；拿不准就先用一句话向用户确认。确认是之后：若存在 molio-doctor skill 先按它的流程走；读取体检结果用 curl -s "$MOLIO_API_BASE/api/diagnostics?format=text"（PowerShell 用 curl.exe，变量写成 $env:MOLIO_API_BASE）。回答时第一句给结论，然后列出用户要做的事（编号、每步一个动作、写明具体路径），最后说怎么确认修好了。全程只读：不要替用户修改设置、安装或卸载软件。不要向用户展示英文报错、术语或退出码。仍未解决时执行 curl -s -X POST "$MOLIO_API_BASE/api/diagnostics/support-bundle" 生成支持包，把返回的文件路径告诉用户，请用户把它发给 Molio 支持人员。）';
+
+/** 包上诊断指令：指令独占首行，用户原话（含 wiki-query 触发语等既有前缀）整体后移。 */
+export function wrapDiagnoseDirective(message: string): string {
+  return `${DIAGNOSE_DIRECTIVE}\n${message}`;
+}
+
+/**
+ * 展示层剥离：与 stripWikiQueryTrigger 同一职责——用户气泡/复制/编辑只见用户自己的
+ * 话。只剥行首的现行指令；正文里提到「（Molio 诊断：…）」的（如用户在讨论这段文案
+ * 本身）原样保留。消息体不动——daemon 存的仍是包裹后的原文。
+ */
+export function stripDiagnoseDirective(text: string): string {
+  if (text.startsWith(`${DIAGNOSE_DIRECTIVE}\n`)) return text.slice(DIAGNOSE_DIRECTIVE.length + 1);
+  return text;
+}
+
 export const WIKI_TITLES: Record<ChatSessionMode, string> = {
   qa: '新会话',
   build: '构建Wiki',

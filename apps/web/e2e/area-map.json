@@ -161,7 +161,8 @@
         "kb-tree-folder-state",
         "navigation-history",
         "kb-external-roots",
-        "kb-message-rail"
+        "kb-message-rail",
+        "diagnostics"
       ]
     },
     "publish": {
@@ -358,6 +359,19 @@
       ],
       "specs": [
         "market-community"
+      ]
+    },
+    "diagnostics": {
+      "paths": [
+        "apps/web/src/components/diagnostics/*",
+        "apps/web/src/styles/diagnostics.css",
+        "apps/web/src/utils/diagnoseIntent*",
+        "apps/daemon/src/core/diagnostics/*",
+        "apps/daemon/src/routes/diagnostics.ts",
+        "apps/daemon/src/tools/skills/molio-doctor/*"
+      ],
+      "specs": [
+        "diagnostics"
       ]
     }
   },
@@ -789,6 +803,10 @@
     "graph-seed": {
       "priority": "P1",
       "file": "graph-seed.spec.ts"
+    },
+    "diagnostics": {
+      "priority": "P1",
+      "file": "diagnostics.spec.ts"
     }
   }
 }

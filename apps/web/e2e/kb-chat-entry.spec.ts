@@ -12,7 +12,7 @@ import * as path from 'path';
  * - 💬问答 (document) in kb-main-header → 1 click, qa mode + @当前文档.
  * - 💬问答 (vault) in KbTabBar actions → 无文件也可用（库级问答，不带 @文档）.
  * - 💬问答 empty-state CTA in「未选择文件」空状态 → 同上.
- * - 📚构建Wiki / 🩺健康检查 (vault) in KbTabBar actions → open + auto-send.
+ * - 📚构建Wiki / 🩺Molio 体检 (vault) in KbTabBar actions → open + auto-send.
  * Prerequisites: `pnpm dev`.
  */
 let vault: TempVault;
@@ -92,10 +92,11 @@ test.describe('KB chat entry (scoped buttons)', () => {
     await expect(activeBuild.locator('.file-chat-messages')).toContainText(/wiki-build/);
   });
 
-  test('🩺健康检查 disabled when wiki not initialized', async ({ page }) => {
+  test('体检按钮在未构建 Wiki 时也可用', async ({ page }) => {
+    // Molio 体检查的是 Molio 自身，不依赖 Wiki 是否构建——按钮不再置灰
     await page.goto(`/knowledge?vault=${vault.id}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
-    await expect(page.locator('[data-testid="kb-btn-lint-wiki"]')).toBeDisabled();
+    await expect(page.locator('[data-testid="kb-btn-lint-wiki"]')).toBeEnabled();
   });
 
   test('💬问答 available when no file open (tab-bar entry, vault-scoped)', async ({ page }) => {

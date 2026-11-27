@@ -1,6 +1,7 @@
 // apps/web/src/components/kb/FloatingChatButton.tsx
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { kbChatSessionsStore, useKbChatPanelOpen } from '../../stores/kbChatSessionsStore';
+import { setCheckupOpen } from '../../stores/checkupStore';
 import { useCurrentContext } from '../../stores/currentContextStore';
 import { ContextMenu, type MenuItem } from './ContextMenu';
 import { useI18n } from '../../i18n';
@@ -18,9 +19,11 @@ import { BrandLogo } from '../BrandLogo';
  *  窗口 resize 时跟随收进新视口（藏边小签贴住新缘），不回写持久化——
  *  还原窗口后原位恢复。
  *
- *  右键菜单（2026-10-13 二轮定稿）：**固定动作**，与 KB 页固定按钮同源——
+ *  右键菜单（2026-10-13 二轮定稿，2026-11-26 加体检项）：**固定动作**，与 KB 页固定按钮同源——
  *  「构建Wiki」走面板 runWikiOp（App 下发，与 KB 页「构建Wiki」按钮同一条
- *  代码路径，复用/三选一互斥全部一致）；「打开会话」只展开面板不创建。
+ *  代码路径，复用/三选一互斥全部一致）；「打开会话」只展开面板不创建；
+ *  「Molio 体检」写 checkupStore 全局开合（弹窗实例在面板 portal 层，与 KB 页
+ *  听诊器按钮共享同一实例）——它不依赖 agent/vault，故不置灰。
  *  不做动态会话列表（会话标题/内容态是异步易变的，静态动作永不「消失」）。
  *
  *  **唤回的可发现性**（2026-10-15）：12px 小签是通往对话的**唯一入口**（导航栏已无对话项），
@@ -372,6 +375,14 @@ export function FloatingChatButton({ agentId, onBuildWiki, onOpenSession }: Prop
       label: t('kb.chatMenu.openSession'),
       testid: 'kb-chat-menu-open',
       onClick: onOpenSession,
+    },
+    // Molio 体检：不依赖 agent / vault（体检是确定性代码，AI 只是可选的解读层），
+    // 所以不像「构建Wiki」那样置灰——任何机器、任何状态都该能查。
+    // 弹窗实例在 KbChatSessionsPanel 的 portal 层，这里只写全局开合。
+    {
+      label: t('kb.molioCheckup'),
+      testid: 'kb-chat-menu-checkup',
+      onClick: () => setCheckupOpen(true),
     },
     { divider: true },
     pos?.hidden

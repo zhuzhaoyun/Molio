@@ -21,6 +21,8 @@ import { maintenanceRoutes } from './routes/maintenance.js';
 import { quizRoutes } from './routes/quiz.js';
 import { authRoutes } from './routes/auth.js';
 import { marketRoutes } from './routes/market.js';
+import { diagnosticsRoutes } from './routes/diagnostics.js';
+import { createDiagnosticsDeps } from './core/diagnostics/run-diagnostics.js';
 import { createStaticFileMiddleware } from './static-files.js';
 import { AuthClient } from './core/auth/auth-client.js';
 import { WeixinService } from './core/weixin/service.js';
@@ -153,6 +155,7 @@ app.route('/api/maintenance', maintenanceRoutes(db));
 app.route('/api/quiz', quizRoutes(db));
 app.route('/api/auth', authRoutes(authClient));
 app.route('/api/market', marketRoutes(db, authClient));
+app.route('/api/diagnostics', diagnosticsRoutes(createDiagnosticsDeps({ db, runManager })));
 
 // NOTE: service startup (weixin/feishu start, vaultWatcher.start, default-vault
 // provisioning) deliberately does NOT live here anymore. Module-level side

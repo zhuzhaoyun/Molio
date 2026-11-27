@@ -5,7 +5,7 @@ import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { setupAutoUpdater } from './updater.js';
-import { log, getLogPath } from './logger.js';
+import { log, getLogPath, getLogDir } from './logger.js';
 import { startFetchServer } from './wiki-fetcher.js';
 import { openFeishuLogin, getFeishuLoginStatus } from './wiki-fetcher-login.js';
 import { startCryptoServer, stopCryptoServer } from './crypto-server.js';
@@ -179,6 +179,9 @@ async function startDaemonProduction() {
       MOLIO_PORT: String(DAEMON_PORT),
       MOLIO_STATIC_DIR: webStaticDir,
       MOLIO_DOCUMENTS_DIR: app.getPath('documents'),
+      // 自助诊断用：真实应用版本 + 主进程日志目录（后台服务异常退出的唯一可靠记录）
+      MOLIO_APP_VERSION: app.getVersion(),
+      MOLIO_MAIN_LOG_DIR: getLogDir(),
     };
     // 云端认证地址：显式设置的 MOLIO_AUTH_URL（私有化/Docker/测试）优先；
     // 缺省或纯空白（与 daemon auth-client 的 trim 语义一致）时注入内置官方地址，

@@ -2,6 +2,7 @@
 import { test, expect } from '@playwright/test';
 import { createTempVault, cleanupTempVault, type TempVault } from './helpers/cleanup';
 import { mockChatRun, unmockAll } from './helpers/mock-sse';
+import { mockDiagnostics } from './helpers/diagnostics';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -243,7 +244,8 @@ test.describe('KB chat sessions', () => {
     // 「新任务要落地的 lint tab」，cancel 它没有 run（no-op），正在跑的 build run
     // 没被杀 → 两个 wiki run 并发写同一 vault。必须 cancel 所有真正在跑的 wiki 会话。
     await mockChatRun(page, { frameDelay: 400 });
-    // 健康检查按钮需 wikiInitialized=true 才可点 —— mock wiki status 为已初始化
+    await mockDiagnostics(page);
+    // 体检面板的「继续检查 Wiki 内容健康」行需 wikiInitialized=true 才渲染 —— mock wiki status
     await page.route('**/api/knowledge/vaults/*/wiki/status', (route) =>
       route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ initialized: true }) }));
     let cancelRequests = 0;
@@ -261,8 +263,10 @@ test.describe('KB chat sessions', () => {
     await expect(page.locator('[data-testid="kb-chat-session-tab"]')).toHaveCount(1);
     await expect(page.locator('[data-testid="kb-chat-panel"] [data-testid="kb-chat-session-running"]')).toBeVisible({ timeout: 5_000 });
 
-    // 构建在跑时点健康检查 → 新建 lint 标签 + 三选一确认框
+    // 构建在跑时点健康检查 → 体检面板 → 面板里的「检查 Wiki 内容健康」→ 新建 lint 标签 + 三选一
     await page.locator('[data-testid="kb-btn-lint-wiki"]').click();
+    await expect(page.locator('[data-testid="checkup-view-report"]')).toBeVisible();
+    await page.locator('[data-testid="checkup-wiki-lint"]').click();
     await expect(page.locator('[data-testid="kb-chat-session-tab"]')).toHaveCount(2);
     const dialog = page.locator('[data-testid="confirm-dialog"]');
     await expect(dialog).toBeVisible();

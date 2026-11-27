@@ -5,7 +5,7 @@ import { useI18n } from '../i18n';
 import { MessageToolbar, type ToolbarAction } from './MessageToolbar';
 import { useSelectMode, useIsSelected } from '../stores/messageSelectionStore';
 import { MessageCheckbox } from './MessageCheckbox';
-import { stripWikiQueryTrigger } from './kb/kbChatPrompts';
+import { stripWikiQueryTrigger, stripDiagnoseDirective } from './kb/kbChatPrompts';
 import type { ChatMessage } from '../hooks/useChatCore';
 
 interface Props {
@@ -100,9 +100,10 @@ export function UserMessage({ message, isLast, onEdit, onRequestDelete, disabled
   const selectMode = useSelectMode();
   const selected = useIsSelected(message.id);
   const [editing, setEditing] = useState(false);
-  // KB 问答首轮消息体带 wiki-query 触发语（发给 agent 的指令，见 kbChatPrompts）
-  // ——展示/复制/编辑只应见到用户自己的话；消息体保持原样，不动存储与发送。
-  const displayContent = stripWikiQueryTrigger(message.content);
+  // KB 问答首轮消息体可能带两类发给 agent 的指令前缀：诊断指令（故障抱怨自动
+  // 包裹，最外层）与 wiki-query 触发语——展示/复制/编辑只应见到用户自己的话；
+  // 消息体保持原样，不动存储与发送。先剥外层诊断指令、再剥触发语。
+  const displayContent = stripWikiQueryTrigger(stripDiagnoseDirective(message.content));
   const [draft, setDraft] = useState(displayContent);
   // 整卷交卷消息（提交判卷：《…》开头）默认紧凑一行：多题卷的协议墙
   // （N × 题干+评分点+指纹行）在消息流里是纯噪音，展开态保全文。
