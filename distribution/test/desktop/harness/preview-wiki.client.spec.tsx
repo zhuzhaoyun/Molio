@@ -15,7 +15,12 @@ it('opens a wiki reference in the previewed document vault and leaves inline cod
   const resolveWiki = vi.fn(async () => ({ path: target }))
   const openResource = vi.fn()
   vi.stubGlobal('molioNavigation', { resolveWiki })
-  const text = '这是 [[曼行]] 的分享。另见 [[曼行|作者]]。`[[示例]]`'
+  const text = [
+    '---', 'title: Y Combinator 谈如何拿到前 100 个客户', 'created: 2026-11-26',
+    'tags:', '  - 营销/增长', 'related:', '  - "[[早期销售]]"', '  - "[[Y-Combinator|YC]]"',
+    'author: "[[Zach Coelius]]"', 'sources:', '  - "两张截图，经 docling OCR"', '---',
+    '这是 [[曼行]] 的分享。另见 [[曼行|作者]]。`[[示例]]`',
+  ].join('\n')
   const props = {
     sessionId: 'session', resourceAddress: sessionFileAddress('session', file),
     content: { kind: 'text', text, pages: [], eof: true }, wrap: false, t: makeTranslate(zh),
@@ -28,4 +33,11 @@ it('opens a wiki reference in the previewed document vault and leaves inline cod
   await waitFor(() => expect(openResource).toHaveBeenCalledWith(sessionFileAddress('session', target)))
   expect(screen.getByRole('link', { name: '作者' })).toBeDefined()
   expect(screen.getByText('[[示例]]').tagName).toBe('CODE')
+  const related = await screen.findByRole('link', { name: '早期销售' })
+  expect(related.closest('dd')?.textContent).toBe('早期销售YC')
+  fireEvent.click(screen.getByRole('link', { name: 'YC' }))
+  expect(resolveWiki).toHaveBeenCalledWith(file, 'Y-Combinator')
+  expect(screen.getByRole('link', { name: 'Zach Coelius' })).toBeDefined()
+  expect(screen.getByText('2026-11-26')).toBeDefined()
+  expect(screen.getByText(/两张截图，经 docling OCR/)).toBeDefined()
 })

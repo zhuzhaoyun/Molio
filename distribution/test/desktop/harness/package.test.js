@@ -23,6 +23,8 @@ test('unsigned Molio desktop packaging uses platform-specific artifacts and smok
   const upstreamHost = fileURLToPath(new URL('../../../../vendor/deepseek-harness/', import.meta.url))
   extra.push('packages/client/ui-primitives/src/markdown/render.tsx',
     'packages/client/ui-primitives/src/markdown/file-link.ts',
+    'packages/client/ui-primitives/src/index.ts',
+    'packages/client/ui-sidebar-documentpreview/src/client/markdown/frontmatter-fields.tsx',
     'packages/client/ui-chat/src/client/index.ts',
     'packages/client/ui-chat/tsconfig.client.json',
     'packages/client/ui-sidebar-documentpreview/src/client/markdown/index.ts',

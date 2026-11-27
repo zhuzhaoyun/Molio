@@ -77,6 +77,12 @@ export function applyDesktop(hostRoot) {
   insert(chat, "import { ChatAside }", "import { useMolioTarget } from './MolioTarget.tsx'\nimport { ChatAside }");
   insert(chat, '  const directory = useSessions', '  const molioTarget = useMolioTarget(sessionId, cwd)\n  const directory = useSessions');
   const documentMarkdown = join(hostRoot, 'packages/client/ui-sidebar-documentpreview/src/client/markdown');
+  insert(join(markdown, '../index.ts'), 'export { MarkdownDelegateProvider,', "export { MolioWikiText } from './markdown/MolioWikiText.tsx'\nexport { MarkdownDelegateProvider,");
+  const fields = join(documentMarkdown, 'frontmatter-fields.tsx');
+  copyFileSync(join(root, 'packages/dsh-plugin-molio/desktop/wiki-field-value.tsx'), join(documentMarkdown, 'wiki-field-value.tsx'));
+  insert(fields, "import css from", "import { wikiFieldValue } from './wiki-field-value.tsx'\nimport css from");
+  insert(fields, '  value: string', '  value: ReactNode');
+  insert(fields, 'value: nodeText(source, value)', 'value: wikiFieldValue(value, nodeText(source, value))');
   copyFileSync(join(root, 'distribution/test/desktop/harness/preview-wiki.client.spec.tsx'), join(documentMarkdown, '../../../tests/preview-wiki.client.spec.tsx'));
   copyFileSync(join(root, 'packages/dsh-plugin-molio/desktop/MolioMarkdownBody.tsx'), join(documentMarkdown, 'MolioMarkdownBody.tsx'));
   insert(join(documentMarkdown, 'index.ts'), "import { MarkdownBody } from './MarkdownBody.tsx'",
