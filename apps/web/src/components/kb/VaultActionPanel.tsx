@@ -1,3 +1,4 @@
+import { vaultDirectoryPicker } from '../../utils/vaultDirectoryPicker';
 /**
  * Right-side action panel for the vault manager.
  *
@@ -115,7 +116,7 @@ export function VaultActionPanel({
 
 /** Native folder picker — only present inside the Electron shell. */
 function nativeDirectoryPicker(): (() => Promise<string | null>) | undefined {
-  return window.__electron__?.showDirectoryPicker;
+  return vaultDirectoryPicker();
 }
 
 interface ExternalRootsSectionProps {

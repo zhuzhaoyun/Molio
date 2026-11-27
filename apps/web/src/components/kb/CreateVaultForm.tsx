@@ -1,3 +1,4 @@
+import { vaultDirectoryPicker } from '../../utils/vaultDirectoryPicker';
 /**
  * Create vault form — right panel of the vault manager.
  */
@@ -24,15 +25,16 @@ export function CreateVaultForm({ onCreate, onCancel, isLoading }: CreateVaultFo
   // The desktop app exposes a native folder picker; in a browser
   // (Docker/NAS deploy) it does not, so we guide the user to type the
   // container-internal mount path instead.
-  const isDesktop = Boolean(window.__electron__?.showDirectoryPicker);
+  const isDesktop = Boolean(vaultDirectoryPicker());
 
   const handleBrowse = useCallback(async () => {
-    if (!window.__electron__?.showDirectoryPicker) {
+    const pick = vaultDirectoryPicker();
+    if (!pick) {
       alert('浏览功能仅在桌面客户端中可用，请手动输入路径。');
       return;
     }
     try {
-      const picked = await window.__electron__.showDirectoryPicker();
+      const picked = await pick();
       if (!picked) return;
       setVaultPath(picked);
       // Auto-derive name from folder if name is empty (Obsidian-style)

@@ -11,7 +11,7 @@ const pages = [
 ];
 const labels = { code: { copyLabel: '复制', copiedLabel: '已复制', toolbarLabels: { codeLabel: '代码', wrapLabel: '换行', unwrapLabel: '取消换行' } }, footnotes: '脚注' };
 const key = session => 'molio.vault.' + session;
-const modes = { ask: '根据知识库回答问题并注明依据。', build: '构建知识库 Wiki。', lint: '检查 Wiki 中的断链和元数据。', ingest: '把以下来源摄取到知识库 Wiki。' };
+const modes = { ask: '', build: '构建知识库 Wiki。', lint: '检查 Wiki 中的断链和元数据。', ingest: '把以下来源摄取到知识库 Wiki。' };
 
 export function apply(ctx) {
   async function call(method, payload = {}) {
@@ -71,7 +71,19 @@ export function apply(ctx) {
       }, []);
       useEffect(() => {
         async function receive(event) {
-          if (!origin || event.origin !== origin || event.source !== frame.current?.contentWindow || event.data?.type !== 'molio-draft') return;
+          if (!origin || event.origin !== origin || event.source !== frame.current?.contentWindow) return;
+          if (event.data?.type === 'molio-pick-directory') {
+            const port = event.ports[0];
+            if (!port) return;
+            try {
+              const picker = globalThis.__DSH_DIRECTORY_PICKER__;
+              if (!picker) throw new Error('当前宿主没有桌面目录选择器');
+              port.postMessage({ path: await picker.pick() });
+            } catch (err) { port.postMessage({ error: err.message }); }
+            finally { port.close(); }
+            return;
+          }
+          if (event.data?.type !== 'molio-draft') return;
           try {
             const input = event.data.context;
             const { vaults } = await call('targets');
@@ -80,6 +92,21 @@ export function apply(ctx) {
             const workspace = ctx.workspaces.list.getSnapshot().items.find(item => item.path === vault.path) ?? await ctx.workspaces.create({ path: vault.path });
             await ctx.uiWorkspace.openWorkspace(workspace.workspaceId, session => {
               localStorage.setItem(key(session), vault.id);
+              if (input.mode === 'ask') {
+                const binding = ctx.sessions.binding(session);
+                if (!binding) throw new Error('无法打开知识库会话');
+                const composer = ctx.conversation.input.for(binding.ctx);
+                const file = event.data.attachment;
+                if (file instanceof File) {
+                  const attachments = ctx.conversation.createDrafts(session, [file], true);
+                  if (!composer.addAttachments(attachments.map(item => item.id))) {
+                    ctx.conversation.releaseDraftAttachments(attachments);
+                    throw new Error('当前会话无法添加附件');
+                  }
+                }
+                if (input.selectedText) composer.insertQuote(input.selectedText);
+                return;
+              }
               draft(session, [modes[input.mode], vault.path, input.filePath, input.selectedText].filter(Boolean).join('\n\n'));
             });
           } catch (err) { window.alert(err.message); }
@@ -88,7 +115,10 @@ export function apply(ctx) {
         return () => window.removeEventListener('message', receive);
       }, [origin]);
       if (error) return <p role="alert">{error}</p>;
-      return origin && <iframe ref={frame} title={title} src={origin + currentRoute} style={{ width: '100%', height: '100%', flex: 1, border: 0 }} />;
+      if (!origin) return null;
+      const panelUrl = new URL(currentRoute, origin);
+      if (globalThis.__DSH_DIRECTORY_PICKER__) panelUrl.searchParams.set('molioDesktop', '1');
+      return <iframe ref={frame} title={title} src={panelUrl.href} style={{ width: '100%', height: '100%', flex: 1, border: 0 }} />;
     });
   }
   const preview = 'dsh-plugin-molio/obsidian';

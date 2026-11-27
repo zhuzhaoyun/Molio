@@ -342,7 +342,17 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
       const open = window.__electron__?.openKnowledgeConversation;
       const parentOrigin = window.location.ancestorOrigins?.[0] || (document.referrer && new URL(document.referrer).origin);
       if (!open && window.parent !== window && parentOrigin && parentOrigin !== 'null') {
-        window.parent.postMessage({ type: 'molio-draft', context: { mode, vaultId: kb.activeVault.id, ...context } }, parentOrigin);
+        const vaultId = kb.activeVault.id;
+        void (async () => {
+          let attachment: File | undefined;
+          if (mode === 'ask' && context.filePath && !context.isDirectory) {
+            const response = await fetch(api.rawFileUrl(vaultId, context.filePath));
+            if (!response.ok) throw new Error('无法读取当前笔记');
+            const blob = await response.blob();
+            attachment = new File([blob], context.filePath.split('/').pop()!, { type: blob.type });
+          }
+          window.parent.postMessage({ type: 'molio-draft', context: { mode, vaultId, ...context }, attachment }, parentOrigin);
+        })().catch(error => showToast(error.message || '无法添加笔记附件'));
         return;
       }
       if (!open) {
