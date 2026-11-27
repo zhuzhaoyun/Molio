@@ -1,67 +1,32 @@
-# dsh-plugin-molio
+# Molio for DeepSeek Harness
 
-让 [DeepSeek Harness (dsh)](https://github.com/deepseek-ai/dsh) 直接读取你的 [Molio](https://github.com/zhuzhaoyun/Molio) 本地知识库：在 dsh 对话中列出知识库、浏览文件树、全文搜索、读取原文，AI 基于你的积累做研究、写作与问答。
+在 DSH 侧栏打开知识库、知识图谱和资源市场。插件使用 Molio 自己的界面和本地知识库服务，第一次访问时启动服务，停用插件时退出。原生 Molio 和插件默认使用当前用户的 Molio 数据目录。
 
-全部工具**只读**——插件不会修改你的知识库。
+## 安装和使用
 
-## 前置条件
+在官方 DSH 桌面版的插件管理中添加插件包。开发版可以从本仓库构建安装包。使用 DSH Web 时，在对应的 profile 中安装：
 
-1. Molio 桌面端（或 Docker/NAS 部署）已启动，其本地 daemon 默认监听 `http://127.0.0.1:3100`
-2. Molio 中已创建至少一个知识库（vault）
-3. dsh `>= 0.2.0-rc.2`
-
-## 安装
-
-```bash
-dsh plugin add dsh-plugin-molio
+```sh
+dsh plugin --profile web add /path/to/dsh-plugin-molio-0.2.0.tgz
 ```
 
-或在 profile 中安装：
+重新启动该 profile，在「知识库」里添加本机知识库目录。「知识图谱」显示笔记之间的引用，「资源市场」用于浏览和导入资源。对话的「＋」菜单中选择「文件入库」，选择目标知识库和来源，再确认草稿。知识库内的工作区按路径匹配，其他工作区可按会话选库。
 
-```bash
-dsh plugin --profile <你的profile> add dsh-plugin-molio
+对话回答和右侧 Obsidian 预览支持笔记双链和别名。预览顶部展开 YAML 属性，点击属性或正文中的笔记引用即可继续阅读。插件的只读工具包括 `molio_status`、`molio_kb_vaults`、`molio_kb_tree`、`molio_kb_search` 和 `molio_kb_read`。
+
+已有独立部署时，可用 `MOLIO_DAEMON_URL` 或 `MOLIO_PORT` 指定服务。三个界面入口需要该地址同时提供 Molio Web 页面和 API。内置服务面向在同一台机器上运行的浏览器和 DSH 宿主。
+
+## 本地构建
+
+仓库根目录使用 Node.js 24 和项目指定的 pnpm：
+
+```sh
+pnpm install --frozen-lockfile
+pnpm build:contracts
+pnpm --filter dsh-plugin-molio build
+pnpm --filter dsh-plugin-molio test
+cd packages/dsh-plugin-molio
+npm pack
 ```
 
-### 连接远程 / 非默认端口的 daemon
-
-通过环境变量覆盖（对 dsh 进程生效）：
-
-| 变量 | 说明 | 默认 |
-|---|---|---|
-| `MOLIO_DAEMON_URL` | daemon 完整地址（远程/NAS/Docker 部署用） | — |
-| `MOLIO_PORT` | 本机 daemon 端口 | `3100` |
-
-## 工具清单
-
-| 工具 | 参数 | 说明 |
-|---|---|---|
-| `molio_status` | — | daemon 健康状态 + 当前激活知识库 |
-| `molio_kb_vaults` | — | 列出全部知识库 |
-| `molio_kb_tree` | `vaultId?` | 知识库文件树（缺省用激活知识库） |
-| `molio_kb_search` | `query`, `vaultId?`, `limit?` | 全文搜索，返回命中路径与摘录 |
-| `molio_kb_read` | `path`, `vaultId?`, `force?` | 读取文本文件；二进制文件返回说明；过大文件需 `force:true` |
-
-`vaultId` 既可传知识库 id，也可传名称（忽略大小写；重名时工具会提示改用 id）。
-
-## 使用示例
-
-在 dsh 会话中直接说：
-
-> 用 molio_kb_search 在我的知识库里搜「分布式事务」，然后用 molio_kb_read 读最相关的那篇，总结要点。
-
-## 错误处理
-
-daemon 未启动时，工具返回可操作的中文提示（例如「无法连接 Molio 守护进程…请确认 Molio 已启动，或用 MOLIO_DAEMON_URL 指定地址」），不会抛裸异常。
-
-## 开发
-
-本包是 [Molio monorepo](https://github.com/zhuzhaoyun/Molio) 的成员（`packages/dsh-plugin-molio`），零运行时依赖：
-
-```bash
-pnpm --filter dsh-plugin-molio build   # tsc → dist/
-pnpm --filter dsh-plugin-molio test    # node:test + 假 daemon HTTP 集成测试
-```
-
-## License
-
-与 Molio 主仓库一致：修改版 Apache License 2.0（附加条件见 [LICENSE](./LICENSE)）。
+生成的 tgz 包含宿主入口、DSH 浏览器入口、Molio 页面、知识库服务和内置技能。构建使用 DSH 公开的客户端插槽，直接在官方 DSH 中运行。插件通过 `dsh-plugin-v*` 标签独立发布。原生 Molio 桌面版沿用自己的构建和发布命令。

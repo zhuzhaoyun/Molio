@@ -53,3 +53,4 @@ apps/cloud/molio-cloud-deploy.zip
 packages/dsh-plugin-molio/LICENSE
 
 /.harness-build/
+/vendor/deepseek-harness/

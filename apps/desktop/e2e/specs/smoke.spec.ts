@@ -1,0 +1,139 @@
+import { test, expect, type Page } from '@playwright/test';
+import { launchMolioApp, closeMolioApp, expectAnyVisible, gotoChatSpa, type LaunchedApp } from '../helpers/electron-app';
+
+/**
+ * Desktop E2E smoke tests.
+ *
+ * Verifies that the packaged Electron app (win-unpacked) launches correctly,
+ * the daemon becomes healthy, and all main pages render without errors.
+ *
+ * Navigation uses `[data-view="..."]` selectors — `data-tooltip` values are
+ * localized (zh by default) and user-configurable, so they are not stable.
+ *
+ * Prerequisites:
+ *   pnpm build && npx electron-builder --win --dir
+ *
+ * Run:
+ *   pnpm test:e2e          (headless)
+ *   pnpm test:e2e:headed   (with GUI window)
+ */
+
+let app: LaunchedApp;
+let page: Page;
+
+test.beforeAll(async () => {
+  app = await launchMolioApp();
+  page = app.page;
+});
+
+test.afterAll(async () => {
+  if (app) {
+    await closeMolioApp(app);
+  }
+});
+
+test('app launches and daemon becomes healthy', async () => {
+  // Window should be visible
+  await expect(page.locator('body')).toBeVisible();
+
+  // Daemon health endpoint should respond (port is dynamic outside CI, where
+  // the installed app may already hold 3100)
+  const res = await page.evaluate(async (port) => {
+    const r = await fetch(`http://localhost:${port}/api/health`);
+    return r.ok;
+  }, app.daemonPort);
+  expect(res).toBe(true);
+});
+
+test('full-page chat renders with brand or chat interface', async () => {
+  // `/chat` is the full-page chat (原「首页」). It left the nav rail in #293 —
+  // navigate via SPA pushState, same as the web layer's gotoChatSpa.
+  await gotoChatSpa(page);
+  await page.waitForSelector('.home-page', { state: 'visible', timeout: 10_000 });
+
+  // Either landing (hero with "Molio") or chat-active (composer)
+  const hasLanding = await page.locator('.home-landing').isVisible().catch(() => false);
+  const hasChat = await page.locator('.chat-active').isVisible().catch(() => false);
+
+  expect(hasLanding || hasChat).toBe(true);
+
+  if (hasLanding) {
+    // Landing shows brand name
+    await expect(page.locator('.home-page')).toContainText('Molio');
+  } else {
+    // Chat mode shows composer
+    await expect(page.locator('.composer')).toBeVisible();
+  }
+});
+
+test('navigates between all main pages', async () => {
+  // Knowledge Base
+  await page.click('[data-view="knowledge"]');
+  await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 10_000 });
+
+  // Knowledge Base -> Resources
+  await page.click('[data-view="resources"]');
+  await expect(page.locator('.resources-shell')).toBeVisible({ timeout: 10_000 });
+
+  // Resources -> History
+  await page.click('[data-view="history"]');
+  await expect(page.locator('.history-shell')).toBeVisible({ timeout: 10_000 });
+
+  // History -> Settings
+  await page.click('[data-view="settings"]');
+  await expect(page.locator('.settings-shell')).toBeVisible({ timeout: 10_000 });
+
+  // Settings -> Knowledge Base (the app entry: `/` redirects here)
+  await page.click('[data-view="knowledge"]');
+  await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 10_000 });
+});
+
+test('knowledge base page shows vault bar and content area', async () => {
+  await page.click('[data-view="knowledge"]');
+  await expect(page.locator('.kb-file-panel')).toBeVisible({ timeout: 10_000 });
+
+  // Vault bar should be present (for selecting/creating vaults)
+  await expect(page.locator('.kb-vault-bar')).toBeVisible();
+
+  // Main content area: wait for any of these states to be visible.
+  // Existence check (not specific instance) — .first() picks whichever
+  // happens to render; the test only cares that *something* is there.
+  const contentStates = [
+    page.locator('.kb-empty-state').first(),
+    page.locator('.kb-tree-item').first(),
+    page.locator('.kb-tree-group').first(), // directory node (existence only)
+    page.locator('.vm-overlay'),
+  ];
+  await expectAnyVisible(contentStates);
+
+  // Guard: if a directory node passed the check above, verify it carries
+  // actual content (label text) — an empty <div class="kb-tree-group">
+  // would indicate the file tree failed to render its children.
+  // Timeout matches the main assertion (5s) to avoid false negatives on slow CI.
+  const treeGroup = page.locator('.kb-tree-group').first();
+  if (await treeGroup.isVisible().catch(() => false)) {
+    const label = treeGroup.locator('.kb-tree-group-label').first();
+    await expect(label).toBeVisible({ timeout: 5_000 });
+  }
+});
+
+test('runtimes panel shows agent management interface', async () => {
+  // The standalone /runtimes route was removed from the main nav;
+  // agent management now lives in Settings -> Runtimes tab.
+  await page.click('[data-view="settings"]');
+  await expect(page.locator('.settings-shell')).toBeVisible({ timeout: 10_000 });
+
+  await page.click('[data-testid="settings-tab-runtimes"]');
+  await expect(page.locator('.rt-shell')).toBeVisible({ timeout: 10_000 });
+
+  // Wait for loading to complete
+  await page.locator('.rt-loading').waitFor({ state: 'detached', timeout: 10_000 }).catch(() => {});
+
+  // Should have the tab interface (Agents / Runs)
+  await expect(page.locator('[role="tablist"]')).toBeVisible();
+
+  // Agent cards or empty state should be present
+  const hasAgents = await page.locator('.rt-agent-card').first().isVisible().catch(() => false);
+  const hasEmptyState = await page.locator('.rt-empty').isVisible().catch(() => false);
+  expect(hasAgents || hasEmptyState).toBe(true);
+});

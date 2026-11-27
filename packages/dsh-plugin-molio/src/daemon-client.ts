@@ -46,10 +46,10 @@ function stripTrailingSlash(url: string): string {
 }
 
 export class DaemonClient {
-  readonly baseUrl: string;
+  private readonly endpoint: () => Promise<string>;
 
-  constructor(baseUrl: string = defaultBaseUrl()) {
-    this.baseUrl = stripTrailingSlash(baseUrl);
+  constructor(baseUrl: string | (() => Promise<string>) = defaultBaseUrl()) {
+    this.endpoint = typeof baseUrl === 'string' ? async () => stripTrailingSlash(baseUrl) : baseUrl;
   }
 
   // ─── 底层请求 ───
@@ -59,9 +59,10 @@ export class DaemonClient {
     opts: { signal?: AbortSignal; timeoutMs?: number } = {},
   ): Promise<T> {
     const { signal, timeoutMs = DEFAULT_TIMEOUT_MS } = opts;
+    const baseUrl = await this.endpoint();
     let res: Response;
     try {
-      res = await fetch(`${this.baseUrl}${path}`, {
+      res = await fetch(`${baseUrl}${path}`, {
         signal: signal ?? AbortSignal.timeout(timeoutMs),
       });
     } catch (err) {
@@ -72,7 +73,7 @@ export class DaemonClient {
       }
       throw new DaemonError(
         'DAEMON_UNREACHABLE',
-        `无法连接 ${this.baseUrl}: ${err instanceof Error ? err.message : String(err)}`,
+        `无法连接 ${baseUrl}: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
     if (!res.ok) {

@@ -65,7 +65,10 @@ jobs:
         run: pnpm --filter @molio/contracts build
 
       - name: Build & test plugin
-        run: pnpm --filter dsh-plugin-molio test
+        run: |
+          pnpm --filter dsh-plugin-molio build
+          pnpm --filter dsh-plugin-molio test
+          node --test packages/dsh-plugin-molio/test/bundle.test.mjs
 
       - name: Guard NPM_TOKEN
         shell: bash

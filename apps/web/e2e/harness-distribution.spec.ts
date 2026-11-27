@@ -8,7 +8,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { zipSync, unzipSync, strToU8 } from 'fflate';
 
-test.skip(process.env.VITE_MOLIO_HARNESS !== '1', 'Harness distribution');
+test.skip(process.env.VITE_MOLIO_HARNESS !== '1', 'DSH plugin interface');
 
 test('host opens the graph directly without Molio chat or runtime discovery', async ({ page }) => {
   await page.addInitScript(() => {
