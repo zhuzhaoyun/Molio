@@ -7,6 +7,12 @@ import { MolioMarkdownBody } from '../src/client/markdown/MolioMarkdownBody.tsx'
 import { zh } from '../src/client/markdown/locales.ts'
 import type { MarkdownBodyProps } from '../src/client/markdown/MarkdownBody.tsx'
 
+// A running desktop can still expose the previous version of the shared UI.
+vi.mock('@deepseek-ai/dsh-client-ui-primitives', async importOriginal => ({
+  ...await importOriginal<typeof import('@deepseek-ai/dsh-client-ui-primitives')>(),
+  MolioWikiText: undefined,
+}))
+
 afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 
 it('opens a wiki reference in the previewed document vault and leaves inline code literal', async () => {

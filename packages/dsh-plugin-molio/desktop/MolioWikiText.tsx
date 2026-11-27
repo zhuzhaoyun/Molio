@@ -3,12 +3,14 @@ import type { ReactNode } from 'react'
 import { useMarkdownDelegate } from './MarkdownDelegate.tsx'
 
 /** Resolve Wiki references in document text and YAML property values. */
-export function MolioWikiText({ text }: { text: string }) {
-  const { wikiCwd, openFile } = useMarkdownDelegate()
+export function MolioWikiText({ text, inlineCode = false }: { text: string; inlineCode?: boolean }) {
+  const { wikiCwd, openFile, wikiInlineCode } = useMarkdownDelegate()
   const bridge = (globalThis as { molioNavigation?: {
     resolveWiki(cwd: string, page: string): Promise<string | { path: string }>
   } }).molioNavigation
-  if (!wikiCwd || !bridge || !openFile) return <>{text}</>
+  if (!wikiCwd || !bridge || !openFile || (inlineCode && !wikiInlineCode)) {
+    return inlineCode ? <code>{text}</code> : <>{text}</>
+  }
   const parts: ReactNode[] = []
   let offset = 0
   for (const match of text.matchAll(/(?<!!)\[\[([^\[\]|\r\n]+)(?:\|([^\[\]\r\n]*))?\]\]/gu)) {
