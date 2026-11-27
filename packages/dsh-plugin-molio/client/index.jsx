@@ -13,6 +13,31 @@ const labels = { code: { copyLabel: '复制', copiedLabel: '已复制', toolbarL
 const key = session => 'molio.vault.' + session;
 const modes = { ask: '', build: '构建知识库 Wiki。', lint: '检查 Wiki 中的断链和元数据。', ingest: '把以下来源摄取到知识库 Wiki。' };
 
+const propertyLabels = new Map(Object.entries({
+  type: '类型', title: '标题', created: '创建日期', updated: '更新日期',
+  tags: '标签', aliases: '别名', related: '相关笔记', sources: '来源',
+}));
+
+function NoteProperties({ fields }) {
+  return <details open style={{ marginBottom: 16, fontSize: '0.9em' }}>
+    <summary style={{ cursor: 'pointer', fontWeight: 600 }}>属性</summary>
+    <dl style={{ margin: '8px 0 0', paddingBottom: 8, borderBottom: '1px solid color-mix(in srgb, currentColor 18%, transparent)' }}>
+      {Object.entries(fields).map(([key, value]) => {
+        const list = Array.isArray(value);
+        return <div key={key} style={{ display: 'grid', gridTemplateColumns: 'minmax(0, min(28%, 6em)) minmax(0, 1fr)', gap: 8, padding: '3px 0', lineHeight: 1.5 }}>
+          <dt title={key} style={{ opacity: 0.75, overflowWrap: 'anywhere' }}>{propertyLabels.get(key) ?? key}</dt>
+          <dd style={{ margin: 0, display: 'flex', flexWrap: 'wrap', gap: '3px 6px' }}>
+            {(list ? value : [value]).map((item, i) => <span key={i} style={{
+              maxWidth: '100%', boxSizing: 'border-box', overflowWrap: 'anywhere',
+              ...(list && { padding: '0 6px', borderRadius: 4, background: 'color-mix(in srgb, currentColor 8%, transparent)' }),
+            }}>{item == null ? '' : typeof item === 'object' ? JSON.stringify(item) : String(item)}</span>)}
+          </dd>
+        </div>;
+      })}
+    </dl>
+  </details>;
+}
+
 export function apply(ctx) {
   async function call(method, payload = {}) {
     const res = await fetch(new URL('api/molio', document.baseURI), {
@@ -132,9 +157,7 @@ export function apply(ctx) {
     let fields;
     try { fields = match && parse(match[1]); } catch { /* Show malformed YAML verbatim. */ }
     return <article data-molio-document="" ref={root} style={{ padding: 16 }}>
-      {match && (fields && typeof fields === 'object' ? <dl>{Object.entries(fields).map(([k, v]) =>
-        <div key={k}><dt><strong>{k}</strong></dt><dd>{(Array.isArray(v) ? v : [v]).map((item, i) =>
-          <div key={i}>{typeof item === 'object' ? JSON.stringify(item) : String(item)}</div>)}</dd></div>)}</dl> : <pre>{match[1]}</pre>)}
+      {match && (fields && typeof fields === 'object' ? <NoteProperties fields={fields} /> : <pre>{match[1]}</pre>)}
       <MarkdownText text={match ? text.slice(match[0].length) : text} labels={labels} streaming={!content.eof} />
     </article>;
   });
