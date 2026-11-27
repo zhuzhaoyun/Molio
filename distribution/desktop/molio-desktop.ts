@@ -1,6 +1,6 @@
 import { app, BrowserWindow, MessageChannelMain, dialog, ipcMain, safeStorage, shell, session, type WebContents, type WebPreferences, type IpcMainInvokeEvent } from 'electron'
 import { randomBytes } from 'node:crypto'
-import { realpath } from 'node:fs/promises'
+import { realpath, stat } from 'node:fs/promises'
 import { extname, isAbsolute, join, relative, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
@@ -197,23 +197,58 @@ export async function startMolioDesktop() {
     host.webContents.once('destroyed', () => { deliverClip = undefined })
     flushMolioClip()
   })
-  ipcMain.handle('molio:wiki', async (event, cwd: unknown, page: unknown) => {
+  const hostOwner = (event: IpcMainInvokeEvent) => {
+    const host = productWindow?.()
+    if (!host || event.sender !== host.webContents || event.senderFrame !== host.webContents.mainFrame) throw new Error('Unknown host')
+    return host
+  }
+  const registeredVaults = async () => {
+    const response = await fetch(origin + '/api/knowledge/vaults', { headers: { Prefer: 'return=minimal' } })
+    if (!response.ok) throw new Error('无法读取知识库列表')
+    return (await response.json() as { vaults: Array<{ id: string; path: string; name: string }> }).vaults
+  }
+  const containingVault = (vaults: Awaited<ReturnType<typeof registeredVaults>>, path: string) =>
+    vaults.filter(item => {
+      const diff = relative(item.path, path)
+      return !isAbsolute(diff) && diff !== '..' && !diff.startsWith('..' + sep)
+    }).sort((a, b) => b.path.length - a.path.length)[0]
+  ipcMain.handle('molio:targets', async (event, cwd: string) => {
+    hostOwner(event)
+    const vaults = await registeredVaults()
+    return { vaults, inferred: cwd && isAbsolute(cwd) ? containingVault(vaults, cwd)?.id : undefined }
+  })
+  ipcMain.handle('molio:preview-location', async (event, file: string, open: boolean) => {
+    const host = hostOwner(event)
+    if (typeof file !== 'string' || !isAbsolute(file)) return false
+    const vault = containingVault(await registeredVaults(), file)
+    if (!vault) return false
+    if (open) {
+      const query = new URLSearchParams({ vault: vault.id, file: relative(vault.path, file).split(sep).join('/'), open: 'tab' })
+      host.webContents.send('molio:panel', pageUrl('/knowledge?' + query).href)
+    }
+    return true
+  })
+  ipcMain.handle('molio:ingest-draft', async (event, vaultId: string) => {
+    const host = hostOwner(event)
+    const vault = (await registeredVaults()).find(item => item.id === vaultId)
+    if (!vault || !await stat(vault.path).then(info => info.isDirectory(), () => false)) throw new Error('所选知识库不可用，请重新选择')
+    const result = await dialog.showOpenDialog(host, { title: '选择要入库的来源文件', properties: ['openFile', 'multiSelections'] })
+    if (result.canceled) return null
+    return '使用目标知识库中的 wiki-ingest 技能，将以下来源文件摄取到指定知识库。' +
+      '\n目标知识库目录：' + vault.path + '\n知识库 ID：' + vault.id + '\n来源文件：\n' + result.filePaths.join('\n')
+  })
+  ipcMain.handle('molio:wiki', async (event, cwd: unknown, page: unknown, preview?: boolean) => {
     const host = productWindow?.()
     if (!host || event.sender !== host.webContents || event.senderFrame !== host.webContents.mainFrame) throw new Error('Unknown host')
     if (typeof cwd !== 'string' || !isAbsolute(cwd) || typeof page !== 'string' || !page.trim()
       || isAbsolute(page) || /[:\\\x00-\x1f]/u.test(page) || page.split('/').some(part => !part || part === '.' || part === '..')) return '知识库链接无效'
-    const list = await fetch(origin + '/api/knowledge/vaults', { headers: { Prefer: 'return=minimal' } })
-    if (!list.ok) return '无法读取知识库列表'
-    const { vaults } = await list.json() as { vaults: Array<{ id: string; path: string }> }
-    const vault = vaults.filter(item => {
-      const diff = relative(item.path, cwd)
-      return !isAbsolute(diff) && diff !== '..' && !diff.startsWith('..' + sep)
-    }).sort((a, b) => b.path.length - a.path.length)[0]
+    const vault = containingVault(await registeredVaults(), cwd)
     if (!vault) return '当前对话的工作目录未关联知识库'
     const encoded = page.split('/').map(encodeURIComponent).join('/')
     const hit = await fetch(origin + '/api/knowledge/vaults/' + encodeURIComponent(vault.id) + '/resolve/' + encoded)
     if (!hit.ok) return hit.status === 404 ? '找不到知识库页面「' + page + '」' : '无法读取知识库页面'
     const { path } = await hit.json() as { path: string }
+    if (preview) return { path: join(vault.path, path) }
     const query = new URLSearchParams({ vault: vault.id, file: path, open: 'tab' })
     host.webContents.send('molio:panel', pageUrl('/knowledge?' + query).href)
     return null

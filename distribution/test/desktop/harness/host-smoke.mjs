@@ -7,7 +7,7 @@ import { once } from 'node:events';
 import { tmpdir } from 'node:os';
 import { extname, join, resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const root = fileURLToPath(new URL('../../../../', import.meta.url));
 const host = join(root, '.harness-build/host/apps/desktop');
@@ -87,6 +87,10 @@ try {
     MOLIO_CODEX_HOME: join(profile, 'codex'), MOLIO_CLAUDE_HOME: join(profile, 'claude'),
     MOLIO_DEBUG_LOG_DIR: join(profile, 'debug'), MOLIO_AUTH_URL: process.env.MOLIO_SMOKE_AUTH_URL || 'http://127.0.0.1:1',
   };
+  if (!packaged && !env.DSH_DESKTOP_PRIMARY_RUNTIME_DIR) {
+    const { developmentRuntimeDirectory } = await import(pathToFileURL(join(host, 'scripts/desktop-build-paths.mjs')).href);
+    env.DSH_DESKTOP_PRIMARY_RUNTIME_DIR = developmentRuntimeDirectory();
+  }
   const inspectorPort = packaged ? undefined : await freePort();
   if (inspectorPort) env.DSH_DESKTOP_HOST_INSPECT_PORT = String(inspectorPort);
   delete env.DEEPSEEK_API_KEY;
@@ -216,7 +220,9 @@ try {
   await writeFile(join(vaultPath, 'wiki/entities/贾后.md'), '# 贾后');
   const openWiki = page => product.evaluate(({ cwd, page }) => window.molioNavigation.openWiki(cwd, page), { cwd: vaultPath, page });
   assert.match(await openWiki('缺失页面'), /找不到/);
-  assert.equal(await openWiki('贾后'), null);
+  const resolved = await product.evaluate(cwd => window.molioNavigation.resolveWiki(cwd, '贾后'), vaultPath);
+  assert.equal(resolved.path, join(vaultPath, 'wiki/entities/贾后.md'));
+  assert.equal(await product.evaluate(file => window.molioNavigation.previewLocation(file, true), resolved.path), true);
   await waitContent(product, '.kb-wtab.is-active[title="wiki/entities/贾后.md"]');
   await application.evaluate(({ app }, id) => app.emit('second-instance', {}, [
     'molio://open/vault/' + encodeURIComponent(id) + '/file/Probe.md',
@@ -239,6 +245,26 @@ try {
     assert.doesNotMatch(await editor.innerText(), /SKILL\.md/);
     assert.match(await editor.innerText(), new RegExp('smoke-selection-' + mode));
     if (mode === 'ask') {
+      assert.equal(await product.getByTestId('molio-session-vault').count(), 0)
+      const commands = product.getByRole('button', { name: /添加文件或调用指令|Add files or run commands/i }).last()
+      const ingestCommand = product.getByText('文件入库', { exact: true })
+      for (let attempt = 0; attempt < 3; attempt++) {
+        if (await commands.getAttribute('aria-expanded') !== 'true') await commands.click()
+        try { await ingestCommand.click({ timeout: 5000 }); break } catch (error) {
+          if (attempt === 2) throw error
+        }
+      }
+      await product.waitForFunction(id => document.querySelector('[data-testid="molio-session-vault"]')?.value === id, vault.id)
+      await application.evaluate(({ dialog }, path) => {
+        const original = dialog.showOpenDialog
+        dialog.showOpenDialog = async () => {
+          dialog.showOpenDialog = original
+          return { canceled: false, filePaths: [path] }
+        }
+      }, join(vaultPath, 'Evidence.md'))
+      await product.getByTestId('molio-ingest').click()
+      await editor.filter({ hasText: 'Evidence.md' }).waitFor()
+      assert.ok((await editor.innerText()).includes(vault.id))
       assert.equal(await openWiki('Evidence'), null)
       await waitContent(product, '.kb-wtab.is-active[title="Evidence.md"]')
       assert.equal(await panel.evaluate(view => view.getWebContentsId()), guestId)

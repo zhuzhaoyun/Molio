@@ -4,11 +4,11 @@ import { useMarkdownDelegate } from './MarkdownDelegate.tsx'
 
 /** Called only for Markdown text nodes, outside code and existing links. */
 export function MolioWikiText({ text }: { text: string }) {
-  const { wikiCwd } = useMarkdownDelegate()
+  const { wikiCwd, openFile } = useMarkdownDelegate()
   const bridge = (globalThis as { molioNavigation?: {
-    openWiki(cwd: string, page: string): Promise<string | null>
+    resolveWiki(cwd: string, page: string): Promise<string | { path: string }>
   } }).molioNavigation
-  if (!wikiCwd || !bridge) return <>{text}</>
+  if (!wikiCwd || !bridge || !openFile) return <>{text}</>
   const parts: ReactNode[] = []
   let offset = 0
   for (const match of text.matchAll(/(?<!!)\[\[([^\[\]|\r\n]+)(?:\|([^\[\]\r\n]*))?\]\]/gu)) {
@@ -19,8 +19,9 @@ export function MolioWikiText({ text }: { text: string }) {
     parts.push(<a key={match.index} href={'#' + encodeURIComponent(target)} title={target}
       onClick={async event => {
         event.preventDefault()
-        const error = await bridge.openWiki(wikiCwd, page).catch(() => '无法连接知识库')
-        if (error) window.alert(error)
+        const result = await bridge.resolveWiki(wikiCwd, page).catch(() => '无法连接知识库')
+        if (typeof result === 'string') window.alert(result)
+        else openFile(result.path)
       }}>{match[2]?.trim() || target}</a>)
     offset = match.index + match[0].length
   }
