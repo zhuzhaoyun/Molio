@@ -2,7 +2,7 @@ import { Fragment } from 'react'
 import type { ReactNode } from 'react'
 import { useMarkdownDelegate } from './MarkdownDelegate.tsx'
 
-/** Called only for Markdown text nodes, outside code and existing links. */
+/** Resolve Wiki references in document text and YAML property values. */
 export function MolioWikiText({ text }: { text: string }) {
   const { wikiCwd, openFile } = useMarkdownDelegate()
   const bridge = (globalThis as { molioNavigation?: {
