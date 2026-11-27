@@ -30,6 +30,7 @@ import type {
   GraphData,
   GraphNode,
 } from '@molio/contracts';
+import { seededRandom } from './graph-louvain.js';
 
 /** 小库不启用 trunk 的默认节点数门（MOLIO_GRAPH_TRUNK_MIN_NODES 可覆盖，≤0 = 强制启用） */
 export const DEFAULT_TRUNK_MIN_NODES = 500;
@@ -220,12 +221,6 @@ export function detectCommunities(graph: GraphData, opts: DetectCommunitiesOptio
   const quality: GraphCommunities['quality'] = degenerate ? 'degenerate' : 'ok';
 
   return { clusters, hubIds: [...hubSet].sort(), links, crumbCount, quality };
-}
-
-/** 固定种子 LCG——LPA 平票随机挑 label 用。种子是常量 ⇒ 同图两次计算逐字段相等。 */
-function seededRandom(): () => number {
-  let s = 20261118;
-  return () => ((s = (s * 1664525 + 1013904223) >>> 0) / 2 ** 32);
 }
 
 /** 默认 hub 阈值：max(50, 5×P90(度数))；P90 线性插值。空输入 → 阈值 50。 */
