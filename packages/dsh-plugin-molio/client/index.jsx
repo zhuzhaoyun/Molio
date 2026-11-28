@@ -1,13 +1,13 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { parse } from 'yaml';
 import { MarkdownText, IconFolderOpenOutlineRegular, IconBranchOutlineRegular, IconAppsAddOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives';
 import { decorateWiki, fileAddress } from './wiki.mjs';
 
 export const inject = ['slots', 'connection', 'sidebarRight', 'sessions', 'documentPreviews', 'workspaces', 'uiWorkspace', 'conversation', 'layout'];
 const pages = [
-  ['knowledge', '知识库', '/knowledge?panel=files', IconFolderOpenOutlineRegular],
-  ['graph', '知识图谱', '/knowledge?panel=graph', IconBranchOutlineRegular],
-  ['resources', '资源市场', '/resources', IconAppsAddOutlineRegular],
+  ['knowledge', '知识', '/knowledge?panel=files', IconFolderOpenOutlineRegular],
+  ['graph', '图谱', '/knowledge?panel=graph', IconBranchOutlineRegular],
+  ['resources', '资源', '/resources', IconAppsAddOutlineRegular],
 ];
 const labels = { code: { copyLabel: '复制', copiedLabel: '已复制', toolbarLabels: { codeLabel: '代码', wrapLabel: '换行', unwrapLabel: '取消换行' } }, footnotes: '脚注' };
 const key = session => 'molio.vault.' + session;
@@ -61,6 +61,18 @@ export function apply(ctx) {
     ctx.slots.inject(name, () => ctx.slots.register({ name, ...options }, component));
   }
   const navigation = new EventTarget();
+  const frames = new Map();
+  let parking;
+  ctx.effect(() => {
+    parking = document.createElement('div');
+    parking.hidden = true;
+    document.body.append(parking);
+    return () => {
+      for (const frame of frames.values()) frame.remove();
+      frames.clear();
+      parking.remove();
+    };
+  });
   let knowledgeRoute = pages[0][2];
   register('sidebar.right.tab.document.actions', { id: 'molio-open-in-vault' }, function OpenInVault({ absolutePath }) {
     const [location, setLocation] = useState(null);
@@ -77,11 +89,16 @@ export function apply(ctx) {
     }}>在知识库中打开</button>;
   });
   for (const [id, title, route, Icon] of pages) {
+    const frameKey = id === 'graph' ? 'knowledge' : id;
     register('sidebar.panellist', { id: 'molio-' + id, label: () => title }, Icon);
     register('main', { key: 'molio-' + id }, function Panel() {
-      const [origin, setOrigin] = useState('');
+      const [origin, setOrigin] = useState(() => {
+        const cached = frames.get(frameKey);
+        return cached ? new URL(cached.src).origin : '';
+      });
       const [error, setError] = useState('');
       const frame = useRef(null);
+      const container = useRef(null);
       const [currentRoute, setRoute] = useState(id === 'knowledge' ? knowledgeRoute : route);
       useEffect(() => {
         if (id !== 'knowledge') return;
@@ -90,13 +107,53 @@ export function apply(ctx) {
         return () => navigation.removeEventListener('open', navigate);
       }, []);
       useEffect(() => {
+        if (origin) return;
         let live = true;
         call('endpoint').then(url => live && setOrigin(new URL(url).origin), err => live && setError(err.message));
         return () => { live = false; };
-      }, []);
+      }, [origin]);
+      useLayoutEffect(() => {
+        if (!origin) return;
+        const parent = container.current;
+        let element = frames.get(frameKey);
+        if (!element) {
+          element = document.createElement('iframe');
+          element.style.cssText = 'width:100%;height:100%;border:0;display:block';
+          frames.set(frameKey, element);
+        }
+        element.title = title;
+        // DSH unmounts inactive main slots. An atomic move keeps the iframe document alive.
+        if (element.isConnected && parent.moveBefore) parent.moveBefore(element, null);
+        else parent.append(element);
+        frame.current = element;
+        return () => {
+          frame.current = null;
+          if (!parking.isConnected) return;
+          if (parking.moveBefore) parking.moveBefore(element, null);
+          else parking.append(element);
+        };
+      }, [origin]);
+      useLayoutEffect(() => {
+        if (!origin) return;
+        const url = new URL(currentRoute, origin);
+        if (globalThis.__DSH_DIRECTORY_PICKER__) url.searchParams.set('molioDesktop', '1');
+        const element = frame.current;
+        if (!element.src) element.src = url.href;
+        else if (element.dataset.route !== currentRoute) {
+          element.dataset.pendingRoute = currentRoute;
+          element.contentWindow.postMessage({ type: 'molio-navigate', route: currentRoute }, origin);
+        }
+        element.dataset.route = currentRoute;
+        if (id === 'knowledge') knowledgeRoute = route;
+      }, [origin, currentRoute]);
       useEffect(() => {
         async function receive(event) {
           if (!origin || event.origin !== origin || event.source !== frame.current?.contentWindow) return;
+          if (event.data?.type === 'molio-router-ready') {
+            const pending = frame.current.dataset.pendingRoute;
+            if (pending) event.source.postMessage({ type: 'molio-navigate', route: pending }, origin);
+            return;
+          }
           if (event.data?.type === 'molio-pick-directory') {
             const port = event.ports[0];
             if (!port) return;
@@ -141,9 +198,7 @@ export function apply(ctx) {
       }, [origin]);
       if (error) return <p role="alert">{error}</p>;
       if (!origin) return null;
-      const panelUrl = new URL(currentRoute, origin);
-      if (globalThis.__DSH_DIRECTORY_PICKER__) panelUrl.searchParams.set('molioDesktop', '1');
-      return <iframe ref={frame} title={title} src={panelUrl.href} style={{ width: '100%', height: '100%', flex: 1, border: 0 }} />;
+      return <div ref={container} style={{ width: '100%', height: '100%', flex: 1, minHeight: 0 }} />;
     });
   }
   const preview = 'dsh-plugin-molio/obsidian';

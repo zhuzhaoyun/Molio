@@ -1,6 +1,6 @@
 {
   "name": "dsh-plugin-molio",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "Molio 知识库、图谱、资源市场与 Obsidian 文档预览 for DeepSeek Harness",
   "type": "module",
   "main": "dist/host/index.mjs",

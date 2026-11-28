@@ -676,10 +676,21 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
     else run();
   }, [tabs, kb, runOrConfirmDiscard]);
 
+  const lastDocumentTab = useRef<{ vault: typeof activeVaultId; id: string } | null>(null);
+  useEffect(() => {
+    if (!harnessMode) return;
+    const active = tabs.tabs.find(tab => tab.id === tabs.activeTabId);
+    if (active?.type === 'file' || active?.type === 'blank') {
+      lastDocumentTab.current = { vault: activeVaultId, id: active.id };
+    }
+  }, [activeVaultId, tabs.activeTabId, tabs.tabs]);
+
   useEffect(() => {
     if (!harnessMode || !activeVaultId || searchParams.get('panel') !== 'files') return;
     if (tabs.activeTabId === GRAPH_TAB_ID || tabs.activeTabId === PUBLISH_TAB_ID) {
-      const file = tabs.tabs.find(tab => tab.type === 'file' || tab.type === 'blank');
+      const last = lastDocumentTab.current;
+      const file = (last?.vault === activeVaultId && tabs.tabs.find(tab => tab.id === last.id))
+        || tabs.tabs.find(tab => tab.type === 'file' || tab.type === 'blank');
       if (file) handleActivateTab(file.id);
       else handleAddTab();
     }

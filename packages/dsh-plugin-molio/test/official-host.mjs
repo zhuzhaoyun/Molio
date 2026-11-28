@@ -29,17 +29,18 @@ test('official DSH loads the three panels, reads and follows a wiki citation', {
       const iframe = page.locator('iframe[title="' + title + '"]');
       await iframe.waitFor();
       const frame = await (await iframe.elementHandle()).contentFrame();
-      await frame.locator('main').waitFor();
+      await frame.locator('main.harness-page').waitFor();
       return frame;
     }
-    await panel('资源市场');
-    await panel('知识图谱');
-    const frame = await panel('知识库');
+    const frame = await panel('知识');
+    await frame.evaluate(() => { window.__molioPanelState = 'retained'; });
+    const resources = await panel('资源');
+    await resources.evaluate(() => { window.__molioPanelState = 'market'; });
+    assert.equal(await (await panel('图谱')).evaluate(() => window.__molioPanelState), 'retained');
+    assert.equal(await (await panel('资源')).evaluate(() => window.__molioPanelState), 'market');
+    assert.equal(await (await panel('知识')).evaluate(() => window.__molioPanelState), 'retained');
     const api = new URL('/api/knowledge/vaults', frame.url());
-    await frame.evaluate(() => {
-      history.pushState({}, '', '/knowledge?manage=1');
-      dispatchEvent(new PopStateEvent('popstate'));
-    });
+    await frame.locator('.kb-vault-bar').evaluate(button => button.click());
     const openFolder = frame.getByTestId('vault-open-action');
     await openFolder.evaluate(button => button.click());
     await page.waitForFunction(() => window.__molioPickerCount === 1);
@@ -50,11 +51,17 @@ test('official DSH loads the three panels, reads and follows a wiki citation', {
     const { vaults } = await (await page.request.get(api.href)).json();
     const id = vaults.find(v => v.path === vault).id;
     endpoint = api.href + '/' + encodeURIComponent(id);
+    await frame.waitForFunction(id => new URLSearchParams(location.search).get('vault') === id, id);
     // Keep the iframe embedded with its real DSH parent and activate our own test vault.
     await frame.evaluate(id => {
       history.pushState({}, '', '/knowledge?vault=' + encodeURIComponent(id) + '&file=' + encodeURIComponent('早期销售.md'));
       dispatchEvent(new PopStateEvent('popstate'));
     }, id);
+    await frame.getByText('见', { exact: false }).last().waitFor();
+    await panel('图谱');
+    await frame.getByTestId('kb-graph-pane').waitFor();
+    await panel('资源');
+    await panel('知识');
     await frame.getByText('见', { exact: false }).last().waitFor();
     await frame.getByTestId('kb-btn-ask-tab').evaluate(button => button.click());
     const session = page.locator('[data-conversation-session]').last();
@@ -75,7 +82,8 @@ test('official DSH loads the three panels, reads and follows a wiki citation', {
     await preview.getByRole('link', { name: '相关实体' }).evaluate(link => link.click());
     await page.getByText('已打开关联笔记。', { exact: true }).waitFor();
     await page.getByRole('button', { name: '在知识库中打开' }).last().evaluate(button => button.click());
-    await page.locator('iframe[title="知识库"][src*="file="]').waitFor();
+    await page.locator('iframe[title="知识"]').waitFor();
+    await frame.getByText('已打开关联笔记。', { exact: true }).last().waitFor();
   } finally {
     if (endpoint) await page.request.delete(endpoint);
     await browser.close();

@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
-import { Link, Navigate, Route, Routes, useLocation } from 'react-router-dom';
+import { Link, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { LanguageProvider } from './i18n/LanguageProvider';
 import { useI18n } from './i18n';
 import { AppErrorBoundary } from './components/AppErrorBoundary';
@@ -21,6 +21,19 @@ const Account = lazy(() => import('./components/account/AccountPage').then(m => 
 
 function HarnessRoutes() {
   const { pathname, search } = useLocation();
+  const navigate = useNavigate();
+  useEffect(() => {
+    const parentOrigin = window.location.ancestorOrigins?.[0] || (document.referrer && new URL(document.referrer).origin);
+    if (window.parent === window || !parentOrigin || parentOrigin === 'null') return;
+    function receive(event: MessageEvent) {
+      if (event.source !== window.parent || event.origin !== parentOrigin || event.data?.type !== 'molio-navigate') return;
+      const route = event.data.route;
+      if (typeof route === 'string' && route.startsWith('/knowledge?')) navigate(route, { replace: true });
+    }
+    window.addEventListener('message', receive);
+    window.parent.postMessage({ type: 'molio-router-ready' }, parentOrigin);
+    return () => window.removeEventListener('message', receive);
+  }, [navigate]);
   const { t } = useI18n();
   const status = useAuthStatus();
   const { role } = useMarketRole();
