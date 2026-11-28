@@ -105,17 +105,15 @@ jobs:
 
       - name: Verify on registry
         shell: bash
-        env:
-          # 清空 setup-node 注入的临时 .npmrc（未传 NODE_AUTH_TOKEN 时含占位符会导致 npmjs 返回 401）
-          NPM_CONFIG_USERCONFIG: /dev/null
         run: |
           set -euo pipefail
           VERSION=$(node -p "require('./packages/dsh-plugin-molio/package.json').version")
-          # 显式查 npmjs：npmmirror 是同步镜像有延迟，且根 .npmrc 默认指向它。
-          # 传播通常 <10s 但偶发更久——重试轮询，最长 ~2 分钟。
+          # 直接请求单版本端点 /dsh-plugin-molio/$VERSION，绕开 npm view 拉取整包 packument
+          # 时命中的 npmjs CDN 缓存延迟（3.7MB 包发布后整包元数据常有 3~5 分钟缓存）。
           LAST_ERR=""
-          for i in $(seq 1 12); do
-            if PUBLISHED=$(npm view dsh-plugin-molio@"$VERSION" version --registry=https://registry.npmjs.org --userconfig=/dev/null 2>/tmp/npm-view.err); then
+          for i in $(seq 1 18); do
+            if META=$(curl -fsSL "https://registry.npmjs.org/dsh-plugin-molio/$VERSION" 2>/tmp/npm-view.err); then
+              PUBLISHED=$(node -e 'console.log(JSON.parse(process.argv[1]).version || "")' "$META" 2>/dev/null || echo "")
               if [[ "$PUBLISHED" == "$VERSION" ]]; then
                 echo "✅ dsh-plugin-molio@$VERSION 已发布"
                 exit 0
@@ -123,7 +121,7 @@ jobs:
             else
               LAST_ERR=$(cat /tmp/npm-view.err || true)
             fi
-            echo "registry 暂未可见（第 $i/12 次），10s 后重试..."
+            echo "registry 暂未可见（第 $i/18 次），10s 后重试..."
             sleep 10
           done
           echo "❌ registry 上未查到 dsh-plugin-molio@$VERSION（最后一次输出：$LAST_ERR）"
