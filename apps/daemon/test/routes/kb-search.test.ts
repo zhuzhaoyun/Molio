@@ -128,7 +128,7 @@ describe('Knowledge routes — full-text search', () => {
     writeFileSync(readablePath, '# 可读\n包含关键词 微服务 的内容\n');
     writeFileSync(unreadablePath, '# 不可读\n包含关键词 微服务 的内容\n');
     chmodSync(unreadablePath, 0o000);
-    resync(); // unreadable 不可读 → 索引器读取失败 → 不入索引（行为不变量）
+    await resync(); // unreadable 不可读 → 索引器读取失败 → 不入索引（行为不变量）
 
     try {
       const res = await app.request(`/api/knowledge/vaults/${vaultId}/search?q=微服务`);
