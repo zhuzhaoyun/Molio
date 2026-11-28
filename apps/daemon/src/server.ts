@@ -156,6 +156,10 @@ if (staticDir) {
 
 // Graceful shutdown
 function gracefulShutdown(): void {
+  if (graphWarmTimer) {
+    clearTimeout(graphWarmTimer);
+    graphWarmTimer = null;
+  }
   cleanupAllBridges();
   weixinService.stop();
   void vaultWatcher.stop();

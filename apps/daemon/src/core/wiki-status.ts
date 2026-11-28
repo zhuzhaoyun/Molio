@@ -111,8 +111,7 @@ function parseStrictCached(
   return parsed;
 }
 
-/** Walk wiki/**​/*.md — build the normalized blob and collect each sources-page's
- *  frontmatter (page mtime + `sources:` list). */
+/** Read only the frontmatter header of each wiki/sources/*.md (page mtime + `sources:` list). */
 function collectSourcesDirFrontmatter(sourcesDir: string, out: ParsedWiki): void {
   let entries: fs.Dirent[];
   try {

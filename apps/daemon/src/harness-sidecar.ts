@@ -55,6 +55,7 @@ app.use('/*', createStaticFileMiddleware(staticDir));
 
 let closing = false;
 let startupChoresTimer: ReturnType<typeof setTimeout> | null = null;
+let reconcileTask: Promise<void> | null = null;
 const server = serve({ fetch: app.fetch, port: 0, hostname: '127.0.0.1' }, ({ port }) => {
   process.send?.({ type: 'molio-ready', port });
   void auth.restoreSession();
@@ -64,7 +65,7 @@ const server = serve({ fetch: app.fetch, port: 0, hostname: '127.0.0.1' }, ({ po
     startupChoresTimer = null;
     if (closing) return;
     vaultWatcher.start();
-    void reconcileAllVaultsAsync(db);
+    reconcileTask = reconcileAllVaultsAsync(db).catch(() => {});
   }, 800);
   startupChoresTimer.unref?.();
 });
@@ -83,6 +84,10 @@ async function shutdown() {
   cleanupAllBridges();
   vaultIndexSweeper.stop();
   await vaultWatcher.stop();
+  if (reconcileTask) {
+    await reconcileTask;
+    reconcileTask = null;
+  }
   disposeVaultWorkers();
   closeDatabase();
   process.exit(0);
