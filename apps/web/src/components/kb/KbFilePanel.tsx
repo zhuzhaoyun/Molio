@@ -23,12 +23,16 @@ const SORT_OPTIONS: SortBy[] = ['name', 'modified', 'size'];
 const PANEL_COLLAPSED_KEY = 'molio.kb.filePanelCollapsed';
 /** 折叠后细竖条的宽度（px）——只容得下顶部的「展开」按钮。 */
 const PANEL_COLLAPSED_WIDTH = 28;
+const EMPTY_EXPANDED_SET = new Set<string>();
+/** Reused natural-order collator — avoids re-instantiating locale collation O(N log N) times per tree sort. */
+const NAME_COLLATOR = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
 
 interface KbFilePanelProps {
   width: number;
   tree: TreeNode[];
   selectedFile: string | null;
   searchQuery: string;
+  vaultId?: string | null;
   vaultName: string;
   /** Active vault has ≥1 registered external root — see KbFileTree. */
   hasExternalRoots?: boolean;
@@ -78,6 +82,7 @@ export const KbFilePanel = forwardRef<KbFilePanelHandle, KbFilePanelProps>(funct
   tree,
   selectedFile,
   searchQuery,
+  vaultId,
   vaultName,
   hasExternalRoots = false,
   onSearchChange,
@@ -103,8 +108,28 @@ export const KbFilePanel = forwardRef<KbFilePanelHandle, KbFilePanelProps>(funct
   // 引导要指向真实入口，而不是 checklist 上的中转按钮：引导消失后，
   // 用户日常用的就是这颗「导入」。
   const guideImport = useOnboardingHint() === 'import';
-  // Expansion state is owned here so the toggle button can read it directly.
-  const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set());
+  // Expansion state is scoped per vault so switching Vault A → Vault B doesn't
+  // leak A's expanded folders into B (and switching back restores A's state).
+  const [expandedByVault, setExpandedByVault] = useState<Map<string, Set<string>>>(() => new Map());
+  const vaultKey = vaultId || '__default__';
+  const vaultKeyRef = useRef(vaultKey);
+  vaultKeyRef.current = vaultKey;
+  const expandedPaths = expandedByVault.get(vaultKey) ?? EMPTY_EXPANDED_SET;
+  const setExpandedPaths = useCallback(
+    (updater: Set<string> | ((prev: Set<string>) => Set<string>)) => {
+      const key = vaultKeyRef.current;
+      setExpandedByVault((prevMap) => {
+        const prevSet = prevMap.get(key) ?? EMPTY_EXPANDED_SET;
+        const nextSet = typeof updater === 'function' ? updater(prevSet) : updater;
+        const nextMap = new Map(prevMap);
+        nextMap.delete(key);
+        nextMap.set(key, nextSet);
+        if (nextMap.size > 8) nextMap.delete(nextMap.keys().next().value!);
+        return nextMap;
+      });
+    },
+    [],
+  );
   const anyExpanded = expandedPaths.size > 0;
 
   // Sort order applied to the whole tree (directories always first, sorted by
@@ -802,7 +827,7 @@ function findNodeByPath(nodes: TreeNode[], path: string): TreeNode | undefined {
 function sortTree(nodes: TreeNode[], sortBy: SortBy): TreeNode[] {
   const sorted = [...nodes].sort((a, b) => {
     if (a.type !== b.type) return a.type === 'directory' ? -1 : 1;
-    if (a.type === 'directory') return a.name.localeCompare(b.name, undefined, { numeric: true });
+    if (a.type === 'directory') return NAME_COLLATOR.compare(a.name, b.name);
     if (sortBy === 'modified') {
       const av = a.modifiedAt ?? 0;
       const bv = b.modifiedAt ?? 0;
@@ -813,7 +838,7 @@ function sortTree(nodes: TreeNode[], sortBy: SortBy): TreeNode[] {
       const bv = b.size ?? 0;
       return bv - av; // largest first
     }
-    return a.name.localeCompare(b.name, undefined, { numeric: true });
+    return NAME_COLLATOR.compare(a.name, b.name);
   });
   return sorted.map((n) =>
     n.type === 'directory' && n.children ? { ...n, children: sortTree(n.children, sortBy) } : n,

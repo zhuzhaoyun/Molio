@@ -16,7 +16,7 @@ export async function resolveVault(
   vaultArg?: string,
 ): Promise<Vault> {
   if (vaultArg !== undefined && vaultArg.trim() !== '') {
-    const vaults = await client.listVaults();
+    const vaults = await client.listVaults({ minimal: true });
     const arg = vaultArg.trim();
 
     const byId = vaults.filter((v) => v.id === arg);
@@ -41,7 +41,7 @@ export async function resolveVault(
     );
   }
 
-  const { vault } = await client.getActiveVault();
+  const { vault } = await client.getActiveVault({ minimal: true });
   if (!vault) {
     throw new CliError(
       EXIT_VAULT_NOT_FOUND,

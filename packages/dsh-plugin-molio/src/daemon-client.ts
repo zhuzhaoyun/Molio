@@ -56,13 +56,14 @@ export class DaemonClient {
 
   private async request<T>(
     path: string,
-    opts: { signal?: AbortSignal; timeoutMs?: number } = {},
+    opts: { signal?: AbortSignal; timeoutMs?: number; headers?: Record<string, string> } = {},
   ): Promise<T> {
-    const { signal, timeoutMs = DEFAULT_TIMEOUT_MS } = opts;
+    const { signal, timeoutMs = DEFAULT_TIMEOUT_MS, headers } = opts;
     const baseUrl = await this.endpoint();
     let res: Response;
     try {
       res = await fetch(`${baseUrl}${path}`, {
+        headers,
         signal: signal ?? AbortSignal.timeout(timeoutMs),
       });
     } catch (err) {
@@ -105,13 +106,19 @@ export class DaemonClient {
 
   // ─── 知识库（只读） ───
 
-  async listVaults(signal?: AbortSignal): Promise<Vault[]> {
-    const res = await this.request<{ vaults: Vault[] }>('/api/knowledge/vaults', { signal });
+  async listVaults(signal?: AbortSignal, opts?: { minimal?: boolean }): Promise<Vault[]> {
+    const res = await this.request<{ vaults: Vault[] }>('/api/knowledge/vaults', {
+      signal,
+      headers: opts?.minimal ? { Prefer: 'return=minimal' } : undefined,
+    });
     return res.vaults;
   }
 
-  getActiveVault(signal?: AbortSignal): Promise<ActiveVaultResponse> {
-    return this.request<ActiveVaultResponse>('/api/knowledge/active-vault', { signal });
+  getActiveVault(signal?: AbortSignal, opts?: { minimal?: boolean }): Promise<ActiveVaultResponse> {
+    return this.request<ActiveVaultResponse>('/api/knowledge/active-vault', {
+      signal,
+      headers: opts?.minimal ? { Prefer: 'return=minimal' } : undefined,
+    });
   }
 
   async getTree(vaultId: string, signal?: AbortSignal): Promise<TreeNode[]> {

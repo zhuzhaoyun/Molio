@@ -114,13 +114,17 @@ export class DaemonClient {
 
   // ─── 知识库（只读） ───
 
-  async listVaults(): Promise<Vault[]> {
-    const res = await this.request<{ vaults: Vault[] }>('/api/knowledge/vaults');
+  async listVaults(opts?: { minimal?: boolean }): Promise<Vault[]> {
+    const res = await this.request<{ vaults: Vault[] }>('/api/knowledge/vaults', {
+      headers: opts?.minimal ? { Prefer: 'return=minimal' } : undefined,
+    });
     return res.vaults;
   }
 
-  getActiveVault(): Promise<ActiveVaultResponse> {
-    return this.request<ActiveVaultResponse>('/api/knowledge/active-vault');
+  getActiveVault(opts?: { minimal?: boolean }): Promise<ActiveVaultResponse> {
+    return this.request<ActiveVaultResponse>('/api/knowledge/active-vault', {
+      headers: opts?.minimal ? { Prefer: 'return=minimal' } : undefined,
+    });
   }
 
   async getTree(vaultId: string): Promise<TreeNode[]> {

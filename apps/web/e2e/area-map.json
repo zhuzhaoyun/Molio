@@ -162,7 +162,9 @@
         "navigation-history",
         "kb-external-roots",
         "kb-message-rail",
-        "diagnostics"
+        "diagnostics",
+        "kb-vault-switch-perf",
+        "harness-distribution"
       ]
     },
     "publish": {
@@ -807,6 +809,14 @@
     "diagnostics": {
       "priority": "P1",
       "file": "diagnostics.spec.ts"
+    },
+    "kb-vault-switch-perf": {
+      "priority": "P1",
+      "file": "kb-vault-switch-perf.spec.ts"
+    },
+    "harness-distribution": {
+      "priority": "P1",
+      "file": "harness-distribution.spec.ts"
     }
   }
 }

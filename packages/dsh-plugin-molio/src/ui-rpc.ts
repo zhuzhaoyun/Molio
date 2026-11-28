@@ -19,7 +19,7 @@ export function registerInterface(ctx: Context, endpoint: () => Promise<string>)
         const origin = await endpoint();
         if (method === 'endpoint') return Response.json({ value: origin });
         const client = new DaemonClient(origin);
-        const vaults = await client.listVaults(signal);
+        const vaults = await client.listVaults(signal, { minimal: true });
         const cwd = typeof payload.cwd === 'string' ? payload.cwd : '';
         const containing = cwd && vaults.filter(v => {
           const rel = relative(v.path, cwd);

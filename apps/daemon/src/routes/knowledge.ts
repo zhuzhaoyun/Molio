@@ -89,6 +89,19 @@ export function knowledgeRoutes(
 ): Hono {
   const app = new Hono();
 
+  const uncachedTreeInflight = new Map<string, Promise<TreeNode[]>>();
+  const buildUncachedTreeDedup = (vaultId: string, vaultPath: string): Promise<TreeNode[]> => {
+    const existing = uncachedTreeInflight.get(vaultId);
+    if (existing) return existing;
+    const job = buildTreeInWorker(vaultPath, externalRefs(db, vaultId)).finally(() => {
+      if (uncachedTreeInflight.get(vaultId) === job) {
+        uncachedTreeInflight.delete(vaultId);
+      }
+    });
+    uncachedTreeInflight.set(vaultId, job);
+    return job;
+  };
+
   // ─── Vaults ───
 
   // GET /api/knowledge/vaults — list all vaults
@@ -179,6 +192,11 @@ export function knowledgeRoutes(
       setActiveVaultId(db, null);
       return c.json({ vaultId: null, vault: null });
     }
+    c.header('Vary', 'Prefer');
+    if (c.req.header('Prefer') === 'return=minimal') {
+      const { fileCount: _count, ...metadata } = vault;
+      return c.json({ vaultId: id, vault: metadata });
+    }
     return c.json({ vaultId: id, vault: { ...vault, fileCount: countFilesSafe(vault.path) } });
   });
 
@@ -207,14 +225,14 @@ export function knowledgeRoutes(
     if (!vault) {
       return c.json({ error: { code: 'NOT_FOUND', message: 'Vault not found' } }, 404);
     }
-    onVaultTouched?.(vault);
 
     try {
       // 树缓存与图谱缓存（#337）同一套规矩：watcher 未就绪 → 没有失效信号 →
       // 每次重扫（= 无缓存时的行为），绝不让「没有信号」冒充「内容没变」。
       const tree = isTreeCacheable(vault.id)
         ? await treeCache.getOrBuild(vault.id, () => buildTreeInWorker(vault.path, externalRefs(db, vault.id)))
-        : await buildTreeInWorker(vault.path, externalRefs(db, vault.id));
+        : await buildUncachedTreeDedup(vault.id, vault.path);
+      onVaultTouched?.(vault);
       return c.json({ tree });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to scan vault';

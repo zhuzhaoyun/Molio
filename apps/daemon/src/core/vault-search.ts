@@ -13,7 +13,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { SearchResult } from '@molio/contracts';
-import { getVault, listExternalRoots, type SqliteDb } from './db.js';
+import { getActiveVaultId, getVault, listExternalRoots, type SqliteDb } from './db.js';
 import { resolveEntry, TEXT_EXTS } from './knowledge.js';
 import { isWithinRoot, safeRealpath } from './external-roots.js';
 import { isPrunedDirName, MAX_DIR_ENTRIES, MAX_TOTAL } from './vault-prune.js';
@@ -163,6 +163,61 @@ export async function reindexVault(
   const seen = new Set<string>();
   let indexed = 0;
   let processed = 0;
+  let sliceStart = Date.now();
+  const MAX_SLICE_MS = 12;
+
+  const maybeYield = async (forceCountStep = false): Promise<void> => {
+    if (yieldEvery <= 0) return;
+    if (forceCountStep || Date.now() - sliceStart >= MAX_SLICE_MS) {
+      await yieldToEventLoop();
+      sliceStart = Date.now();
+    }
+  };
+
+  // Pre-load the vault's shadow state in a SINGLE SQLite query instead of 3×
+  // per-file SELECTs + no-op transactions across thousands of unchanged/binary files.
+  const existingRows = db.prepare(
+    'SELECT rowid AS rid, file_path, mtime, size FROM vault_files_state WHERE vault_id = ?',
+  ).all(vaultId) as Array<{ rid: number; file_path: string; mtime: number; size: number }>;
+  const known = new Map<string, { rid: number; mtime: number; size: number }>();
+  for (const r of existingRows) {
+    known.set(r.file_path, { rid: r.rid, mtime: r.mtime, size: r.size });
+  }
+
+  // Hoist prepared statements once per reindex pass (especially critical when
+  // running against node:sqlite shims without built-in statement caching).
+  const upsertStateStmt = db.prepare(
+    `INSERT INTO vault_files_state(vault_id, file_path, mtime, size) VALUES (?, ?, ?, ?)
+     ON CONFLICT(vault_id, file_path) DO UPDATE SET mtime = excluded.mtime, size = excluded.size`,
+  );
+  const selectRidStmt = db.prepare(
+    'SELECT rowid AS rid FROM vault_files_state WHERE vault_id = ? AND file_path = ?',
+  );
+  const delFtsStmt = db.prepare('DELETE FROM vault_files_fts WHERE rowid = ?');
+  const delStateStmt = db.prepare('DELETE FROM vault_files_state WHERE rowid = ?');
+  const insFtsStmt = db.prepare(
+    'INSERT INTO vault_files_fts(rowid, content, vault_id, file_path) VALUES (?, ?, ?, ?)',
+  );
+
+  const removeByKnown = db.transaction((normPath: string, rid: number) => {
+    delFtsStmt.run(rid);
+    delStateStmt.run(rid);
+    known.delete(normPath);
+  });
+
+  const upsertFileTx = db.transaction(
+    (normPath: string, mtime: number, size: number, content: string, prevRid?: number) => {
+      upsertStateStmt.run(vaultId, normPath, mtime, size);
+      if (prevRid !== undefined) {
+        delFtsStmt.run(prevRid);
+      }
+      const rid = prevRid ?? (selectRidStmt.get(vaultId, normPath) as { rid: number } | undefined)?.rid;
+      if (rid !== undefined) {
+        insFtsStmt.run(rid, content, vaultId, normPath);
+        known.set(normPath, { rid, mtime, size });
+      }
+    },
+  );
 
   // 外部素材根与 scanTree 同一个白名单：登记的挂载以 `external/<label>/…` 虚路径
   // 进索引（KB 搜索 = FTS，树/图谱可见的东西搜索必须也可见）。未登记/悬空链接
@@ -204,32 +259,78 @@ export async function reindexVault(
         // unwind 释放：同宿兄弟链接不静默丢，胜负不取决于 readdir 顺序。
         if (info.linkReal) visitedLinks.delete(info.linkReal);
       } else if (info.isFile) {
-        seen.add(rel);
-        const before = db.prepare(
-          'SELECT mtime, size FROM vault_files_state WHERE vault_id = ? AND file_path = ?',
-        ).get(vaultId, rel) as { mtime: number; size: number } | undefined;
-        indexVaultFile(db, vaultId, vaultPath, rel);
-        const after = db.prepare(
-          'SELECT mtime, size FROM vault_files_state WHERE vault_id = ? AND file_path = ?',
-        ).get(vaultId, rel) as { mtime: number; size: number } | undefined;
-        if (after && (!before || before.mtime !== after.mtime || before.size !== after.size)) indexed++;
+        const norm = rel.replace(/\\/g, '/');
+        seen.add(norm);
+        const prev = known.get(norm);
+
+        // Fast skip for non-text files (images, PDFs, audio, video): zero statSync, zero SQLite queries!
+        if (!isIndexableExt(norm)) {
+          if (prev) removeByKnown(norm, prev.rid);
+          processed++;
+          await maybeYield(yieldEvery > 0 && processed % (yieldEvery * 4) === 0);
+          continue;
+        }
+
+        let stat: fs.Stats;
+        try {
+          stat = fs.statSync(abs);
+        } catch {
+          if (prev) removeByKnown(norm, prev.rid);
+          continue;
+        }
+        if (!stat.isFile() || stat.size > MAX_INDEX_FILE_BYTES) {
+          if (prev) removeByKnown(norm, prev.rid);
+          processed++;
+          await maybeYield(yieldEvery > 0 && processed % (yieldEvery * 4) === 0);
+          continue;
+        }
+
+        const mtime = Math.floor(stat.mtimeMs);
+        if (prev && prev.mtime === mtime && prev.size === stat.size) {
+          // Unchanged text file: 0 SQLite queries, 0 file reads!
+          processed++;
+          await maybeYield(yieldEvery > 0 && processed % (yieldEvery * 4) === 0);
+          continue;
+        }
+
+        const resolved = path.resolve(path.join(vaultPath, norm));
+        assertWithinVault(vaultPath, resolved);
+        let content: string;
+        try {
+          content = fs.readFileSync(resolved, 'utf-8');
+        } catch {
+          if (prev) removeByKnown(norm, prev.rid);
+          continue;
+        }
+        upsertFileTx(norm, mtime, stat.size, content, prev?.rid);
+        indexed++;
         processed++;
         // 分片让位点：让 HTTP/SSE/定时器在整库索引期间照常跑（见文件头注释）。
-        if (yieldEvery > 0 && processed % yieldEvery === 0) await yieldToEventLoop();
+        await maybeYield(yieldEvery > 0 && processed % yieldEvery === 0);
       }
     }
   };
   await walk(vaultPath, '');
 
-  // 收尾清除外部/agent 删掉的路径：同一批一个事务（比逐文件自动提交快），
-  // 同样分片让位——一次性删掉几千文件时不能独占事件循环。
-  const known = db.prepare('SELECT file_path FROM vault_files_state WHERE vault_id = ?')
-    .all(vaultId) as Array<{ file_path: string }>;
-  const stale = known.map((r) => r.file_path).filter((p) => !seen.has(p));
+  // If stopped mid-walk (daemon shutting down), do NOT treat unvisited files as deleted!
+  if (shouldStop()) return { indexed, removed: 0 };
+
+  // 收尾清除外部/agent 删掉的路径：直接从内存 known 表差集得出，无需再次全表查询。
+  const stale: string[] = [];
+  for (const [p] of known) {
+    if (!seen.has(p)) stale.push(p);
+  }
   const removed = stale.length;
   if (removed > 0) {
     const batch = db.transaction((paths: string[]) => {
-      for (const p of paths) removeVaultFile(db, vaultId, p);
+      for (const p of paths) {
+        const entry = known.get(p);
+        if (entry) {
+          delFtsStmt.run(entry.rid);
+          delStateStmt.run(entry.rid);
+          known.delete(p);
+        }
+      }
     });
     const chunk = yieldEvery > 0 ? yieldEvery : removed;
     for (let i = 0; i < removed; i += chunk) {
@@ -427,10 +528,12 @@ const STAGGER_MS = 250;
 
 export class VaultIndexSweeper {
   private timers = new Map<string, ReturnType<typeof setTimeout>>();
-  /** 每个 vault 正在跑的 sweep。分片异步后同一 vault 可能被并发触发，必须去重。 */
+  /** 每个 vault 正在跑（或已入串行队列等待跑）的 sweep，保持同一 vault 返回同一个 promise。 */
   private running = new Map<string, Promise<void>>();
   /** 正在跑的 sweep 期间又收到 tree-changed 的 vault——跑完立刻补一次，不丢改动。 */
   private dirty = new Set<string>();
+  /** 全局串行尾指针：多库后台预索引逐库顺序执行，避免 10 个大库同时并发抢占主线程与磁盘 IO。 */
+  private serialTail: Promise<void> = Promise.resolve();
   private stopped = false;
   private readonly debounceMs: number;
 
@@ -452,19 +555,24 @@ export class VaultIndexSweeper {
   }
 
   /**
-   * 启动预索引：对 vaults 表里全部 vault 各排一次，逐个顺延 STAGGER_MS 错峰
-   * （不阻塞 listen）。构建本身是分片异步的（不独占事件循环），错峰只是让
-   * NAS/网络挂载上的 stat 不至于同时涌入。
+   * 启动预索引：对 vaults 表里全部 vault 各排一次，优先排当前 active vault，
+   * 相邻库错峰（测试小 debounce 时跟随缩小错峰，生产逐库串行不并发）。
    */
   scheduleAll(): void {
     const rows = this.db.prepare('SELECT id FROM vaults').all() as Array<{ id: string }>;
-    rows.forEach(({ id }, i) => this.scheduleVault(id, i * STAGGER_MS));
+    const activeId = getActiveVaultId(this.db);
+    if (activeId) {
+      rows.sort((a, b) => (a.id === activeId ? -1 : b.id === activeId ? 1 : 0));
+    }
+    const stagger = Math.min(this.debounceMs, STAGGER_MS);
+    rows.forEach(({ id }, i) => this.scheduleVault(id, i * stagger));
   }
 
   /**
    * 扫一个 vault（测试/立即刷新入口）。vault 不存在或目录不可达则静默跳过。
    * 同一 vault 已有 sweep 在跑时不并发：登记 dirty 并返回同一个 in-flight
-   * promise（调用方可安全 await，不会拿到半成品）。
+   * promise（调用方可安全 await，不会拿到半成品）。跨库 sweep 通过 serialTail
+   * 串行排队，消除多库启动/切换时的并发扫盘风暴。
    *
    * 刻意不写成 async 方法——async 每次调用都包一层新 promise，
    * 「同一 vault 返回同一个 promise」这个去重语义就没了。
@@ -478,10 +586,13 @@ export class VaultIndexSweeper {
       this.dirty.add(vaultId);
       return inflight;
     }
-    const task = this.runSweep(vaultId).then(
-      () => this.finishSweep(vaultId),
-      () => this.finishSweep(vaultId),
-    );
+    const task = this.serialTail
+      .then(() => (this.stopped ? undefined : this.runSweep(vaultId)))
+      .then(
+        () => this.finishSweep(vaultId),
+        () => this.finishSweep(vaultId),
+      );
+    this.serialTail = task;
     this.running.set(vaultId, task);
     return task;
   }

@@ -1574,6 +1574,7 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
         tree={kb.tree}
         selectedFile={kb.selectedFile}
         searchQuery={kb.searchQuery}
+        vaultId={kb.activeVault?.id ?? activeVaultId}
         vaultName={kb.activeVault?.name ?? ''}
         hasExternalRoots={hasExternalRoots}
         onSearchChange={kb.setSearchQuery}
@@ -1650,7 +1651,8 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
               <button
                 type="button"
                 className="kb-btn kb-btn-ghost"
-                onClick={() => setCheckupOpen(true)}
+                onClick={() => (harnessMode ? openKnowledgeAction('lint') : setCheckupOpen(true))}
+                disabled={harnessMode && !kb.activeVault}
                 title={t('kb.molioCheckup')}
                 data-testid="kb-btn-lint-wiki"
               >

@@ -5,7 +5,7 @@
  * Supports: click-select, right-click context menu, inline rename.
  */
 
-import { useCallback, useRef, useEffect } from 'react';
+import { memo, useCallback, useRef, useEffect, useState } from 'react';
 import type { TreeNode, IngestStatus } from '@molio/contracts';
 import { isExternalPath } from './kb-constants';
 import { useI18n } from '../../i18n';
@@ -13,11 +13,20 @@ import { FileIcon, FolderIcon, SearchIcon } from '../icons';
 
 /** Directories that reject drag-and-drop operations. */
 const PROTECTED_DIRS = ['wiki', 'docling_output'];
+/** Progressive mounting budget for huge expanded directories (e.g. wiki/entities with 3000+ notes). */
+const PROGRESSIVE_INITIAL_LIMIT = 300;
+const PROGRESSIVE_BATCH_SIZE = 500;
 
 function isInsideProtected(nodePath: string): boolean {
   return PROTECTED_DIRS.some(
     d => nodePath === d || nodePath.startsWith(d + '/')
   );
+}
+
+/** True if `targetPath` is `dirPath` itself or a strict descendant (`dirPath/...`). */
+function isSameOrDescendant(dirPath: string, targetPath: string | null | undefined): boolean {
+  if (!targetPath) return false;
+  return targetPath === dirPath || targetPath.startsWith(dirPath + '/');
 }
 
 interface KbFileTreeProps {
@@ -181,7 +190,7 @@ interface TreeNodeItemProps {
   onNodeDragLeave?: () => void;
 }
 
-function TreeNodeItem({
+const TreeNodeItem = memo(function TreeNodeItem({
   node,
   selectedFile,
   searchQuery,
@@ -201,7 +210,50 @@ function TreeNodeItem({
   onNodeDragOver,
   onNodeDragLeave,
 }: TreeNodeItemProps) {
-  const expanded = expandedPaths.has(node.path);
+  const searching = searchQuery.trim().length > 0;
+  const childCount = node.children?.length ?? 0;
+  // Auto-expand folders that have matching children while filtering, while keeping
+  // empty folders controlled by `expandedPaths` (preserves ghost-row behavior).
+  const expanded = expandedPaths.has(node.path) || (searching && childCount > 0);
+
+  // Progressive chunked mounting for huge expanded folders (>300 items):
+  // mount the first chunk (or through the active/revealed child) immediately so
+  // expansion feels instant, then stream remaining items across animation frames.
+  const requiredVisibleCount = (() => {
+    if (!expanded || node.type !== 'directory' || childCount <= PROGRESSIVE_INITIAL_LIMIT) {
+      return childCount;
+    }
+    let minIdx = PROGRESSIVE_INITIAL_LIMIT;
+    const children = node.children!;
+    for (const target of [selectedFile, revealPath, renamingPath]) {
+      if (!target) continue;
+      const idx = children.findIndex((c) => isSameOrDescendant(c.path, target));
+      if (idx >= minIdx) minIdx = Math.min(childCount, idx + 50);
+    }
+    return minIdx;
+  })();
+
+  const [renderLimit, setRenderLimit] = useState(requiredVisibleCount);
+
+  useEffect(() => {
+    if (!expanded || node.type !== 'directory') {
+      setRenderLimit(PROGRESSIVE_INITIAL_LIMIT);
+      return;
+    }
+    if (childCount <= PROGRESSIVE_INITIAL_LIMIT) {
+      setRenderLimit(childCount);
+      return;
+    }
+    setRenderLimit((prev) => Math.max(prev, requiredVisibleCount));
+  }, [expanded, node.type, childCount, requiredVisibleCount]);
+
+  useEffect(() => {
+    if (!expanded || node.type !== 'directory' || renderLimit >= childCount) return;
+    const raf = requestAnimationFrame(() => {
+      setRenderLimit((prev) => Math.min(childCount, prev + PROGRESSIVE_BATCH_SIZE));
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [expanded, node.type, renderLimit, childCount]);
 
   // Don't show "+" for items inside protected directories
   const nodeProtected = isInsideProtected(node.path);
@@ -357,8 +409,11 @@ function TreeNodeItem({
     // nothing" — the exact report behind the entities-folder bug.
     // Suppressed while searching: filterTree empties children for non-matching
     // dirs, and "no search hits" is not "empty folder".
-    const searching = searchQuery.trim().length > 0;
-    const childless = (node.children?.length ?? 0) === 0;
+    const childless = childCount === 0;
+    const visibleChildren =
+      expanded && node.children
+        ? (renderLimit < childCount ? node.children.slice(0, renderLimit) : node.children)
+        : null;
 
     return (
       <div
@@ -410,44 +465,46 @@ function TreeNodeItem({
             </div>
           ) : null}
         </div>
-        <div className={`kb-tree-children ${expanded ? '' : 'collapsed'}`}>
-          {node.children?.map((child) => (
-            <TreeNodeItem
-              key={child.path}
-              node={child}
-              selectedFile={selectedFile}
-              searchQuery={searchQuery}
-              expandedPaths={expandedPaths}
-              hasExternalRoots={hasExternalRoots}
-              revealToken={revealToken}
-              revealPath={revealPath}
-              onRevealConsumed={onRevealConsumed}
-              onTogglePath={onTogglePath}
-              onSelectFile={onSelectFile}
-              onAddToWiki={onAddToWiki}
-              onContextMenu={onContextMenu}
-              renamingPath={renamingPath}
-              onRenameComplete={onRenameComplete}
-              onRenameCancel={onRenameCancel}
-              onMoveFile={onMoveFile}
-              onNodeDragOver={onNodeDragOver}
-              onNodeDragLeave={onNodeDragLeave}
-            />
-          ))}
-          {expanded && !searching && childless && (node.pruned ? (
-            <div
-              className="kb-tree-ghost-row"
-              data-testid="kb-tree-pruned-hint"
-              title="该文件夹内文件过多，未在文件树中显示"
-            >
-              文件过多，未显示
-            </div>
-          ) : (
-            <div className="kb-tree-ghost-row" data-testid="kb-tree-empty-hint">
-              空文件夹
-            </div>
-          ))}
-        </div>
+        {expanded && (
+          <div className="kb-tree-children">
+            {visibleChildren?.map((child) => (
+              <TreeNodeItem
+                key={child.path}
+                node={child}
+                selectedFile={selectedFile}
+                searchQuery={searchQuery}
+                expandedPaths={expandedPaths}
+                hasExternalRoots={hasExternalRoots}
+                revealToken={revealToken}
+                revealPath={revealPath}
+                onRevealConsumed={onRevealConsumed}
+                onTogglePath={onTogglePath}
+                onSelectFile={onSelectFile}
+                onAddToWiki={onAddToWiki}
+                onContextMenu={onContextMenu}
+                renamingPath={renamingPath}
+                onRenameComplete={onRenameComplete}
+                onRenameCancel={onRenameCancel}
+                onMoveFile={onMoveFile}
+                onNodeDragOver={onNodeDragOver}
+                onNodeDragLeave={onNodeDragLeave}
+              />
+            ))}
+            {!searching && childless && (node.pruned ? (
+              <div
+                className="kb-tree-ghost-row"
+                data-testid="kb-tree-pruned-hint"
+                title="该文件夹内文件过多，未在文件树中显示"
+              >
+                文件过多，未显示
+              </div>
+            ) : (
+              <div className="kb-tree-ghost-row" data-testid="kb-tree-empty-hint">
+                空文件夹
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     );
   }
@@ -523,7 +580,69 @@ function TreeNodeItem({
       ) : null}
     </div>
   );
-}
+}, function areTreeNodePropsEqual(prev, next) {
+  if (
+    prev.node !== next.node ||
+    prev.searchQuery !== next.searchQuery ||
+    prev.hasExternalRoots !== next.hasExternalRoots ||
+    prev.onTogglePath !== next.onTogglePath ||
+    prev.onSelectFile !== next.onSelectFile ||
+    prev.onAddToWiki !== next.onAddToWiki ||
+    prev.onContextMenu !== next.onContextMenu ||
+    prev.onRenameComplete !== next.onRenameComplete ||
+    prev.onRenameCancel !== next.onRenameCancel ||
+    prev.onMoveFile !== next.onMoveFile ||
+    prev.onNodeDragOver !== next.onNodeDragOver ||
+    prev.onNodeDragLeave !== next.onNodeDragLeave ||
+    prev.onRevealConsumed !== next.onRevealConsumed
+  ) {
+    return false;
+  }
+
+  const p = prev.node.path;
+  if (prev.node.type === 'file') {
+    const prevActive = prev.selectedFile === p;
+    const nextActive = next.selectedFile === p;
+    if (prevActive !== nextActive) return false;
+    if (nextActive && prev.revealToken !== next.revealToken) return false;
+    if ((prev.renamingPath === p) !== (next.renamingPath === p)) return false;
+    if ((prev.revealPath === p) !== (next.revealPath === p)) return false;
+    return true;
+  }
+
+  // Directory node: if collapsed before and after, descendant-only changes don't affect it!
+  const searching = next.searchQuery.trim().length > 0;
+  const hasChildren = (next.node.children?.length ?? 0) > 0;
+  const prevExpanded = prev.expandedPaths.has(p) || (searching && hasChildren);
+  const nextExpanded = next.expandedPaths.has(p) || (searching && hasChildren);
+  if (prevExpanded !== nextExpanded) return false;
+  if ((prev.renamingPath === p) !== (next.renamingPath === p)) return false;
+  if ((prev.revealPath === p) !== (next.revealPath === p)) return false;
+  if (!nextExpanded) return true;
+
+  // Expanded directory: only re-render if expansion set changed or a descendant's
+  // active / renaming / reveal state changed inside this directory's subtree.
+  if (prev.expandedPaths !== next.expandedPaths) return false;
+  const prevSubActive = isSameOrDescendant(p, prev.selectedFile);
+  const nextSubActive = isSameOrDescendant(p, next.selectedFile);
+  if (prevSubActive !== nextSubActive) return false;
+  if (nextSubActive && (prev.selectedFile !== next.selectedFile || prev.revealToken !== next.revealToken)) {
+    return false;
+  }
+  if (
+    (isSameOrDescendant(p, prev.renamingPath) || isSameOrDescendant(p, next.renamingPath)) &&
+    prev.renamingPath !== next.renamingPath
+  ) {
+    return false;
+  }
+  if (
+    (isSameOrDescendant(p, prev.revealPath) || isSameOrDescendant(p, next.revealPath)) &&
+    (prev.revealPath !== next.revealPath || prev.revealToken !== next.revealToken)
+  ) {
+    return false;
+  }
+  return true;
+});
 
 // ─── Ingest status badge ───
 

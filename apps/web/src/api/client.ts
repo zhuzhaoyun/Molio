@@ -120,6 +120,8 @@ async function authFetch(path: string, init?: RequestInit): Promise<Response> {
 
 const AUTH_JSON_HEADERS = { 'Content-Type': 'application/json' } as const;
 
+let listVaultsInflight: Promise<Vault[]> | null = null;
+
 export const api = {
   // ─── Agents ───
 
@@ -591,11 +593,25 @@ export const api = {
 
   // ─── Knowledge Base ───
 
-  async listVaults(): Promise<Vault[]> {
-    const res = await fetch(`${BASE}/knowledge/vaults`);
-    if (!res.ok) throw new Error(`Failed to fetch vaults: ${res.status}`);
-    const data = await res.json();
-    return data.vaults;
+  async listVaults(opts?: { includeCounts?: boolean }): Promise<Vault[]> {
+    if (opts?.includeCounts) {
+      const res = await fetch(`${BASE}/knowledge/vaults`);
+      if (!res.ok) throw new Error(`Failed to fetch vaults: ${res.status}`);
+      const data = await res.json();
+      return data.vaults;
+    }
+    if (listVaultsInflight) return listVaultsInflight;
+    listVaultsInflight = (async () => {
+      const res = await fetch(`${BASE}/knowledge/vaults`, {
+        headers: { Prefer: 'return=minimal' },
+      });
+      if (!res.ok) throw new Error(`Failed to fetch vaults: ${res.status}`);
+      const data = await res.json();
+      return data.vaults as Vault[];
+    })().finally(() => {
+      listVaultsInflight = null;
+    });
+    return listVaultsInflight;
   },
 
   /** 获取 vault 一级目录列表（发布页目录选择用；排除隐藏目录，.molio 除外） */
@@ -637,8 +653,10 @@ export const api = {
   },
 
   /** Returns the user's currently-active vault (the one external clippers target). */
-  async getActiveVault(): Promise<{ vaultId: string | null; vault: (Vault & { fileCount: number }) | null }> {
-    const res = await fetch(`${BASE}/knowledge/active-vault`);
+  async getActiveVault(opts?: { includeCounts?: boolean }): Promise<{ vaultId: string | null; vault: Vault | null }> {
+    const res = await fetch(`${BASE}/knowledge/active-vault`, {
+      headers: opts?.includeCounts ? undefined : { Prefer: 'return=minimal' },
+    });
     if (!res.ok) throw new Error(`Failed to fetch active vault: ${res.status}`);
     return res.json();
   },

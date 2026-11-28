@@ -7,6 +7,36 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import { fileAddress, wikiParts } from '../client/wiki.mjs';
+import PluginDatabase from '../runtime/sqlite.mjs';
+
+test('PluginDatabase caches prepared statements and handles nested + rollback transactions', () => {
+  const db = new PluginDatabase(':memory:');
+  try {
+    db.exec('CREATE TABLE items (id INTEGER PRIMARY KEY, name TEXT NOT NULL)');
+    const s1 = db.prepare('INSERT INTO items (name) VALUES (?)');
+    const s2 = db.prepare('INSERT INTO items (name) VALUES (?)');
+    assert.equal(s1, s2, 'identical SQL should reuse cached StatementSync');
+
+    const innerTx = db.transaction((name) => {
+      s1.run(name);
+    });
+    const outerTx = db.transaction(() => {
+      s1.run('outer');
+      innerTx('inner');
+    });
+    outerTx();
+    assert.equal(db.prepare('SELECT COUNT(*) AS c FROM items').get().c, 2);
+
+    const failingTx = db.transaction(() => {
+      s1.run('rolled-back');
+      throw new Error('boom');
+    });
+    assert.throws(() => failingTx(), /boom/);
+    assert.equal(db.prepare('SELECT COUNT(*) AS c FROM items').get().c, 2);
+  } finally {
+    db.close();
+  }
+});
 
 test('Chinese note aliases and Windows DSH file addresses', () => {
   assert.deepEqual(wikiParts('见 [[指南|创业指南]] 和 [[曼行]]'), [

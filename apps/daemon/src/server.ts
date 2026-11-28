@@ -112,12 +112,18 @@ app.route('/api/config', configRoutes({
 app.route('/api/skills', skillsRoutes(db, runManager));
 app.route('/api/conversations', conversationRoutes(db, runManager, conversationService));
 app.route('/api/projects', projectRoutes(db));
-// H3：树请求 = vault 被触碰 → 提前建图 + worker 布局预跑（错过窗口的图谱 GET 回退现状）
+// H3：树请求 = vault 被触碰 → 延后空闲时提前建图 + worker 布局预跑（切库关键路径先让给树与正文读取）
 const graphWarmer = makeGraphWarmer(graphCache, (vaultId) => vaultWatcher.isReady(vaultId));
+let graphWarmTimer: ReturnType<typeof setTimeout> | null = null;
 app.route(
   '/api/knowledge',
   knowledgeRoutes(db, vaultWatcher, treeCache, (vaultId) => vaultWatcher.isReady(vaultId), (vault) => {
-    void graphWarmer(vault, listExternalRoots(db, vault.id).map((r) => ({ label: r.label, target: r.target })));
+    if (graphWarmTimer) clearTimeout(graphWarmTimer);
+    graphWarmTimer = setTimeout(() => {
+      graphWarmTimer = null;
+      void graphWarmer(vault, listExternalRoots(db, vault.id).map((r) => ({ label: r.label, target: r.target })));
+    }, 1500);
+    graphWarmTimer.unref?.();
   }),
 );
 app.route('/api/publish', publishRoutes());

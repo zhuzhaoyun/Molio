@@ -32,7 +32,7 @@ import { realpathSync, statSync, watch as fsWatch, type FSWatcher as NodeFsWatch
 import path from 'node:path';
 import type Database from 'better-sqlite3';
 import chokidar, { type FSWatcher as ChokidarFsWatcher } from 'chokidar';
-import { listExternalRoots, listVaults } from './db.js';
+import { getActiveVaultId, listExternalRoots, listVaults } from './db.js';
 // Import from vault-prune (not knowledge) so this module does NOT transitively
 // pull in encoding.ts — tests tune encoding's size caps via env vars at load.
 import { isPrunedDirName, MAX_DIR_ENTRIES } from './vault-prune.js';
@@ -103,16 +103,28 @@ export class VaultWatcher extends EventEmitter {
 
   /**
    * Watch all vaults currently in the DB. Called once on daemon start.
-   * New vaults created later should call {@link watch} explicitly.
+   * Watches the active vault FIRST so its TreeCache / GraphCache invalidation
+   * signal becomes ready immediately, then staggers remaining vaults sequentially
+   * so multi-vault startups don't stampede disk I/O in a single tick.
    */
   start(): void {
     if (this.started) return;
     this.started = true;
-    for (const vault of listVaults(this.db)) {
-      this.watch(vault.id, vault.path).catch(() => {
-        /* individual vault failures are non-fatal */
-      });
+    const vaults = listVaults(this.db);
+    const activeId = getActiveVaultId(this.db);
+    if (activeId) {
+      vaults.sort((a, b) => (a.id === activeId ? -1 : b.id === activeId ? 1 : 0));
     }
+    void (async () => {
+      for (const vault of vaults) {
+        if (!this.started) break;
+        // Skip if watch() or delete/unwatch already handled this vault in the interim.
+        if (this.watchers.has(vault.id)) continue;
+        await this.watch(vault.id, vault.path).catch(() => {
+          /* individual vault failures are non-fatal */
+        });
+      }
+    })();
   }
 
   /**
@@ -350,9 +362,9 @@ export class VaultWatcher extends EventEmitter {
 
   /** Stop all watchers. Safe to call on shutdown. */
   async stop(): Promise<void> {
+    this.started = false;
     const ids = Array.from(this.watchers.keys());
     await Promise.all(ids.map((id) => this.unwatch(id)));
-    this.started = false;
   }
 
   /**
