@@ -1,7 +1,7 @@
 {
   "name": "dsh-plugin-molio",
   "version": "0.2.4",
-  "description": "Molio 知识库、图谱、资源市场与 Obsidian 文档预览 for DeepSeek Harness",
+  "description": "Obsidian 与本地知识库插件 for DeepSeek Harness — 在 DSH 侧栏原生打开 Obsidian Vault、关系图谱与双链属性预览，让 AI 基于你的笔记问答与沉淀（Powered by Molio）",
   "type": "module",
   "main": "dist/host/index.mjs",
   "types": "dist/src/index.d.ts",
@@ -32,9 +32,20 @@
   "keywords": [
     "dsh-plugin",
     "deepseek-harness",
-    "molio",
-    "knowledge-base"
+    "dsh",
+    "obsidian",
+    "obsidian-vault",
+    "wikilink",
+    "markdown",
+    "knowledge-base",
+    "knowledge-graph",
+    "second-brain",
+    "molio"
   ],
+  "homepage": "https://github.com/zhuzhaoyun/Molio/tree/main/packages/dsh-plugin-molio",
+  "bugs": {
+    "url": "https://github.com/zhuzhaoyun/Molio/issues"
+  },
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
