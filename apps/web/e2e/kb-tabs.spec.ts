@@ -31,6 +31,30 @@ test.describe('KB tab bar', () => {
   });
   test.afterAll(async () => { if (vault) await cleanupTempVault(vault); });
 
+  test('blank tab offers note and search actions and keeps the last blank tab open', async ({ page }) => {
+    await page.goto(`/knowledge?vault=${vault.id}`);
+    const add = page.getByTestId('kb-tab-add');
+    await add.click();
+    const tabs = page.locator('.kb-wtab');
+    await expect(tabs).toHaveCount(1);
+    await expect(tabs.locator('.kb-wtab-close')).toHaveCount(0);
+    await tabs.first().click({ button: 'middle' });
+    await expect(tabs).toHaveCount(1);
+    await add.click();
+    await expect(tabs).toHaveCount(2);
+    await tabs.last().locator('.kb-wtab-close').click();
+    await expect(tabs).toHaveCount(1);
+    await expect(tabs.locator('.kb-wtab-close')).toHaveCount(0);
+
+    const actions = page.getByTestId('kb-blank-page');
+    await expect(actions.getByTestId('kb-empty-ask-cta')).toBeVisible();
+    await actions.getByTestId('kb-blank-search').click();
+    await expect(page.getByTestId('kb-search-input')).toBeFocused();
+    await page.keyboard.press('Escape');
+    await actions.getByTestId('kb-blank-new-note').click();
+    await expect(page.getByRole('textbox').filter({ visible: true }).last()).toHaveValue('未命名笔记');
+  });
+
   test('open second file reuses the current tab; + creates a fresh tab', async ({ page }) => {
     await page.goto(`/knowledge?vault=${vault.id}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });

@@ -6,7 +6,6 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { Hono } from 'hono';
 import { knowledgeRoutes } from '../../src/routes/knowledge.js';
 import { openDatabase, closeDatabase, createVault } from '../../src/core/db.js';
-import { RunManager } from '../../src/core/RunManager.js';
 import { VaultWatcher } from '../../src/core/vault-watcher.js';
 
 const JSON_HDR = { 'Content-Type': 'application/json' };
@@ -23,7 +22,7 @@ describe('写路径索引挂钩', () => {
     const db = openDatabase(tempDir);
     V = createVault(db, 'hook-vault', vaultDir).id;
     const root = new Hono();
-    root.route('/api/knowledge', knowledgeRoutes(db, new RunManager(), new VaultWatcher(db)));
+    root.route('/api/knowledge', knowledgeRoutes(db, new VaultWatcher(db)));
     app = root;
   });
 

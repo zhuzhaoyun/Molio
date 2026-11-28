@@ -252,14 +252,13 @@ test.describe('KB chat entry (scoped buttons)', () => {
     expect(resolveRequests).toBe(1);
   });
 
-  test('💬问答 empty-state CTA also in 未选择文件 state (wiki initialized, no file)', async ({ page }) => {
-    // wiki/INDEX.md 存在 → wikiInitialized=true → 空状态走「未选择文件」分支
+  test('💬问答 empty-state CTA also in blank-page state (wiki initialized, no file)', async ({ page }) => {
+    // wiki/INDEX.md 存在 → wikiInitialized=true → 空状态走空白标签页（kb-blank-page）分支
     // （放 describe 末尾：写 INDEX.md 会翻转后续测试的 wiki 状态）
     fs.mkdirSync(path.join(vault.path, 'wiki'), { recursive: true });
     fs.writeFileSync(path.join(vault.path, 'wiki', 'INDEX.md'), '# Index\n');
     await page.goto(`/knowledge?vault=${vault.id}`);
-    // 限定 .kb-main：文件面板的「Empty vault」也用 .kb-empty-state，不限定会 strict 冲突
-    await expect(page.locator('.kb-main .kb-empty-state')).toContainText('未选择文件');
+    await expect(page.getByTestId('kb-blank-page')).toBeVisible();
     const cta = page.locator('[data-testid="kb-empty-ask-cta"]');
     await expect(cta).toBeVisible();
     await cta.click();

@@ -51,3 +51,6 @@ apps/cloud/molio-cloud-deploy.zip
 
 # 发布时从根 LICENSE 拷贝（同 apps/cli 约定），不入仓
 packages/dsh-plugin-molio/LICENSE
+
+/.harness-build/
+/vendor/deepseek-harness/

@@ -18,7 +18,8 @@
  * If per-vault opt-outs ever become a real need again, re-add them as a filter
  * here — the sync layer below already fans out per vault and wouldn't change.
  *
- * Scope: sync targets ONLY registered vaults' `<vault.path>/.claude/skills/`,
+ * The DSH preinstall provisions bundled skills in the registered vault's .agents/skills.
+ * The standalone service syncs to registered vaults' `<vault.path>/.claude/skills/`,
  * so skills reach runs whose cwd resolves to a vault. Runs without a vault
  * (pre-vault home chat, channels whose defaultCwd is not a vault path) do not
  * see library/bundled skills.
@@ -39,6 +40,7 @@
  * degrade to a warning, never abort vault provisioning (see default-vault.ts).
  */
 import path from 'node:path';
+import { installHarnessProjectSkills } from './harness-project.js';
 import type Database from 'better-sqlite3';
 import type { SkillManifestEntry, Vault } from '@molio/contracts';
 import { listVaults } from '../db.js';
@@ -74,6 +76,7 @@ export function getEffectiveSkillIds(db: Database.Database, vaultId: string): st
  */
 export function reconcileVault(db: Database.Database, vault: Vault, opts?: SkillPathsOpts): void {
   try {
+    if (process.env['MOLIO_HARNESS_SIDECAR'] === '1') return installHarnessProjectSkills(vault.path);
     const effective = getEffectiveSkills(db, vault.id);
 
     // library → molio-- single-file sync (orphan cleanup included).

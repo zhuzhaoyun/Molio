@@ -696,3 +696,33 @@ test('选择残留回归（终审 Important-2）：trunk 选中簇后切全量�
     .toBe(false);
   expect(await page.evaluate(() => window.__graphEngine?.getSelectedKey())).toBeNull();
 });
+
+test('预装版全库图谱逐节点显示，枝干选择在本地服务换端口后仍生效', async ({ page }) => {
+  test.skip(process.env.VITE_MOLIO_HARNESS !== '1', 'Harness distribution');
+  const data = await (await fetch(DAEMON_API + '/graph/' + vaultId)).json();
+  const keys = data.nodes.map((node: { key: string }) => node.key).sort();
+  expect(keys.length).toBeGreaterThan(500);
+  const route = '/knowledge?vault=' + vaultId + '&panel=graph';
+  await page.goto(route);
+  const toggle = page.getByTestId('graph-view-mode-toggle');
+  await expect(toggle).toHaveAttribute('aria-pressed', 'false');
+  await expect.poll(() => page.evaluate(() => (window.__graphEngine?.getSnapshot()?.nodes ?? [])
+    .map(node => node.key).sort()), { timeout: 15000 })
+    .toEqual(keys);
+  await page.locator('.kb-tree-group-label').filter({ hasText: '主题00' }).first().click({ button: 'right' });
+  await page.getByTestId('kb-ctx-local-graph').click();
+  await expect(page.getByTestId('graph-scope-back')).toBeVisible();
+  await page.evaluate(route => {
+    history.pushState({}, '', route);
+    dispatchEvent(new PopStateEvent('popstate'));
+  }, route);
+  await expect(page.getByTestId('graph-scope-back')).toHaveCount(0);
+  await expect.poll(() => page.evaluate(() => window.__graphEngine?.getSnapshot()?.nodes.length)).toBe(keys.length);
+  await toggle.click();
+  await waitForTrunkNodes(page);
+  // A new sidecar port has a fresh localStorage origin but shares the desktop partition's host cookie.
+  await page.evaluate(() => localStorage.removeItem('molio.graph.settings'));
+  await page.goto(route);
+  await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+  await waitForTrunkNodes(page);
+});

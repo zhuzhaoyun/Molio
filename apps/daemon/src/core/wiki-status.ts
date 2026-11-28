@@ -25,13 +25,19 @@ import { isPrunedDirName, MAX_DIR_ENTRIES } from './vault-prune.js';
 
 const LOG_REL = path.join('wiki', 'log.md');
 const SOURCES_DIR_REL = path.join('wiki', 'sources');
+/** Max bytes to read from a wiki/sources/*.md header when extracting YAML frontmatter. */
+const FRONTMATTER_READ_BYTES = 16 * 1024;
+/** Guards for the legacy name-mention blob fallback so giant generated wikis never stall tree scans. */
+const MAX_WIKI_BLOB_FILES = 1500;
+const MAX_WIKI_BLOB_FILE_BYTES = 512 * 1024;
 
 interface ParsedWiki {
   /** normalized key → latest ingest time (ms) */
   ingestedAt: Map<string, number>;
   latestBuildAt: number;
-  /** Normalized text of all wiki/*.md — for the name-mention fallback. */
+  /** Normalized text of wiki/*.md — populated lazily only when strict signals miss. */
   wikiBlob: string;
+  wikiBlobLoaded: boolean;
   /** Approximate last wiki activity time (ms). */
   wikiActivityAt: number;
 }
@@ -41,6 +47,12 @@ const cache = new Map<string, { token: string; parsed: ParsedWiki }>();
 // ─── public API ───
 
 export async function annotateTreeStatus(vaultPath: string, nodes: TreeNode[]): Promise<void> {
+  // Fast exit: annotateNodes skips the entire `wiki/` subtree (wiki pages are
+  // products, not ingest sources). Ready-made / pure-wiki vaults have 0 non-wiki
+  // files — skip all disk stats and wiki reads immediately.
+  const nonWikiCount = countFiles(nodes);
+  if (nonWikiCount === 0) return;
+
   const logPath = path.join(vaultPath, LOG_REL);
   const sourcesDir = path.join(vaultPath, SOURCES_DIR_REL);
   const logExists = fs.existsSync(logPath);
@@ -49,12 +61,15 @@ export async function annotateTreeStatus(vaultPath: string, nodes: TreeNode[]): 
 
   let parsed: ParsedWiki;
   try {
-    parsed = parseCached(vaultPath, logPath, sourcesDir, logExists, sourcesExist);
+    parsed = parseStrictCached(vaultPath, logPath, sourcesDir, logExists, sourcesExist);
   } catch {
     return;
   }
 
-  const mentionEnabled = countFiles(nodes) <= MENTION_CAP;
+  const mentionEnabled = nonWikiCount <= MENTION_CAP;
+  if (mentionEnabled && !parsed.wikiBlobLoaded && hasUnmatchedSource(nodes, parsed)) {
+    ensureWikiBlob(vaultPath, parsed);
+  }
   annotateNodes(nodes, parsed, mentionEnabled);
 }
 
@@ -62,9 +77,9 @@ export function invalidateLogCache(vaultPath: string): void {
   cache.delete(vaultPath);
 }
 
-// ─── cache + parse (single-pass wiki walk) ───
+// ─── cache + two-stage parse (strict frontmatter/log first, lazy wiki blob fallback) ───
 
-function parseCached(
+function parseStrictCached(
   vaultPath: string,
   logPath: string,
   sourcesDir: string,
@@ -78,55 +93,110 @@ function parseCached(
   const cached = cache.get(vaultPath);
   if (cached && cached.token === token) return cached.parsed;
 
-  const parsed: ParsedWiki = { ingestedAt: new Map(), latestBuildAt: 0, wikiBlob: '', wikiActivityAt: 0 };
+  const parsed: ParsedWiki = {
+    ingestedAt: new Map(),
+    latestBuildAt: 0,
+    wikiBlob: '',
+    wikiBlobLoaded: false,
+    wikiActivityAt: logMtime || dirMtime,
+  };
   if (logExists) {
     parseLogContent(fs.readFileSync(logPath, 'utf-8'), parsed);
   }
-  // Single-pass wiki walk: build the text blob AND collect sources-page
-  // frontmatter in one traversal.  Avoids reading sources pages twice.
-  walkWiki(path.join(vaultPath, 'wiki'), parsed);
-  parsed.wikiActivityAt = logMtime || dirMtime;
+  if (sourcesExist) {
+    collectSourcesDirFrontmatter(sourcesDir, parsed);
+  }
 
   cache.set(vaultPath, { token, parsed });
   return parsed;
 }
 
-/** Walk wiki/**​/*.md — build the normalized blob and collect each sources-page's
- *  frontmatter (page mtime + `sources:` list). */
-function walkWiki(wikiDir: string, out: ParsedWiki): void {
-  let blob = '';
+/** Read only the frontmatter header of each wiki/sources/*.md (page mtime + `sources:` list). */
+function collectSourcesDirFrontmatter(sourcesDir: string, out: ParsedWiki): void {
+  let entries: fs.Dirent[];
+  try {
+    entries = fs.readdirSync(sourcesDir, { withFileTypes: true });
+  } catch {
+    return;
+  }
+  if (entries.length > MAX_DIR_ENTRIES) return;
+  for (const e of entries) {
+    if (!e.isFile() || !e.name.endsWith('.md') || isPrunedDirName(e.name)) continue;
+    const p = path.join(sourcesDir, e.name);
+    let pageMtime = 0;
+    let head = '';
+    let fd: number | undefined;
+    try {
+      fd = fs.openSync(p, 'r');
+      const st = fs.fstatSync(fd);
+      pageMtime = st.mtimeMs;
+      const len = Math.min(FRONTMATTER_READ_BYTES, st.size);
+      if (len > 0) {
+        const buf = Buffer.allocUnsafe(len);
+        const bytesRead = fs.readSync(fd, buf, 0, len, 0);
+        head = buf.toString('utf-8', 0, bytesRead);
+      }
+    } catch {
+      continue;
+    } finally {
+      if (fd !== undefined) {
+        try { fs.closeSync(fd); } catch { /* ignore */ }
+      }
+    }
+    for (const src of extractSourcesList(head)) {
+      for (const key of keysFor(src)) {
+        record(out.ingestedAt, key, pageMtime);
+      }
+    }
+  }
+}
+
+function hasUnmatchedSource(nodes: TreeNode[], parsed: ParsedWiki): boolean {
+  for (const node of nodes) {
+    if (node.path === 'wiki' || node.path.startsWith('wiki/')) continue;
+    if (node.type === 'directory' && node.children) {
+      if (hasUnmatchedSource(node.children, parsed)) return true;
+      continue;
+    }
+    if (node.type === 'file') {
+      if (matchStrict(node, parsed) === 0 && normalize(stripMd(node.name)).length >= MIN_NORMALIZED_LEN) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+function ensureWikiBlob(vaultPath: string, out: ParsedWiki): void {
+  out.wikiBlobLoaded = true;
+  const wikiDir = path.join(vaultPath, 'wiki');
+  const chunks: string[] = [];
+  let filesRead = 0;
   const walk = (d: string) => {
+    if (filesRead >= MAX_WIKI_BLOB_FILES) return;
     let entries: fs.Dirent[];
     try { entries = fs.readdirSync(d, { withFileTypes: true }); } catch { return; }
     if (entries.length > MAX_DIR_ENTRIES) return;
     for (const e of entries) {
+      if (filesRead >= MAX_WIKI_BLOB_FILES) return;
       if (isPrunedDirName(e.name)) continue;
       const p = path.join(d, e.name);
       if (e.isDirectory()) {
         walk(p);
       } else if (e.isFile() && e.name.endsWith('.md')) {
-        let content: string;
-        try { content = fs.readFileSync(p, 'utf-8'); } catch { continue; }
-        blob += '\n' + content;
-        // If this is a sources-page, extract its frontmatter
-        if (d === path.join(wikiDir, 'sources')) {
-          collectSourcesPage(p, e.name, content, out);
+        try {
+          const st = fs.statSync(p);
+          if (st.size > MAX_WIKI_BLOB_FILE_BYTES) continue;
+          chunks.push(fs.readFileSync(p, 'utf-8'));
+          filesRead++;
+        } catch {
+          continue;
         }
       }
     }
   };
   walk(wikiDir);
-  out.wikiBlob = normalize(blob);
-}
-
-function collectSourcesPage(pagePath: string, _name: string, content: string, out: ParsedWiki): void {
-  let pageMtime = 0;
-  try { pageMtime = fs.statSync(pagePath).mtimeMs; } catch { return; }
-  for (const src of extractSourcesList(content)) {
-    for (const key of keysFor(src)) {
-      record(out.ingestedAt, key, pageMtime);
-    }
-  }
+  out.wikiBlob = chunks.length > 0 ? normalize(chunks.join('\n')) : '';
 }
 
 // ─── tree annotation ───

@@ -236,8 +236,14 @@ interface UseKnowledgeReturn {
   forceLoadFile: () => Promise<void>;
 }
 
+async function listPickerVaults(): Promise<Vault[]> {
+  return api.listVaults();
+}
+
 export function useKnowledge(): UseKnowledgeReturn {
-  const [vaults, setVaults] = useState<Vault[]>([]);
+  const [vaults, setVaults] = useState<Vault[]>(() =>
+    vaultStore.getVaultsLoaded() ? vaultStore.getVaults() : [],
+  );
   // Mirror vaults in a ref so async callbacks (create/open/delete) can compute
   // the next list without reading a stale closure — and without putting the
   // vaultStore sync *inside* the setVaults updater (that side effect runs in
@@ -254,13 +260,15 @@ export function useKnowledge(): UseKnowledgeReturn {
   const [treeError, setTreeError] = useState<string | null>(null);
   /** 树请求序号：并发刷新（创建/导入/聚焦/SSE/手动）只认最后发起的那一次。 */
   const treeSeqRef = useRef(0);
+  const recentTrees = useRef(new Map<string, TreeNode[]>());
+  const lastTreeLoadRef = useRef<{ vaultId: string; at: number }>({ vaultId: '', at: 0 });
   // 每次收到「库变了」的信号就 +1。文件树自己重取即可，但别的视图（图谱）需要知道
   // 「该重取了」这件事本身——把信号变成可订阅的计数器，比让每个视图各自开一条 SSE 便宜。
   const [treeRevision, setTreeRevision] = useState(0);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [fileContent, setFileContent] = useState<FileContent | null>(null);
   const [fileLoadError, setFileLoadError] = useState<string | null>(null);
-  const [history, setHistory] = useState<KbHistoryEntry[]>([]);
+  const [history] = useState<KbHistoryEntry[]>([]);
   const [panelWidth, setPanelWidth] = useState(260);
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(false);
@@ -315,7 +323,7 @@ export function useKnowledge(): UseKnowledgeReturn {
     let cancelled = false;
     (async () => {
       try {
-        const list = await api.listVaults();
+        const list = await listPickerVaults();
         if (cancelled) return;
         setVaults(list);
         vaultStore.setVaults(list); // shared store handles auto-selection
@@ -328,7 +336,7 @@ export function useKnowledge(): UseKnowledgeReturn {
 
   /** Re-fetch the vault list into both local state and the shared store. */
   const refreshVaults = useCallback(async () => {
-    const list = await api.listVaults();
+    const list = await listPickerVaults();
     setVaults(list);
     vaultStore.setVaults(list);
   }, []);
@@ -354,15 +362,24 @@ export function useKnowledge(): UseKnowledgeReturn {
    */
   const loadTree = useCallback(async (vaultId: string): Promise<boolean> => {
     const seq = ++treeSeqRef.current;
+    lastTreeLoadRef.current = { vaultId, at: Date.now() };
     try {
       const t = await api.getFileTree(vaultId);
       if (seq !== treeSeqRef.current) return true; // 已被更新的请求取代
+      lastTreeLoadRef.current = { vaultId, at: Date.now() };
+      const recent = recentTrees.current;
+      recent.delete(vaultId);
+      recent.set(vaultId, t);
+      if (recent.size > 6) recent.delete(recent.keys().next().value!);
       setTree(t);
       setTreeVaultId(vaultId);
       setTreeError(null);
       return true;
     } catch (err) {
       if (seq !== treeSeqRef.current) return true;
+      recentTrees.current.delete(vaultId);
+      setTree([]);
+      setTreeVaultId(null);
       setTreeError(err instanceof Error ? err.message : String(err));
       return false;
     }
@@ -379,21 +396,22 @@ export function useKnowledge(): UseKnowledgeReturn {
 
     let cancelled = false;
     (async () => {
-      setLoading(true);
-      setTree([]);
+      const preview = recentTrees.current.get(activeVaultId);
+      setLoading(!preview);
+      setTree(preview ?? []);
       setTreeVaultId(null);
       setTreeError(null);
-      const ok = await loadTree(activeVaultId);
-      if (cancelled) return;
+
       // Only clear selection on explicit vault switch, not on mount/remount
       // (tab restore sets selectedFile via KnowledgeBasePage useEffect)
-      if (ok && isVaultSwitch) {
+      if (isVaultSwitch) {
         setSelectedFile(null);
         setFileContent(null);
       }
-      setLoading(false);
+      await loadTree(activeVaultId);
+      if (!cancelled) setLoading(false);
     })();
-    return () => { cancelled = true; };
+    return () => { cancelled = true; treeSeqRef.current++; };
   }, [activeVaultId, loadTree]);
 
   // Check wiki status when vault changes
@@ -419,11 +437,17 @@ export function useKnowledge(): UseKnowledgeReturn {
     if (!activeVaultId) return;
 
     let lastFocusTime = Date.now();
-    const MIN_INTERVAL = 1000; // Prevent rapid refreshes
+    const MIN_FOCUS_INTERVAL = 2500; // Prevent rapid refreshes on modal/iframe focus transitions
 
     const handleFocus = async () => {
       const now = Date.now();
-      if (now - lastFocusTime < MIN_INTERVAL) return;
+      if (now - lastFocusTime < MIN_FOCUS_INTERVAL) return;
+      if (
+        lastTreeLoadRef.current.vaultId === activeVaultId &&
+        now - lastTreeLoadRef.current.at < MIN_FOCUS_INTERVAL
+      ) {
+        return;
+      }
       lastFocusTime = now;
       await loadTree(activeVaultId);
     };
@@ -469,21 +493,6 @@ export function useKnowledge(): UseKnowledgeReturn {
     return () => { cancelled = true; };
   }, [activeVaultId, selectedFile, clearFileLoadRetry, scheduleFileLoadRetry]);
 
-  // Load history when vault changes
-  useEffect(() => {
-    if (!activeVaultId) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const h = await api.getKbHistory(activeVaultId);
-        if (!cancelled) setHistory(h);
-      } catch {
-        if (!cancelled) setHistory([]);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [activeVaultId]);
-
   const activeVault = vaults.find((v) => v.id === activeVaultId) ?? null;
 
   // Switching does NOT dismiss the manager: the manager is also where a vault's
@@ -505,7 +514,7 @@ export function useKnowledge(): UseKnowledgeReturn {
 
   const openVault = useCallback(async (path: string) => {
     // Derive a name from the last path segment
-    const name = path.split(/[\/]/).pop() || '未命名知识库';
+    const name = path.split(/[\\/]+/).filter(Boolean).pop() || '未命名知识库';
     const vault = await api.createVault({ name, path, description: `从本地文件夹打开: ${path}` });
     const next = [vault, ...vaultsRef.current];
     setVaults(next);

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { openDatabase } from '../../src/core/db.js';
+import { openDatabase, setActiveVaultId } from '../../src/core/db.js';
 import { VaultIndexSweeper } from '../../src/core/vault-search.js';
 
 let vaultDir: string;
@@ -69,5 +69,27 @@ describe('VaultIndexSweeper', () => {
     await sleep(120);
     assert.equal(hit('全量预索引标记QAZWS'), true);
     sw.stop();
+  });
+
+  test('多库 scheduleAll 优先激活库并串行完成全部库索引', async () => {
+    const vaultDir2 = fs.mkdtempSync(path.join(os.tmpdir(), 'molio-swp2-'));
+    try {
+      db.prepare('INSERT INTO vaults (id, name, path, created_at) VALUES (?,?,?,?)')
+        .run('v2', '库2', vaultDir2, Date.now());
+      setActiveVaultId(db, 'v2');
+      fs.writeFileSync(path.join(vaultDir, 'v1doc.md'), '第一库标记UIOP', 'utf-8');
+      fs.writeFileSync(path.join(vaultDir2, 'v2doc.md'), '第二库激活优先HJKL', 'utf-8');
+
+      const sw = new VaultIndexSweeper(db, { debounceMs: 15 });
+      sw.scheduleAll();
+      await sleep(150);
+      assert.equal(hit('第一库标记UIOP'), true);
+      const hitV2 = !!db.prepare('SELECT 1 FROM vault_files_fts WHERE vault_files_fts MATCH ? AND vault_id=?')
+        .get('"第二库激活优先HJKL"', 'v2');
+      assert.equal(hitV2, true);
+      sw.stop();
+    } finally {
+      fs.rmSync(vaultDir2, { recursive: true, force: true });
+    }
   });
 });

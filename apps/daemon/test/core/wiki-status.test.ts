@@ -261,4 +261,62 @@ describe('wiki-status (log.md-derived ingest state)', () => {
       assert.equal(statusOf(nodes, 'Clippings/foo.md'), 'tracked-clean');
     });
   });
+
+  describe('lazy wiki-blob fast paths (vault-switch perf)', () => {
+    it('skips reading wiki/*.md completely when vault only has files under wiki/', async () => {
+      mkdirSync(join(vault, 'wiki', 'entities'), { recursive: true });
+      writeLog(vault, '## 2026-06-25 12:00 | build | initial build\n');
+      writeFileSync(join(vault, 'wiki', 'entities', 'hero.md'), '# Hero\n');
+
+      const fsMod = await import('node:fs');
+      let wikiReads = 0;
+      const origRead = fsMod.default.readFileSync;
+      fsMod.default.readFileSync = ((p: Parameters<typeof origRead>[0], ...rest: unknown[]) => {
+        if (String(p).includes('entities') || String(p).endsWith('log.md')) wikiReads++;
+        return (origRead as (...args: unknown[]) => unknown)(p, ...rest);
+      }) as typeof origRead;
+      try {
+        const nodes = scanTree(vault);
+        await annotateTreeStatus(vault, nodes);
+        assert.equal(wikiReads, 0, 'pure-wiki vaults should perform zero wiki file reads');
+      } finally {
+        fsMod.default.readFileSync = origRead;
+      }
+    });
+
+    it('skips reading wiki/entities/*.md when all non-wiki sources match strict signals, and falls back lazily when unmatched', async () => {
+      mkdirSync(join(vault, 'wiki', 'entities'), { recursive: true });
+      const entityPath = join(vault, 'wiki', 'entities', 'concept.md');
+      writeFileSync(entityPath, '# Concept\nMentions unmatched-long-source-name inside body.\n');
+      const strictSrc = join(vault, 'strict.md');
+      writeFileSync(strictSrc, 'strict');
+      setMtime(strictSrc, '2026-06-20T10:00:00');
+      writeLog(vault, '## 2026-06-25 12:00 | ingest | strict.md\n');
+
+      const fsMod = await import('node:fs');
+      let entityReads = 0;
+      const origRead = fsMod.default.readFileSync;
+      fsMod.default.readFileSync = ((p: Parameters<typeof origRead>[0], ...rest: unknown[]) => {
+        if (String(p) === entityPath) entityReads++;
+        return (origRead as (...args: unknown[]) => unknown)(p, ...rest);
+      }) as typeof origRead;
+      try {
+        const nodes1 = scanTree(vault);
+        await annotateTreeStatus(vault, nodes1);
+        assert.equal(statusOf(nodes1, 'strict.md'), 'tracked-clean');
+        assert.equal(entityReads, 0, 'strict match should not walk wiki/entities');
+
+        // Now add an unmatched source whose >=8-char stem is mentioned in entityPath
+        const fallbackSrc = join(vault, 'unmatched-long-source-name.md');
+        writeFileSync(fallbackSrc, 'fallback');
+        setMtime(fallbackSrc, '2026-06-20T10:00:00');
+        const nodes2 = scanTree(vault);
+        await annotateTreeStatus(vault, nodes2);
+        assert.equal(entityReads, 1, 'unmatched source should lazily load wikiBlob once');
+        assert.equal(statusOf(nodes2, 'unmatched-long-source-name.md'), 'tracked-clean');
+      } finally {
+        fsMod.default.readFileSync = origRead;
+      }
+    });
+  });
 });

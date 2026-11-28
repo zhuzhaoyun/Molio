@@ -12,6 +12,7 @@ import type { ScrollIntent } from '../../hooks/useScrollMemory';
 import { useKbTabs, MAX_TABS, type WorkspaceTab } from '../../hooks/useKbTabs';
 import { vaultStore, useActiveVaultId, useVaultsLoaded, useVaults } from '../../stores/vaultStore';
 import { onboardingStore } from '../../stores/onboardingStore';
+import { harnessMode } from '../../harnessMode';
 import { useAgents } from '../../hooks/useAgents';
 import { useOnboardingHint } from '../../hooks/useOnboardingHint';
 import { OnboardingChecklist } from './OnboardingChecklist';
@@ -51,6 +52,7 @@ interface KnowledgeBasePageProps {
 }
 
 interface UrlFileNavigation {
+  keepFileTab?: boolean;
   vaultId: string;
   filePath: string;
 }
@@ -65,7 +67,7 @@ function resolveUrlFileNavigation(
   const vaultId = searchParams.get('vault') || kb.activeVault?.id || kb.vaults[0]?.id || null;
   if (!vaultId) return null;
 
-  return { vaultId, filePath };
+  return { vaultId, filePath, keepFileTab: searchParams.get('open') === 'tab' };
 }
 
 /** Summarize import errors into a human-readable string for toasts. */
@@ -194,6 +196,7 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
     setPendingUrlNav(nav);
     const next = new URLSearchParams(searchParams);
     next.delete('file');
+    next.delete('open');
     next.set('vault', nav.vaultId);
     setSearchParams(next, { replace: true });
   }, [searchParams, kb.vaults, kb.activeVault?.id, setSearchParams]);
@@ -322,23 +325,6 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
   // Pending import files for conflict retry (replaces fragile `as any` function-property hack)
   const pendingImportRef = useRef<{ files: File[]; targetDir: string; oversizedCount: number } | null>(null);
 
-  const handleOpenQa = useCallback(() => {
-    // 上下文跟随可见视图：图谱/发布预览面板激活时，可见上下文是库（vault）而非文档，
-    // 不携带被隐藏的 selectedFile——否则会凭空给新会话绑定、或把活跃会话改绑到
-    // 一个用户当前看不见的文件。openQa 约定 filePath=null = 打开/继续会话且不改绑。
-    const contextHidden = tabs.activeTabId === GRAPH_TAB_ID || tabs.activeTabId === PUBLISH_TAB_ID;
-    panelRef.current?.openQa({
-      filePath: contextHidden ? null : kb.selectedFile ?? null,
-      vaultId: kb.activeVault?.id ?? null,
-      selectedText: null,
-    });
-  }, [tabs.activeTabId, kb.selectedFile, kb.activeVault?.id]);
-
-  const handleAskAboutSelection = useCallback((selectedText: string) => {
-    if (!kb.selectedFile) return;
-    panelRef.current?.openQa({ filePath: kb.selectedFile, vaultId: kb.activeVault?.id ?? null, selectedText });
-  }, [kb.selectedFile, kb.activeVault?.id]);
-
   // ─── Save toast helper (used by file selection and other callbacks) ───
 
   const showToast = useCallback((msg: string) => {
@@ -346,6 +332,52 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
     setSaveToast(msg);
     saveToastTimer.current = setTimeout(() => setSaveToast(null), 2000);
   }, []);
+
+  const openKnowledgeAction = useCallback((
+    mode: 'ask' | 'build' | 'lint' | 'ingest',
+    context: { filePath?: string; selectedText?: string; isDirectory?: boolean } = {},
+  ) => {
+    if (harnessMode) {
+      if (!kb.activeVault) return;
+      const open = window.__electron__?.openKnowledgeConversation;
+      const parentOrigin = window.location.ancestorOrigins?.[0] || (document.referrer && new URL(document.referrer).origin);
+      if (!open && window.parent !== window && parentOrigin && parentOrigin !== 'null') {
+        const vaultId = kb.activeVault.id;
+        void (async () => {
+          let attachment: File | undefined;
+          if (mode === 'ask' && context.filePath && !context.isDirectory) {
+            const response = await fetch(api.rawFileUrl(vaultId, context.filePath));
+            if (!response.ok) throw new Error('无法读取当前笔记');
+            const blob = await response.blob();
+            attachment = new File([blob], context.filePath.split('/').pop()!, { type: blob.type });
+          }
+          window.parent.postMessage({ type: 'molio-draft', context: { mode, vaultId, ...context }, attachment }, parentOrigin);
+        })().catch(error => showToast(error.message || '无法添加笔记附件'));
+        return;
+      }
+      if (!open) {
+        showToast('请在 DSH 中打开 Molio 插件');
+        return;
+      }
+      void open({ mode, vaultId: kb.activeVault.id, vaultPath: kb.activeVault.path, ...context })
+        .catch((error: Error) => showToast(error.message || '无法打开知识库对话'));
+    } else if (mode === 'ask') {
+      panelRef.current?.openQa({
+        vaultId: kb.activeVault?.id ?? null, filePath: context.filePath ?? null, selectedText: context.selectedText ?? null,
+      });
+    } else if (kb.activeVault && agentId) {
+      panelRef.current?.runWikiOp({ mode, ...context });
+    }
+  }, [kb.activeVault, agentId, panelRef, showToast]);
+
+  const handleOpenQa = useCallback(() => {
+    const hideFile = tabs.activeTabId === GRAPH_TAB_ID || tabs.activeTabId === PUBLISH_TAB_ID;
+    openKnowledgeAction('ask', !hideFile && kb.selectedFile ? { filePath: kb.selectedFile } : {});
+  }, [tabs.activeTabId, kb.selectedFile, openKnowledgeAction]);
+
+  const handleAskAboutSelection = useCallback((selectedText: string) => {
+    if (kb.selectedFile) openKnowledgeAction('ask', { filePath: kb.selectedFile, selectedText });
+  }, [kb.selectedFile, openKnowledgeAction]);
 
   /** 显式刷新目录树（右键「刷新目录」/ 错误条「重试」）：成功失败都给反馈。 */
   const handleRefreshTree = useCallback(async () => {
@@ -362,7 +394,7 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
   // 引导动画指向真实按钮：导入 → 文件面板的导入键，提问 → 文档头的问答键，
   // 保存 → 消息工具条。没有可用运行时的那一帧例外：提问键点了也发不出去，
   // 此时动画仍留在 checklist 的「先配置 AI」上。
-  const { agents, loading: agentsLoading, error: agentsError } = useAgents();
+  const { agents, loading: agentsLoading, error: agentsError } = useAgents(!harnessMode);
   // daemon 永远会列出全部已知运行时（包括没装的），「没装」体现在 available
   // 为 false，而不是数组为空——只判 length 会让真机上这条分流永远不生效。
   const noRuntime =
@@ -371,7 +403,7 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
 
   // 只在库列表首次取回时初始化：0 库 → 激活，老用户 → 直接 done。
   useEffect(() => {
-    if (!vaultsLoaded) return;
+    if (harnessMode || !vaultsLoaded) return;
     onboardingStore.init(storeVaults.length);
   }, [vaultsLoaded, storeVaults.length]);
 
@@ -457,7 +489,9 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
    * 前进/后退这类「回到刚才那篇」的调用才传 restore。文档已开在某个标签里
    * （走 activateTab 分支）时一律 restore——那正是「多标签切回」的主场景。
    */
-  const handleSelectFile = useCallback((path: string, opts?: { intent?: ScrollIntent }) => {
+  const handleSelectFile = useCallback((path: string, opts?: { intent?: ScrollIntent; keepFileTab?: boolean }) => {
+    const activeTab = tabs.getActiveTab();
+    const recyclable = activeTab && !activeTab.pinned && (activeTab.type === 'blank' || (activeTab.type === 'file' && !opts?.keepFileTab));
     const action = () => {
       onboardingStore.markOpenOrImport();
       const fileName = path.split('/').pop() ?? path;
@@ -471,10 +505,8 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
       }
       // 换文档（回收当前标签 / 新开标签）：默认「重新开始读」。
       scrollIntentRef.current = opts?.intent ?? 'fresh';
-      const activeTab = tabs.getActiveTab();
       // Recycle the active tab in place iff it is a normal (file/blank) tab and
       // not pinned. Pinned tabs keep their document; special tabs are protected.
-      const recyclable = activeTab && activeTab.pinned !== true && (activeTab.type === 'file' || activeTab.type === 'blank');
       if (recyclable) {
         tabs.updateTab(activeTab.id, { id: tabId, type: 'file', title: fileName, vaultId: activeVaultId ?? undefined, data: undefined, pinned: false });
         kb.selectFile(path);
@@ -491,8 +523,7 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
     // can grow the count, so skip the guard when we'll recycle instead.
     const tabId = `file:${path}`;
     const existingTab = tabs.tabs.find(t => t.id === tabId);
-    const activeTab = tabs.getActiveTab();
-    const willGrow = !existingTab && !(activeTab && activeTab.pinned !== true && (activeTab.type === 'file' || activeTab.type === 'blank'));
+    const willGrow = !existingTab && !recyclable;
     if (willGrow && tabs.tabs.length >= MAX_TABS) {
       showToast(`已达 ${MAX_TABS} 个标签上限，请先关闭某个标签`);
       return;
@@ -564,6 +595,7 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
   useEffect(() => {
     if (searchParams.get('panel') !== 'graph') return;
     if (!activeVaultId) return;
+    setGraphTabScope(null);
     openGraphTab();
     const next = new URLSearchParams(searchParams);
     next.delete('panel');
@@ -643,6 +675,29 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
     if (willSwitchFile) runOrConfirmDiscard(run);
     else run();
   }, [tabs, kb, runOrConfirmDiscard]);
+
+  const lastDocumentTab = useRef<{ vault: typeof activeVaultId; id: string } | null>(null);
+  useEffect(() => {
+    if (!harnessMode) return;
+    const active = tabs.tabs.find(tab => tab.id === tabs.activeTabId);
+    if (active?.type === 'file' || active?.type === 'blank') {
+      lastDocumentTab.current = { vault: activeVaultId, id: active.id };
+    }
+  }, [activeVaultId, tabs.activeTabId, tabs.tabs]);
+
+  useEffect(() => {
+    if (!harnessMode || !activeVaultId || searchParams.get('panel') !== 'files') return;
+    if (tabs.activeTabId === GRAPH_TAB_ID || tabs.activeTabId === PUBLISH_TAB_ID) {
+      const last = lastDocumentTab.current;
+      const file = (last?.vault === activeVaultId && tabs.tabs.find(tab => tab.id === last.id))
+        || tabs.tabs.find(tab => tab.type === 'file' || tab.type === 'blank');
+      if (file) handleActivateTab(file.id);
+      else handleAddTab();
+    }
+    const next = new URLSearchParams(searchParams);
+    next.delete('panel');
+    setSearchParams(next, { replace: true });
+  }, [activeVaultId, searchParams, tabs, handleActivateTab, handleAddTab, setSearchParams]);
 
   /** Toggle a tab's pinned flag (double-click / right-click menu). */
   const handleTogglePin = useCallback((id: string) => {
@@ -728,6 +783,11 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
    * Dock 最近菜单）不读此设置，恒新窗。
    */
   const handleVaultPick = useCallback((id: string) => {
+    if (harnessMode) {
+      kb.setShowVaultSwitcher(false);
+      kb.selectVault(id);
+      return;
+    }
     const pinnedVaultId = new URLSearchParams(window.location.search).get('vault');
     const crossVault = pinnedVaultId !== null && pinnedVaultId !== id;
     if (crossVault && !shouldReuseWindowOnVaultSwitch()) {
@@ -756,14 +816,14 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
       .then((canonical) => {
         if (controller.signal.aborted) return;
         setPendingUrlNav(null);
-        handleSelectFileRef.current(canonical ?? filePath);
+        handleSelectFileRef.current(canonical ?? filePath, { keepFileTab: pendingUrlNav.keepFileTab });
       })
       .catch(() => {
         if (controller.signal.aborted) return;
         // Daemon unreachable / resolve errored — degrade to raw path (pre-fix
         // behavior for this click; file may still open via readFile fallback).
         setPendingUrlNav(null);
-        handleSelectFileRef.current(filePath);
+        handleSelectFileRef.current(filePath, { keepFileTab: pendingUrlNav.keepFileTab });
       });
     return () => controller.abort();
     // Opening a tab changes the selection callback. Keep that callback out of
@@ -801,9 +861,14 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
 
   // Reactive safety net: close tabs whose file no longer exists in the active vault's tree.
   // Triggers on tree refresh (external deletes via VaultWatcher) and vault switches.
+  const checkedTree = useRef<{ vaultId: string; tree: TreeNode[] } | null>(null);
   useEffect(() => {
     const av = kb.activeVault;
     if (!av || kb.treeVaultId !== av.id || kb.tree.length === 0) return;
+    // A link can resolve a newly written file before the watcher delivers its
+    // updated tree. An older snapshot cannot invalidate a newly opened tab.
+    if (checkedTree.current?.vaultId === av.id && checkedTree.current.tree === kb.tree) return;
+    checkedTree.current = { vaultId: av.id, tree: kb.tree };
     const paths = new Set<string>();
     const collect = (nodes: TreeNode[]) => {
       for (const n of nodes) {
@@ -850,12 +915,7 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
     document.addEventListener('mouseup', onUp);
   }, [kb.panelWidth, kb.setPanelWidth]);
 
-  // Wiki operation handlers — 通过 panel 的 runWikiOp 入口下发（互斥/排队在 panel 内部处理）
-  const handleBuildWiki = useCallback(() => {
-    if (!kb.activeVault) return;
-    if (!agentId) return;
-    panelRef.current?.runWikiOp({ mode: 'build' });
-  }, [kb.activeVault, agentId]);
+  const handleBuildWiki = useCallback(() => openKnowledgeAction('build'), [openKnowledgeAction]);
   // 发布当前知识库到资源库：打开/激活页内 publish tab（store per-vault，
   // id 固定即天然单例）。要求登录；未登录挂起登录意图，登录成功后续接打开。
   const openPublishTab = useCallback((vaultId: string) => {
@@ -894,9 +954,8 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
   }, [searchParams, setSearchParams, openPublishTab, activeVaultId]);
 
   const handleIngestFile = useCallback((filePath: string, isDirectory = false) => {
-    if (!agentId) return;
-    panelRef.current?.runWikiOp({ mode: 'ingest', filePath, isDirectory });
-  }, [agentId]);
+    openKnowledgeAction('ingest', { filePath, isDirectory });
+  }, [openKnowledgeAction]);
 
   // Ctrl/Cmd+F — 打开全文搜索（仅 KB 页面）
   useEffect(() => {
@@ -938,7 +997,7 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
     };
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
-  }, [kb.selectedFile, kb.activeVault?.id]);
+  }, [handleOpenQa]);
 
   // ─── New file / folder flows (React dialogs instead of window.prompt) ───
 
@@ -1102,7 +1161,7 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
           if (kb.selectedFile !== node.path) {
             handleSelectFile(node.path);
           }
-          panelRef.current?.openQa({ filePath: node.path, vaultId: kb.activeVault?.id ?? null, selectedText: null });
+          openKnowledgeAction('ask', { filePath: node.path });
         },
       });
     } else if (!readonly) {
@@ -1207,7 +1266,7 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
     }
 
     return items;
-  }, [ctxMenu, kb, hasExternalRoots, showToast, handleNewFile, handleNewFolder, handleSelectFile, handleOpenInNewTab, handleDeleteFile, handleDeleteFolder, openGraphTab, handleRefreshTree]);
+  }, [ctxMenu, kb, hasExternalRoots, showToast, handleNewFile, handleNewFolder, handleSelectFile, handleOpenInNewTab, handleDeleteFile, handleDeleteFolder, openGraphTab, handleRefreshTree, openKnowledgeAction]);
 
   // ─── Inline rename ───
 
@@ -1515,6 +1574,7 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
         tree={kb.tree}
         selectedFile={kb.selectedFile}
         searchQuery={kb.searchQuery}
+        vaultId={kb.activeVault?.id ?? activeVaultId}
         vaultName={kb.activeVault?.name ?? ''}
         hasExternalRoots={hasExternalRoots}
         onSearchChange={kb.setSearchQuery}
@@ -1540,7 +1600,7 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
 
       {/* Tab Bar + Main Content */}
       <div className="kb-main-wrapper">
-        <OnboardingChecklist
+        {!harnessMode && <OnboardingChecklist
           hasVault={storeVaults.length > 0}
           noRuntime={noRuntime}
           onImport={() => kb.setShowImport(true)}
@@ -1554,7 +1614,7 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
           }}
           onOpenHistory={() => navigate('/history')}
           onOpenRuntimeSettings={() => navigate('/settings?tab=runtimes')}
-        />
+        />}
         <KbTabBar
           tabs={tabs.tabs}
           activeTabId={tabs.activeTabId}
@@ -1591,7 +1651,8 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
               <button
                 type="button"
                 className="kb-btn kb-btn-ghost"
-                onClick={() => setCheckupOpen(true)}
+                onClick={() => (harnessMode ? openKnowledgeAction('lint') : setCheckupOpen(true))}
+                disabled={harnessMode && !kb.activeVault}
                 title={t('kb.molioCheckup')}
                 data-testid="kb-btn-lint-wiki"
               >
@@ -1643,6 +1704,9 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
               hasFiles={kb.tree.length > 0}
               onAskAboutSelection={handleAskAboutSelection}
               onOpenOutline={() => setShowOutline(true)}
+              blankTab={tabs.getActiveTab()?.type === 'blank'}
+              onNewNote={() => handleNewFile()}
+              onSearchFiles={() => setShowSearch(true)}
               onAskAboutFile={handleOpenQa}
               guideAsk={onboardingHint === 'ask' && !noRuntime}
               showFileName={true}
@@ -1738,7 +1802,7 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
                   onContentChange={() => {}}
                   onCopy={() => {}}
                   onPublish={() => {}}
-                  onBuildWiki={() => {}}
+                  onBuildWiki={handleBuildWiki}
                   showFileName={true}
                   onNavigateToFile={handleNavigateToFile}
                   scrollIntentRef={companionScrollIntentRef}

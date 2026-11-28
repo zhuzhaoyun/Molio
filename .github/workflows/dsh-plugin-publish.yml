@@ -65,7 +65,10 @@ jobs:
         run: pnpm --filter @molio/contracts build
 
       - name: Build & test plugin
-        run: pnpm --filter dsh-plugin-molio test
+        run: |
+          pnpm --filter dsh-plugin-molio build
+          pnpm --filter dsh-plugin-molio test
+          node --test packages/dsh-plugin-molio/test/bundle.test.mjs
 
       - name: Guard NPM_TOKEN
         shell: bash
@@ -105,17 +108,21 @@ jobs:
         run: |
           set -euo pipefail
           VERSION=$(node -p "require('./packages/dsh-plugin-molio/package.json').version")
-          # 显式查 npmjs：npmmirror 是同步镜像有延迟，且根 .npmrc 默认指向它。
-          # 传播通常 <10s 但偶发更久（dsh-plugin-v0.1.0 首发时 sleep 10 单次探测
-          # 在发布成功 11s 后仍 404 误报失败）——改为重试轮询，最长 ~2 分钟。
-          for i in $(seq 1 12); do
-            PUBLISHED=$(npm view dsh-plugin-molio@"$VERSION" version --registry=https://registry.npmjs.org 2>/dev/null || echo "")
-            if [[ "$PUBLISHED" == "$VERSION" ]]; then
-              echo "✅ dsh-plugin-molio@$VERSION 已发布"
-              exit 0
+          # 直接请求单版本端点 /dsh-plugin-molio/$VERSION，绕开 npm view 拉取整包 packument
+          # 时命中的 npmjs CDN 缓存延迟（3.7MB 包发布后整包元数据常有 3~5 分钟缓存）。
+          LAST_ERR=""
+          for i in $(seq 1 18); do
+            if META=$(curl -fsSL "https://registry.npmjs.org/dsh-plugin-molio/$VERSION" 2>/tmp/npm-view.err); then
+              PUBLISHED=$(node -e 'console.log(JSON.parse(process.argv[1]).version || "")' "$META" 2>/dev/null || echo "")
+              if [[ "$PUBLISHED" == "$VERSION" ]]; then
+                echo "✅ dsh-plugin-molio@$VERSION 已发布"
+                exit 0
+              fi
+            else
+              LAST_ERR=$(cat /tmp/npm-view.err || true)
             fi
-            echo "registry 暂未可见（第 $i/12 次），10s 后重试..."
+            echo "registry 暂未可见（第 $i/18 次），10s 后重试..."
             sleep 10
           done
-          echo "❌ registry 上未查到 dsh-plugin-molio@$VERSION（发布可能失败）"
+          echo "❌ registry 上未查到 dsh-plugin-molio@$VERSION（最后一次输出：$LAST_ERR）"
           exit 1

@@ -62,7 +62,7 @@ export function VaultSwitcherModal({
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-strong)' }}>{vault.name}</div>
                     <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                      {vault.path} &middot; {vault.fileCount} files
+                      {vault.path}{vault.fileCount !== undefined && ` · ${vault.fileCount} files`}
                     </div>
                   </div>
                   {vault.id === activeVaultId && (

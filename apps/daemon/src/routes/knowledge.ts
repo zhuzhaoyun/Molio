@@ -55,7 +55,6 @@ import { searchVaultFiles, indexVaultFile, removeVaultFile, removeVaultDir, ensu
 import { buildTreeInWorker } from '../core/vault-worker.js';
 import { TreeCache } from '../core/tree-cache.js';
 import { VAULT_TREE_CHANGED_EVENT, type VaultWatcher } from '../core/vault-watcher.js';
-import type { RunManager } from '../core/RunManager.js';
 import { reconcileVault } from '../core/skills/vault-config.js';
 import { FileTooLargeError } from '../core/encoding.js';
 import { createSampleVault, SampleVaultPathError } from '../core/sample-vault.js';
@@ -72,7 +71,6 @@ const ILLEGAL_LABEL = /[\\/:*?"<>|]/;
 
 export function knowledgeRoutes(
   db: Database.Database,
-  runManager: RunManager,
   vaultWatcher: VaultWatcher,
   /**
    * @param treeCache 文件树缓存。默认自建一个（每个 app 实例一份）——server.ts 会
@@ -91,11 +89,29 @@ export function knowledgeRoutes(
 ): Hono {
   const app = new Hono();
 
+  const uncachedTreeInflight = new Map<string, Promise<TreeNode[]>>();
+  const buildUncachedTreeDedup = (vaultId: string, vaultPath: string): Promise<TreeNode[]> => {
+    const existing = uncachedTreeInflight.get(vaultId);
+    if (existing) return existing;
+    const job = buildTreeInWorker(vaultPath, externalRefs(db, vaultId)).finally(() => {
+      if (uncachedTreeInflight.get(vaultId) === job) {
+        uncachedTreeInflight.delete(vaultId);
+      }
+    });
+    uncachedTreeInflight.set(vaultId, job);
+    return job;
+  };
+
   // ─── Vaults ───
 
   // GET /api/knowledge/vaults — list all vaults
   app.get('/vaults', (c) => {
-    const vaults = listVaults(db).map((v) => ({
+    const rows = listVaults(db);
+    c.header('Vary', 'Prefer');
+    if (c.req.header('Prefer') === 'return=minimal') {
+      return c.json({ vaults: rows.map(({ fileCount: _count, ...metadata }) => metadata) });
+    }
+    const vaults = rows.map((v) => ({
       ...v,
       fileCount: countFilesSafe(v.path),
     }));
@@ -176,6 +192,11 @@ export function knowledgeRoutes(
       setActiveVaultId(db, null);
       return c.json({ vaultId: null, vault: null });
     }
+    c.header('Vary', 'Prefer');
+    if (c.req.header('Prefer') === 'return=minimal') {
+      const { fileCount: _count, ...metadata } = vault;
+      return c.json({ vaultId: id, vault: metadata });
+    }
     return c.json({ vaultId: id, vault: { ...vault, fileCount: countFilesSafe(vault.path) } });
   });
 
@@ -204,14 +225,14 @@ export function knowledgeRoutes(
     if (!vault) {
       return c.json({ error: { code: 'NOT_FOUND', message: 'Vault not found' } }, 404);
     }
-    onVaultTouched?.(vault);
 
     try {
       // 树缓存与图谱缓存（#337）同一套规矩：watcher 未就绪 → 没有失效信号 →
       // 每次重扫（= 无缓存时的行为），绝不让「没有信号」冒充「内容没变」。
       const tree = isTreeCacheable(vault.id)
         ? await treeCache.getOrBuild(vault.id, () => buildTreeInWorker(vault.path, externalRefs(db, vault.id)))
-        : await buildTreeInWorker(vault.path, externalRefs(db, vault.id));
+        : await buildUncachedTreeDedup(vault.id, vault.path);
+      onVaultTouched?.(vault);
       return c.json({ tree });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to scan vault';

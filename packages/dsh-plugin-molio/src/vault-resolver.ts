@@ -19,7 +19,7 @@ export async function resolveVault(
   signal?: AbortSignal,
 ): Promise<Vault> {
   if (vaultArg !== undefined && vaultArg.trim() !== '') {
-    const vaults = await client.listVaults(signal);
+    const vaults = await client.listVaults(signal, { minimal: true });
     const arg = vaultArg.trim();
 
     const byId = vaults.filter((v) => v.id === arg);
@@ -40,7 +40,7 @@ export async function resolveVault(
     throw new VaultNotFoundError(`未找到知识库「${arg}」。可用知识库：\n${available}`);
   }
 
-  const { vault } = await client.getActiveVault(signal);
+  const { vault } = await client.getActiveVault(signal, { minimal: true });
   if (!vault) {
     throw new VaultNotFoundError(
       '未指定知识库，且 Molio 当前没有打开的知识库。请在 Molio 中选择一个知识库，或用 vaultId 参数指定',

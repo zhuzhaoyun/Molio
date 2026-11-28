@@ -7,7 +7,6 @@ import { Hono } from 'hono';
 import { knowledgeRoutes } from '../../src/routes/knowledge.js';
 import { maintenanceRoutes } from '../../src/routes/maintenance.js';
 import { openDatabase, closeDatabase, createVault } from '../../src/core/db.js';
-import { RunManager } from '../../src/core/RunManager.js';
 import { VaultWatcher } from '../../src/core/vault-watcher.js';
 
 describe('搜索路由（FTS5 实现）', () => {
@@ -22,7 +21,7 @@ describe('搜索路由（FTS5 实现）', () => {
     const db = openDatabase(tempDir);
     vaultId = createVault(db, 'test-vault', vaultDir).id;
     const root = new Hono();
-    root.route('/api/knowledge', knowledgeRoutes(db, new RunManager(), new VaultWatcher(db)));
+    root.route('/api/knowledge', knowledgeRoutes(db, new VaultWatcher(db)));
     root.route('/api/maintenance', maintenanceRoutes(db));
     app = root;
   });

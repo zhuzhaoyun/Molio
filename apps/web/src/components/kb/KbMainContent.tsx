@@ -31,7 +31,7 @@ import { preprocessKbMarkdown } from '../../hooks/useKnowledge';
 import { useScrollMemory, type ScrollIntent } from '../../hooks/useScrollMemory';
 import { api } from '../../api/client';
 import {
-  BookIcon, BoxIcon, BulbIcon, ChatIcon, FileIcon, FileType2Icon, FolderInputIcon,
+  BookIcon, BoxIcon, BulbIcon, ChatIcon, EditIcon, SearchIcon, FileIcon, FileType2Icon, FolderInputIcon,
   LinkIcon, NewsIcon, PaperclipIcon, PhoneIcon, QuestionIcon, ScaleIcon, UserIcon, WarningIcon,
 } from '../icons';
 import type { ComponentType } from 'react';
@@ -149,7 +149,7 @@ interface KbMainContentProps {
   onSave?: () => void;
   onCopy: () => void;
   onPublish: () => void;
-  onBuildWiki: () => void;
+  onBuildWiki?: () => void;
   /** Open the import dialog (file panel toolbar's 导入 按钮的双生入口)。 */
   onImport?: () => void;
   /** 打开知识库管理器（建库/打开已有库）。用于「一个库都没有」的空态。 */
@@ -177,6 +177,9 @@ interface KbMainContentProps {
   /** Open the document outline panel. */
   onOpenOutline?: () => void;
   /** Open the unified KB chat panel in QA mode for the current file. */
+  blankTab?: boolean;
+  onNewNote?: () => void;
+  onSearchFiles?: () => void;
   onAskAboutFile?: () => void;
   /** First-run guide is on the ask step and a runtime is available: pulse the
    *  real document-level ask button (not the checklist's proxy button). */
@@ -229,6 +232,9 @@ export function KbMainContent({
   readonly = false,
   onAskAboutSelection,
   onOpenOutline,
+  blankTab,
+  onNewNote,
+  onSearchFiles,
   onAskAboutFile,
   guideAsk = false,
   editedContent,
@@ -677,7 +683,7 @@ export function KbMainContent({
    */
   // key 固定（不随主次对调变化）：这两个按钮在同一 flex 行里互相对调位置，
   // key 若跟随主次变化会导致对调时 React 卸载/重建按钮而非复用。
-  const buildWikiButton = (primary: boolean) => (
+  const buildWikiButton = (primary: boolean) => onBuildWiki && (
     <button
       key="build-wiki"
       type="button"
@@ -743,6 +749,8 @@ export function KbMainContent({
             </button>
           </div>
         )}
+
+        {blankTab && !selectedFile && <span className="kb-blank-title">{t('kb.newTab')}</span>}
 
         {/* ── Frontmatter property pill (wiki docs only) — badges + collapse toggle in one unit ── */}
         {!isTypesetMode && !isEditMode && isSmallMd && fmCollapsed && (
@@ -1266,7 +1274,7 @@ export function KbMainContent({
               </div>
             </div>
           </div>
-        ) : !wikiInitialized ? (
+        ) : !blankTab && !wikiInitialized && (onBuildWiki || !hasFiles) ? (
           /* 未建 Wiki 的两个状态合成一处：同一套结构、同一组按钮，只对调主次。
              没有文件时构建 Wiki 是死路（AI 没有素材可读），所以它不是「次要选项」，
              而是「还不成立的动作」——置灰并在 title 里说明前置条件，让「先导文件、
@@ -1298,16 +1306,25 @@ export function KbMainContent({
             )}
           </div>
         ) : (
-          <div className="kb-empty-state">
-            <div className="kb-empty-icon"><FileIcon size={40} /></div>
-            <h3>{t('kb.noFileTitle')}</h3>
-            <p>{t('kb.noFileBody')}</p>
-            {/* 库级问答 CTA —— 未打开文件时也能对话（样式复用「开始构建 Wiki」） */}
-            {onAskAboutFile && (
-              <button type="button" className="wiki-cta-btn" data-testid="kb-empty-ask-cta" onClick={onAskAboutFile}>
-                <ChatIcon size={14} /> {t('kb.askVault')}
-              </button>
-            )}
+          <div className="kb-blank-page" data-testid="kb-blank-page">
+            <div className="kb-blank-actions">
+              {onNewNote && (
+                <button type="button" data-testid="kb-blank-new-note" onClick={onNewNote}>
+                  <EditIcon size={15} /> {t('kb.newNote')}
+                </button>
+              )}
+              {onSearchFiles && (
+                <button type="button" data-testid="kb-blank-search" onClick={onSearchFiles}>
+                  <SearchIcon size={15} /> {t('kb.moreMenuSearch')}
+                  <kbd>{/Mac/i.test(navigator.platform) ? '⌘ F' : 'Ctrl + F'}</kbd>
+                </button>
+              )}
+              {onAskAboutFile && (
+                <button type="button" data-testid="kb-empty-ask-cta" onClick={onAskAboutFile}>
+                  <ChatIcon size={15} /> {t('kb.askVault')}
+                </button>
+              )}
+            </div>
           </div>
         )
       ) : fileLoadError ? (
@@ -1548,15 +1565,14 @@ export function KbMainContent({
                   s.addRange(range);
                 },
               },
-              { divider: true },
-              {
+              ...(onAskAboutSelection ? [{ divider: true }, {
                 label: t('kb.askSelection'),
                 disabled: !sel || sel.length > MAX_ASK_SELECTION,
                 title: sel.length > MAX_ASK_SELECTION ? t('kb.selectionTooLarge') : undefined,
                 onClick: () => {
-                  if (sel && sel.length <= MAX_ASK_SELECTION) onAskAboutSelection?.(sel);
+                  if (sel && sel.length <= MAX_ASK_SELECTION) onAskAboutSelection(sel);
                 },
-              },
+              }] : []),
             ];
             return items;
           })()}

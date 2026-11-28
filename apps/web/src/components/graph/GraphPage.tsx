@@ -9,6 +9,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { GraphData, GraphNode, GraphScope } from '@molio/contracts';
+import { harnessMode } from '../../harnessMode';
 import { api } from '../../api/client';
 import { useI18n } from '../../i18n';
 import { useActiveVault, useActiveVaultId, vaultStore } from '../../stores/vaultStore';
@@ -128,7 +129,7 @@ export function GraphPage({
   const engineRef = useRef<PixiGraphEngine | null>(null);
   const [engine, setEngine] = useState<PixiGraphEngine | null>(null);
 
-  const { settings, updateSettings, updateForce, resetSettings } = useGraphSettings();
+  const { settings, updateSettings, updateForce, resetSettings } = useGraphSettings(harnessMode);
   const themeColors = getThemeColors(settings.theme);
 
   // 供引擎回调读取的最新值（避免重建引擎）
@@ -193,15 +194,25 @@ export function GraphPage({
     return () => clearTimeout(timer);
   }, [revision, active]);
 
+  const lastGraphRequest = useRef<{ key: string; tick: number } | null>(null);
   // Fetch graph data when active vault / scope changes, or the vault content changes
   useEffect(() => {
     // 库被清空时在途请求会被 cleanup 取消，其 finally 不再执行——必须在这里收掉在途反馈，
     // 否则那枚芯片会永远盖在旧图上（库删除发生在换 scope 请求飞行途中时命中）。
     if (!activeVaultId) {
+      lastGraphRequest.current = null;
       setScopeLoading(false);
       return;
     }
 
+    if (!active) return;
+    const dedupKey = graphDataKey(activeVaultId, scopeKey);
+    if (lastGraphRequest.current?.key === dedupKey && lastGraphRequest.current.tick === refreshTick) {
+      setLoading(false);
+      setScopeLoading(false);
+      setError(null);
+      return;
+    }
     // 局部分支：按 scopeRef.current 分派局部图 / 全量图（deps 用 scopeKey，不含 scope 对象）
     const scope = scopeRef.current;
 
@@ -211,7 +222,6 @@ export function GraphPage({
     setError(null);
     // 换 scope（全量图 ⇄ 局部图、局部图之间）而屏幕上已有旧图时，置在途反馈。
     // 后台自动刷新（refreshTick 触发）键没变，不置——那里数据没变就该保持原样、不闪加载态。
-    const dedupKey = graphDataKey(activeVaultId, scopeKey);
     if (shownKeyRef.current !== dedupKey) setScopeLoading(true);
     const req = scope
       ? api.getLocalGraph(activeVaultId, scope)
@@ -223,6 +233,7 @@ export function GraphPage({
         // 而重建一次要重跑整轮力导向仿真；数据没变就保持原对象，下游 setData/重排全不跑。
         // 但去重只在**同一库 + 同一 scope** 内成立：换 scope 时哪怕内容逐字节相同
         // （两个不同的空子图正是如此）也必须采纳，否则界面停在上一个 scope 上不动。
+        lastGraphRequest.current = { key: dedupKey, tick: refreshTick };
         const fingerprint = graphFingerprint(data);
         const prev = fingerprintRef.current;
         if (prev && prev.key === dedupKey && prev.fingerprint === fingerprint) return;
@@ -254,7 +265,7 @@ export function GraphPage({
     return () => {
       cancelled = true;
     };
-  }, [activeVaultId, scopeKey, refreshTick]);
+  }, [active, activeVaultId, scopeKey, refreshTick]);
 
   // ── 筛选后的图数据（引擎只接收可见节点）──
   const engineData = useMemo((): { nodes: EngineNode[]; edges: EngineEdge[] } | null => {

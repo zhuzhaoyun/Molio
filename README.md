@@ -262,13 +262,14 @@ Tools: `molio_status`, `kb_vaults`, `kb_tree`, `kb_read`, `kb_search`, `kb_ask_s
 
 ### 🧩 DeepSeek Harness (dsh) plugin
 
-Molio's knowledge base is also available as a read-only plugin for DeepSeek Harness (dsh), so dsh agents can search and read your local Molio vaults during a conversation:
+**The Obsidian & local knowledge base plugin for DSH.** Open any local Obsidian vault or Markdown folder right inside the official DSH app — no Obsidian bridge plugin needed. The sidebar gets three native views (Knowledge · Graph · Resources) that keep their state as you switch. Click "Ask" on a note to attach it to a chat, follow `[[wikilinks]]` in answers into a collapsible Obsidian property preview, and jump back to the source note in one click. Agents get 5 read-only tools; saving back to the vault goes through a draft you confirm. The plugin starts its bundled local service on demand.
 
-```bash
+```sh
 dsh plugin add dsh-plugin-molio
 ```
 
-It exposes 5 read-only tools (`molio_status`, `molio_kb_vaults`, `molio_kb_tree`, `molio_kb_search`, `molio_kb_read`) backed by the local Molio daemon HTTP API. Requires a running Molio service (desktop app or Docker). Details: [`packages/dsh-plugin-molio/README.md`](packages/dsh-plugin-molio/README.md) · [npm: dsh-plugin-molio](https://www.npmjs.com/package/dsh-plugin-molio)
+Details: [`packages/dsh-plugin-molio/README.md`](packages/dsh-plugin-molio/README.md) · [npm: dsh-plugin-molio](https://www.npmjs.com/package/dsh-plugin-molio)
+
 
 ## 🏗️ Architecture
 

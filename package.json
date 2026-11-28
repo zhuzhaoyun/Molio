@@ -27,6 +27,7 @@
   "devDependencies": {
     "@types/node": "^24.0.0",
     "concurrently": "^10.0.1",
+    "esbuild": "0.25.0",
     "typescript": "^5.8.3"
   }
 }

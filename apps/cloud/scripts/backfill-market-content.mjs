@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 /**
- * 将 content/market/<listingId>.json 回填到 market_listings.content（JSONB）。
+ * 将 $MOLIO_MARKET_CONTENT_DIR/<listingId>.json 回填到 market_listings.content（JSONB）。
  *
+ * 先将 MOLIO_MARKET_CONTENT_DIR 设为外部商品 JSON 目录。
  * 用法（仓库根目录）：
  *   DATABASE_URL="postgres://..." node apps/cloud/scripts/backfill-market-content.mjs
  *   DATABASE_URL="postgres://..." node apps/cloud/scripts/backfill-market-content.mjs --dry-run
@@ -11,11 +12,10 @@
  */
 import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import pg from 'pg';
 
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
-const contentDir = path.join(root, 'content', 'market');
+const contentDir = process.env.MOLIO_MARKET_CONTENT_DIR;
+if (!contentDir) throw new Error('Set MOLIO_MARKET_CONTENT_DIR to the directory containing the listing JSON files');
 const args = new Set(process.argv.slice(2));
 const dryRun = args.has('--dry-run');
 const idArgIndex = process.argv.indexOf('--id');

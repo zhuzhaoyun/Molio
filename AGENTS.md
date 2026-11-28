@@ -337,3 +337,4 @@ git tag v0.3.22 && git push origin v0.3.22
 ```
 
 CI 中通过 `grep -qiE '(test|beta|alpha|rc|dirty)'` 判断是否为预发布版，匹配则跳过 OSS latest 文件更新。
+DSH 独立插件位于 `packages/dsh-plugin-molio`，构建、安装和测试见 [插件说明](packages/dsh-plugin-molio/README.md)。原生桌面端位于 `apps/desktop`。

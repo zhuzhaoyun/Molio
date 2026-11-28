@@ -384,7 +384,10 @@ async function refreshDockMenu() {
   if (process.platform !== 'darwin' || !app.dock || !vaultRecency) return;
   let vaults = [];
   try {
-    const res = await fetch(`${DAEMON_BASE}/api/knowledge/vaults`, { signal: AbortSignal.timeout(2500) });
+    const res = await fetch(`${DAEMON_BASE}/api/knowledge/vaults`, {
+      headers: { Prefer: 'return=minimal' },
+      signal: AbortSignal.timeout(2500),
+    });
     if (res.ok) {
       const body = await res.json();
       vaults = Array.isArray(body.vaults) ? body.vaults : [];
@@ -413,7 +416,10 @@ async function resolveVaultName(vaultId) {
   for (let attempt = 0; attempt < 2; attempt++) {
     if (!vaultNameCache) {
       try {
-        const res = await fetch(`${DAEMON_BASE}/api/knowledge/vaults`, { signal: AbortSignal.timeout(2500) });
+        const res = await fetch(`${DAEMON_BASE}/api/knowledge/vaults`, {
+      headers: { Prefer: 'return=minimal' },
+      signal: AbortSignal.timeout(2500),
+    });
         const body = res.ok ? await res.json() : {};
         const vaults = Array.isArray(body.vaults) ? body.vaults : [];
         vaultNameCache = new Map(vaults.map((v) => [v.id, v.name || v.id]));

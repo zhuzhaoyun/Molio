@@ -159,7 +159,7 @@ test('admin content: 高中数学样例通过 MarketContent 校验', async () =>
     createdAt: 1, updatedAt: 1, publishedAt: 1,
   });
   const content = JSON.parse(readFileSync(
-    path.resolve(process.cwd(), '../../content/market/01M4PZPNGWR1YZ1W9GGVTJG82N.json'),
+    path.resolve(process.cwd(), 'test/fixtures/market/math-listing.json'),
     'utf8',
   ));
   const admin = await register(app, 'admin@x.com');

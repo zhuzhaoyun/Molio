@@ -5,11 +5,12 @@
  * 全部就绪后框架才调用 apply）、`apply(ctx)`（注册工具）。
  *
  * 全部工具只读（与 @molio/cli 的第一版红线一致）：列库 / 文件树 / 全文
- * 搜索 / 读文件 / 状态自检。数据经 Molio daemon HTTP API（默认
- * http://127.0.0.1:3100，MOLIO_DAEMON_URL / MOLIO_PORT 可覆盖）。
+ * 搜索 / 读文件 / 状态自检。默认按需启动插件内置服务。
  *
  * @module dsh-plugin-molio
  */
+import { registerInterface } from './ui-rpc.js';
+import { createService } from './service.js';
 import type { Context } from '@deepseek-ai/cordis';
 import { DaemonClient } from './daemon-client.js';
 import { registerKbRead } from './tools/kb-read.js';
@@ -26,7 +27,10 @@ export const inject = ['tools'];
 
 /** 注册全部 Molio 知识库工具（5 个，全只读）。 */
 export function apply(ctx: Context): void {
-  const client = new DaemonClient();
+  const service = createService();
+  ctx.effect(() => () => service.stop());
+  registerInterface(ctx, service.endpoint);
+  const client = new DaemonClient(service.endpoint);
   registerMolioStatus(ctx, client);
   registerKbVaults(ctx, client);
   registerKbTree(ctx, client);

@@ -7,7 +7,6 @@ import { Hono } from 'hono';
 import { knowledgeRoutes } from '../../src/routes/knowledge.js';
 import { TreeCache } from '../../src/core/tree-cache.js';
 import { openDatabase, closeDatabase, createVault } from '../../src/core/db.js';
-import { RunManager } from '../../src/core/RunManager.js';
 import { VaultWatcher } from '../../src/core/vault-watcher.js';
 
 /**
@@ -46,8 +45,8 @@ describe('Knowledge routes — tree cache', () => {
     const app = (cache: TreeCache, gate?: (id: string) => boolean) => {
       const root = new Hono();
       const routes = gate
-        ? knowledgeRoutes(db, new RunManager(), new VaultWatcher(db), cache, gate)
-        : knowledgeRoutes(db, new RunManager(), new VaultWatcher(db), cache);
+        ? knowledgeRoutes(db, new VaultWatcher(db), cache, gate)
+        : knowledgeRoutes(db, new VaultWatcher(db), cache);
       root.route('/api/knowledge', routes);
       return root;
     };

@@ -19,6 +19,14 @@ interface UpdaterAPI {
 }
 
 interface DesktopAPI {
+  openKnowledgeConversation?: (context: {
+    mode: 'ask' | 'build' | 'lint' | 'ingest';
+    vaultId: string;
+    vaultPath: string;
+    filePath?: string;
+    selectedText?: string;
+    isDirectory?: boolean;
+  }) => Promise<void>;
   platform: string;
   appInfo: { version: string; os: string };
   showDirectoryPicker: () => Promise<string | null>;

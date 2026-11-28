@@ -1,6 +1,5 @@
 /* ═══════════════════════════════════════════════════════════
    Knowledge Base Module Styles
-   Based on prototypes/knowledge-base-v2.html
    ═══════════════════════════════════════════════════════════ */
 
 /* ── Shell: 3-column layout ──
@@ -1016,6 +1015,44 @@
   color: var(--text-muted);
   margin-top: 2px;
 }
+
+/* Blank document tab */
+.kb-blank-page {
+  flex: 1;
+  display: grid;
+  place-items: center;
+  min-height: 0;
+  overflow: auto;
+  padding: 16px;
+  background: var(--bg);
+}
+.kb-blank-actions { display: grid; gap: 6px; max-width: 100%; }
+.kb-blank-actions button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  min-height: 32px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.kb-blank-actions button:hover { background: var(--bg-subtle); }
+.kb-blank-actions button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.kb-blank-actions kbd {
+  margin-inline-start: auto;
+  padding: 1px 5px;
+  border-radius: 6px;
+  background: var(--bg-subtle);
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 11px;
+}
+.kb-blank-title { color: var(--text-muted); font-size: 13px; }
 
 /* Empty state */
 .kb-empty-state {

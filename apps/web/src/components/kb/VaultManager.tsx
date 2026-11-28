@@ -1,3 +1,4 @@
+import { vaultDirectoryPicker } from '../../utils/vaultDirectoryPicker';
 /**
  * Obsidian-style Vault Manager — modal overlay.
  *
@@ -76,14 +77,15 @@ export function VaultManagerModal({
 
   /** Native picker (Electron) or the inline path form (browser). */
   const handlePickLocal = useCallback(async () => {
-    if (!window.__electron__?.showDirectoryPicker) {
+    const pick = vaultDirectoryPicker();
+    if (!pick) {
       // Browser: show inline path input form
       setView('open');
       return;
     }
     let pickedPath: string | null = null;
     try {
-      pickedPath = await window.__electron__.showDirectoryPicker();
+      pickedPath = await pick();
     } catch {
       return; // picker dismissed or failed — nothing to report to the user
     }

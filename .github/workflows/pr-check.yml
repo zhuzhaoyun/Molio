@@ -41,6 +41,11 @@ jobs:
       - name: Run CLI tests
         run: pnpm --filter @molio/cli test
 
+      - name: Test standalone DSH plugin and bundled service
+        run: |
+          pnpm --filter dsh-plugin-molio test
+          node --test packages/dsh-plugin-molio/test/bundle.test.mjs
+
       - name: Run desktop tests (updater regression)
         run: pnpm --filter @molio/desktop test
 

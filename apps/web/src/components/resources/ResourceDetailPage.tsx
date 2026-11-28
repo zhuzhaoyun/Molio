@@ -10,6 +10,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams, useLocation } from 'react-router-dom';
 import type { MarketListing } from '@molio/contracts';
+import { harnessMode } from '../../harnessMode';
 import { useI18n } from '../../i18n';
 import {
   marketToEntry,
@@ -250,7 +251,7 @@ export function ResourceDetailPage() {
                 <li>{t('resources.import.step2')}</li>
                 <li>{t('resources.import.step3')}</li>
               </ol>
-              <Link to="/knowledge" className="resources-open-kb" data-testid="resources-open-kb">
+              <Link to={harnessMode ? "/knowledge?manage=1" : "/knowledge"} className="resources-open-kb" data-testid="resources-open-kb">
                 {t('resources.openKnowledge')} →
               </Link>
             </div>
